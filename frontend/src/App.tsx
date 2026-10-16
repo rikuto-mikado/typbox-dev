@@ -79,7 +79,7 @@ const ACCENT_PALETTE = [
 ];
 
 const DICT = {
-  subtitle: 'QUANTIFIED STUDY & TELEMETRY ARCHIVE',
+  subtitle: 'QUANTIFIED STUDY & ARCHIVE',
   hubStatus: 'HUB SYNC: READY',
   signIn: 'SIGN IN',
   signOut: 'SIGN OUT',
@@ -102,7 +102,7 @@ const DICT = {
   catCode: 'Code (Max 4 chars)',
   catTarget: 'Monthly Target (Hrs)',
   create: 'CREATE',
-  analyticsTitle: 'TELEMETRY & ANALYTICS',
+  analyticsTitle: 'ANALYTICS',
   weeklyView: 'WEEKLY (7D)',
   monthlyView: 'MONTHLY (30D)',
   recentLogs: 'CHRONOLOGICAL LOG STREAM',
@@ -1143,12 +1143,10 @@ export default function App() {
                 <span>PUBLIC GUEST MODE // STANDBY</span>
               </div>
               <h1 className="font-mono text-2xl sm:text-3xl font-bold tracking-tight">
-                Quantified Study &amp; Engineering Telemetry Archive
+                Quantified Study &amp; Archive
               </h1>
               <p className={`text-sm leading-relaxed ${textMuted}`}>
-                TypBox logs study hours, budgets time across technical domains, and exposes curated
-                aggregations directly to your public portfolio hub. Authenticate to sync with your private Django
-                backend database.
+                TYPBOX is a minimal workspace to log study sessions, track time across categories, and archive your daily learning progress.
               </p>
               <div className="pt-2 flex flex-wrap gap-3">
                 <button
@@ -2187,19 +2185,35 @@ export default function App() {
       </main>
 
       {/* ==========================================
-          7. FOOTER SECTION
+          7. FOOTER SECTION (Inverted Monochrome)
       ========================================== */}
-      <footer id="contact" className="relative w-full text-[#F5F4F0] py-20 px-6 scroll-mt-6">
-        <div className="absolute inset-0 bg-[#9A4C22] z-0 pointer-events-none" />
+      <footer
+        id="contact"
+        className={`relative w-full py-20 px-6 scroll-mt-6 border-t transition-colors duration-300 ${
+          isDark
+            ? 'bg-white text-zinc-950 border-zinc-200'
+            : 'bg-[#0a0a0a] text-white border-zinc-800'
+        }`}
+      >
         <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center space-y-10">
-          <div className="flex flex-col md:flex-row items-center justify-between w-full border-b border-[#c29c6d]/60 pb-10 gap-6">
+          <div
+            className={`flex flex-col md:flex-row items-center justify-between w-full border-b pb-10 gap-6 ${
+              isDark ? 'border-zinc-200' : 'border-zinc-800'
+            }`}
+          >
             <div>
-              <span className="text-xs uppercase tracking-widest text-[#eed6be] font-sans block mb-1">
+              <span
+                className={`text-xs uppercase tracking-widest font-sans block mb-1 font-medium ${
+                  isDark ? 'text-zinc-500' : 'text-zinc-400'
+                }`}
+              >
                 {ui.footerContact}
               </span>
               <a
                 href="mailto:mikadorikuto@gmail.com"
-                className="font-serif text-2xl sm:text-3xl hover:underline underline-offset-4 transition-all"
+                className={`font-serif text-2xl sm:text-3xl hover:underline underline-offset-4 transition-colors ${
+                  isDark ? 'text-zinc-950 hover:text-zinc-700' : 'text-white hover:text-zinc-300'
+                }`}
               >
                 mikadorikuto@gmail.com
               </a>
@@ -2216,16 +2230,24 @@ export default function App() {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={link.name}
-                    className="p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all transform hover:scale-110 text-[#F5F4F0]"
+                    className={`p-3 rounded-full transition-all transform hover:scale-110 border ${
+                      isDark
+                        ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-950 border-zinc-200'
+                        : 'bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-800'
+                    }`}
                   >
-                    <Icon className="w-6 h-6" />
+                    <Icon className="w-5 h-5" />
                   </a>
                 );
               })}
             </div>
           </div>
 
-          <div className="text-center font-sans text-xs text-[#eed6be]/80 tracking-wide">
+          <div
+            className={`text-center font-sans text-xs tracking-wide ${
+              isDark ? 'text-zinc-500' : 'text-zinc-400'
+            }`}
+          >
             {ui.copyright}
           </div>
         </div>
