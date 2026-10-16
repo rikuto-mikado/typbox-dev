@@ -4,7 +4,8 @@
  */
 
 const rawBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
+const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+const API_BASE_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl : `${cleanBaseUrl}/api`;
 
 const TOKEN_KEY = 'typbox_access_token';
 const REFRESH_KEY = 'typbox_refresh_token';
