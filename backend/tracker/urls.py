@@ -1,0 +1,32 @@
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+
+from .views import (
+    CategoryViewSet,
+    CurrentUserView,
+    HubTelemetryView,
+    RegisterView,
+    StudyLogViewSet,
+)
+
+router = DefaultRouter()
+router.register(r'categories', CategoryViewSet, basename='category')
+router.register(r'logs', StudyLogViewSet, basename='studylog')
+
+urlpatterns = [
+    # Authentication endpoints
+    path('auth/register/', RegisterView.as_view(), name='auth_register'),
+    path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/me/', CurrentUserView.as_view(), name='current_user'),
+
+    # Portfolio / Hub Aggregator Telemetry
+    path('hub/telemetry/', HubTelemetryView.as_view(), name='hub_telemetry'),
+
+    # CRUD Router for categories and logs
+    path('', include(router.urls)),
+]

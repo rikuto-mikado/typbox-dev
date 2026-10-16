@@ -1,3 +1,17 @@
 from django.contrib import admin
+from .models import Category, StudyLog
 
-# Register your models here.
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'user', 'color', 'monthly_target_hours', 'created_at')
+    list_filter = ('user',)
+    search_fields = ('name', 'code', 'user__username')
+
+
+@admin.register(StudyLog)
+class StudyLogAdmin(admin.ModelAdmin):
+    list_display = ('date', 'category', 'user', 'duration_minutes', 'is_public_to_hub', 'topic')
+    list_filter = ('is_public_to_hub', 'date', 'user', 'category')
+    search_fields = ('topic', 'user__username', 'category__name')
+    date_hierarchy = 'date'
