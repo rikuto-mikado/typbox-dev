@@ -96,7 +96,7 @@ database_url = os.getenv('DATABASE_URL')
 if database_url:
     try:
         import dj_database_url
-        DATABASES['default'] = dj_database_url.parse(database_url, conn_max_age=600)
+        DATABASES['default'] = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=True)
     except ImportError:
         pass
 
