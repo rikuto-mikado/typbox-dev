@@ -26,8 +26,13 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-allowed_hosts_raw = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+allowed_hosts_raw = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com,typbox-dev.onrender.com')
 ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
+
+# Automatically add Render's external hostname if provided by the environment
+render_external_hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_external_hostname)
 
 
 # Application definition
@@ -91,14 +96,19 @@ DATABASES = {
     }
 }
 
-# If DATABASE_URL is set (e.g. Render with Managed PostgreSQL), automatically switch to PostgreSQL
+# If DATABASE_URL is set (e.g. Render with Neon PostgreSQL), automatically switch to PostgreSQL
 database_url = os.getenv('DATABASE_URL')
-if database_url:
+if database_url and database_url.strip():
     try:
         import dj_database_url
-        DATABASES['default'] = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=True)
-    except ImportError:
-        pass
+        conn_max_age = int(os.getenv('CONN_MAX_AGE', '600'))
+        DATABASES['default'] = dj_database_url.parse(
+            database_url.strip(),
+            conn_max_age=conn_max_age,
+            ssl_require=True,
+        )
+    except Exception as e:
+        print(f"Warning: Failed to parse DATABASE_URL: {e}")
 
 
 # Password validation
@@ -181,9 +191,8 @@ cors_raw = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_raw.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
-csrf_raw = os.getenv('CSRF_TRUSTED_ORIGINS', '')
-if csrf_raw:
-    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_raw.split(',') if origin.strip()]
+csrf_raw = os.getenv('CSRF_TRUSTED_ORIGINS', 'https://typbox-dev.onrender.com,https://*.onrender.com')
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_raw.split(',') if origin.strip()]
 
 
 # ==========================================
