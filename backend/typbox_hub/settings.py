@@ -24,7 +24,9 @@ SECRET_KEY = os.getenv(
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
+is_render = os.getenv('RENDER', '').lower() == 'true'
+default_debug = 'False' if is_render else 'True'
+DEBUG = os.getenv('DEBUG', default_debug).lower() in ('true', '1', 'yes')
 
 allowed_hosts_raw = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com,typbox-dev.onrender.com')
 ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]

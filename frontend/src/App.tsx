@@ -241,6 +241,24 @@ export default function App() {
   const [authSubmitting, setAuthSubmitting] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
+  // Authentication Modal Controls with fresh input state reset
+  const openAuthModal = useCallback((mode: 'login' | 'register' = 'login') => {
+    setAuthMode(mode);
+    setAuthError(null);
+    setAuthUsername('');
+    setAuthEmail('');
+    setAuthPassword('');
+    setShowAuthModal(true);
+  }, []);
+
+  const closeAuthModal = useCallback(() => {
+    setShowAuthModal(false);
+    setAuthError(null);
+    setAuthUsername('');
+    setAuthEmail('');
+    setAuthPassword('');
+  }, []);
+
   // Data State (Directly synchronized with Django Backend)
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<StudyLog[]>([]);
@@ -386,11 +404,17 @@ export default function App() {
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+
+    if (authMode === 'register' && (!authEmail || !authEmail.trim())) {
+      setAuthError('Email address is required for registration.');
+      return;
+    }
+
     setAuthSubmitting(true);
 
     try {
       if (authMode === 'register') {
-        await api.auth.register(authUsername, authEmail, authPassword);
+        await api.auth.register(authUsername, authEmail.trim(), authPassword);
         // Automatically login after registration
         await api.auth.login(authUsername, authPassword);
       } else {
@@ -399,8 +423,7 @@ export default function App() {
 
       const me = await api.auth.getMe();
       setUser(me);
-      setShowAuthModal(false);
-      setAuthPassword('');
+      closeAuthModal();
       await loadUserData();
     } catch (err: unknown) {
       const error = err as Error;
@@ -447,7 +470,7 @@ export default function App() {
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      setShowAuthModal(true);
+      openAuthModal('login');
       return;
     }
 
@@ -494,7 +517,7 @@ export default function App() {
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      setShowAuthModal(true);
+      openAuthModal('login');
       return;
     }
     if (!newCatName.trim() || !newCatCode.trim()) return;
@@ -1107,11 +1130,7 @@ export default function App() {
               </div>
             ) : (
               <button
-                onClick={() => {
-                  setAuthMode('login');
-                  setAuthError(null);
-                  setShowAuthModal(true);
-                }}
+                onClick={() => openAuthModal('login')}
                 className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-mono font-semibold border transition-colors cursor-pointer ${
                   isDark
                     ? 'bg-zinc-100 text-zinc-950 border-zinc-100 hover:bg-zinc-300'
@@ -1147,10 +1166,7 @@ export default function App() {
               </p>
               <div className="pt-2 flex flex-wrap gap-3">
                 <button
-                  onClick={() => {
-                    setAuthMode('login');
-                    setShowAuthModal(true);
-                  }}
+                  onClick={() => openAuthModal('login')}
                   className={`px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider flex items-center space-x-2 cursor-pointer ${
                     isDark ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'
                   }`}
@@ -1159,10 +1175,7 @@ export default function App() {
                   <span>SIGN IN TO START TRACKING</span>
                 </button>
                 <button
-                  onClick={() => {
-                    setAuthMode('register');
-                    setShowAuthModal(true);
-                  }}
+                  onClick={() => openAuthModal('register')}
                   className={`px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider border ${borderCol} hover:border-emerald-500/60 transition-colors cursor-pointer`}
                 >
                   <span>CREATE ACCOUNT</span>
@@ -1272,10 +1285,7 @@ export default function App() {
                     </p>
                   </div>
                   <button
-                    onClick={() => {
-                      setAuthMode('login');
-                      setShowAuthModal(true);
-                    }}
+                    onClick={() => openAuthModal('login')}
                     className="px-4 py-2 font-mono text-xs font-semibold bg-emerald-500 text-zinc-950 uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer"
                   >
                     SIGN IN NOW
@@ -2287,8 +2297,14 @@ export default function App() {
           MODAL 2: AUTHENTICATION MODAL (REAL JWT)
       ========================================== */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-md border ${borderCol} ${bgCard} p-6 space-y-5 shadow-2xl`}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={closeAuthModal}
+        >
+          <div
+            className={`w-full max-w-md border ${borderCol} ${bgCard} p-6 space-y-5 shadow-2xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div className="flex items-center space-x-2">
                 <Shield className="w-4 h-4 text-emerald-400" />
@@ -2297,7 +2313,8 @@ export default function App() {
                 </h3>
               </div>
               <button
-                onClick={() => setShowAuthModal(false)}
+                type="button"
+                onClick={closeAuthModal}
                 className="font-mono text-xs hover:underline cursor-pointer"
               >
                 [CLOSE]
@@ -2311,6 +2328,7 @@ export default function App() {
                 onClick={() => {
                   setAuthMode('login');
                   setAuthError(null);
+                  setAuthPassword('');
                 }}
                 className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
                   authMode === 'login'
@@ -2327,6 +2345,7 @@ export default function App() {
                 onClick={() => {
                   setAuthMode('register');
                   setAuthError(null);
+                  setAuthPassword('');
                 }}
                 className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
                   authMode === 'register'
@@ -2368,12 +2387,13 @@ export default function App() {
               {authMode === 'register' && (
                 <div>
                   <label htmlFor="auth-email" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                    Email (Optional)
+                    Email Address *
                   </label>
                   <input
                     id="auth-email"
                     name="email"
                     type="email"
+                    required
                     autoComplete="email"
                     placeholder="user@example.com"
                     value={authEmail}

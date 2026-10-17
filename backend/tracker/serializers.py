@@ -24,16 +24,25 @@ class RegisterSerializer(serializers.ModelSerializer):
     """
     Serializer for new user registration.
     """
+    email = serializers.EmailField(required=True, allow_blank=False)
     password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
         fields = ('id', 'username', 'email', 'password')
 
+    def validate_email(self, value):
+        cleaned = value.strip().lower()
+        if not cleaned:
+            raise serializers.ValidationError('Email address is required.')
+        if User.objects.filter(email__iexact=cleaned).exists():
+            raise serializers.ValidationError('A user with that email already exists.')
+        return cleaned
+
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],
-            email=validated_data.get('email', ''),
+            email=validated_data['email'],
             password=validated_data['password']
         )
         # Create default categories for convenience upon signup
