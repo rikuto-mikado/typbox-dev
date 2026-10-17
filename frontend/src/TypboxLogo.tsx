@@ -18,9 +18,9 @@ export const TypboxLogo: React.FC<TypboxLogoProps> = ({
   isDark = true,
   isRunning = false,
 }) => {
-  const outerFill = isDark ? '#000000' : '#F6F4F0';
-  const outerStroke = isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.14)';
-  const innerFill = isRunning ? '#10b981' : isDark ? '#F6F4F0' : '#000000';
+  const outerFill = isDark ? '#F6F4F0' : '#000000';
+  const outerStroke = isDark ? 'rgba(255, 255, 255, 0.24)' : 'rgba(0, 0, 0, 0.14)';
+  const innerFill = isRunning ? '#10b981' : isDark ? '#000000' : '#F6F4F0';
 
   return (
     <svg

@@ -71,23 +71,26 @@ type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'monthly';
 
 const ACCENT_PALETTE = [
+  // Row 1: Original 6 Core Accents
   { name: 'Emerald', hex: '#10b981' },
-  { name: 'Teal', hex: '#14b8a6' },
-  { name: 'Cyan', hex: '#06b6d4' },
-  { name: 'Sky', hex: '#0ea5e9' },
   { name: 'Blue', hex: '#3b82f6' },
-  { name: 'Indigo', hex: '#6366f1' },
-  { name: 'Violet', hex: '#8b5cf6' },
-  { name: 'Purple', hex: '#a855f7' },
-  { name: 'Fuchsia', hex: '#d946ef' },
-  { name: 'Pink', hex: '#ec4899' },
-  { name: 'Rose', hex: '#f43f5e' },
-  { name: 'Red', hex: '#ef4444' },
-  { name: 'Orange', hex: '#f97316' },
   { name: 'Amber', hex: '#f59e0b' },
-  { name: 'Yellow', hex: '#eab308' },
+  { name: 'Purple', hex: '#a855f7' },
+  { name: 'Rose', hex: '#f43f5e' },
+  { name: 'Cyan', hex: '#06b6d4' },
+  // Row 2: Distinct Bright & Pastel Accents
   { name: 'Lime', hex: '#84cc16' },
-  { name: 'Green', hex: '#22c55e' },
+  { name: 'Sky', hex: '#7dd3fc' },
+  { name: 'Yellow', hex: '#fde047' },
+  { name: 'Lavender', hex: '#c4b5fd' },
+  { name: 'Pink', hex: '#f472b6' },
+  { name: 'Orange', hex: '#ea580c' },
+  // Row 3: Distinct Deep, Earthy & Neutral Tones
+  { name: 'Forest', hex: '#166534' },
+  { name: 'Navy', hex: '#1e3a8a' },
+  { name: 'Bronze', hex: '#92400e' },
+  { name: 'Crimson', hex: '#991b1b' },
+  { name: 'Teal', hex: '#115e59' },
   { name: 'Slate', hex: '#64748b' },
 ];
 
