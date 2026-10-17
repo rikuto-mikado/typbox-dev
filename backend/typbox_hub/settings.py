@@ -191,6 +191,13 @@ cors_raw = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_raw.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
+# Automatically allow all onrender.com frontend domains and local dev ports
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.onrender\.com$",
+    r"^http:\/\/localhost:\d+$",
+    r"^http:\/\/127\.0\.0\.1:\d+$",
+]
+
 csrf_raw = os.getenv('CSRF_TRUSTED_ORIGINS', 'https://typbox-dev.onrender.com,https://*.onrender.com')
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_raw.split(',') if origin.strip()]
 
