@@ -485,9 +485,10 @@ export default function App() {
   }, [initialResetParams.hasReset]);
 
   // Data State (Directly synchronized with Django Backend)
+  const INITIAL_VISIBLE_LOGS = 6;
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<StudyLog[]>([]);
-  const [visibleLogCount, setVisibleLogCount] = useState<number>(25);
+  const [visibleLogCount, setVisibleLogCount] = useState<number>(INITIAL_VISIBLE_LOGS);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -2142,8 +2143,8 @@ export default function App() {
                 <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} ${textMuted} shrink-0`}>
                   {clearanceStatus.current.division}
                 </span>
-                <span className={`hidden sm:inline text-[11px] font-sans ${textMuted} truncate`}>
-                  ({clearanceStatus.current.jpSubtitle})
+                <span className={`hidden sm:inline text-[11px] font-mono ${textMuted} truncate`}>
+                  // {clearanceStatus.current.subtitle}
                 </span>
               </div>
             </div>
@@ -3724,34 +3725,53 @@ export default function App() {
                     })}
                   </div>
 
-                  {logs.length > visibleLogCount && (
-                    <div className={`pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-t ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'} font-mono text-xs`}>
-                      <span className={textMuted}>
+                  {logs.length > INITIAL_VISIBLE_LOGS && (
+                    <div className={`pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 border-t ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'} font-mono text-xs`}>
+                      <span className={`text-[11px] ${textMuted}`}>
                         DISPLAYING {Math.min(visibleLogCount, logs.length)} OF {logs.length} RECORDS
                       </span>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => setVisibleLogCount((prev) => Math.min(prev + 50, logs.length))}
-                          className={`px-3 py-1.5 border ${borderCol} ${
-                            isDark
-                              ? 'text-zinc-200 hover:bg-zinc-800/40'
-                              : 'text-black hover:bg-zinc-100 hover:border-zinc-800'
-                          } hover:border-zinc-500 transition-colors cursor-pointer`}
-                        >
-                          + LOAD 50 MORE
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVisibleLogCount(logs.length)}
-                          className={`px-3 py-1.5 border ${borderCol} ${
-                            isDark
-                              ? 'text-zinc-300 hover:text-white hover:bg-zinc-800/40'
-                              : 'text-black hover:text-black hover:bg-zinc-100 hover:border-zinc-800'
-                          } hover:border-zinc-500 transition-colors cursor-pointer`}
-                        >
-                          SHOW ALL
-                        </button>
+                      <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                        {visibleLogCount < logs.length && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setVisibleLogCount((prev) => Math.min(prev + 10, logs.length))}
+                              className={`px-3.5 py-1.5 border ${borderCol} ${
+                                isDark
+                                  ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
+                                  : 'text-emerald-700 border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100'
+                              } font-bold transition-colors cursor-pointer`}
+                            >
+                              SHOW MORE (+{Math.min(10, logs.length - visibleLogCount)})
+                            </button>
+                            {logs.length - visibleLogCount > 10 && (
+                              <button
+                                type="button"
+                                onClick={() => setVisibleLogCount(logs.length)}
+                                className={`px-3 py-1.5 border ${borderCol} ${
+                                  isDark
+                                    ? 'text-zinc-300 hover:text-white hover:bg-zinc-800/40'
+                                    : 'text-black hover:bg-zinc-100 hover:border-zinc-800'
+                                } hover:border-zinc-500 transition-colors cursor-pointer`}
+                              >
+                                SHOW ALL ({logs.length})
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {visibleLogCount > INITIAL_VISIBLE_LOGS && (
+                          <button
+                            type="button"
+                            onClick={() => setVisibleLogCount(INITIAL_VISIBLE_LOGS)}
+                            className={`px-3 py-1.5 border ${borderCol} ${
+                              isDark
+                                ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+                                : 'text-zinc-700 hover:text-black hover:bg-zinc-100'
+                            } transition-colors cursor-pointer`}
+                          >
+                            COLLAPSE
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -4095,15 +4115,15 @@ export default function App() {
       ========================================== */}
       {showSettingsModal && user && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           onClick={() => setShowSettingsModal(false)}
         >
           <div
-            className={`w-full max-w-xl border ${borderCol} ${bgCard} p-6 space-y-5 shadow-2xl my-8 max-h-[90vh] overflow-y-auto`}
+            className={`w-full max-w-xl border ${borderCol} ${bgCard} p-6 shadow-2xl h-[650px] max-h-[88vh] flex flex-col overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className={`flex items-center justify-between border-b ${borderCol} pb-3.5`}>
+            <div className={`flex items-center justify-between border-b ${borderCol} pb-3.5 shrink-0`}>
               <div className="flex items-center space-x-2.5">
                 <Settings className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
@@ -4120,7 +4140,7 @@ export default function App() {
             </div>
 
             {/* Settings Navigation Tabs */}
-            <div className={`grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-[10px] sm:text-[11px] font-mono`}>
+            <div className={`grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-[10px] sm:text-[11px] font-mono mt-4 shrink-0`}>
               <button
                 type="button"
                 onClick={() => setSettingsTab('profile')}
@@ -4175,19 +4195,21 @@ export default function App() {
               </button>
             </div>
 
-            {/* TAB 2: TELEMETRY CLEARANCE LEVEL (100 RANKS) */}
-            {settingsTab === 'clearance' && (
-              <ClearanceBrowserPanel
-                clearance={clearanceStatus}
-                isDark={isDark}
-                borderCol={borderCol}
-                textMuted={textMuted}
-              />
-            )}
+            {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
+            <div className="flex-1 min-h-0 overflow-y-auto mt-5 pr-1">
+              {/* TAB 2: TELEMETRY CLEARANCE LEVEL (500 RANKS) */}
+              {settingsTab === 'clearance' && (
+                <ClearanceBrowserPanel
+                  clearance={clearanceStatus}
+                  isDark={isDark}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                />
+              )}
 
-            {/* TAB 1: PROFILE & AVATAR */}
-            {settingsTab === 'profile' && (
-              <form onSubmit={handleSaveProfile} className="space-y-5 font-mono text-xs">
+              {/* TAB 1: PROFILE & AVATAR */}
+              {settingsTab === 'profile' && (
+                <form onSubmit={handleSaveProfile} className="space-y-5 font-mono text-xs">
                 {profileStatus && (
                   <div
                     className={`p-3 border flex items-center space-x-2 ${
@@ -4567,6 +4589,7 @@ export default function App() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
