@@ -28,8 +28,14 @@ is_render = os.getenv('RENDER', '').lower() == 'true'
 default_debug = 'False' if is_render else 'True'
 DEBUG = os.getenv('DEBUG', default_debug).lower() in ('true', '1', 'yes')
 
-allowed_hosts_raw = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com,typbox-dev.onrender.com')
+allowed_hosts_raw = os.getenv(
+    'ALLOWED_HOSTS',
+    'localhost,127.0.0.1,.onrender.com,typbox-dev.onrender.com,typbox.me,www.typbox.me,.typbox.me'
+)
 ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
+for default_host in ('typbox.me', 'www.typbox.me', '.typbox.me'):
+    if default_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(default_host)
 
 # Automatically add Render's external hostname if provided by the environment
 render_external_hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME')
@@ -189,19 +195,38 @@ SIMPLE_JWT = {
 # CORS & CSRF Configuration
 # ==========================================
 
-cors_raw = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
+cors_raw = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,http://127.0.0.1:5173,https://typbox.me,https://www.typbox.me'
+)
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_raw.split(',') if origin.strip()]
+for default_origin in ('https://typbox.me', 'https://www.typbox.me'):
+    if default_origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(default_origin)
+
 CORS_ALLOW_CREDENTIALS = True
 
-# Automatically allow all onrender.com frontend domains and local dev ports
+# Automatically allow all onrender.com, typbox.me domains, and local dev ports
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https:\/\/.*\.onrender\.com$",
+    r"^https:\/\/(www\.)?typbox\.me$",
+    r"^https:\/\/.*\.typbox\.me$",
     r"^http:\/\/localhost:\d+$",
     r"^http:\/\/127\.0\.0\.1:\d+$",
 ]
 
-csrf_raw = os.getenv('CSRF_TRUSTED_ORIGINS', 'https://typbox-dev.onrender.com,https://*.onrender.com')
+csrf_raw = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://typbox-dev.onrender.com,https://*.onrender.com,https://typbox.me,https://www.typbox.me,https://*.typbox.me'
+)
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_raw.split(',') if origin.strip()]
+for default_csrf in (
+    'https://typbox.me',
+    'https://www.typbox.me',
+    'https://*.typbox.me',
+):
+    if default_csrf not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(default_csrf)
 
 
 # ==========================================
