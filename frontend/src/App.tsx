@@ -72,11 +72,23 @@ type PeriodView = 'weekly' | 'monthly';
 
 const ACCENT_PALETTE = [
   { name: 'Emerald', hex: '#10b981' },
-  { name: 'Blue', hex: '#3b82f6' },
-  { name: 'Amber', hex: '#f59e0b' },
-  { name: 'Purple', hex: '#a855f7' },
-  { name: 'Rose', hex: '#f43f5e' },
+  { name: 'Teal', hex: '#14b8a6' },
   { name: 'Cyan', hex: '#06b6d4' },
+  { name: 'Sky', hex: '#0ea5e9' },
+  { name: 'Blue', hex: '#3b82f6' },
+  { name: 'Indigo', hex: '#6366f1' },
+  { name: 'Violet', hex: '#8b5cf6' },
+  { name: 'Purple', hex: '#a855f7' },
+  { name: 'Fuchsia', hex: '#d946ef' },
+  { name: 'Pink', hex: '#ec4899' },
+  { name: 'Rose', hex: '#f43f5e' },
+  { name: 'Red', hex: '#ef4444' },
+  { name: 'Orange', hex: '#f97316' },
+  { name: 'Amber', hex: '#f59e0b' },
+  { name: 'Yellow', hex: '#eab308' },
+  { name: 'Lime', hex: '#84cc16' },
+  { name: 'Green', hex: '#22c55e' },
+  { name: 'Slate', hex: '#64748b' },
 ];
 
 const DICT = {
@@ -1525,17 +1537,28 @@ export default function App() {
                     </div>
                   </div>
                   <div>
-                    <label className={`block font-mono text-[10px] uppercase mb-1.5 ${textMuted}`}>
-                      Indicator Accent
-                    </label>
-                    <div className="flex space-x-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={`block font-mono text-[10px] uppercase ${textMuted}`}>
+                        Indicator Accent
+                      </label>
+                      <span className="font-mono text-[10px] text-zinc-400">
+                        {ACCENT_PALETTE.find((c) => c.hex === newCatColor)?.name} ({newCatColor})
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-6 gap-2.5 pt-0.5">
                       {ACCENT_PALETTE.map((col) => (
                         <button
                           key={col.hex}
                           type="button"
                           onClick={() => setNewCatColor(col.hex)}
-                          className={`w-5 h-5 rounded-full border cursor-pointer ${
-                            newCatColor === col.hex ? 'ring-2 ring-offset-2 ring-zinc-400' : 'opacity-60'
+                          title={`${col.name} (${col.hex})`}
+                          aria-label={`Select ${col.name} color`}
+                          className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${
+                            newCatColor === col.hex
+                              ? isDark
+                                ? 'ring-2 ring-offset-2 ring-offset-[#111111] ring-zinc-200 scale-110 border-white/40'
+                                : 'ring-2 ring-offset-2 ring-offset-white ring-zinc-800 scale-110 border-black/20'
+                              : 'opacity-65 hover:opacity-100 hover:scale-105 border-transparent'
                           }`}
                           style={{ backgroundColor: col.hex }}
                         />
