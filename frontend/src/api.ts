@@ -137,6 +137,15 @@ async function refreshAccessToken(): Promise<boolean> {
 // API Methods
 // ==========================================
 
+export interface AuthUserResponse {
+  id: number;
+  username: string;
+  email: string;
+  avatar_color?: string;
+  avatar_preset?: string;
+  avatar_image?: string;
+}
+
 export const api = {
   auth: {
     login: async (username: string, password: string) => {
@@ -156,7 +165,41 @@ export const api = {
       });
     },
     getMe: async () => {
-      return apiFetch<{ id: number; username: string; email: string }>('/auth/me/');
+      return apiFetch<AuthUserResponse>('/auth/me/');
+    },
+    updateProfile: async (
+      data: Partial<{
+        username: string;
+        email: string;
+        avatar_color: string;
+        avatar_preset: string;
+        avatar_image: string;
+      }>
+    ) => {
+      return apiFetch<AuthUserResponse>('/auth/me/', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    },
+    changePassword: async (current_password: string, new_password: string) => {
+      return apiFetch<{ detail: string }>('/auth/password-change/', {
+        method: 'POST',
+        body: JSON.stringify({ current_password, new_password }),
+      });
+    },
+    requestPasswordReset: async (email: string) => {
+      return apiFetch<{ detail: string; debug_reset_url?: string }>('/auth/password-reset/', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+        requiresAuth: false,
+      });
+    },
+    confirmPasswordReset: async (uid: string, token: string, new_password: string) => {
+      return apiFetch<{ detail: string }>('/auth/password-reset/confirm/', {
+        method: 'POST',
+        body: JSON.stringify({ uid, token, new_password }),
+        requiresAuth: false,
+      });
     },
     logout: () => {
       clearTokens();
@@ -252,24 +295,17 @@ export const api = {
         method: 'DELETE',
       });
     },
-  },
-  hub: {
-    getTelemetry: async (username?: string) => {
-      const query = username ? `?username=${encodeURIComponent(username)}` : '';
-      return apiFetch<{
-        source: string;
-        timestamp: string;
-        user?: string;
-        summary: { total_hours: number; weekly_hours: number; monthly_hours: number };
-        categories: Array<{ code: string; name: string; monthly_hours: number; target_hours: number }>;
-        recent_public_logs: Array<{
-          id: string | number;
-          date: string;
-          category_code: string;
-          duration_minutes: number;
-          topic: string;
-        }>;
-      }>(`/hub/telemetry/${query}`, { requiresAuth: false });
+    clearAll: async () => {
+      return apiFetch<{ deleted: number }>('/logs/clear-all/', {
+        method: 'DELETE',
+      });
+    },
+    importBackup: async (payload: { categories?: unknown[]; logs: unknown[] }) => {
+      return apiFetch<{ imported_logs: number; created_categories: number }>('/logs/import-backup/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
     },
   },
 };
+

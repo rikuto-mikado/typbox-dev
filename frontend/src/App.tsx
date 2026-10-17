@@ -16,7 +16,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  User as UserIcon,
   AlertCircle,
   Loader2,
   Shield,
@@ -30,6 +29,19 @@ import {
   Activity,
   Download,
   Pencil,
+  Settings,
+  Upload,
+  KeyRound,
+  Mail,
+  CheckCircle2,
+  Cpu,
+  Code2,
+  Zap,
+  Globe,
+  Compass,
+  Layers,
+  Database,
+  Camera,
 } from 'lucide-react';
 import { api, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
@@ -64,10 +76,30 @@ export interface AuthUser {
   id: number;
   username: string;
   email: string;
+  avatar_color?: string;
+  avatar_preset?: string;
+  avatar_image?: string;
 }
 
 type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'monthly';
+type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
+type SettingsTab = 'profile' | 'security' | 'data';
+
+const AVATAR_PRESET_OPTIONS = [
+  { id: 'initial', label: 'Initial' },
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'cpu', label: 'CPU' },
+  { id: 'code', label: 'Code' },
+  { id: 'zap', label: 'Zap' },
+  { id: 'shield', label: 'Shield' },
+  { id: 'globe', label: 'Globe' },
+  { id: 'sparkles', label: 'Sparkles' },
+  { id: 'flame', label: 'Flame' },
+  { id: 'compass', label: 'Compass' },
+  { id: 'layers', label: 'Layers' },
+  { id: 'database', label: 'Database' },
+] as const;
 
 const ACCENT_PALETTE = [
   // Row 1: Original 6 Core Accents
@@ -230,6 +262,122 @@ const getInitialTheme = (): Theme => {
   return 'dark';
 };
 
+const compressAvatarFile = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Please select a valid image file (PNG, JPEG, WebP, GIF).'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read image file.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Failed to decode image.'));
+      img.onload = () => {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas context unavailable.'));
+          return;
+        }
+        // Center-crop square
+        const minSide = Math.min(img.width, img.height);
+        const sx = (img.width - minSide) / 2;
+        const sy = (img.height - minSide) / 2;
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+
+        // Try WebP first for compact size, fallback to JPEG
+        let dataUrl = canvas.toDataURL('image/webp', 0.82);
+        if (!dataUrl.startsWith('data:image/webp')) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        }
+        resolve(dataUrl);
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+const AvatarBadge = ({
+  username,
+  color = '#10b981',
+  preset = 'initial',
+  image = '',
+  size = 'sm',
+}: {
+  username: string;
+  color?: string;
+  preset?: string;
+  image?: string;
+  size?: 'sm' | 'md' | 'lg';
+}) => {
+  const dimClass =
+    size === 'lg'
+      ? 'w-14 h-14 text-lg'
+      : size === 'md'
+      ? 'w-9 h-9 text-xs'
+      : 'w-6 h-6 text-[11px]';
+  const iconClass =
+    size === 'lg' ? 'w-6 h-6' : size === 'md' ? 'w-4 h-4' : 'w-3.5 h-3.5';
+
+  if (image && image.startsWith('data:image/')) {
+    return (
+      <div
+        className={`${dimClass} rounded-full overflow-hidden border shrink-0 flex items-center justify-center bg-zinc-900`}
+        style={{ borderColor: color }}
+      >
+        <img src={image} alt={username} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
+  const renderPresetIcon = () => {
+    switch (preset) {
+      case 'terminal':
+        return <Terminal className={iconClass} />;
+      case 'cpu':
+        return <Cpu className={iconClass} />;
+      case 'code':
+        return <Code2 className={iconClass} />;
+      case 'zap':
+        return <Zap className={iconClass} />;
+      case 'shield':
+        return <Shield className={iconClass} />;
+      case 'globe':
+        return <Globe className={iconClass} />;
+      case 'sparkles':
+        return <Sparkles className={iconClass} />;
+      case 'flame':
+        return <Flame className={iconClass} />;
+      case 'compass':
+        return <Compass className={iconClass} />;
+      case 'layers':
+        return <Layers className={iconClass} />;
+      case 'database':
+        return <Database className={iconClass} />;
+      default:
+        return <span>{(username || 'U').charAt(0).toUpperCase()}</span>;
+    }
+  };
+
+  return (
+    <div
+      className={`${dimClass} rounded-full border shrink-0 flex items-center justify-center font-mono font-bold uppercase select-none`}
+      style={{
+        backgroundColor: `${color}22`,
+        borderColor: `${color}88`,
+        color: color,
+      }}
+    >
+      {renderPresetIcon()}
+    </div>
+  );
+};
+
 // ==========================================
 // Main Component
 // ==========================================
@@ -265,38 +413,68 @@ export default function App() {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
-  // Authentication State
+  // Authentication State (including initial detection of ?reset_uid=...&reset_token=... URL params)
+  const initialResetParams = useMemo(() => {
+    if (typeof window === 'undefined') return { uid: '', token: '', hasReset: false };
+    const params = new URLSearchParams(window.location.search);
+    const uid = params.get('reset_uid') || '';
+    const token = params.get('reset_token') || '';
+    return { uid, token, hasReset: Boolean(uid && token) };
+  }, []);
+
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   // Full-Screen Site Access Splash Screen
   const [isSiteLoading, setIsSiteLoading] = useState<boolean>(true);
   const [fadeLoader, setFadeLoader] = useState<boolean>(false);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(initialResetParams.hasReset);
+  const [authMode, setAuthMode] = useState<AuthModalMode>(
+    initialResetParams.hasReset ? 'reset_confirm' : 'login'
+  );
   const [authUsername, setAuthUsername] = useState<string>('');
   const [authEmail, setAuthEmail] = useState<string>('');
   const [authPassword, setAuthPassword] = useState<string>('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState<string>('');
+  const [resetUid, setResetUid] = useState<string>(initialResetParams.uid);
+  const [resetToken, setResetToken] = useState<string>(initialResetParams.token);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccessMsg, setAuthSuccessMsg] = useState<string | null>(null);
+  const [debugResetUrl, setDebugResetUrl] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
   // Authentication Modal Controls with fresh input state reset
-  const openAuthModal = useCallback((mode: 'login' | 'register' = 'login') => {
+  const openAuthModal = useCallback((mode: AuthModalMode = 'login') => {
     setAuthMode(mode);
     setAuthError(null);
+    setAuthSuccessMsg(null);
+    setDebugResetUrl(null);
     setAuthUsername('');
     setAuthEmail('');
     setAuthPassword('');
+    setAuthConfirmPassword('');
     setShowAuthModal(true);
   }, []);
 
   const closeAuthModal = useCallback(() => {
     setShowAuthModal(false);
     setAuthError(null);
+    setAuthSuccessMsg(null);
+    setDebugResetUrl(null);
     setAuthUsername('');
     setAuthEmail('');
     setAuthPassword('');
+    setAuthConfirmPassword('');
+    setResetUid('');
+    setResetToken('');
   }, []);
+
+  // Clean password reset query parameters (?reset_uid=...&reset_token=...) from address bar on mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || !initialResetParams.hasReset) return;
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }, [initialResetParams.hasReset]);
 
   // Data State (Directly synchronized with Django Backend)
   const [categories, setCategories] = useState<Category[]>([]);
@@ -376,12 +554,58 @@ export default function App() {
     };
   }, [currentTime]);
 
-  // User Dropdown & Account Deletion State
+  // User Dropdown, Account Settings Modal & Account Deletion State
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
+  const [profileUsername, setProfileUsername] = useState<string>('');
+  const [profileEmail, setProfileEmail] = useState<string>('');
+  const [profileAvatarColor, setProfileAvatarColor] = useState<string>('#10b981');
+  const [profileAvatarPreset, setProfileAvatarPreset] = useState<string>('initial');
+  const [profileAvatarImage, setProfileAvatarImage] = useState<string>('');
+  const [profileSaving, setProfileSaving] = useState<boolean>(false);
+  const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [currentPassword, setCurrentPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
+  const [passwordSaving, setPasswordSaving] = useState<boolean>(false);
+  const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [clearLogsConfirmText, setClearLogsConfirmText] = useState<string>('');
+  const [clearingLogs, setClearingLogs] = useState<boolean>(false);
+  const [importingBackup, setImportingBackup] = useState<boolean>(false);
+  const [dataStatus, setDataStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState<string>('');
   const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
   const userMenuRef = React.useRef<HTMLDivElement>(null);
+  const avatarFileInputRef = React.useRef<HTMLInputElement>(null);
+  const backupFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const openSettingsModal = useCallback(
+    (tab: SettingsTab = 'profile') => {
+      if (user) {
+        setProfileUsername(user.username || '');
+        setProfileEmail(user.email || '');
+        setProfileAvatarColor(user.avatar_color || '#10b981');
+        setProfileAvatarPreset(user.avatar_preset || 'initial');
+        setProfileAvatarImage(user.avatar_image || '');
+      }
+      setProfileStatus(null);
+      setPasswordStatus(null);
+      setDataStatus(null);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setClearLogsConfirmText('');
+      setSettingsTab(tab);
+      setShowUserMenu(false);
+      setShowSettingsModal(true);
+    },
+    [user]
+  );
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -528,12 +752,60 @@ export default function App() {
   }, [loadUserData]);
 
   // ==========================================
-  // Auth Handlers
+  // Auth & Account Settings Handlers
   // ==========================================
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+    setAuthSuccessMsg(null);
+    setDebugResetUrl(null);
+
+    if (authMode === 'forgot') {
+      if (!authEmail.trim()) {
+        setAuthError('Please enter your registered email address.');
+        return;
+      }
+      setAuthSubmitting(true);
+      try {
+        const res = await api.auth.requestPasswordReset(authEmail.trim());
+        setAuthSuccessMsg(res.detail || 'If an account with that email exists, a reset link has been sent.');
+        if (res.debug_reset_url) {
+          setDebugResetUrl(res.debug_reset_url);
+        }
+      } catch (err: unknown) {
+        const error = err as Error;
+        setAuthError(error.message || 'Failed to send password reset email.');
+      } finally {
+        setAuthSubmitting(false);
+      }
+      return;
+    }
+
+    if (authMode === 'reset_confirm') {
+      if (authPassword.length < 8) {
+        setAuthError('New password must be at least 8 characters.');
+        return;
+      }
+      if (authPassword !== authConfirmPassword) {
+        setAuthError('Passwords do not match.');
+        return;
+      }
+      setAuthSubmitting(true);
+      try {
+        const res = await api.auth.confirmPasswordReset(resetUid, resetToken, authPassword);
+        setAuthMode('login');
+        setAuthPassword('');
+        setAuthConfirmPassword('');
+        setAuthSuccessMsg(res.detail || 'Password reset complete! Please sign in with your new password.');
+      } catch (err: unknown) {
+        const error = err as Error;
+        setAuthError(error.message || 'Invalid or expired password reset link.');
+      } finally {
+        setAuthSubmitting(false);
+      }
+      return;
+    }
 
     if (authMode === 'register' && (!authEmail || !authEmail.trim())) {
       setAuthError('Email address is required for registration.');
@@ -544,11 +816,11 @@ export default function App() {
 
     try {
       if (authMode === 'register') {
-        await api.auth.register(authUsername, authEmail.trim(), authPassword);
+        await api.auth.register(authUsername.trim(), authEmail.trim(), authPassword);
         // Automatically login after registration
-        await api.auth.login(authUsername, authPassword);
+        await api.auth.login(authUsername.trim(), authPassword);
       } else {
-        await api.auth.login(authUsername, authPassword);
+        await api.auth.login(authUsername.trim(), authPassword);
       }
 
       const me = await api.auth.getMe();
@@ -563,6 +835,142 @@ export default function App() {
     }
   };
 
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setProfileSaving(true);
+    setProfileStatus(null);
+    try {
+      const updated = await api.auth.updateProfile({
+        username: profileUsername.trim(),
+        email: profileEmail.trim(),
+        avatar_color: profileAvatarColor,
+        avatar_preset: profileAvatarPreset,
+        avatar_image: profileAvatarImage,
+      });
+      setUser(updated);
+      setProfileStatus({ type: 'success', text: 'Profile and avatar settings updated successfully.' });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setProfileStatus({ type: 'error', text: error.message || 'Failed to update profile.' });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProfileStatus(null);
+    try {
+      const compressedDataUrl = await compressAvatarFile(file);
+      setProfileAvatarImage(compressedDataUrl);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setProfileStatus({ type: 'error', text: error.message || 'Could not process image.' });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordStatus(null);
+    if (newPassword.length < 8) {
+      setPasswordStatus({ type: 'error', text: 'New password must be at least 8 characters.' });
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordStatus({ type: 'error', text: 'New password and confirmation do not match.' });
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await api.auth.changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordStatus({ type: 'success', text: 'Password updated successfully.' });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setPasswordStatus({ type: 'error', text: error.message || 'Failed to change password.' });
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const handleSendResetEmailFromSettings = async () => {
+    if (!user?.email) return;
+    setPasswordStatus(null);
+    setPasswordSaving(true);
+    try {
+      const res = await api.auth.requestPasswordReset(user.email);
+      setPasswordStatus({
+        type: 'success',
+        text: `Password reset email dispatched to ${user.email}.${
+          res.debug_reset_url ? ` (Dev URL logged to console)` : ''
+        }`,
+      });
+      if (res.debug_reset_url) {
+        console.info('TYPBOX Dev Password Reset Link:', res.debug_reset_url);
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      setPasswordStatus({ type: 'error', text: error.message || 'Failed to send reset email.' });
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const handleImportBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDataStatus(null);
+    setImportingBackup(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!parsed || !Array.isArray(parsed.logs)) {
+        throw new Error('Invalid backup JSON file: missing "logs" array.');
+      }
+      const res = await api.logs.importBackup({
+        categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+        logs: parsed.logs,
+      });
+      await loadUserData();
+      setDataStatus({
+        type: 'success',
+        text: `Imported ${res.imported_logs} log(s) and ${res.created_categories} new category(s).`,
+      });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setDataStatus({ type: 'error', text: error.message || 'Failed to import JSON backup.' });
+    } finally {
+      setImportingBackup(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleClearAllLogs = async () => {
+    if (clearLogsConfirmText !== 'CLEAR') return;
+    setClearingLogs(true);
+    setDataStatus(null);
+    try {
+      const res = await api.logs.clearAll();
+      setLogs([]);
+      setClearLogsConfirmText('');
+      setDataStatus({
+        type: 'success',
+        text: `Cleared ${res.deleted} study log record(s). Categories and account remain intact.`,
+      });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setDataStatus({ type: 'error', text: error.message || 'Failed to clear study logs.' });
+    } finally {
+      setClearingLogs(false);
+    }
+  };
+
   const handleSignOut = () => {
     api.auth.logout();
     setUser(null);
@@ -570,6 +978,7 @@ export default function App() {
     setLogs([]);
     setSelectedCatId('');
     setShowUserMenu(false);
+    setShowSettingsModal(false);
   };
 
   const handleDeleteAccount = async () => {
@@ -582,6 +991,7 @@ export default function App() {
       setLogs([]);
       setSelectedCatId('');
       setShowDeleteModal(false);
+      setShowSettingsModal(false);
       setShowUserMenu(false);
       setDeleteConfirmUsername('');
       alert('Your account and all associated study telemetry data have been permanently deleted.');
@@ -1406,9 +1816,13 @@ export default function App() {
                   className={`flex items-center space-x-2 px-2 py-1.5 sm:px-3 border ${borderCol} ${bgCard} hover:border-zinc-400 transition-colors cursor-pointer select-none`}
                   aria-label="User Account Menu"
                 >
-                  <div className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-mono text-[11px] font-bold uppercase">
-                    {user.username.charAt(0)}
-                  </div>
+                  <AvatarBadge
+                    username={user.username}
+                    color={user.avatar_color}
+                    preset={user.avatar_preset}
+                    image={user.avatar_image}
+                    size="sm"
+                  />
                   <span className="hidden sm:inline font-mono text-xs font-semibold">{user.username}</span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 opacity-60 transition-transform duration-200 ${
@@ -1420,26 +1834,47 @@ export default function App() {
                 {/* Dropdown Menu */}
                 {showUserMenu && (
                   <div
-                    className={`absolute right-0 top-full mt-2 w-60 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
+                    className={`absolute right-0 top-full mt-2 w-64 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
                       isDark ? 'divide-zinc-800' : 'divide-zinc-200'
                     }`}
                   >
                     {/* User Info Header */}
-                    <div className="px-4 py-3 space-y-1">
-                      <div className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold flex items-center space-x-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>ACTIVE ACCOUNT</span>
-                      </div>
-                      <div className="font-bold text-sm truncate flex items-center space-x-1.5">
-                        <UserIcon className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span>{user.username}</span>
-                      </div>
-                      <div className={`text-[11px] truncate ${textMuted}`}>
-                        {user.email || 'No email registered'}
+                    <div className="px-4 py-3 flex items-center space-x-3">
+                      <AvatarBadge
+                        username={user.username}
+                        color={user.avatar_color}
+                        preset={user.avatar_preset}
+                        image={user.avatar_image}
+                        size="md"
+                      />
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold flex items-center space-x-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>ACTIVE ACCOUNT</span>
+                        </div>
+                        <div className="font-bold text-sm truncate">{user.username}</div>
+                        <div className={`text-[11px] truncate ${textMuted}`}>
+                          {user.email || 'No email registered'}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Sign Out & Destruction */}
+                    {/* Settings Action (Safely placed above Sign Out) */}
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => openSettingsModal('profile')}
+                        className="w-full px-4 py-2.5 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <Settings className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>ACCOUNT SETTINGS</span>
+                        </span>
+                        <span className={`text-[10px] ${textMuted}`}>CFG</span>
+                      </button>
+                    </div>
+
+                    {/* Sign Out */}
                     <div className="py-1">
                       <button
                         type="button"
@@ -1447,22 +1882,10 @@ export default function App() {
                           setShowUserMenu(false);
                           handleSignOut();
                         }}
-                        className={`w-full px-4 py-2 text-left flex items-center space-x-2.5 hover:bg-zinc-500/10 transition-colors cursor-pointer`}
+                        className="w-full px-4 py-2.5 text-left flex items-center space-x-2.5 hover:bg-zinc-500/10 transition-colors cursor-pointer"
                       >
                         <LogOut className="w-3.5 h-3.5 text-zinc-400" />
                         <span>{t.signOut}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          setDeleteConfirmUsername('');
-                          setShowDeleteModal(true);
-                        }}
-                        className="w-full px-4 py-2 text-left flex items-center space-x-2.5 text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Delete Account...</span>
                       </button>
                     </div>
                   </div>
@@ -3263,7 +3686,7 @@ export default function App() {
       </footer>
 
       {/* ==========================================
-          MODAL 2: AUTHENTICATION MODAL (REAL JWT)
+          MODAL 1: AUTHENTICATION GATEWAY (LOGIN / REGISTER / PASSWORD RESET)
       ========================================== */}
       {showAuthModal && (
         <div
@@ -3274,11 +3697,15 @@ export default function App() {
             className={`w-full max-w-md border ${borderCol} ${bgCard} p-6 space-y-5 shadow-2xl`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+            <div className={`flex items-center justify-between border-b ${borderCol} pb-3`}>
               <div className="flex items-center space-x-2">
                 <Shield className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                  AUTHENTICATION GATEWAY
+                  {authMode === 'forgot'
+                    ? 'PASSWORD RECOVERY // EMAIL DISPATCH'
+                    : authMode === 'reset_confirm'
+                    ? 'SET NEW PASSWORD // TOKEN VERIFIED'
+                    : 'AUTHENTICATION GATEWAY'}
                 </h3>
               </div>
               <button
@@ -3290,43 +3717,47 @@ export default function App() {
               </button>
             </div>
 
-            {/* Mode Switcher Tabs */}
-            <div className={`flex border ${borderCol} text-xs font-mono`}>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('login');
-                  setAuthError(null);
-                  setAuthPassword('');
-                }}
-                className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
-                  authMode === 'login'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                SIGN IN
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('register');
-                  setAuthError(null);
-                  setAuthPassword('');
-                }}
-                className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
-                  authMode === 'register'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                CREATE ACCOUNT
-              </button>
-            </div>
+            {/* Mode Switcher Tabs (Shown for Login / Register) */}
+            {(authMode === 'login' || authMode === 'register') && (
+              <div className={`flex border ${borderCol} text-xs font-mono`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                    setAuthPassword('');
+                  }}
+                  className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
+                    authMode === 'login'
+                      ? isDark
+                        ? 'bg-zinc-100 text-zinc-950 font-bold'
+                        : 'bg-zinc-900 text-white font-bold'
+                      : textMuted
+                  }`}
+                >
+                  SIGN IN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('register');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                    setAuthPassword('');
+                  }}
+                  className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
+                    authMode === 'register'
+                      ? isDark
+                        ? 'bg-zinc-100 text-zinc-950 font-bold'
+                        : 'bg-zinc-900 text-white font-bold'
+                      : textMuted
+                  }`}
+                >
+                  CREATE ACCOUNT
+                </button>
+              </div>
+            )}
 
             {authError && (
               <div className="p-3 border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs font-mono flex items-center space-x-2">
@@ -3335,28 +3766,51 @@ export default function App() {
               </div>
             )}
 
-            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
-              <div>
-                <label htmlFor="auth-username" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                  Username
-                </label>
-                <input
-                  id="auth-username"
-                  name="username"
-                  type="text"
-                  required
-                  autoComplete="username"
-                  placeholder="e.g., engineer"
-                  value={authUsername}
-                  onChange={(e) => setAuthUsername(e.target.value)}
-                  className={`w-full px-3 py-2 text-xs font-mono border outline-none ${inputBg}`}
-                />
+            {authSuccessMsg && (
+              <div className="p-3 border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-mono space-y-2">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{authSuccessMsg}</span>
+                </div>
+                {debugResetUrl && (
+                  <div className="pt-2 border-t border-emerald-500/20">
+                    <a
+                      href={debugResetUrl}
+                      className="inline-block px-2.5 py-1 bg-emerald-500 text-zinc-950 font-bold text-[11px] uppercase hover:bg-emerald-400 transition-colors"
+                    >
+                      [DEV MODE: OPEN PASSWORD RESET LINK]
+                    </a>
+                  </div>
+                )}
               </div>
+            )}
 
-              {authMode === 'register' && (
+            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+              {/* Login & Register: Username */}
+              {(authMode === 'login' || authMode === 'register') && (
+                <div>
+                  <label htmlFor="auth-username" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
+                    Username
+                  </label>
+                  <input
+                    id="auth-username"
+                    name="username"
+                    type="text"
+                    required
+                    autoComplete="username"
+                    placeholder="e.g., engineer"
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    className={`w-full px-3 py-2 text-xs font-mono border outline-none ${inputBg}`}
+                  />
+                </div>
+              )}
+
+              {/* Register or Forgot Password: Email */}
+              {(authMode === 'register' || authMode === 'forgot') && (
                 <div>
                   <label htmlFor="auth-email" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                    Email Address *
+                    {authMode === 'forgot' ? 'Registered Email Address' : 'Email Address *'}
                   </label>
                   <input
                     id="auth-email"
@@ -3372,40 +3826,77 @@ export default function App() {
                 </div>
               )}
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="auth-password" className={`block font-mono text-[10px] uppercase ${textMuted}`}>
-                    Password
-                  </label>
-                  {authMode === 'register' && (
-                    <span className="text-[10px] font-mono text-emerald-400">
-                      Browser autofill supported
-                    </span>
-                  )}
+              {/* Login, Register, or Reset Confirm: Password */}
+              {authMode !== 'forgot' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="auth-password" className={`block font-mono text-[10px] uppercase ${textMuted}`}>
+                      {authMode === 'reset_confirm' ? 'New Password (Min 8 chars)' : 'Password'}
+                    </label>
+                    {authMode === 'login' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode('forgot');
+                          setAuthError(null);
+                          setAuthSuccessMsg(null);
+                        }}
+                        className="text-[10px] font-mono text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                    {authMode === 'register' && (
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        Min 8 characters
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="auth-password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={authMode === 'login' ? 1 : 8}
+                      autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                      placeholder="••••••••••••"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className={`w-full pl-3 pr-10 py-2 text-xs font-mono border outline-none ${inputBg}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer"
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
-                <div className="relative">
+              )}
+
+              {/* Reset Confirm: Confirm New Password */}
+              {authMode === 'reset_confirm' && (
+                <div>
+                  <label htmlFor="auth-confirm-password" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
+                    Confirm New Password
+                  </label>
                   <input
-                    id="auth-password"
-                    name="password"
+                    id="auth-confirm-password"
                     type={showPassword ? 'text' : 'password'}
                     required
-                    autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                    minLength={8}
+                    autoComplete="new-password"
                     placeholder="••••••••••••"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    className={`w-full pl-3 pr-10 py-2 text-xs font-mono border outline-none ${inputBg}`}
+                    value={authConfirmPassword}
+                    onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                    className={`w-full px-3 py-2 text-xs font-mono border outline-none ${inputBg}`}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer`}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
                 </div>
-              </div>
+              )}
 
               <button
                 type="submit"
@@ -3415,7 +3906,17 @@ export default function App() {
                 {authSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>AUTHENTICATING...</span>
+                    <span>PROCESSING...</span>
+                  </>
+                ) : authMode === 'forgot' ? (
+                  <>
+                    <Mail className="w-4 h-4" />
+                    <span>SEND PASSWORD RESET LINK</span>
+                  </>
+                ) : authMode === 'reset_confirm' ? (
+                  <>
+                    <KeyRound className="w-4 h-4" />
+                    <span>SAVE NEW PASSWORD</span>
                   </>
                 ) : (
                   <>
@@ -3424,12 +3925,479 @@ export default function App() {
                   </>
                 )}
               </button>
-            </form>
 
-            <p className={`text-[11px] leading-relaxed text-center ${textMuted}`}>
-              Authenticates securely with Django REST SimpleJWT backend at{' '}
-              <code className="text-zinc-400">/api/auth/{authMode === 'login' ? 'login/' : 'register/'}</code>
-            </p>
+              {(authMode === 'forgot' || authMode === 'reset_confirm') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                  }}
+                  className={`w-full py-2 font-mono text-xs border ${borderCol} hover:opacity-80 cursor-pointer`}
+                >
+                  ← BACK TO SIGN IN
+                </button>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          MODAL 2: ACCOUNT & SECURITY SETTINGS
+      ========================================== */}
+      {showSettingsModal && user && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto"
+          onClick={() => setShowSettingsModal(false)}
+        >
+          <div
+            className={`w-full max-w-xl border ${borderCol} ${bgCard} p-6 space-y-5 shadow-2xl my-8 max-h-[90vh] overflow-y-auto`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className={`flex items-center justify-between border-b ${borderCol} pb-3.5`}>
+              <div className="flex items-center space-x-2.5">
+                <Settings className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
+                  ACCOUNT &amp; SECURITY SETTINGS
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(false)}
+                className="font-mono text-xs hover:underline cursor-pointer"
+              >
+                [CLOSE]
+              </button>
+            </div>
+
+            {/* Settings Navigation Tabs */}
+            <div className={`grid grid-cols-3 border ${borderCol} text-[11px] font-mono`}>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('profile')}
+                className={`py-2 text-center transition-colors cursor-pointer ${
+                  settingsTab === 'profile'
+                    ? isDark
+                      ? 'bg-zinc-100 text-zinc-950 font-bold'
+                      : 'bg-zinc-900 text-white font-bold'
+                    : textMuted
+                }`}
+              >
+                01 / PROFILE &amp; ICON
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('security')}
+                className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
+                  settingsTab === 'security'
+                    ? isDark
+                      ? 'bg-zinc-100 text-zinc-950 font-bold'
+                      : 'bg-zinc-900 text-white font-bold'
+                    : textMuted
+                }`}
+              >
+                02 / PASSWORD
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('data')}
+                className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
+                  settingsTab === 'data'
+                    ? isDark
+                      ? 'bg-zinc-100 text-zinc-950 font-bold'
+                      : 'bg-zinc-900 text-white font-bold'
+                    : textMuted
+                }`}
+              >
+                03 / DATA &amp; DANGER
+              </button>
+            </div>
+
+            {/* TAB 1: PROFILE & AVATAR */}
+            {settingsTab === 'profile' && (
+              <form onSubmit={handleSaveProfile} className="space-y-5 font-mono text-xs">
+                {profileStatus && (
+                  <div
+                    className={`p-3 border flex items-center space-x-2 ${
+                      profileStatus.type === 'success'
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                    }`}
+                  >
+                    {profileStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{profileStatus.text}</span>
+                  </div>
+                )}
+
+                {/* Avatar Preview & Upload Box */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-4`}>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3.5">
+                      <AvatarBadge
+                        username={profileUsername || user.username}
+                        color={profileAvatarColor}
+                        preset={profileAvatarPreset}
+                        image={profileAvatarImage}
+                        size="lg"
+                      />
+                      <div className="space-y-1">
+                        <div className="text-[11px] font-bold uppercase tracking-wider">
+                          ACCOUNT AVATAR // HYBRID BADGE
+                        </div>
+                        <p className={`text-[10px] ${textMuted} font-sans`}>
+                          Upload a custom photo (auto-resized to 128×128 in DB) or choose a preset icon &amp; accent color.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <input
+                        ref={avatarFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFileChange}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarFileInputRef.current?.click()}
+                        className={`px-3 py-1.5 border ${borderCol} hover:border-emerald-500/60 flex items-center space-x-1.5 cursor-pointer`}
+                      >
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>UPLOAD IMAGE</span>
+                      </button>
+                      {profileAvatarImage && (
+                        <button
+                          type="button"
+                          onClick={() => setProfileAvatarImage('')}
+                          className={`px-2.5 py-1.5 border ${borderCol} text-rose-400 hover:bg-rose-500/10 cursor-pointer`}
+                        >
+                          USE PRESET
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Preset Icon Selector */}
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
+                      Preset Badge Icon {profileAvatarImage ? '(Clear uploaded image to display)' : ''}
+                    </label>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                      {AVATAR_PRESET_OPTIONS.map((opt) => {
+                        const isSelected = !profileAvatarImage && profileAvatarPreset === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              setProfileAvatarImage('');
+                              setProfileAvatarPreset(opt.id);
+                            }}
+                            className={`px-2 py-1.5 border text-[10px] flex items-center justify-center space-x-1 transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                                : `${borderCol} ${textMuted} hover:opacity-100`
+                            }`}
+                          >
+                            <span>{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 36 Accent Color Swatches for Avatar */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={`block text-[10px] uppercase ${textMuted}`}>
+                        Avatar Accent Ring / Badge Color (36 Colors)
+                      </label>
+                      <span className="text-[10px] text-zinc-400">{profileAvatarColor}</span>
+                    </div>
+                    <div className="grid grid-cols-9 sm:grid-cols-12 gap-2 pt-0.5">
+                      {ACCENT_PALETTE.map((col) => (
+                        <button
+                          key={`avatar-col-${col.hex}`}
+                          type="button"
+                          onClick={() => setProfileAvatarColor(col.hex)}
+                          title={`${col.name} (${col.hex})`}
+                          className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                            profileAvatarColor === col.hex
+                              ? 'ring-2 ring-offset-2 ring-offset-zinc-900 ring-white scale-110'
+                              : 'opacity-65 hover:opacity-100 hover:scale-105 border-transparent'
+                          }`}
+                          style={{ backgroundColor: col.hex }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Username & Email Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                      Account Username
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      minLength={2}
+                      maxLength={30}
+                      value={profileUsername}
+                      onChange={(e) => setProfileUsername(e.target.value)}
+                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                      Email Address (For Password Recovery)
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={profileEmail}
+                      onChange={(e) => setProfileEmail(e.target.value)}
+                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="w-full py-2.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {profileSaving ? 'SAVING PROFILE...' : 'SAVE PROFILE & AVATAR'}
+                </button>
+              </form>
+            )}
+
+            {/* TAB 2: PASSWORD & SECURITY */}
+            {settingsTab === 'security' && (
+              <div className="space-y-5 font-mono text-xs">
+                {passwordStatus && (
+                  <div
+                    className={`p-3 border flex items-center space-x-2 ${
+                      passwordStatus.type === 'success'
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                    }`}
+                  >
+                    {passwordStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{passwordStatus.text}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePassword} className="space-y-3.5">
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      autoComplete="current-password"
+                      placeholder="••••••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                        New Password (Min 8 chars)
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="••••••••••••"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                        Confirm New Password
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="••••••••••••"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={passwordSaving}
+                    className="w-full py-2.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {passwordSaving ? 'UPDATING PASSWORD...' : 'UPDATE PASSWORD'}
+                  </button>
+                </form>
+
+                {/* Email Recovery Dispatch */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-2.5`}>
+                  <div className="flex items-center space-x-2 text-[11px] font-semibold">
+                    <Mail className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>FORGOT CURRENT PASSWORD? // EMAIL RECOVERY</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    Send a one-time password reset link to your registered email address (
+                    <span className="font-mono">{user.email}</span>).
+                  </p>
+                  <button
+                    type="button"
+                    disabled={passwordSaving}
+                    onClick={handleSendResetEmailFromSettings}
+                    className={`px-3.5 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-semibold cursor-pointer`}
+                  >
+                    SEND PASSWORD RESET EMAIL
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: DATA ARCHIVE & DANGER ZONE */}
+            {settingsTab === 'data' && (
+              <div className="space-y-5 font-mono text-xs">
+                {dataStatus && (
+                  <div
+                    className={`p-3 border flex items-center space-x-2 ${
+                      dataStatus.type === 'success'
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                    }`}
+                  >
+                    {dataStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{dataStatus.text}</span>
+                  </div>
+                )}
+
+                {/* Backup & Restore */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
+                  <div className="flex items-center space-x-2 font-semibold text-[11px]">
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>BACKUP &amp; RESTORE TELEMETRY</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    Restore study logs and categories from a previously exported TYPBOX JSON archive, or download a fresh snapshot.
+                  </p>
+                  <input
+                    ref={backupFileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={handleImportBackupFile}
+                    className="hidden"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={importingBackup}
+                      onClick={() => backupFileInputRef.current?.click()}
+                      className="px-3.5 py-2 bg-emerald-500 text-zinc-950 font-semibold flex items-center space-x-1.5 hover:bg-emerald-400 cursor-pointer disabled:opacity-50"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{importingBackup ? 'IMPORTING...' : 'IMPORT JSON BACKUP'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportJSON}
+                      disabled={logs.length === 0}
+                      className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>EXPORT JSON</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportCSV}
+                      disabled={logs.length === 0}
+                      className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>EXPORT CSV</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reset All Study Logs (Keep Account) */}
+                <div className="p-4 border border-amber-500/30 bg-amber-500/5 space-y-3">
+                  <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                    RESET STUDY LOGS // KEEP ACCOUNT &amp; CATEGORIES
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    Wipe all recorded study sessions ({logs.length} records) while preserving your account and category settings. Type{' '}
+                    <span className="font-mono font-bold text-amber-400">CLEAR</span> to unlock:
+                  </p>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      placeholder="Type CLEAR"
+                      value={clearLogsConfirmText}
+                      onChange={(e) => setClearLogsConfirmText(e.target.value)}
+                      className={`flex-1 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
+                    />
+                    <button
+                      type="button"
+                      disabled={clearLogsConfirmText !== 'CLEAR' || clearingLogs || logs.length === 0}
+                      onClick={handleClearAllLogs}
+                      className="px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {clearingLogs ? 'CLEARING...' : 'CLEAR LOGS'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Danger Zone: Permanent Account Deletion */}
+                <div className="p-4 border border-rose-500/40 bg-rose-500/5 space-y-3">
+                  <div className="flex items-center space-x-2 text-rose-400 font-bold text-[11px] uppercase tracking-wider">
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>DANGER ZONE // PERMANENT ACCOUNT DELETION</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    Permanently delete your account (<span className="font-mono">{user.username}</span>), categories, and all study telemetry. This cannot be undone.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteConfirmUsername('');
+                      setShowDeleteModal(true);
+                    }}
+                    className="px-4 py-2 border border-rose-500/60 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors font-bold uppercase cursor-pointer"
+                  >
+                    PROCEED TO DELETE ACCOUNT...
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3470,7 +4438,7 @@ export default function App() {
                   placeholder={user.username}
                   value={deleteConfirmUsername}
                   onChange={(e) => setDeleteConfirmUsername(e.target.value)}
-                  className={`w-full px-3 py-2 text-xs font-mono border border-rose-500/40 outline-none bg-black/50 text-rose-200 focus:border-rose-400`}
+                  className="w-full px-3 py-2 text-xs font-mono border border-rose-500/40 outline-none bg-black/50 text-rose-200 focus:border-rose-400"
                 />
               </div>
             </div>
