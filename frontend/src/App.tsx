@@ -42,9 +42,17 @@ import {
   Layers,
   Database,
   Camera,
+  Share2,
 } from 'lucide-react';
 import { api, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
+import {
+  getClearanceStatus,
+  AmbientSoundControl,
+  ClearanceBrowserPanel,
+  StatusCardModal,
+  Award,
+} from './telemetryFeatures';
 
 // ==========================================
 // Types & Interfaces
@@ -84,7 +92,7 @@ export interface AuthUser {
 type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
-type SettingsTab = 'profile' | 'security' | 'data';
+type SettingsTab = 'profile' | 'clearance' | 'security' | 'data';
 
 const AVATAR_PRESET_OPTIONS = [
   { id: 'initial', label: 'Initial' },
@@ -578,6 +586,7 @@ export default function App() {
   const [dataStatus, setDataStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
+  const [showStatusCardModal, setShowStatusCardModal] = useState<boolean>(false);
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState<string>('');
   const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
   const userMenuRef = React.useRef<HTMLDivElement>(null);
@@ -622,14 +631,12 @@ export default function App() {
   const [selectedCatId, setSelectedCatId] = useState<string | number>('');
   const [logDate, setLogDate] = useState<string>(getRecentDateString(0));
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
-  const [topic, setTopic] = useState<string>('');
 
   // Log Edit State
   const [editingLogId, setEditingLogId] = useState<string | number | null>(null);
   const [editLogCatId, setEditLogCatId] = useState<string | number>('');
   const [editLogDate, setEditLogDate] = useState<string>('');
   const [editLogDuration, setEditLogDuration] = useState<number>(60);
-  const [editLogTopic, setEditLogTopic] = useState<string>('');
 
   // Drift-free Stopwatch State
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -1024,7 +1031,7 @@ export default function App() {
         category: selectedCatId,
         date: logDate,
         duration_minutes: Number(finalMinutes),
-        topic: topic.trim() || 'Focused study session',
+        topic: '',
         is_public_to_hub: true,
       });
 
@@ -1037,13 +1044,12 @@ export default function App() {
         categoryColor: cat?.color,
         date: logDate,
         durationMinutes: Number(finalMinutes),
-        topic: topic.trim() || 'Focused study session',
+        topic: '',
         isPublicToHub: true,
         createdAt: new Date().toISOString(),
       };
 
       setLogs([newLogItem, ...logs]);
-      setTopic('');
       if (inputMode === 'timer') {
         setIsRunning(false);
         setElapsedSeconds(0);
@@ -1061,7 +1067,6 @@ export default function App() {
     setEditLogCatId(log.categoryId ?? (categories[0]?.id ?? ''));
     setEditLogDate(log.date);
     setEditLogDuration(log.durationMinutes);
-    setEditLogTopic(log.topic);
   };
 
   const handleCancelEditLog = () => {
@@ -1073,7 +1078,6 @@ export default function App() {
     if (!user || editingLogId === null) return;
     if (!editLogCatId || editLogDuration <= 0) return;
 
-    const updatedTopic = editLogTopic.trim() || 'Focused study session';
     const updatedDuration = Number(editLogDuration) || 60;
 
     try {
@@ -1081,7 +1085,7 @@ export default function App() {
         category: editLogCatId,
         date: editLogDate,
         duration_minutes: updatedDuration,
-        topic: updatedTopic,
+        topic: '',
       });
 
       const cat = categories.find((c) => String(c.id) === String(editLogCatId));
@@ -1097,7 +1101,7 @@ export default function App() {
                 date: editLogDate,
                 durationMinutes: updatedDuration,
                 durationHours: +(updatedDuration / 60).toFixed(2),
-                topic: updatedTopic,
+                topic: '',
               }
             : l
         )
@@ -1287,11 +1291,16 @@ export default function App() {
       .reduce((acc, l) => acc + l.durationMinutes, 0);
 
     return {
+      totalMin,
       totalHours: (totalMin / 60).toFixed(1),
       weeklyHours: (weeklyMin / 60).toFixed(1),
       monthlyHours: (monthlyMin / 60).toFixed(1),
     };
   }, [logs, currentMonthPrefix]);
+
+  const clearanceStatus = useMemo(() => {
+    return getClearanceStatus(user ? stats.totalMin : 0);
+  }, [user, stats.totalMin]);
 
   // Weekly Navigation Data
   const selectedWeeklyDays = useMemo(() => {
@@ -1791,7 +1800,27 @@ export default function App() {
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-2.5">
+            {/* Status Card Snapshot / Share Button */}
+            <button
+              type="button"
+              onClick={() => setShowStatusCardModal(true)}
+              className={`px-2.5 py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors flex items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
+              aria-label="Generate Telemetry Status Card"
+              title="Generate & Share Status Card Image"
+            >
+              <Share2 className="w-4 h-4 text-emerald-400" />
+              <span className="hidden md:inline font-semibold">CARD</span>
+            </button>
+
+            {/* Ambient Focus Sound / White Noise Generator (Left of Theme Toggle) */}
+            <AmbientSoundControl
+              isDark={isDark}
+              borderCol={borderCol}
+              bgCard={bgCard}
+              textMuted={textMuted}
+            />
+
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
@@ -1824,6 +1853,12 @@ export default function App() {
                     size="sm"
                   />
                   <span className="hidden sm:inline font-mono text-xs font-semibold">{user.username}</span>
+                  <span
+                    className="hidden lg:inline-block px-1.5 py-0.2 font-mono text-[10px] font-bold text-zinc-950"
+                    style={{ backgroundColor: clearanceStatus.current.color }}
+                  >
+                    LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                  </span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 opacity-60 transition-transform duration-200 ${
                       showUserMenu ? 'rotate-180' : ''
@@ -1834,37 +1869,81 @@ export default function App() {
                 {/* Dropdown Menu */}
                 {showUserMenu && (
                   <div
-                    className={`absolute right-0 top-full mt-2 w-64 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
+                    className={`absolute right-0 top-full mt-2 w-68 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
                       isDark ? 'divide-zinc-800' : 'divide-zinc-200'
                     }`}
                   >
                     {/* User Info Header */}
-                    <div className="px-4 py-3 flex items-center space-x-3">
-                      <AvatarBadge
-                        username={user.username}
-                        color={user.avatar_color}
-                        preset={user.avatar_preset}
-                        image={user.avatar_image}
-                        size="md"
-                      />
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        <div className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold flex items-center space-x-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          <span>ACTIVE ACCOUNT</span>
+                    <div className="px-4 py-3 space-y-2">
+                      <div className="flex items-center space-x-3">
+                        <AvatarBadge
+                          username={user.username}
+                          color={user.avatar_color}
+                          preset={user.avatar_preset}
+                          image={user.avatar_image}
+                          size="md"
+                        />
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold flex items-center space-x-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>ACTIVE ACCOUNT</span>
+                          </div>
+                          <div className="font-bold text-sm truncate">{user.username}</div>
+                          <div className={`text-[11px] truncate ${textMuted}`}>
+                            {user.email || 'No email registered'}
+                          </div>
                         </div>
-                        <div className="font-bold text-sm truncate">{user.username}</div>
-                        <div className={`text-[11px] truncate ${textMuted}`}>
-                          {user.email || 'No email registered'}
-                        </div>
+                      </div>
+                      {/* Clearance Badge inside Dropdown */}
+                      <div className={`pt-2 border-t ${borderCol} flex items-center justify-between text-[10px]`}>
+                        <span
+                          className="px-1.5 py-0.5 font-bold text-zinc-950"
+                          style={{ backgroundColor: clearanceStatus.current.color }}
+                        >
+                          LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                        </span>
+                        <span className="font-bold truncate ml-2 flex-1">
+                          {clearanceStatus.current.title}
+                        </span>
+                        <span className={textMuted}>{clearanceStatus.progressPct}%</span>
                       </div>
                     </div>
 
-                    {/* Settings Action (Safely placed above Sign Out) */}
+                    {/* Clearance & Share Actions */}
                     <div className="py-1">
                       <button
                         type="button"
+                        onClick={() => openSettingsModal('clearance')}
+                        className="w-full px-4 py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <Award className="w-3.5 h-3.5 text-amber-400" />
+                          <span>CLEARANCE RANKS (500)</span>
+                        </span>
+                        <span className={`text-[10px] ${textMuted}`}>
+                          LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setShowStatusCardModal(true);
+                        }}
+                        className="w-full px-4 py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>SHARE STATUS CARD</span>
+                        </span>
+                        <span className={`text-[10px] ${textMuted}`}>PNG</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => openSettingsModal('profile')}
-                        className="w-full px-4 py-2.5 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                        className="w-full px-4 py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
                       >
                         <span className="flex items-center space-x-2.5">
                           <Settings className="w-3.5 h-3.5 text-emerald-400" />
@@ -1964,78 +2043,172 @@ export default function App() {
           </div>
         )}
 
-        {/* 1. TOP METRICS STRIP */}
-        <section className={`grid grid-cols-2 lg:grid-cols-4 border-t border-l ${borderCol}`}>
-          <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
-            <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
-              01 / {t.totalHours}
-            </div>
-            <div className="mt-2 flex items-baseline space-x-2">
-              <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
-                {user ? stats.totalHours : '0.0'}
-              </span>
-              <span className={`font-mono text-xs ${textMuted}`}>HRS</span>
-            </div>
-          </div>
-
-          <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
-            <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
-              02 / {t.weeklyHours}
-            </div>
-            <div className="mt-2 flex items-baseline space-x-2">
-              <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
-                {user ? stats.weeklyHours : '0.0'}
-              </span>
-              <span className={`font-mono text-xs ${textMuted}`}>HRS / 7D</span>
-            </div>
-          </div>
-
-          <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
-            <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
-              03 / {t.monthlyHours}
-            </div>
-            <div className="mt-2 flex items-baseline space-x-2">
-              <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
-                {user ? stats.monthlyHours : '0.0'}
-              </span>
-              <span className={`font-mono text-xs ${textMuted}`}>HRS ({currentMonthPrefix})</span>
-            </div>
-          </div>
-
-          <div className={`p-5 border-r border-b ${borderCol} ${bgCard} flex flex-col justify-between`}>
-            <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
-              04 / {t.activeCategories}
-            </div>
-            <div className="mt-2 flex items-baseline justify-between gap-2 min-w-0">
-              <div className="flex items-baseline space-x-2 shrink-0">
-                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
-                  {user ? categories.length : '0'}
-                </span>
-                <span className={`font-mono text-xs ${textMuted}`}>UNITS</span>
+        {/* 1. TOP METRICS STRIP + TELEMETRY CLEARANCE BAR */}
+        <section className="space-y-0">
+          <div className={`grid grid-cols-2 lg:grid-cols-4 border-t border-l ${borderCol}`}>
+            <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
+              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+                01 / {t.totalHours}
               </div>
-              {user && categories.length > 0 && (
-                <div className="flex flex-wrap items-center justify-end gap-1 max-w-[96px] sm:max-w-[148px]">
-                  {categories.slice(0, 12).map((c) => (
-                    <span
-                      key={c.id}
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: c.color }}
-                      title={`[${c.code}] ${c.name}`}
-                    />
-                  ))}
-                  {categories.length > 12 && (
-                    <span
-                      className={`font-mono text-[9px] leading-none px-1 py-0.5 border ${borderCol} ${textMuted} shrink-0`}
-                      title={categories
-                        .slice(12)
-                        .map((c) => `[${c.code}] ${c.name}`)
-                        .join(', ')}
-                    >
-                      +{categories.length - 12}
-                    </span>
-                  )}
+              <div className="mt-2 flex items-baseline space-x-2">
+                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+                  {user ? stats.totalHours : '0.0'}
+                </span>
+                <span className={`font-mono text-xs ${textMuted}`}>HRS</span>
+              </div>
+            </div>
+
+            <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
+              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+                02 / {t.weeklyHours}
+              </div>
+              <div className="mt-2 flex items-baseline space-x-2">
+                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+                  {user ? stats.weeklyHours : '0.0'}
+                </span>
+                <span className={`font-mono text-xs ${textMuted}`}>HRS / 7D</span>
+              </div>
+            </div>
+
+            <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
+              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+                03 / {t.monthlyHours}
+              </div>
+              <div className="mt-2 flex items-baseline space-x-2">
+                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+                  {user ? stats.monthlyHours : '0.0'}
+                </span>
+                <span className={`font-mono text-xs ${textMuted}`}>HRS ({currentMonthPrefix})</span>
+              </div>
+            </div>
+
+            <div className={`p-5 border-r border-b ${borderCol} ${bgCard} flex flex-col justify-between`}>
+              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+                04 / {t.activeCategories}
+              </div>
+              <div className="mt-2 flex items-baseline justify-between gap-2 min-w-0">
+                <div className="flex items-baseline space-x-2 shrink-0">
+                  <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+                    {user ? categories.length : '0'}
+                  </span>
+                  <span className={`font-mono text-xs ${textMuted}`}>UNITS</span>
                 </div>
-              )}
+                {user && categories.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-end gap-1 max-w-[96px] sm:max-w-[148px]">
+                    {categories.slice(0, 12).map((c) => (
+                      <span
+                        key={c.id}
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: c.color }}
+                        title={`[${c.code}] ${c.name}`}
+                      />
+                    ))}
+                    {categories.length > 12 && (
+                      <span
+                        className={`font-mono text-[9px] leading-none px-1 py-0.5 border ${borderCol} ${textMuted} shrink-0`}
+                        title={categories
+                          .slice(12)
+                          .map((c) => `[${c.code}] ${c.name}`)
+                          .join(', ')}
+                      >
+                        +{categories.length - 12}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* TELEMETRY CLEARANCE LEVEL BAR (500 RANKS // 0H TO 10,000H) */}
+          <div className={`border-x border-b ${borderCol} ${bgCard} px-5 py-3.5 font-mono text-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3`}>
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
+              <div className="flex items-center space-x-2 shrink-0">
+                <span className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
+                  CLEARANCE
+                </span>
+                <span
+                  className="px-2 py-0.5 text-xs font-bold text-zinc-950"
+                  style={{ backgroundColor: clearanceStatus.current.color }}
+                >
+                  LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className="font-bold tracking-wider truncate">
+                  {clearanceStatus.current.title}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} ${textMuted} shrink-0`}>
+                  {clearanceStatus.current.division}
+                </span>
+                <span className={`hidden sm:inline text-[11px] font-sans ${textMuted} truncate`}>
+                  ({clearanceStatus.current.jpSubtitle})
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Bar & Sub-Phases */}
+            <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 flex-1 max-w-2xl">
+              <div className="flex-1 min-w-[180px] space-y-1">
+                <div className="flex items-center justify-between text-[10px]">
+                  <div className="flex items-center space-x-1">
+                    {[1, 2, 3, 4, 5].map((pip) => (
+                      <span
+                        key={pip}
+                        className={`w-2 h-2 border ${
+                          pip <= clearanceStatus.subPhase
+                            ? 'bg-emerald-400 border-emerald-400'
+                            : `${borderCol} opacity-40`
+                        }`}
+                        title={`Sub-Phase ${pip}/5`}
+                      />
+                    ))}
+                    <span className="ml-1 text-emerald-400 font-bold">
+                      PHASE {clearanceStatus.subPhase}/5
+                    </span>
+                  </div>
+                  <span className={textMuted}>
+                    {clearanceStatus.next
+                      ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(3, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
+                      : 'OMEGA MONOLITH (10,000H+)'}
+                  </span>
+                </div>
+                <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
+                  <div
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: `${clearanceStatus.progressPct}%`,
+                      backgroundColor: clearanceStatus.current.color,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (user) {
+                      openSettingsModal('clearance');
+                    } else {
+                      openAuthModal('login');
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 border ${borderCol} hover:border-emerald-500/60 text-[10px] font-semibold flex items-center space-x-1.5 cursor-pointer transition-colors`}
+                >
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  <span>500 RANKS</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStatusCardModal(true)}
+                  className={`px-2.5 py-1.5 border ${borderCol} hover:border-emerald-500/60 text-[10px] font-semibold flex items-center space-x-1.5 cursor-pointer transition-colors`}
+                >
+                  <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>SHARE CARD</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -2255,20 +2428,6 @@ export default function App() {
                       className={`w-full px-3 py-2 text-sm font-mono border outline-none ${inputBg}`}
                     />
                   </div>
-                </div>
-
-                {/* Topic / Memo */}
-                <div>
-                  <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
-                    {t.topicMemo}
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Implementing JWT authentication & models..."
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    className={`w-full px-3 py-2 text-sm border outline-none ${inputBg}`}
-                  />
                 </div>
 
                 <button
@@ -3339,7 +3498,6 @@ export default function App() {
                         <span>
                           {hoveredMatrixCell.minutes} MIN ({(hoveredMatrixCell.minutes / 60).toFixed(1)}H) //{' '}
                           {hoveredMatrixCell.count} COMMIT(S)
-                          {hoveredMatrixCell.topics[0] ? ` — "${hoveredMatrixCell.topics[0]}"` : ''}
                         </span>
                       ) : (
                         <span className={textMuted}>0 MIN // STANDBY SLOT (CLICK CELL TO SELECT DATE)</span>
@@ -3425,23 +3583,23 @@ export default function App() {
                       const cat = categories.find((c) => String(c.id) === String(log.categoryId));
                       const isEditingLog = String(editingLogId) === String(log.id);
                       return (
-                        <div key={log.id} className="py-3.5 space-y-3 group">
-                          <div className="flex items-start sm:items-center justify-between gap-4">
-                            <div className="space-y-1 flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-                                <span
-                                  className="w-2 h-2 rounded-full shrink-0"
-                                  style={{ backgroundColor: cat?.color || log.categoryColor || '#71717a' }}
-                                />
-                                <span className="font-semibold">
-                                  [{cat?.code || log.categoryCode || 'LOG'}]
-                                </span>
-                                <span className={textMuted}>{log.date}</span>
-                                <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60">
-                                  {log.durationMinutes} MIN
-                                </span>
-                              </div>
-                              <p className="text-sm truncate pl-4">{log.topic}</p>
+                        <div key={log.id} className="py-3 space-y-3 group">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs flex-1 min-w-0">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: cat?.color || log.categoryColor || '#71717a' }}
+                              />
+                              <span className="font-bold">
+                                [{cat?.code || log.categoryCode || 'LOG'}]
+                              </span>
+                              <span className="truncate font-medium">
+                                {cat?.name || log.categoryName || 'Study Session'}
+                              </span>
+                              <span className={textMuted}>// {log.date}</span>
+                              <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60 font-semibold">
+                                {log.durationMinutes} MIN ({(log.durationMinutes / 60).toFixed(1)}H)
+                              </span>
                             </div>
 
                             <div className="flex items-center space-x-1.5 shrink-0">
@@ -3538,18 +3696,6 @@ export default function App() {
                                     className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
                                   />
                                 </div>
-                              </div>
-
-                              <div>
-                                <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                                  {t.topicMemo}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editLogTopic}
-                                  onChange={(e) => setEditLogTopic(e.target.value)}
-                                  className={`w-full px-2.5 py-1.5 text-xs font-sans border outline-none ${inputBg}`}
-                                />
                               </div>
 
                               <div className="flex items-center justify-end space-x-2 pt-1">
@@ -3974,7 +4120,7 @@ export default function App() {
             </div>
 
             {/* Settings Navigation Tabs */}
-            <div className={`grid grid-cols-3 border ${borderCol} text-[11px] font-mono`}>
+            <div className={`grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-[10px] sm:text-[11px] font-mono`}>
               <button
                 type="button"
                 onClick={() => setSettingsTab('profile')}
@@ -3986,12 +4132,25 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                01 / PROFILE &amp; ICON
+                01 / PROFILE
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('clearance')}
+                className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
+                  settingsTab === 'clearance'
+                    ? isDark
+                      ? 'bg-zinc-100 text-zinc-950 font-bold'
+                      : 'bg-zinc-900 text-white font-bold'
+                    : textMuted
+                }`}
+              >
+                02 / CLEARANCE (500)
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsTab('security')}
-                className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
+                className={`py-2 text-center border-t sm:border-t-0 sm:border-l ${borderCol} transition-colors cursor-pointer ${
                   settingsTab === 'security'
                     ? isDark
                       ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -3999,12 +4158,12 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                02 / PASSWORD
+                03 / PASSWORD
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsTab('data')}
-                className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
+                className={`py-2 text-center border-t sm:border-t-0 border-l ${borderCol} transition-colors cursor-pointer ${
                   settingsTab === 'data'
                     ? isDark
                       ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -4012,9 +4171,19 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                03 / DATA &amp; DANGER
+                04 / DATA &amp; DANGER
               </button>
             </div>
+
+            {/* TAB 2: TELEMETRY CLEARANCE LEVEL (100 RANKS) */}
+            {settingsTab === 'clearance' && (
+              <ClearanceBrowserPanel
+                clearance={clearanceStatus}
+                isDark={isDark}
+                borderCol={borderCol}
+                textMuted={textMuted}
+              />
+            )}
 
             {/* TAB 1: PROFILE & AVATAR */}
             {settingsTab === 'profile' && (
@@ -4473,6 +4642,30 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ==========================================
+          MODAL 4: TELEMETRY STATUS CARD GENERATOR
+      ========================================== */}
+      <StatusCardModal
+        isOpen={showStatusCardModal}
+        onClose={() => setShowStatusCardModal(false)}
+        username={user?.username || 'GUEST_OPERATOR'}
+        avatarColor={user?.avatar_color || '#10b981'}
+        avatarImage={user?.avatar_image || ''}
+        clearance={clearanceStatus}
+        totalHours={user ? stats.totalHours : '0.0'}
+        weeklyHours={user ? stats.weeklyHours : '0.0'}
+        monthlyHours={user ? stats.monthlyHours : '0.0'}
+        currentStreak={user ? streakStats.currentStreak : 0}
+        longestStreak={user ? streakStats.longestStreak : 0}
+        activeDaysCount={user ? new Set(logs.map((l) => l.date)).size : 0}
+        categories={user ? categories : []}
+        logs={user ? logs : []}
+        isDark={isDark}
+        borderCol={borderCol}
+        bgCard={bgCard}
+        textMuted={textMuted}
+      />
     </div>
   );
 }

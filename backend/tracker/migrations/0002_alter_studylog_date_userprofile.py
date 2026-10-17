@@ -6,6 +6,11 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def clear_default_topic_placeholder(apps, schema_editor):
+    StudyLog = apps.get_model('tracker', 'StudyLog')
+    StudyLog.objects.filter(topic='Focused study session').update(topic='')
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -33,5 +38,9 @@ class Migration(migrations.Migration):
                 'verbose_name': 'User Profile',
                 'verbose_name_plural': 'User Profiles',
             },
+        ),
+        migrations.RunPython(
+            clear_default_topic_placeholder,
+            reverse_code=migrations.RunPython.noop,
         ),
     ]
