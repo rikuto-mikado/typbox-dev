@@ -185,6 +185,15 @@ export const api = {
         body: JSON.stringify(data),
       });
     },
+    update: async (
+      id: string | number,
+      data: Partial<{ name: string; code: string; color: string; monthly_target_hours: number }>
+    ) => {
+      return apiFetch(`/categories/${id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    },
     delete: async (id: string | number) => {
       return apiFetch(`/categories/${id}/`, {
         method: 'DELETE',

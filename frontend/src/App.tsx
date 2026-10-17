@@ -31,6 +31,7 @@ import {
   TrendingUp,
   Activity,
   Download,
+  Pencil,
 } from 'lucide-react';
 import { api, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
@@ -329,12 +330,19 @@ export default function App() {
     };
   }, [isRunning]);
 
-  // Category Form State
+  // Category Form State (Create & Edit)
   const [showCatForm, setShowCatForm] = useState<boolean>(false);
   const [newCatName, setNewCatName] = useState<string>('');
   const [newCatCode, setNewCatCode] = useState<string>('');
   const [newCatColor, setNewCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
   const [newCatTarget, setNewCatTarget] = useState<number>(20);
+
+  // Category Edit State
+  const [editingCatId, setEditingCatId] = useState<string | number | null>(null);
+  const [editCatName, setEditCatName] = useState<string>('');
+  const [editCatCode, setEditCatCode] = useState<string>('');
+  const [editCatColor, setEditCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
+  const [editCatTarget, setEditCatTarget] = useState<number>(20);
 
   // ==========================================
   // Data Fetching: Categories & Logs
@@ -564,6 +572,71 @@ export default function App() {
     }
   };
 
+  const handleStartEditCategory = (cat: Category) => {
+    setEditingCatId(cat.id);
+    setEditCatName(cat.name);
+    setEditCatCode(cat.code);
+    setEditCatColor(cat.color);
+    setEditCatTarget(cat.monthlyTargetHours);
+    setShowCatForm(false);
+  };
+
+  const handleCancelEditCategory = () => {
+    setEditingCatId(null);
+  };
+
+  const handleUpdateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || editingCatId === null) return;
+    if (!editCatName.trim() || !editCatCode.trim()) return;
+
+    const updatedName = editCatName.trim();
+    const updatedCode = editCatCode.trim().toUpperCase().slice(0, 4);
+    const updatedColor = editCatColor;
+    const updatedTarget = Number(editCatTarget) || 10;
+
+    try {
+      await api.categories.update(editingCatId, {
+        name: updatedName,
+        code: updatedCode,
+        color: updatedColor,
+        monthly_target_hours: updatedTarget,
+      });
+
+      setCategories((prev) =>
+        prev.map((c) =>
+          String(c.id) === String(editingCatId)
+            ? {
+                ...c,
+                name: updatedName,
+                code: updatedCode,
+                color: updatedColor,
+                monthlyTargetHours: updatedTarget,
+              }
+            : c
+        )
+      );
+
+      setLogs((prev) =>
+        prev.map((l) =>
+          String(l.categoryId) === String(editingCatId)
+            ? {
+                ...l,
+                categoryName: updatedName,
+                categoryCode: updatedCode,
+                categoryColor: updatedColor,
+              }
+            : l
+        )
+      );
+
+      setEditingCatId(null);
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(`Failed to update category: ${error.message}`);
+    }
+  };
+
   const handleDeleteCategory = async (id: string | number, name: string) => {
     if (categories.length <= 1) {
       alert('At least one category is required for study logging.');
@@ -580,6 +653,10 @@ export default function App() {
       await api.categories.delete(id);
       const remaining = categories.filter((c) => c.id !== id);
       setCategories(remaining);
+
+      if (String(editingCatId) === String(id)) {
+        setEditingCatId(null);
+      }
 
       if (String(selectedCatId) === String(id) && remaining.length > 0) {
         setSelectedCatId(remaining[0].id);
@@ -1488,7 +1565,10 @@ export default function App() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowCatForm(!showCatForm)}
+                  onClick={() => {
+                    setShowCatForm(!showCatForm);
+                    setEditingCatId(null);
+                  }}
                   className={`px-2.5 py-1 text-[11px] font-mono border ${borderCol} hover:opacity-80 cursor-pointer`}
                 >
                   {showCatForm ? 'CLOSE' : `+ ${t.addCategory}`}
@@ -1586,62 +1666,193 @@ export default function App() {
                     No categories configured yet.
                   </div>
                 ) : (
-                  monthlyBreakdown.map((cat) => (
-                    <div
-                      key={cat.id}
-                      className="group space-y-1.5 p-2 -mx-2 rounded transition-colors hover:bg-zinc-500/5"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: cat.color }}
+                  monthlyBreakdown.map((cat) => {
+                    const isEditing = String(editingCatId) === String(cat.id);
+                    return (
+                      <div
+                        key={cat.id}
+                        className="group space-y-2 p-2 -mx-2 rounded transition-colors hover:bg-zinc-500/5"
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-2 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: cat.color }}
+                            />
+                            <span className="font-mono font-semibold text-[11px] shrink-0">
+                              [{cat.code}]
+                            </span>
+                            <span className="truncate max-w-[115px] sm:max-w-[155px] font-medium" title={cat.name}>
+                              {cat.name}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                            <span className="font-mono text-[11px] mr-0.5">
+                              {cat.hours}h <span className={textMuted}>/ {cat.monthlyTargetHours}h</span>
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                isEditing ? handleCancelEditCategory() : handleStartEditCategory(cat)
+                              }
+                              className={`p-1 border transition-all cursor-pointer ${
+                                isEditing
+                                  ? 'border-emerald-500/60 text-emerald-400 opacity-100'
+                                  : `${borderCol} ${textMuted} opacity-40 group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50`
+                              }`}
+                              title={isEditing ? 'Close editor' : `Edit category [${cat.code}]`}
+                              aria-label={`Edit category ${cat.name}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                              disabled={categories.length <= 1}
+                              className={`p-1 border ${borderCol} ${textMuted} transition-all ${
+                                categories.length <= 1
+                                  ? 'opacity-20 cursor-not-allowed'
+                                  : 'opacity-40 group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 cursor-pointer'
+                              }`}
+                              title={
+                                categories.length <= 1
+                                  ? 'At least one category is required'
+                                  : `Delete category [${cat.code}]`
+                              }
+                              aria-label={`Delete category ${cat.name}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
+                          <div
+                            className="h-full transition-all duration-500"
+                            style={{
+                              width: `${cat.progress}%`,
+                              backgroundColor: cat.color,
+                            }}
                           />
-                          <span className="font-mono font-semibold text-[11px] shrink-0">
-                            [{cat.code}]
-                          </span>
-                          <span className="truncate max-w-[130px] sm:max-w-[170px] font-medium" title={cat.name}>
-                            {cat.name}
-                          </span>
                         </div>
 
-                        <div className="flex items-center space-x-2 shrink-0 ml-2">
-                          <span className="font-mono text-[11px]">
-                            {cat.hours}h <span className={textMuted}>/ {cat.monthlyTargetHours}h</span>
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                            disabled={categories.length <= 1}
-                            className={`p-1 border ${borderCol} ${textMuted} transition-all ${
-                              categories.length <= 1
-                                ? 'opacity-20 cursor-not-allowed'
-                                : 'opacity-40 group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 cursor-pointer'
-                            }`}
-                            title={
-                              categories.length <= 1
-                                ? 'At least one category is required'
-                                : `Delete category [${cat.code}]`
-                            }
-                            aria-label={`Delete category ${cat.name}`}
+                        {/* Inline Category Edit Form */}
+                        {isEditing && (
+                          <form
+                            onSubmit={handleUpdateCategory}
+                            className={`mt-2 p-3.5 border ${borderCol} ${
+                              isDark ? 'bg-[#0a0a0a]/90' : 'bg-zinc-50/90'
+                            } space-y-3`}
                           >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
+                                EDIT CATEGORY // [{cat.code}]
+                              </span>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditCategory}
+                                className={`font-mono text-[10px] uppercase ${textMuted} hover:underline cursor-pointer`}
+                              >
+                                [CANCEL]
+                              </button>
+                            </div>
 
-                      <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
-                        <div
-                          className="h-full transition-all duration-500"
-                          style={{
-                            width: `${cat.progress}%`,
-                            backgroundColor: cat.color,
-                          }}
-                        />
+                            <div>
+                              <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
+                                {t.catName}
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={editCatName}
+                                onChange={(e) => setEditCatName(e.target.value)}
+                                className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
+                                  {t.catCode}
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  maxLength={4}
+                                  value={editCatCode}
+                                  onChange={(e) => setEditCatCode(e.target.value)}
+                                  className={`w-full px-2.5 py-1.5 text-xs font-mono uppercase border outline-none ${inputBg}`}
+                                />
+                              </div>
+                              <div>
+                                <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
+                                  {t.catTarget}
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={editCatTarget}
+                                  onChange={(e) => setEditCatTarget(Number(e.target.value))}
+                                  className={`w-full px-2.5 py-1.5 text-xs font-mono border outline-none ${inputBg}`}
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className={`block font-mono text-[10px] uppercase ${textMuted}`}>
+                                  Indicator Accent
+                                </label>
+                                <span className="font-mono text-[10px] text-zinc-400">
+                                  {ACCENT_PALETTE.find((c) => c.hex === editCatColor)?.name || 'Custom'} ({editCatColor})
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-6 gap-2.5 pt-0.5">
+                                {ACCENT_PALETTE.map((col) => (
+                                  <button
+                                    key={col.hex}
+                                    type="button"
+                                    onClick={() => setEditCatColor(col.hex)}
+                                    title={`${col.name} (${col.hex})`}
+                                    aria-label={`Select ${col.name} color`}
+                                    className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${
+                                      editCatColor === col.hex
+                                        ? isDark
+                                          ? 'ring-2 ring-offset-2 ring-offset-[#0a0a0a] ring-zinc-200 scale-110 border-white/40'
+                                          : 'ring-2 ring-offset-2 ring-offset-zinc-50 ring-zinc-800 scale-110 border-black/20'
+                                        : 'opacity-65 hover:opacity-100 hover:scale-105 border-transparent'
+                                    }`}
+                                    style={{ backgroundColor: col.hex }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={handleCancelEditCategory}
+                                className={`flex-1 py-1.5 font-mono text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
+                              >
+                                CANCEL
+                              </button>
+                              <button
+                                type="submit"
+                                className={`flex-1 py-1.5 font-mono text-xs uppercase font-semibold cursor-pointer ${
+                                  isDark ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                                }`}
+                              >
+                                SAVE CHANGES
+                              </button>
+                            </div>
+                          </form>
+                        )}
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
