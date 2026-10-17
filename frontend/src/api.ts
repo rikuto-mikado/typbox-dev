@@ -41,10 +41,17 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
   }
 
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  let response = await fetch(url, {
-    ...rest,
-    headers: reqHeaders,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      headers: reqHeaders,
+    });
+  } catch (err: unknown) {
+    const error = err as Error;
+    console.error(`TypBox API fetch error to [${url}]:`, error);
+    throw new Error(`Unable to connect to backend (${url}): ${error.message}. Please verify CORS and backend status.`);
+  }
 
   // If token expired (401), try refreshing token once
   if (response.status === 401 && requiresAuth && getRefreshToken()) {
