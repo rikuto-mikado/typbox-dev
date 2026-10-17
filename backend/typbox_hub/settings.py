@@ -230,6 +230,37 @@ for default_csrf in (
 
 
 # ==========================================
+# Email & Password Reset Configuration
+# ==========================================
+
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
+
+# Automatically use SMTP when EMAIL_HOST_USER is configured, otherwise fallback to console output in dev
+default_email_backend = (
+    'django.core.mail.backends.smtp.EmailBackend'
+    if EMAIL_HOST_USER
+    else 'django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', default_email_backend)
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 'yes')
+DEFAULT_FROM_EMAIL = os.getenv(
+    'DEFAULT_FROM_EMAIL',
+    f'TYPBOX <{EMAIL_HOST_USER}>' if EMAIL_HOST_USER else 'TYPBOX <noreply@typbox.me>'
+)
+FRONTEND_URL = os.getenv(
+    'FRONTEND_URL',
+    'http://localhost:5173' if DEBUG else 'https://typbox.me'
+).rstrip('/')
+
+# Password reset token validity in seconds (default: 1 hour)
+PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
+
+
+# ==========================================
 # Production Security Hardening
 # ==========================================
 
@@ -244,5 +275,6 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
 
 

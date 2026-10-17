@@ -1,5 +1,11 @@
 from django.contrib import admin
-from .models import Category, StudyLog
+from .models import Category, StudyLog, UserProfile
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'avatar_preset', 'avatar_color', 'updated_at')
+    search_fields = ('user__username', 'user__email')
 
 
 @admin.register(Category)
@@ -15,3 +21,4 @@ class StudyLogAdmin(admin.ModelAdmin):
     list_filter = ('is_public_to_hub', 'date', 'user', 'category')
     search_fields = ('topic', 'user__username', 'category__name')
     date_hierarchy = 'date'
+

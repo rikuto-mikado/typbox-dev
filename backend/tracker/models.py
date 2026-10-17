@@ -3,6 +3,29 @@ from django.db import models
 from django.utils import timezone
 
 
+class UserProfile(models.Model):
+    """
+    Extended profile settings for a User, including hybrid avatar customization
+    (color accent, preset icon, or compressed base64 Data URL image stored in DB).
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='profile'
+    )
+    avatar_color = models.CharField(max_length=20, default='#10b981')
+    avatar_preset = models.CharField(max_length=30, default='initial')
+    avatar_image = models.TextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'User Profile'
+        verbose_name_plural = 'User Profiles'
+
+    def __str__(self):
+        return f"Profile ({self.user.username})"
+
+
 class Category(models.Model):
     """
     Study category model, linked to a specific user.
