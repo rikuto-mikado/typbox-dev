@@ -740,7 +740,7 @@ export default function App() {
   const hubPayloadPreview = useMemo(() => {
     const publicLogs = logs.filter((l) => l.isPublicToHub);
     return {
-      source: 'typbox.com',
+      source: 'typbox.me',
       timestamp: new Date().toISOString(),
       user: user?.username || 'anonymous',
       summary: {
@@ -1021,7 +1021,7 @@ export default function App() {
               <TypboxLogo className="w-5 h-5" isDark={isDark} isRunning={isRunning} />
               <span className="font-mono text-lg font-bold tracking-tighter">TYPBOX</span>
               <span className={`font-mono text-xs px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
-                .com
+                .me
               </span>
             </div>
             <span className={`hidden md:inline-block font-mono text-[11px] tracking-widest ${textMuted}`}>

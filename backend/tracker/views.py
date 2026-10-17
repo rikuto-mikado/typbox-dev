@@ -131,7 +131,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
 class HubTelemetryView(APIView):
     """
     GET /api/hub/telemetry/
-    Public aggregate telemetry endpoint matching typbox.com React payload format.
+    Public aggregate telemetry endpoint matching typbox.me React payload format.
     Accepts optional ?username=<username> query parameter (defaults to first superuser or active user).
     """
     permission_classes = (permissions.AllowAny,)
@@ -148,7 +148,7 @@ class HubTelemetryView(APIView):
         if not user:
             return Response(
                 {
-                    'source': 'typbox.com',
+                    'source': 'typbox.me',
                     'timestamp': timezone.now().isoformat(),
                     'summary': {'total_hours': 0, 'weekly_hours': 0, 'monthly_hours': 0},
                     'categories': [],
@@ -195,7 +195,7 @@ class HubTelemetryView(APIView):
         ]
 
         payload = {
-            'source': 'typbox.com',
+            'source': 'typbox.me',
             'timestamp': timezone.now().isoformat(),
             'user': user.username,
             'summary': {
