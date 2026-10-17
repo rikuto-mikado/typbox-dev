@@ -3,9 +3,30 @@
  * Handles JWT authentication, token refreshing, and REST API communication with Django backend.
  */
 
-const rawBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
-const API_BASE_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl : `${cleanBaseUrl}/api`;
+const getApiBaseUrl = (): string => {
+  // 1. Explicit environment variable takes precedence
+  if (import.meta.env.VITE_API_URL) {
+    const raw = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+    return raw.endsWith('/api') ? raw : `${raw}/api`;
+  }
+
+  // 2. Production or public web deployment (phone, laptop, Render static site)
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalHost = isBrowser && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0'
+  );
+
+  if (import.meta.env.PROD || (isBrowser && !isLocalHost)) {
+    return 'https://typbox-dev.onrender.com/api';
+  }
+
+  // 3. Local development fallback
+  return 'http://localhost:8000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const TOKEN_KEY = 'typbox_access_token';
 const REFRESH_KEY = 'typbox_refresh_token';
@@ -50,7 +71,10 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
   } catch (err: unknown) {
     const error = err as Error;
     console.error(`TypBox API fetch error to [${url}]:`, error);
-    throw new Error(`Unable to connect to backend (${url}): ${error.message}. Please verify CORS and backend status.`);
+    throw new Error(
+      `Unable to connect to backend (${url}): ${error.message}. Please verify CORS and backend status.`,
+      { cause: err }
+    );
   }
 
   // If token expired (401), try refreshing token once
