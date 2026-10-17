@@ -16,13 +16,13 @@ import {
 import type { Category, StudyLog } from './App';
 
 // ==========================================
-// 1. TELEMETRY CLEARANCE LEVEL SYSTEM (500 RANKS // 5X EXPANSION)
+// 1. TELEMETRY CLEARANCE LEVEL SYSTEM (500 RANKS // 100% ENGLISH)
 // ==========================================
 
 export interface ClearanceLevel {
   level: number;
   title: string;
-  jpSubtitle: string;
+  subtitle: string;
   division: string;
   divisionIndex: number; // 1..10
   requiredHours: number;
@@ -34,7 +34,7 @@ export interface ClearanceDivision {
   index: number;
   code: string;
   name: string;
-  jpName: string;
+  sectorName: string;
   minLevel: number;
   maxLevel: number;
   minHours: number;
@@ -43,173 +43,168 @@ export interface ClearanceDivision {
 }
 
 const CLEARANCE_DIVISIONS: ClearanceDivision[] = [
-  { index: 1, code: 'DIV-01', name: 'INITIATE', jpName: '初等観測部門', minLevel: 1, maxLevel: 50, minHours: 0, maxHours: 75, color: '#a1a1aa' },
-  { index: 2, code: 'DIV-02', name: 'CADET', jpName: '軌道訓練部門', minLevel: 51, maxLevel: 100, minHours: 77, maxHours: 200, color: '#38bdf8' },
-  { index: 3, code: 'DIV-03', name: 'OPERATOR', jpName: '実戦通信部門', minLevel: 101, maxLevel: 150, minHours: 204, maxHours: 450, color: '#10b981' },
-  { index: 4, code: 'DIV-04', name: 'SPECIALIST', jpName: '高度解析部門', minLevel: 151, maxLevel: 200, minHours: 458, maxHours: 850, color: '#06b6d4' },
-  { index: 5, code: 'DIV-05', name: 'VANGUARD', jpName: '先鋒突破部門', minLevel: 201, maxLevel: 250, minHours: 862, maxHours: 1500, color: '#6366f1' },
-  { index: 6, code: 'DIV-06', name: 'ARCHITECT', jpName: '構造設計部門', minLevel: 251, maxLevel: 300, minHours: 1518, maxHours: 2400, color: '#a855f7' },
-  { index: 7, code: 'DIV-07', name: 'OVERSEER', jpName: '広域統括部門', minLevel: 301, maxLevel: 350, minHours: 2424, maxHours: 3600, color: '#ec4899' },
-  { index: 8, code: 'DIV-08', name: 'SENTINEL', jpName: '不撓守護部門', minLevel: 351, maxLevel: 400, minHours: 3632, maxHours: 5200, color: '#f97316' },
-  { index: 9, code: 'DIV-09', name: 'SOVEREIGN', jpName: '絶対王権部門', minLevel: 401, maxLevel: 450, minHours: 5240, maxHours: 7200, color: '#eab308' },
-  { index: 10, code: 'DIV-10', name: 'MONOLITH', jpName: '究極神話部門', minLevel: 451, maxLevel: 500, minHours: 7256, maxHours: 10000, color: '#f43f5e' },
+  { index: 1, code: 'DIV-01', name: 'INITIATE', sectorName: 'Initial Observation Sector', minLevel: 1, maxLevel: 50, minHours: 0, maxHours: 75, color: '#a1a1aa' },
+  { index: 2, code: 'DIV-02', name: 'CADET', sectorName: 'Orbital Training Sector', minLevel: 51, maxLevel: 100, minHours: 77, maxHours: 200, color: '#38bdf8' },
+  { index: 3, code: 'DIV-03', name: 'OPERATOR', sectorName: 'Field Communications Sector', minLevel: 101, maxLevel: 150, minHours: 204, maxHours: 450, color: '#10b981' },
+  { index: 4, code: 'DIV-04', name: 'SPECIALIST', sectorName: 'Deep Analytics Sector', minLevel: 151, maxLevel: 200, minHours: 458, maxHours: 850, color: '#06b6d4' },
+  { index: 5, code: 'DIV-05', name: 'VANGUARD', sectorName: 'Frontier Vanguard Sector', minLevel: 201, maxLevel: 250, minHours: 862, maxHours: 1500, color: '#6366f1' },
+  { index: 6, code: 'DIV-06', name: 'ARCHITECT', sectorName: 'Structural Systems Sector', minLevel: 251, maxLevel: 300, minHours: 1518, maxHours: 2400, color: '#a855f7' },
+  { index: 7, code: 'DIV-07', name: 'OVERSEER', sectorName: 'High Command Sector', minLevel: 301, maxLevel: 350, minHours: 2424, maxHours: 3600, color: '#ec4899' },
+  { index: 8, code: 'DIV-08', name: 'SENTINEL', sectorName: 'Aegis Citadel Sector', minLevel: 351, maxLevel: 400, minHours: 3632, maxHours: 5200, color: '#f97316' },
+  { index: 9, code: 'DIV-09', name: 'SOVEREIGN', sectorName: 'Imperial Dominion Sector', minLevel: 401, maxLevel: 450, minHours: 5240, maxHours: 7200, color: '#eab308' },
+  { index: 10, code: 'DIV-10', name: 'MONOLITH', sectorName: 'Transcendent Monolith Sector', minLevel: 451, maxLevel: 500, minHours: 7256, maxHours: 10000, color: '#f43f5e' },
 ];
 
-// 10 Archetypes per Division × 5 Grades (V, IV, III, II, I) = 50 Ranks per Division × 10 Divisions = 500 Ranks!
+// 10 Archetypes per Division × 5 Grades (I, II, III, IV, V) = 50 Ranks per Division × 10 Divisions = 500 Ranks
 const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
   1: [
-    ['BOOT NODE', '初期起動ノード'],
-    ['PULSE LISTENER', 'パルス聴取者'],
-    ['SIGNAL SEEKER', 'シグナル探求者'],
-    ['TERMINAL NOVICE', 'ターミナル実習生'],
-    ['LOG APPRENTICE', '記録見習い'],
-    ['SYNTAX RUNNER', '構文ランナー'],
-    ['HABIT SPARK', '習慣の火花'],
-    ['ROUTINE LINKER', 'ルーティン接続者'],
-    ['TRACE TRACKER', 'トレース追跡者'],
-    ['INITIATE PRIME', 'イニシエイト極意'],
+    ['BOOT NODE', 'Baseline telemetry uplink initialized'],
+    ['PULSE LISTENER', 'Detecting early study cadence signals'],
+    ['SIGNAL SEEKER', 'Scanning low-band frequency channels'],
+    ['TERMINAL NOVICE', 'Operating foundational console protocols'],
+    ['LOG APPRENTICE', 'Establishing consistent archival habits'],
+    ['SYNTAX RUNNER', 'Executing structured learning sequences'],
+    ['HABIT SPARK', 'Igniting daily cognitive momentum'],
+    ['ROUTINE LINKER', 'Synchronizing recurring study nodes'],
+    ['TRACE TRACKER', 'Monitoring continuous session output'],
+    ['INITIATE PRIME', 'Mastery of Division 01 baseline operations'],
   ],
   2: [
-    ['CADET PROBATION', 'カデット候補生'],
-    ['CIRCUIT BUILDER', '回路構築者'],
-    ['STATIC BREAKER', 'ノイズ突破者'],
-    ['VECTOR PILOT', 'ベクトル操縦士'],
-    ['GRID NAVIGATOR', 'グリッド航海士'],
-    ['CORE CALIBRATOR', 'コア調整官'],
-    ['PHASE SPRINTER', 'フェーズ走者'],
-    ['RELAY GUARDIAN', 'リレー衛士'],
-    ['ORBITAL CADET', '軌道カデット'],
-    ['CENTURION CADET', 'カデット主席'],
+    ['CADET PROBATION', 'Entered orbital training qualification'],
+    ['CIRCUIT BUILDER', 'Constructing resilient focus pathways'],
+    ['STATIC BREAKER', 'Overcoming environmental resistance'],
+    ['VECTOR PILOT', 'Navigating directional study trajectories'],
+    ['GRID NAVIGATOR', 'Mapping multi-category knowledge grids'],
+    ['CORE CALIBRATOR', 'Fine-tuning session endurance metrics'],
+    ['PHASE SPRINTER', 'Accelerating weekly telemetry velocity'],
+    ['RELAY GUARDIAN', 'Maintaining unbroken signal continuity'],
+    ['ORBITAL CADET', 'Stabilized high-altitude study orbit'],
+    ['CENTURION CADET', 'Supreme commander of Cadet Division'],
   ],
   3: [
-    ['FIELD OPERATOR', 'フィールド通信官'],
-    ['DATA RELAYER', 'データ中継官'],
-    ['CHRONO KEEPER', '時間管理官'],
-    ['STREAM ANALYST', 'ストリーム解析官'],
-    ['PROTOCOL GUARD', 'プロトコル衛士'],
-    ['DUPLEX OPERATOR', '二重通信オペレーター'],
-    ['MATRIX WATCHER', 'マトリクス監視官'],
-    ['PACKET ROUTER', 'パケット制御官'],
-    ['HIGH-GAIN OPERATOR', '高出力オペレーター'],
-    ['OPERATOR PRIME', 'オペレーター極意'],
+    ['FIELD OPERATOR', 'Active-duty telemetry operations'],
+    ['DATA RELAYER', 'High-throughput knowledge transmission'],
+    ['CHRONO KEEPER', 'Precision time-allocation discipline'],
+    ['STREAM ANALYST', 'Evaluating long-range session patterns'],
+    ['PROTOCOL GUARD', 'Enforcing strict daily focus standards'],
+    ['DUPLEX OPERATOR', 'Dual-channel analytical processing'],
+    ['MATRIX WATCHER', 'Sustaining dense cadence matrix coverage'],
+    ['PACKET ROUTER', 'Optimizing complex category workloads'],
+    ['HIGH-GAIN OPERATOR', 'Amplified cognitive output efficiency'],
+    ['OPERATOR PRIME', 'Apex operational authority achieved'],
   ],
   4: [
-    ['TELEMETRY SPECIALIST', 'テレメトリー専門官'],
-    ['CYCLE ENGINEER', '周回エンジニア'],
-    ['DEEP BUFFER', 'ディープバッファ技師'],
-    ['SPECTRUM TUNER', 'スペクトラム調律官'],
-    ['LOGIC SYNTHESIZER', '論理シンセサイザー'],
-    ['SIGNAL AUDITOR', 'シグナル監査官'],
-    ['FREQUENCY MASTER', '周波数マスター'],
-    ['PRECISION CRAFTER', '精密クラフト技師'],
-    ['QUANTUM SPECIALIST', '量子スペシャリスト'],
-    ['SPECIALIST PRIME', 'スペシャリスト極意'],
+    ['TELEMETRY SPECIALIST', 'Advanced technical domain specialization'],
+    ['CYCLE ENGINEER', 'Engineering sustainable deep-work cycles'],
+    ['DEEP BUFFER', 'High-capacity mental retention buffer'],
+    ['SPECTRUM TUNER', 'Broad-spectrum subject mastery'],
+    ['LOGIC SYNTHESIZER', 'Synthesizing cross-disciplinary axioms'],
+    ['SIGNAL AUDITOR', 'Zero-drift telemetry verification'],
+    ['FREQUENCY MASTER', 'Harmonic alignment of daily focus'],
+    ['PRECISION CRAFTER', 'High-craft execution across all units'],
+    ['QUANTUM SPECIALIST', 'Non-linear problem solving capability'],
+    ['SPECIALIST PRIME', 'Grand Specialist of Division 04'],
   ],
   5: [
-    ['VANGUARD SCOUT', 'ヴァンガード斥候'],
-    ['HORIZON BREAKER', 'ホライズン突破者'],
-    ['FRONTIER RUNNER', 'フロンティア走者'],
-    ['KILO-NODE STRIKER', 'キロノード撃破者'],
-    ['MILLENNIUM VANGUARD', '千時間ヴァンガード'],
-    ['HYPERION PILOT', 'ハイペリオン操縦長'],
-    ['AETHER NAVIGATOR', 'エーテル航海長'],
-    ['STARLIGHT LANCER', 'スターライト槍騎兵'],
-    ['NOVA COMMANDER', 'ノヴァ指揮官'],
-    ['VANGUARD PRIME', 'ヴァンガード極意'],
+    ['VANGUARD SCOUT', 'Pioneering deep-endurance frontiers'],
+    ['HORIZON BREAKER', 'Surpassing conventional study limits'],
+    ['FRONTIER RUNNER', 'Long-range autonomous expedition'],
+    ['KILO-NODE STRIKER', 'Approaching the 1,000-hour barrier'],
+    ['MILLENNIUM VANGUARD', 'Four-digit cumulative hour authority'],
+    ['HYPERION PILOT', 'High-luminosity intellectual drive'],
+    ['AETHER NAVIGATOR', 'Charting upper-atmosphere mastery'],
+    ['STARLIGHT LANCER', 'Piercing through complex domains'],
+    ['NOVA COMMANDER', 'Radiating sustained analytical power'],
+    ['VANGUARD PRIME', 'Supreme Vanguard of the First Millennium'],
   ],
   6: [
-    ['SYSTEM ARCHITECT', 'システム設計官'],
-    ['FOUNDATION BUILDER', '基盤構築者'],
-    ['SCHEMA DIRECTOR', 'スキーマ統括官'],
-    ['NEURAL CARTOGRAPHER', 'ニューラル製図家'],
-    ['MONOLITH DRAFTER', 'モノリス設計技師'],
-    ['BI-MILLENNIUM ARCHITECT', '二千時間アーキテクト'],
-    ['CITADEL ENGINEER', 'シタデル構築長'],
-    ['NEXUS STRUCTURALIST', 'ネクサス構造家'],
-    ['LATTICE MASTER', 'ラティス支配者'],
-    ['ARCHITECT PRIME', 'アーキテクト極意'],
+    ['SYSTEM ARCHITECT', 'Designing foundational knowledge systems'],
+    ['FOUNDATION BUILDER', 'Erecting permanent intellectual pillars'],
+    ['SCHEMA DIRECTOR', 'Governing high-level structural schemas'],
+    ['NEURAL CARTOGRAPHER', 'Mapping deep cognitive architectures'],
+    ['MONOLITH DRAFTER', 'Drafting monumental study frameworks'],
+    ['BI-MILLENNIUM ARCHITECT', 'Two-thousand-hour structural veteran'],
+    ['CITADEL ENGINEER', 'Fortifying unshakeable domain expertise'],
+    ['NEXUS STRUCTURALIST', 'Connecting core theoretical nexuses'],
+    ['LATTICE MASTER', 'Crystal-lattice precision & endurance'],
+    ['ARCHITECT PRIME', 'Chief Architect of Division 06'],
   ],
   7: [
-    ['SECTOR OVERSEER', 'セクター監督官'],
-    ['CHRONO WARDEN', 'クロノ監視長'],
-    ['ORBITAL DIRECTOR', '軌道統括ディレクター'],
-    ['TRI-KILO WATCHER', '三千時間ウォッチャー'],
-    ['TRI-MILLENNIUM OVERSEER', '三千時間オーバーシア'],
-    ['ZENITH CUSTODIAN', 'ゼニス管理官'],
-    ['OBELISK GUARDIAN', 'オベリスク守護官'],
-    ['DOMINION INSPECTOR', 'ドミニオン検閲官'],
-    ['GRAND ARBITER', 'グランド裁定者'],
-    ['OVERSEER PRIME', 'オーバーシア極意'],
+    ['SECTOR OVERSEER', 'Overseeing multi-year telemetry archives'],
+    ['CHRONO WARDEN', 'Custodian of thousands of focused hours'],
+    ['ORBITAL DIRECTOR', 'Directing macro-scale learning campaigns'],
+    ['TRI-KILO WATCHER', 'Approaching the 3,000-hour horizon'],
+    ['TRI-MILLENNIUM OVERSEER', 'Three-thousand-hour command authority'],
+    ['ZENITH CUSTODIAN', 'Operating at peak cognitive altitude'],
+    ['OBELISK GUARDIAN', 'Standing sentinel over vast archives'],
+    ['DOMINION INSPECTOR', 'Supreme oversight of all study units'],
+    ['GRAND ARBITER', 'Unquestioned mastery of self-discipline'],
+    ['OVERSEER PRIME', 'High Overseer of Division 07'],
   ],
   8: [
-    ['AEGIS SENTINEL', 'イージス守護騎士'],
-    ['TETRA-KILO BASTION', '四千時間バスティオン'],
-    ['SOLAR WARDEN', 'ソーラー守護長'],
-    ['VOID SENTINEL', 'ヴォイド監視騎士'],
-    ['ASTRAL PALADIN', 'アストラル聖騎士'],
-    ['CHRONO TEMPLAR', 'クロノ・テンプラー'],
-    ['PENTA-MILLENNIUM TITAN', '五千時間タイタン'],
-    ['CELESTIAL KEEPER', 'セレスティアル番人'],
-    ['IMMORTAL ENGINE', '不滅の動力炉'],
-    ['SENTINEL PRIME', 'センチネル極意'],
+    ['AEGIS SENTINEL', 'Unyielding guardian of deep focus'],
+    ['TETRA-KILO BASTION', 'Four-thousand-hour fortress of habit'],
+    ['SOLAR WARDEN', 'Relentless daily illumination & output'],
+    ['VOID SENTINEL', 'Unmoved by distraction or entropy'],
+    ['ASTRAL PALADIN', 'Champion of long-horizon dedication'],
+    ['CHRONO TEMPLAR', 'Sworn keeper of the perpetual clock'],
+    ['PENTA-MILLENNIUM TITAN', 'Five-thousand-hour mythic endurance'],
+    ['CELESTIAL KEEPER', 'Sustaining stellar-grade consistency'],
+    ['IMMORTAL ENGINE', 'Perpetual-motion intellectual reactor'],
+    ['SENTINEL PRIME', 'Supreme Sentinel of Division 08'],
   ],
   9: [
-    ['HIGH SOVEREIGN', 'ハイ・ソヴリン'],
-    ['CROWN OF CADENCE', 'ケイデンスの王冠'],
-    ['HEXA-MILLENNIUM LORD', '六千時間の覇王'],
-    ['EMPYREAN REGENT', '天上の摂政'],
-    ['IMPERIAL ARCHON', 'インペリアル執政官'],
-    ['ASTRAL MONARCH', '星界の君主'],
-    ['SEVEN-THOUSAND HORIZON', '七千時間ホライズン'],
-    ['HEPTA-MILLENNIUM SOVEREIGN', '七千時間の絶対王者'],
-    ['ETERNAL DYNASTY', '久遠の王朝'],
-    ['SOVEREIGN PRIME', 'ソヴリン極意'],
+    ['HIGH SOVEREIGN', 'Ascended to Sovereign-class telemetry'],
+    ['CROWN OF CADENCE', 'Crowned in unbroken daily discipline'],
+    ['HEXA-MILLENNIUM LORD', 'Six-thousand-hour sovereign dominion'],
+    ['EMPYREAN REGENT', 'Ruling the highest altitudes of focus'],
+    ['IMPERIAL ARCHON', ' Imperial-grade analytical command'],
+    ['ASTRAL MONARCH', 'Monarch of the deep-archive realm'],
+    ['SEVEN-THOUSAND HORIZON', 'Standing at the gates of 7,000 hours'],
+    ['HEPTA-MILLENNIUM SOVEREIGN', 'Legendary 7,000-hour absolute sovereign'],
+    ['ETERNAL DYNASTY', 'Forging an enduring intellectual legacy'],
+    ['SOVEREIGN PRIME', 'Paramount Sovereign of Division 09'],
   ],
   10: [
-    ['MONOLITH ASCENDANT', 'モノリス覚醒者'],
-    ['OCTA-MILLENNIUM TITAN', '八千時間の巨神'],
-    ['SINGULARITY CORE', 'シンギュラリティ核'],
-    ['COSMIC ARCHITECT', '宇宙構造設計神'],
-    ['TIMELESS ORACLE', '無窮のオラクル'],
-    ['NONA-MILLENNIUM DEITY', '九千時間の神域'],
-    ['AKASHIC RECORDER', 'アカシック記録神'],
-    ['DIMENSION WEAVER', '次元紡ぎの超越者'],
-    ['APEX OF ETERNITY', '永劫の頂'],
-    ['OMEGA MONOLITH', '一万時間の究極モノリス'],
+    ['MONOLITH ASCENDANT', 'Transcending mortal study thresholds'],
+    ['OCTA-MILLENNIUM TITAN', 'Eight-thousand-hour colossal archive'],
+    ['SINGULARITY CORE', 'Infinite density of focused execution'],
+    ['COSMIC ARCHITECT', 'Shaping universal knowledge structures'],
+    ['TIMELESS ORACLE', 'Beyond the constraints of ordinary time'],
+    ['NONA-MILLENNIUM DEITY', 'Nine-thousand-hour pantheon status'],
+    ['AKASHIC RECORDER', 'Inscribed in the permanent telemetry ledger'],
+    ['DIMENSION WEAVER', 'Weaving mastery across all disciplines'],
+    ['APEX OF ETERNITY', 'The final steps before the 10,000h summit'],
+    ['OMEGA MONOLITH', 'Ultimate 10,000-hour Monolith perfection'],
   ],
 };
 
 // Special exact hour milestones to highlight
-const SPECIAL_HOUR_OVERRIDES: Record<number, { title: string; jp: string }> = {
-  0: { title: 'ZERO-HOUR INITIALIZATION', jp: '0時間・観測システム初期起動' },
-  1: { title: 'FIRST IGNITION // 1H', jp: '最初の1時間達成・点火完了' },
-  10: { title: 'DECA-HOUR LOCK // 10H', jp: '10時間達成・初期軌道ロック' },
-  50: { title: 'HALF-CENTURY CORE // 50H', jp: '50時間達成・半百の核' },
-  100: { title: 'CENTURION MILESTONE // 100H', jp: '100時間達成・百時間の金字塔' },
-  200: { title: 'BI-CENTURY OPERATOR // 200H', jp: '200時間達成・二百時間の証' },
-  300: { title: 'TRI-CENTURY VANGUARD // 300H', jp: '300時間達成・三百時間の熟練' },
-  500: { title: 'HALF-MILLENNIUM TITAN // 500H', jp: '500時間達成・五百時間の覇者' },
-  750: { title: 'THREE-QUARTER KILO // 750H', jp: '750時間達成・千時間への視界' },
-  1000: { title: 'MILLENNIUM ASCENSION // 1,000H', jp: '1000時間達成・千時間の大台突破' },
-  1500: { title: 'SESQUI-MILLENNIUM // 1,500H', jp: '1500時間達成・千五百時間の礎' },
-  2000: { title: 'BI-MILLENNIUM ARCHITECT // 2,000H', jp: '2000時間達成・二千時間の巨匠' },
-  2500: { title: 'QUARTER-MYRIAD // 2,500H', jp: '2500時間達成・四分の一万時間' },
-  3000: { title: 'TRI-MILLENNIUM OVERSEER // 3,000H', jp: '3000時間達成・三千時間の統治者' },
-  4000: { title: 'TETRA-MILLENNIUM SENTINEL // 4,000H', jp: '4000時間達成・四千時間の不撓' },
-  5000: { title: 'PENTA-MILLENNIUM MYTH // 5,000H', jp: '5000時間達成・五千時間の神話' },
-  6000: { title: 'HEXA-MILLENNIUM EMPEROR // 6,000H', jp: '6000時間達成・六千時間の覇帝' },
-  7000: { title: 'HEPTA-MILLENNIUM SOVEREIGN // 7,000H', jp: '7000時間達成・七千時間の絶対王者' },
-  8000: { title: 'OCTA-MILLENNIUM MONOLITH // 8,000H', jp: '8000時間達成・八千時間の巨塔' },
-  9000: { title: 'NONA-MILLENNIUM DEITY // 9,000H', jp: '9000時間達成・九千時間の神域' },
-  10000: { title: 'OMEGA MONOLITH // 10,000H', jp: '10000時間達成・究極のモノリス' },
+const SPECIAL_HOUR_OVERRIDES: Record<number, { title: string; sub: string }> = {
+  0: { title: 'ZERO-HOUR INITIALIZATION', sub: '0H MILESTONE // Telemetry archive initialized' },
+  1: { title: 'FIRST IGNITION // 1H', sub: '1H MILESTONE // First hour committed to archive' },
+  10: { title: 'DECA-HOUR LOCK // 10H', sub: '10H MILESTONE // Initial orbital lock achieved' },
+  50: { title: 'HALF-CENTURY CORE // 50H', sub: '50H MILESTONE // Half-century foundation complete' },
+  100: { title: 'CENTURION MILESTONE // 100H', sub: '100H MILESTONE // Triple-digit telemetry unlocked' },
+  200: { title: 'BI-CENTURY OPERATOR // 200H', sub: '200H MILESTONE // Two hundred hours of verified focus' },
+  300: { title: 'TRI-CENTURY VANGUARD // 300H', sub: '300H MILESTONE // Three hundred hours archived' },
+  500: { title: 'HALF-MILLENNIUM TITAN // 500H', sub: '500H MILESTONE // Five hundred hours of discipline' },
+  750: { title: 'THREE-QUARTER KILO // 750H', sub: '750H MILESTONE // Approaching the 1,000h threshold' },
+  1000: { title: 'MILLENNIUM ASCENSION // 1,000H', sub: '1,000H MILESTONE // Four-digit telemetry landmark' },
+  1500: { title: 'SESQUI-MILLENNIUM // 1,500H', sub: '1,500H MILESTONE // Fifteen hundred hours committed' },
+  2000: { title: 'BI-MILLENNIUM ARCHITECT // 2,000H', sub: '2,000H MILESTONE // Two thousand hours of mastery' },
+  2500: { title: 'QUARTER-MYRIAD // 2,500H', sub: '2,500H MILESTONE // Quarter of ten thousand hours' },
+  3000: { title: 'TRI-MILLENNIUM OVERSEER // 3,000H', sub: '3,000H MILESTONE // Three thousand hours archived' },
+  4000: { title: 'TETRA-MILLENNIUM SENTINEL // 4,000H', sub: '4,000H MILESTONE // Four thousand hours of grit' },
+  5000: { title: 'PENTA-MILLENNIUM MYTH // 5,000H', sub: '5,000H MILESTONE // Halfway to the 10,000h Monolith' },
+  6000: { title: 'HEXA-MILLENNIUM EMPEROR // 6,000H', sub: '6,000H MILESTONE // Six thousand hours of sovereignty' },
+  7000: { title: 'HEPTA-MILLENNIUM SOVEREIGN // 7,000H', sub: '7,000H MILESTONE // Seven thousand hours — Supreme Veteran' },
+  8000: { title: 'OCTA-MILLENNIUM MONOLITH // 8,000H', sub: '8,000H MILESTONE // Eight thousand hours of transcendence' },
+  9000: { title: 'NONA-MILLENNIUM DEITY // 9,000H', sub: '9,000H MILESTONE // Nine thousand hours — Final Horizon' },
+  10000: { title: 'OMEGA MONOLITH // 10,000H', sub: '10,000H MILESTONE // The Ultimate Telemetry Pinnacle' },
 };
 
 function build500ClearanceLevels(): ClearanceLevel[] {
-  // Hour anchors at every 50th level (0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500)
-  // Designed so 0h..75h has 50 ranks (~1.5h/rank), 75h..200h has 50 ranks (2.5h/rank),
-  // 200h..450h (5h/rank), 450h..850h (8h/rank), 850h..1500h (13h/rank),
-  // 1500h..2400h (18h/rank), 2400h..3600h (24h/rank), 3600h..5200h (32h/rank),
-  // 5200h..7200h (40h/rank -> hits 7,000h at LV.445!), 7200h..10000h (56h/rank)
   const divisionHourBounds: Array<[number, number]> = [
     [0, 75],       // DIV 1: LV 1..50
     [75, 200],     // DIV 2: LV 51..100
@@ -219,12 +214,12 @@ function build500ClearanceLevels(): ClearanceLevel[] {
     [1500, 2400],  // DIV 6: LV 251..300
     [2400, 3600],  // DIV 7: LV 301..350
     [3600, 5200],  // DIV 8: LV 351..400
-    [5200, 7200],  // DIV 9: LV 401..450 (LV.445 = 7,000H!)
+    [5200, 7200],  // DIV 9: LV 401..450 (LV.445 = 7,000H)
     [7200, 10000], // DIV 10: LV 451..500
   ];
 
   const romanTiers = ['I', 'II', 'III', 'IV', 'V'];
-  const jpTierLabels = ['壱式', '弐式', '参式', '肆式', '伍式・極'];
+  const tierLabels = ['TIER I', 'TIER II', 'TIER III', 'TIER IV', 'TIER V // PRIME'];
   const result: ClearanceLevel[] = [];
 
   for (let divIdx = 1; divIdx <= 10; divIdx++) {
@@ -239,9 +234,7 @@ function build500ClearanceLevels(): ClearanceLevel[] {
       if (level === 1) {
         reqHours = 0;
       } else if (divIdx === 1) {
-        // LV 1..50: 0h to 75h, smooth 1h-2h steps
         reqHours = Math.round((offset / 49) * 75);
-        // ensure strictly increasing at least +1h from previous
         const prevH = result[result.length - 1].requiredHours;
         if (reqHours <= prevH) reqHours = prevH + 1;
       } else {
@@ -249,24 +242,23 @@ function build500ClearanceLevels(): ClearanceLevel[] {
         reqHours = Math.round(startH + (offset + 1) * step);
       }
 
-      // Snap near major round milestones if closest
       const archIdx = Math.floor(offset / 5);
       const gradeIdx = offset % 5;
-      const [archTitle, archJp] = archetypes[archIdx];
+      const [archTitle, archDesc] = archetypes[archIdx];
       const roman = romanTiers[gradeIdx];
-      const jpGrade = jpTierLabels[gradeIdx];
+      const tierStr = tierLabels[gradeIdx];
 
       const override = SPECIAL_HOUR_OVERRIDES[reqHours];
       const title = override ? override.title : `${archTitle} ${roman}`;
-      const jpSubtitle = override
-        ? override.jp
-        : `${div.jpName} // ${archJp}（${jpGrade}）`;
+      const subtitle = override
+        ? override.sub
+        : `${div.sectorName} (${tierStr}) — ${archDesc}`;
 
       result.push({
         level,
         requiredHours: reqHours,
         title,
-        jpSubtitle,
+        subtitle,
         division: div.name,
         divisionIndex: divIdx,
         color: div.color,
@@ -288,7 +280,7 @@ export interface UserClearanceStatus {
   levelSpanHours: number;
   progressPct: number;
   hoursRemainingToNext: number;
-  subPhase: number; // 1..5 stars/pips within current level to prevent monotony
+  subPhase: number; // 1..5 pips within current level
   hoursToNextSubPhase: number;
   unlockedCount: number;
   totalRanks: number;
@@ -696,7 +688,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 };
 
 // ==========================================
-// 3. CLEARANCE BROWSER PANEL (ALL 500 LEVELS)
+// 3. CLEARANCE BROWSER PANEL (ALL 500 LEVELS // PURE ENGLISH)
 // ==========================================
 
 interface ClearanceBrowserProps {
@@ -728,7 +720,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
         const matchLv = `lv.${lvl.level}`.includes(q) || String(lvl.level) === q;
         const matchHours = `${lvl.requiredHours}h`.includes(q);
         const matchTitle =
-          lvl.title.toLowerCase().includes(q) || lvl.jpSubtitle.toLowerCase().includes(q);
+          lvl.title.toLowerCase().includes(q) || lvl.subtitle.toLowerCase().includes(q);
         return matchLv || matchHours || matchTitle;
       }
       return true;
@@ -736,12 +728,12 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
   }, [selectedDiv, filterMode, searchQuery, clearance.totalHours]);
 
   return (
-    <div className="space-y-4 font-mono text-xs">
+    <div className="space-y-3.5 font-mono text-xs flex flex-col h-full">
       {/* Current Clearance Summary Card */}
       <div
-        className={`p-4 border ${borderCol} ${
+        className={`p-3.5 border ${borderCol} ${
           isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'
-        } space-y-3 relative overflow-hidden`}
+        } space-y-2.5 shrink-0`}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center space-x-2.5">
@@ -758,10 +750,9 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                   {clearance.current.division}
                 </span>
               </div>
-              <div className={`text-[11px] font-sans ${textMuted}`}>
-                {clearance.current.jpSubtitle} — 累計{' '}
-                <strong className="text-emerald-400">{clearance.totalHours}h</strong> 達成 (
-                {clearance.unlockedCount} / {clearance.totalRanks} 称号解放済)
+              <div className={`text-[10px] ${textMuted}`}>
+                TOTAL ARCHIVED: <strong className="text-emerald-400">{clearance.totalHours}H</strong> //{' '}
+                {clearance.unlockedCount} OF {clearance.totalRanks} CLEARANCE RANKS UNLOCKED
               </div>
             </div>
           </div>
@@ -785,8 +776,8 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
             </div>
             {clearance.next && (
               <div className={`text-[10px] mt-0.5 ${textMuted}`}>
-                Next Rank in{' '}
-                <span className="text-emerald-400 font-bold">{clearance.hoursRemainingToNext}h</span>
+                NEXT RANK IN{' '}
+                <span className="text-emerald-400 font-bold">{clearance.hoursRemainingToNext}H</span>
               </div>
             )}
           </div>
@@ -797,18 +788,18 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
           <div className="flex justify-between text-[10px]">
             <span>
               CURRENT: LV.{String(clearance.current.level).padStart(3, '0')} (
-              {clearance.current.requiredHours}h)
+              {clearance.current.requiredHours}H)
             </span>
             {clearance.next ? (
               <span>
                 NEXT: LV.{String(clearance.next.level).padStart(3, '0')} {clearance.next.title} (
-                {clearance.next.requiredHours}h) — {clearance.progressPct}%
+                {clearance.next.requiredHours}H) — {clearance.progressPct}%
               </span>
             ) : (
               <span className="text-emerald-400 font-bold">MAX CLEARANCE ACHIEVED (10,000H+)</span>
             )}
           </div>
-          <div className={`w-full h-2 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
+          <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
             <div
               className="h-full transition-all duration-500"
               style={{
@@ -821,13 +812,13 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
       </div>
 
       {/* Search & Mode Filter */}
-      <div className="space-y-2">
+      <div className="space-y-2 shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className={`flex items-center border ${borderCol} px-2.5 py-1 flex-1 min-w-[180px]`}>
+          <div className={`flex items-center border ${borderCol} px-2.5 py-1 flex-1 min-w-[170px]`}>
             <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
             <input
               type="text"
-              placeholder="Search 500 ranks (e.g. 7000h, SOVEREIGN, 王者)..."
+              placeholder="Search 500 ranks (e.g. 7000h, SOVEREIGN, ARCHITECT)..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -841,7 +832,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
             {(
               [
                 { id: 'all', label: 'ALL' },
-                { id: 'milestones', label: 'KEY MILESTONES' },
+                { id: 'milestones', label: 'MILESTONES' },
                 { id: 'unlocked', label: 'UNLOCKED' },
                 { id: 'locked', label: 'LOCKED' },
               ] as const
@@ -869,13 +860,13 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
           <button
             type="button"
             onClick={() => setSelectedDiv(null)}
-            className={`px-2 py-1 text-[10px] border cursor-pointer ${
+            className={`px-2 py-0.5 text-[10px] border cursor-pointer ${
               selectedDiv === null
                 ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
                 : `${borderCol} ${textMuted}`
             }`}
           >
-            ALL 500 RANKS
+            ALL (500)
           </button>
           {CLEARANCE_DIVISIONS.map((div) => {
             const isSelected = selectedDiv === div.index;
@@ -884,17 +875,15 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                 key={div.code}
                 type="button"
                 onClick={() => setSelectedDiv(isSelected ? null : div.index)}
-                title={`${div.jpName} (LV.${div.minLevel}–${div.maxLevel} // ${div.minHours}h–${div.maxHours}h)`}
-                className={`px-2 py-1 text-[10px] border flex items-center space-x-1 cursor-pointer ${
+                title={`${div.sectorName} (LV.${div.minLevel}–${div.maxLevel} // ${div.minHours}H–${div.maxHours}H)`}
+                className={`px-2 py-0.5 text-[10px] border flex items-center space-x-1 cursor-pointer ${
                   isSelected
                     ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
                     : `${borderCol} ${textMuted} hover:opacity-100`
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: div.color }} />
-                <span>
-                  {div.name} ({div.minHours}h–{div.maxHours}h)
-                </span>
+                <span>{div.name}</span>
               </button>
             );
           })}
@@ -903,7 +892,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
 
       {/* Scrollable 500 Ranks List */}
       <div
-        className={`max-h-80 overflow-y-auto border ${borderCol} divide-y ${
+        className={`flex-1 min-h-[220px] overflow-y-auto border ${borderCol} divide-y ${
           isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'
         }`}
       >
@@ -949,7 +938,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                     )}
                   </div>
                   <div className={`text-[10px] font-sans truncate ${textMuted}`}>
-                    [{lvl.division}] {lvl.jpSubtitle}
+                    [{lvl.division}] {lvl.subtitle}
                   </div>
                 </div>
               </div>
@@ -962,7 +951,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                   </div>
                   {!unlocked && (
                     <div className={`text-[9px] ${textMuted}`}>
-                      あと {(lvl.requiredHours - clearance.totalHours).toFixed(1)}h
+                      -{(lvl.requiredHours - clearance.totalHours).toFixed(1)}H REQ
                     </div>
                   )}
                 </div>
