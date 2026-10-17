@@ -77,7 +77,22 @@ class CategorySerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate_code(self, value):
-        return value.strip().upper()
+        cleaned = value.strip().upper()
+        if not cleaned:
+            raise serializers.ValidationError('Category code cannot be empty.')
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            qs = Category.objects.filter(user=request.user, code__iexact=cleaned)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(f'Category with code [{cleaned}] already exists.')
+        return cleaned
+
+    def validate_monthly_target_hours(self, value):
+        if value < 1 or value > 744:
+            raise serializers.ValidationError('Monthly target hours must be between 1 and 744.')
+        return value
 
 
 # ==========================================
@@ -118,6 +133,11 @@ class StudyLogSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         )
+
+    def validate_duration_minutes(self, value):
+        if value < 1 or value > 1440:
+            raise serializers.ValidationError('Duration must be between 1 and 1440 minutes (24 hours).')
+        return value
 
     def validate_category(self, category):
         # Ensure user can only link logs to their own categories
