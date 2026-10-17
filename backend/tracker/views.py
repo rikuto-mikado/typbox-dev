@@ -1,6 +1,7 @@
 from datetime import timedelta
 from django.contrib.auth import get_user_model
-from django.db.models import Sum
+from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
@@ -107,7 +108,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
     permission_classes = (permissions.IsAuthenticated,)
 
     def get_queryset(self):
-        queryset = StudyLog.objects.filter(user=self.request.user)
+        queryset = StudyLog.objects.filter(user=self.request.user).select_related('category')
         # Optional query param filters
         category_id = self.request.query_params.get('category')
         if category_id:
@@ -156,31 +157,41 @@ class HubTelemetryView(APIView):
                 }
             )
 
-        now = timezone.now().date()
-        seven_days_ago = now - timedelta(days=7)
+        now = timezone.localdate()
+        # Inclusive 7-day window (today + 6 previous days = 7 days total, matching frontend)
+        seven_days_ago = now - timedelta(days=6)
         first_day_of_month = now.replace(day=1)
 
-        user_logs = StudyLog.objects.filter(user=user)
-        public_logs = user_logs.filter(is_public_to_hub=True)
+        public_logs = StudyLog.objects.filter(user=user, is_public_to_hub=True).select_related('category')
 
-        total_min = user_logs.aggregate(total=Sum('duration_minutes'))['total'] or 0
-        weekly_min = user_logs.filter(date__gte=seven_days_ago).aggregate(total=Sum('duration_minutes'))['total'] or 0
-        monthly_min = user_logs.filter(date__gte=first_day_of_month).aggregate(total=Sum('duration_minutes'))['total'] or 0
+        aggregates = public_logs.aggregate(
+            total_min=Coalesce(Sum('duration_minutes'), 0),
+            weekly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=seven_days_ago)), 0),
+            monthly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=first_day_of_month)), 0),
+        )
+        total_min = aggregates['total_min']
+        weekly_min = aggregates['weekly_min']
+        monthly_min = aggregates['monthly_min']
 
-        # Calculate category hours for this month
-        categories = Category.objects.filter(user=user)
-        cat_data = []
-        for cat in categories:
-            cat_month_min = user_logs.filter(
-                category=cat,
-                date__gte=first_day_of_month
-            ).aggregate(total=Sum('duration_minutes'))['total'] or 0
-            cat_data.append({
+        # Calculate category hours for this month in a single annotated query
+        categories = Category.objects.filter(user=user).annotate(
+            month_min=Coalesce(
+                Sum(
+                    'logs__duration_minutes',
+                    filter=Q(logs__is_public_to_hub=True, logs__date__gte=first_day_of_month)
+                ),
+                0
+            )
+        )
+        cat_data = [
+            {
                 'code': cat.code,
                 'name': cat.name,
-                'monthly_hours': round(cat_month_min / 60, 1),
+                'monthly_hours': round(cat.month_min / 60, 1),
                 'target_hours': cat.monthly_target_hours,
-            })
+            }
+            for cat in categories
+        ]
 
         recent_public = public_logs.order_by('-date', '-created_at')[:5]
         recent_logs_data = [

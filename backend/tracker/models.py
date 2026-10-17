@@ -52,7 +52,7 @@ class StudyLog(models.Model):
         blank=True,
         related_name='logs'
     )
-    date = models.DateField(default=timezone.now)
+    date = models.DateField(default=timezone.localdate)
     duration_minutes = models.PositiveIntegerField(default=60)
     topic = models.CharField(max_length=255, blank=True)
     is_public_to_hub = models.BooleanField(

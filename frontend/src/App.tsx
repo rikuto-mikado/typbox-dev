@@ -11,10 +11,8 @@ import {
   Sun,
   LogIn,
   LogOut,
-  Share2,
   Trash2,
   Terminal,
-  ArrowUpRight,
   Lock,
   Eye,
   EyeOff,
@@ -79,25 +77,45 @@ const ACCENT_PALETTE = [
   { name: 'Purple', hex: '#a855f7' },
   { name: 'Rose', hex: '#f43f5e' },
   { name: 'Cyan', hex: '#06b6d4' },
-  // Row 2: Distinct Bright & Pastel Accents
+  // Row 2: Original Distinct Bright & Pastel Accents
   { name: 'Lime', hex: '#84cc16' },
   { name: 'Sky', hex: '#7dd3fc' },
   { name: 'Yellow', hex: '#fde047' },
   { name: 'Lavender', hex: '#c4b5fd' },
   { name: 'Pink', hex: '#f472b6' },
   { name: 'Orange', hex: '#ea580c' },
-  // Row 3: Distinct Deep, Earthy & Neutral Tones
+  // Row 3: Original Distinct Deep, Earthy & Neutral Tones
   { name: 'Forest', hex: '#166534' },
   { name: 'Navy', hex: '#1e3a8a' },
   { name: 'Bronze', hex: '#92400e' },
   { name: 'Crimson', hex: '#991b1b' },
   { name: 'Teal', hex: '#115e59' },
   { name: 'Slate', hex: '#64748b' },
+  // Row 4: High-Clarity Vivid & Electric Spectrum
+  { name: 'Mint', hex: '#2dd4bf' },
+  { name: 'Cobalt', hex: '#2563eb' },
+  { name: 'Tangerine', hex: '#fb923c' },
+  { name: 'Indigo', hex: '#6366f1' },
+  { name: 'Fuchsia', hex: '#d946ef' },
+  { name: 'Scarlet', hex: '#ef4444' },
+  // Row 5: Soft Architectural Pastels & Tints
+  { name: 'Pistachio', hex: '#bef264' },
+  { name: 'Aquamarine', hex: '#67e8f9' },
+  { name: 'Peach', hex: '#fdba74' },
+  { name: 'Periwinkle', hex: '#93c5fd' },
+  { name: 'Blush', hex: '#fda4af' },
+  { name: 'Champagne', hex: '#fef08a' },
+  // Row 6: Rich Earthy, Jewel & Industrial Monochrome
+  { name: 'Olive', hex: '#4d7c0f' },
+  { name: 'Plum', hex: '#6b21a8' },
+  { name: 'Burgundy', hex: '#881337' },
+  { name: 'Ochre', hex: '#ca8a04' },
+  { name: 'Coffee', hex: '#78350f' },
+  { name: 'Silver', hex: '#a1a1aa' },
 ];
 
 const DICT = {
   subtitle: 'QUANTIFIED STUDY & ARCHIVE',
-  hubStatus: 'HUB SYNC: READY',
   signIn: 'SIGN IN',
   signOut: 'SIGN OUT',
   totalHours: 'TOTAL LOGGED',
@@ -111,7 +129,6 @@ const DICT = {
   durationMin: 'DURATION (MIN)',
   date: 'DATE',
   topicMemo: 'TOPIC / LOG NOTE',
-  publicToPortfolio: 'Expose to Portfolio Hub (Public)',
   saveLog: 'COMMIT LOG',
   categoriesTitle: 'CATEGORY REGISTRY',
   addCategory: 'NEW CATEGORY',
@@ -123,7 +140,6 @@ const DICT = {
   weeklyView: 'WEEKLY (7D)',
   monthlyView: 'MONTHLY (30D)',
   recentLogs: 'CHRONOLOGICAL LOG STREAM',
-  hubPreviewBtn: 'INSPECT HUB PAYLOAD',
   noLogs: 'No study logs recorded yet.',
 };
 
@@ -186,10 +202,17 @@ const ui = {
   copyright: '© 2026 Rikuto Mikado. All rights reserved.',
 };
 
+const formatLocalDateString = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const getRecentDateString = (daysAgo: number): string => {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
-  return d.toISOString().split('T')[0];
+  return formatLocalDateString(d);
 };
 
 const THEME_STORAGE_KEY = 'typbox_theme';
@@ -286,8 +309,72 @@ export default function App() {
   const [weeklyOffset, setWeeklyOffset] = useState<number>(0); // weeks ago (0 = current week)
   const [monthlyOffset, setMonthlyOffset] = useState<number>(0); // months ago (0 = current month)
 
-  // Hub Modal
-  const [showHubModal, setShowHubModal] = useState<boolean>(false);
+  // Telemetry Cadence Matrix State (7 rows x dynamic W columns, auto-expanding in 1x/2x blocks)
+  const [matrixColorMode, setMatrixColorMode] = useState<'intensity' | 'binary'>('intensity');
+  const [matrixSpanMultiplier, setMatrixSpanMultiplier] = useState<1 | 2>(1);
+  const [matrixPageOffset, setMatrixPageOffset] = useState<number>(0); // 0 = latest block
+  const [baseFitWeeks, setBaseFitWeeks] = useState<number>(28);
+  const [hoveredMatrixCell, setHoveredMatrixCell] = useState<{
+    date: string;
+    minutes: number;
+    count: number;
+    topics: string[];
+  } | null>(null);
+  const matrixGridContainerRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = matrixGridContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width;
+        if (w > 100) {
+          // Each column is 13px wide + 4px gap = 17px
+          const cols = Math.max(12, Math.min(52, Math.floor((w + 4) / 17)));
+          setBaseFitWeeks(cols);
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // System Chronometer (Real-Time Digital Clock) State
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(tick);
+  }, []);
+
+  const clockReadout = useMemo(() => {
+    const hh = String(currentTime.getHours()).padStart(2, '0');
+    const mm = String(currentTime.getMinutes()).padStart(2, '0');
+    const ss = String(currentTime.getSeconds()).padStart(2, '0');
+    const yyyy = currentTime.getFullYear();
+    const mo = String(currentTime.getMonth() + 1).padStart(2, '0');
+    const dd = String(currentTime.getDate()).padStart(2, '0');
+    const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    const dayStr = dayNames[currentTime.getDay()];
+
+    const offsetMin = -currentTime.getTimezoneOffset();
+    const sign = offsetMin >= 0 ? '+' : '-';
+    const absMin = Math.abs(offsetMin);
+    const tzH = String(Math.floor(absMin / 60)).padStart(2, '0');
+    const tzM = String(absMin % 60).padStart(2, '0');
+    const tzLabel = `UTC${sign}${tzH}:${tzM}`;
+
+    return {
+      hh,
+      mm,
+      ss,
+      dateDot: `${yyyy}.${mo}.${dd}`,
+      dayStr,
+      tzLabel,
+    };
+  }, [currentTime]);
 
   // User Dropdown & Account Deletion State
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
@@ -312,21 +399,41 @@ export default function App() {
   const [logDate, setLogDate] = useState<string>(getRecentDateString(0));
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
   const [topic, setTopic] = useState<string>('');
-  const isPublicToHub = true;
 
-  // Stopwatch State
+  // Log Edit State
+  const [editingLogId, setEditingLogId] = useState<string | number | null>(null);
+  const [editLogCatId, setEditLogCatId] = useState<string | number>('');
+  const [editLogDate, setEditLogDate] = useState<string>('');
+  const [editLogDuration, setEditLogDuration] = useState<number>(60);
+  const [editLogTopic, setEditLogTopic] = useState<string>('');
+
+  // Drift-free Stopwatch State
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  const timerStartTimestampRef = React.useRef<number | null>(null);
+  const accumulatedSecondsRef = React.useRef<number>(0);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (isRunning) {
-      interval = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
-      }, 1000);
+    if (!isRunning) {
+      timerStartTimestampRef.current = null;
+      return;
     }
+    timerStartTimestampRef.current = Date.now();
+    const baseSec = accumulatedSecondsRef.current;
+
+    const interval = setInterval(() => {
+      if (timerStartTimestampRef.current !== null) {
+        const deltaSec = Math.floor((Date.now() - timerStartTimestampRef.current) / 1000);
+        setElapsedSeconds(baseSec + deltaSec);
+      }
+    }, 250);
+
     return () => {
-      if (interval) clearInterval(interval);
+      if (timerStartTimestampRef.current !== null) {
+        const deltaSec = Math.floor((Date.now() - timerStartTimestampRef.current) / 1000);
+        accumulatedSecondsRef.current = baseSec + deltaSec;
+      }
+      clearInterval(interval);
     };
   }, [isRunning]);
 
@@ -508,7 +615,7 @@ export default function App() {
         date: logDate,
         duration_minutes: Number(finalMinutes),
         topic: topic.trim() || 'Focused study session',
-        is_public_to_hub: isPublicToHub,
+        is_public_to_hub: true,
       });
 
       const cat = categories.find((c) => String(c.id) === String(selectedCatId));
@@ -521,7 +628,7 @@ export default function App() {
         date: logDate,
         durationMinutes: Number(finalMinutes),
         topic: topic.trim() || 'Focused study session',
-        isPublicToHub,
+        isPublicToHub: true,
         createdAt: new Date().toISOString(),
       };
 
@@ -530,10 +637,65 @@ export default function App() {
       if (inputMode === 'timer') {
         setIsRunning(false);
         setElapsedSeconds(0);
+        accumulatedSecondsRef.current = 0;
+        timerStartTimestampRef.current = null;
       }
     } catch (err: unknown) {
       const error = err as Error;
       alert(`Error saving log: ${error.message}`);
+    }
+  };
+
+  const handleStartEditLog = (log: StudyLog) => {
+    setEditingLogId(log.id);
+    setEditLogCatId(log.categoryId ?? (categories[0]?.id ?? ''));
+    setEditLogDate(log.date);
+    setEditLogDuration(log.durationMinutes);
+    setEditLogTopic(log.topic);
+  };
+
+  const handleCancelEditLog = () => {
+    setEditingLogId(null);
+  };
+
+  const handleUpdateLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || editingLogId === null) return;
+    if (!editLogCatId || editLogDuration <= 0) return;
+
+    const updatedTopic = editLogTopic.trim() || 'Focused study session';
+    const updatedDuration = Number(editLogDuration) || 60;
+
+    try {
+      await api.logs.update(editingLogId, {
+        category: editLogCatId,
+        date: editLogDate,
+        duration_minutes: updatedDuration,
+        topic: updatedTopic,
+      });
+
+      const cat = categories.find((c) => String(c.id) === String(editLogCatId));
+      setLogs((prev) =>
+        prev.map((l) =>
+          String(l.id) === String(editingLogId)
+            ? {
+                ...l,
+                categoryId: editLogCatId,
+                categoryCode: cat?.code,
+                categoryName: cat?.name,
+                categoryColor: cat?.color,
+                date: editLogDate,
+                durationMinutes: updatedDuration,
+                durationHours: +(updatedDuration / 60).toFixed(2),
+                topic: updatedTopic,
+              }
+            : l
+        )
+      );
+      setEditingLogId(null);
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(`Failed to update log: ${error.message}`);
     }
   };
 
@@ -686,7 +848,7 @@ export default function App() {
     if (logs.length === 0) return 12;
     const now = new Date();
     const oldest = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
-    const oldestDate = new Date(oldest);
+    const oldestDate = new Date(oldest + 'T00:00:00');
     const diffDays = Math.max(0, Math.ceil((now.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)));
     return Math.max(12, Math.ceil(diffDays / 7));
   }, [logs]);
@@ -695,13 +857,13 @@ export default function App() {
     if (logs.length === 0) return 4;
     const now = new Date();
     const oldest = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
-    const oldestDate = new Date(oldest);
+    const oldestDate = new Date(oldest + 'T00:00:00');
     const diffMonths = (now.getFullYear() - oldestDate.getFullYear()) * 12 + (now.getMonth() - oldestDate.getMonth());
     return Math.max(4, Math.max(0, diffMonths));
   }, [logs]);
 
   const currentMonthPrefix = useMemo(() => {
-    return new Date().toISOString().slice(0, 7); // YYYY-MM
+    return formatLocalDateString(new Date()).slice(0, 7); // YYYY-MM in local timezone
   }, []);
 
   const stats = useMemo(() => {
@@ -813,36 +975,148 @@ export default function App() {
     });
   }, [logs, categories, currentMonthPrefix]);
 
-  // Payload for Django Hub Aggregator
-  const hubPayloadPreview = useMemo(() => {
-    const publicLogs = logs.filter((l) => l.isPublicToHub);
-    return {
-      source: 'typbox.me',
-      timestamp: new Date().toISOString(),
-      user: user?.username || 'anonymous',
-      summary: {
-        total_hours: Number(stats.totalHours),
-        weekly_hours: Number(stats.weeklyHours),
-        monthly_hours: Number(stats.monthlyHours),
-      },
-      categories: monthlyBreakdown.map((c) => ({
-        code: c.code,
-        name: c.name,
-        monthly_hours: c.hours,
-        target_hours: c.monthlyTargetHours,
-      })),
-      recent_public_logs: publicLogs.slice(0, 5).map((l) => {
-        const cat = categories.find((c) => String(c.id) === String(l.categoryId));
-        return {
-          id: l.id,
-          date: l.date,
-          category_code: cat?.code || l.categoryCode || 'MISC',
-          duration_minutes: l.durationMinutes,
-          topic: l.topic,
-        };
-      }),
+  // ==========================================
+  // Telemetry Cadence Matrix (7 Days x Dynamic W Weeks, Epoch Expansion)
+  // ==========================================
+  const cadenceMatrixData = useMemo(() => {
+    const dayMap = new Map<string, { minutes: number; count: number; topics: string[] }>();
+    logs.forEach((l) => {
+      const existing = dayMap.get(l.date) || { minutes: 0, count: 0, topics: [] };
+      existing.minutes += l.durationMinutes;
+      existing.count += 1;
+      if (l.topic && existing.topics.length < 2) {
+        existing.topics.push(l.topic);
+      }
+      dayMap.set(l.date, existing);
+    });
+
+    const getMonday = (d: Date) => {
+      const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const day = copy.getDay();
+      const diff = (day + 6) % 7; // Monday = 0, Sunday = 6
+      copy.setDate(copy.getDate() - diff);
+      return copy;
     };
-  }, [logs, stats, monthlyBreakdown, categories, user]);
+
+    const today = new Date();
+    const todayStr = formatLocalDateString(today);
+    const currentMonday = getMonday(today);
+
+    let originMonday = new Date(currentMonday);
+    if (logs.length > 0) {
+      const oldestStr = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
+      const oldestDate = new Date(oldestStr + 'T00:00:00');
+      if (!isNaN(oldestDate.getTime())) {
+        originMonday = getMonday(oldestDate);
+      }
+    }
+
+    const weeksElapsed = Math.max(
+      0,
+      Math.round((currentMonday.getTime() - originMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+    );
+    const totalActiveWeeks = weeksElapsed + 1;
+
+    // 1 screen capacity = baseFitWeeks; when filled, auto-unlocks next block (or displays 2x capacity when toggled)
+    const unitWeeks = Math.max(12, baseFitWeeks);
+    const totalEpochs = Math.max(1, Math.ceil(totalActiveWeeks / unitWeeks));
+    const displayWeeksCount = unitWeeks * matrixSpanMultiplier;
+
+    const clampedOffset = Math.min(matrixPageOffset, Math.max(0, totalEpochs - 1));
+    const targetEpochIndex = Math.max(0, totalEpochs - 1 - clampedOffset);
+
+    const startWeekIndex =
+      matrixSpanMultiplier === 2
+        ? Math.max(0, (targetEpochIndex - 1) * unitWeeks)
+        : targetEpochIndex * unitWeeks;
+
+    const blockStartMonday = new Date(originMonday);
+    blockStartMonday.setDate(blockStartMonday.getDate() + startWeekIndex * 7);
+
+    const weeks: Array<{
+      weekIndex: number;
+      mondayDate: string;
+      monthLabel: string | null;
+      days: Array<{
+        date: string;
+        dayOfWeek: number;
+        minutes: number;
+        count: number;
+        topics: string[];
+        isFuture: boolean;
+        isToday: boolean;
+      }>;
+    }> = [];
+
+    let lastMonth = -1;
+    let activeDaysInBlock = 0;
+    let totalMinutesInBlock = 0;
+
+    for (let w = 0; w < displayWeeksCount; w++) {
+      const weekMonday = new Date(blockStartMonday);
+      weekMonday.setDate(weekMonday.getDate() + w * 7);
+      const m = weekMonday.getMonth();
+      let monthLabel: string | null = null;
+      if (m !== lastMonth) {
+        if (w === 0 || weekMonday.getDate() <= 7) {
+          monthLabel = weekMonday.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+          lastMonth = m;
+        }
+      }
+
+      const days = [];
+      for (let d = 0; d < 7; d++) {
+        const cellDate = new Date(weekMonday);
+        cellDate.setDate(cellDate.getDate() + d);
+        const dateStr = formatLocalDateString(cellDate);
+        const info = dayMap.get(dateStr);
+        const minutes = info?.minutes || 0;
+        const count = info?.count || 0;
+        const topics = info?.topics || [];
+        const isFuture = dateStr > todayStr;
+        const isToday = dateStr === todayStr;
+
+        if (minutes > 0) {
+          activeDaysInBlock += 1;
+          totalMinutesInBlock += minutes;
+        }
+
+        days.push({
+          date: dateStr,
+          dayOfWeek: d,
+          minutes,
+          count,
+          topics,
+          isFuture,
+          isToday,
+        });
+      }
+
+      weeks.push({
+        weekIndex: startWeekIndex + w,
+        mondayDate: formatLocalDateString(weekMonday),
+        monthLabel,
+        days,
+      });
+    }
+
+    const startLabel = weeks[0]?.days[0]?.date || todayStr;
+    const endLabel = weeks[weeks.length - 1]?.days[6]?.date || todayStr;
+
+    return {
+      weeks,
+      totalEpochs,
+      targetEpochIndex: targetEpochIndex + 1,
+      clampedOffset,
+      unitWeeks,
+      displayWeeksCount,
+      totalActiveWeeks,
+      activeDaysInBlock,
+      totalMinutesInBlock,
+      startLabel,
+      endLabel,
+    };
+  }, [logs, baseFitWeeks, matrixSpanMultiplier, matrixPageOffset]);
 
   // ==========================================
   // Study Insights & Streak Calculations
@@ -868,7 +1142,7 @@ export default function App() {
 
     if (dateSet.has(todayStr) || dateSet.has(yesterdayStr)) {
       while (true) {
-        const dStr = checkDate.toISOString().split('T')[0];
+        const dStr = formatLocalDateString(checkDate);
         if (dateSet.has(dStr)) {
           current++;
           checkDate.setDate(checkDate.getDate() - 1);
@@ -885,8 +1159,8 @@ export default function App() {
       let tempStreak = 1;
       longest = 1;
       for (let i = 1; i < ascDates.length; i++) {
-        const prev = new Date(ascDates[i - 1]);
-        const curr = new Date(ascDates[i]);
+        const prev = new Date(ascDates[i - 1] + 'T00:00:00');
+        const curr = new Date(ascDates[i] + 'T00:00:00');
         const diffTime = curr.getTime() - prev.getTime();
         const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
         if (diffDays === 1) {
@@ -977,7 +1251,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `typbox_telemetry_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `typbox_telemetry_${formatLocalDateString(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -999,7 +1273,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `typbox_telemetry_${new Date().toISOString().split('T')[0]}.json`);
+    link.setAttribute('download', `typbox_telemetry_${formatLocalDateString(new Date())}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1108,17 +1382,6 @@ export default function App() {
 
           {/* Right Controls */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Hub API Payload Inspector Button */}
-            <button
-              onClick={() => setShowHubModal(true)}
-              className={`hidden sm:flex items-center space-x-2 px-3 py-1.5 text-xs font-mono border ${borderCol} hover:border-emerald-500/60 transition-colors`}
-              title="Inspect JSON payload for Django Hub"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>{t.hubStatus}</span>
-              <Share2 className="w-3.5 h-3.5 ml-1 opacity-70" />
-            </button>
-
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
@@ -1174,21 +1437,6 @@ export default function App() {
                       <div className={`text-[11px] truncate ${textMuted}`}>
                         {user.email || 'No email registered'}
                       </div>
-                    </div>
-
-                    {/* Quick Actions */}
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          setShowHubModal(true);
-                        }}
-                        className={`w-full px-4 py-2 text-left flex items-center space-x-2.5 hover:bg-zinc-500/10 transition-colors cursor-pointer`}
-                      >
-                        <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Inspect Hub Payload</span>
-                      </button>
                     </div>
 
                     {/* Sign Out & Destruction */}
@@ -1331,42 +1579,110 @@ export default function App() {
             </div>
           </div>
 
-          <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
+          <div className={`p-5 border-r border-b ${borderCol} ${bgCard} flex flex-col justify-between`}>
             <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
               04 / {t.activeCategories}
             </div>
-            <div className="mt-2 flex items-baseline justify-between">
-              <div className="flex items-baseline space-x-2">
+            <div className="mt-2 flex items-baseline justify-between gap-2 min-w-0">
+              <div className="flex items-baseline space-x-2 shrink-0">
                 <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
                   {user ? categories.length : '0'}
                 </span>
                 <span className={`font-mono text-xs ${textMuted}`}>UNITS</span>
               </div>
-              <div className="flex space-x-1">
-                {categories.map((c) => (
-                  <span
-                    key={c.id}
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: c.color }}
-                    title={c.name}
-                  />
-                ))}
-              </div>
+              {user && categories.length > 0 && (
+                <div className="flex flex-wrap items-center justify-end gap-1 max-w-[96px] sm:max-w-[148px]">
+                  {categories.slice(0, 12).map((c) => (
+                    <span
+                      key={c.id}
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: c.color }}
+                      title={`[${c.code}] ${c.name}`}
+                    />
+                  ))}
+                  {categories.length > 12 && (
+                    <span
+                      className={`font-mono text-[9px] leading-none px-1 py-0.5 border ${borderCol} ${textMuted} shrink-0`}
+                      title={categories
+                        .slice(12)
+                        .map((c) => `[${c.code}] ${c.name}`)
+                        .join(', ')}
+                    >
+                      +{categories.length - 12}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </section>
 
         {/* 2. MAIN WORKSPACE */}
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
-          {/* LEFT COLUMN: Recording & Category Creation */}
+          {/* LEFT COLUMN: Chronometer, Recording & Category Creation */}
           <div className="contents lg:block lg:col-span-5 lg:space-y-8">
+            {/* SYSTEM CHRONOMETER (DIGITAL CLOCK PANEL) */}
+            <div className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
+              <div
+                className={`flex items-center justify-between pb-3 mb-3.5 border-b ${
+                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
+                } font-mono text-[10px] tracking-widest uppercase`}
+              >
+                <div className="flex items-center space-x-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isRunning ? 'bg-amber-400 animate-ping' : 'bg-emerald-500 animate-pulse'
+                    }`}
+                  />
+                  <span className="font-semibold">SYSTEM CHRONOMETER</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {isRunning ? (
+                    <span className="px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold">
+                      REC // ACTIVE
+                    </span>
+                  ) : (
+                    <span className={textMuted}>SYNC // {clockReadout.tzLabel}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="font-mono tracking-tight flex items-baseline">
+                  <span className="text-3xl sm:text-4xl font-light tabular-nums">
+                    {clockReadout.hh}:{clockReadout.mm}
+                  </span>
+                  <span className="text-lg sm:text-xl font-mono text-emerald-500 ml-1 tabular-nums font-medium">
+                    :{clockReadout.ss}
+                  </span>
+                </div>
+
+                <div className="text-right font-mono">
+                  <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums">
+                    {clockReadout.dateDot}
+                  </div>
+                  <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
+                    {clockReadout.dayStr} // {clockReadout.tzLabel}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* SESSION LOGGER PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-6 relative order-1 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 relative order-2 lg:order-none`}>
               {/* Overlay if not authenticated */}
               {!user && (
-                <div className="absolute inset-0 z-20 backdrop-blur-[2px] bg-black/60 flex flex-col items-center justify-center p-6 text-center space-y-3">
-                  <div className="w-10 h-10 rounded-full border border-zinc-700 bg-zinc-900 flex items-center justify-center">
-                    <Lock className="w-5 h-5 text-emerald-400" />
+                <div
+                  className={`absolute inset-0 z-20 backdrop-blur-[2px] ${
+                    isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'
+                  } flex flex-col items-center justify-center p-6 text-center space-y-3`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full border ${
+                      isDark ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-300 bg-zinc-100'
+                    } flex items-center justify-center`}
+                  >
+                    <Lock className={`w-5 h-5 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   </div>
                   <div>
                     <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
@@ -1453,6 +1769,8 @@ export default function App() {
                         onClick={() => {
                           setIsRunning(false);
                           setElapsedSeconds(0);
+                          accumulatedSecondsRef.current = 0;
+                          timerStartTimestampRef.current = null;
                         }}
                         className={`px-3 py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer`}
                       >
@@ -1546,10 +1864,14 @@ export default function App() {
             </div>
 
             {/* CATEGORY REGISTRY PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-6 relative order-3 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none`}>
               {!user && (
-                <div className="absolute inset-0 z-20 backdrop-blur-[2px] bg-black/60 flex flex-col items-center justify-center p-6 text-center space-y-2">
-                  <Lock className="w-4 h-4 text-emerald-400" />
+                <div
+                  className={`absolute inset-0 z-20 backdrop-blur-[2px] ${
+                    isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'
+                  } flex flex-col items-center justify-center p-6 text-center space-y-2`}
+                >
+                  <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <p className="font-mono text-xs uppercase tracking-wider font-semibold">
                     Sign in to configure categories
                   </p>
@@ -1858,7 +2180,7 @@ export default function App() {
             </div>
 
             {/* STUDY INSIGHTS & TELEMETRY VAULT PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-6 space-y-5 relative order-4 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 space-y-5 relative order-5 lg:order-none`}>
               {!user && (
                 <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
                   <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -2002,7 +2324,7 @@ export default function App() {
           {/* RIGHT COLUMN: Analytics & Chronological Stream */}
           <div className="contents lg:block lg:col-span-7 lg:space-y-8">
             {/* ANALYTICS MODULE */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-2 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
               <div className={`flex flex-wrap items-center justify-between gap-2 pb-4 mb-6 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <BarChart3 className="w-4 h-4" />
@@ -2321,8 +2643,337 @@ export default function App() {
               </div>
             </div>
 
+            {/* TELEMETRY CADENCE MATRIX (7 DAYS VERTICAL x DYNAMIC WEEKS HORIZONTAL) */}
+            <div className={`border ${borderCol} ${bgCard} p-6 space-y-4 order-3 lg:order-none`}>
+              {/* Header & Mode Controls */}
+              <div
+                className={`flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b ${
+                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Activity className="w-4 h-4 text-emerald-500" />
+                  <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
+                    TELEMETRY CADENCE MATRIX
+                  </h2>
+                  <span
+                    className={`px-1.5 py-0.5 font-mono text-[10px] border ${
+                      isDark
+                        ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                        : 'border-emerald-600/40 text-emerald-700 bg-emerald-500/10'
+                    }`}
+                  >
+                    EPOCH {cadenceMatrixData.targetEpochIndex} / {cadenceMatrixData.totalEpochs}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                  {/* Color Mode Toggle: INTENSITY (Shaded) vs BINARY (Single Signal) */}
+                  <div className={`flex border ${borderCol}`}>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixColorMode('intensity')}
+                      className={`px-2.5 py-1 cursor-pointer transition-colors ${
+                        matrixColorMode === 'intensity'
+                          ? isDark
+                            ? 'bg-zinc-100 text-zinc-950 font-semibold'
+                            : 'bg-zinc-900 text-white font-semibold'
+                          : textMuted
+                      }`}
+                      title="4-tier study duration shade mode"
+                    >
+                      SHADED
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixColorMode('binary')}
+                      className={`px-2.5 py-1 cursor-pointer transition-colors ${
+                        matrixColorMode === 'binary'
+                          ? isDark
+                            ? 'bg-zinc-100 text-zinc-950 font-semibold'
+                            : 'bg-zinc-900 text-white font-semibold'
+                          : textMuted
+                      }`}
+                      title="Single-tone commit log signal mode"
+                    >
+                      BINARY
+                    </button>
+                  </div>
+
+                  {/* Capacity Span Toggle: 1X (Fit Screen) vs 2X (Double Capacity Expansion) */}
+                  <div className={`flex border ${borderCol}`}>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixSpanMultiplier(1)}
+                      className={`px-2 py-1 cursor-pointer transition-colors ${
+                        matrixSpanMultiplier === 1
+                          ? isDark
+                            ? 'bg-emerald-500 text-zinc-950 font-semibold'
+                            : 'bg-emerald-600 text-white font-semibold'
+                          : textMuted
+                      }`}
+                      title="1x screen-fitted week columns"
+                    >
+                      1X ({cadenceMatrixData.unitWeeks}W)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixSpanMultiplier(2)}
+                      className={`px-2 py-1 cursor-pointer transition-colors ${
+                        matrixSpanMultiplier === 2
+                          ? isDark
+                            ? 'bg-emerald-500 text-zinc-950 font-semibold'
+                            : 'bg-emerald-600 text-white font-semibold'
+                          : textMuted
+                      }`}
+                      title="2x expanded horizon (double columns)"
+                    >
+                      2X ({cadenceMatrixData.unitWeeks * 2}W)
+                    </button>
+                  </div>
+
+                  {/* Epoch Pagination when history spans multiple blocks */}
+                  {cadenceMatrixData.totalEpochs > 1 && (
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        disabled={cadenceMatrixData.clampedOffset >= cadenceMatrixData.totalEpochs - 1}
+                        onClick={() =>
+                          setMatrixPageOffset((p) => Math.min(p + 1, cadenceMatrixData.totalEpochs - 1))
+                        }
+                        className={`p-1 border ${borderCol} disabled:opacity-30 cursor-pointer`}
+                        title="Previous Epoch Block"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cadenceMatrixData.clampedOffset === 0}
+                        onClick={() => setMatrixPageOffset((p) => Math.max(0, p - 1))}
+                        className={`p-1 border ${borderCol} disabled:opacity-30 cursor-pointer`}
+                        title="Next Epoch Block"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sub-header Telemetry Readout */}
+              <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+                <div className="flex items-center space-x-2">
+                  <span className={textMuted}>SPAN:</span>
+                  <span className="font-semibold">
+                    {cadenceMatrixData.startLabel} — {cadenceMatrixData.endLabel}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <div>
+                    <span className={textMuted}>ACTIVE DAYS: </span>
+                    <span className="font-semibold text-emerald-400">
+                      {cadenceMatrixData.activeDaysInBlock}D
+                    </span>
+                  </div>
+                  <div>
+                    <span className={textMuted}>BLOCK VOLUME: </span>
+                    <span className="font-semibold">
+                      {(cadenceMatrixData.totalMinutesInBlock / 60).toFixed(1)}H
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Matrix Grid Container (7 Vertical Days x Dynamic Horizontal Weeks) */}
+              <div className="flex items-start space-x-2.5 pt-1">
+                {/* 7-Day Vertical Axis Labels (MON - SUN) */}
+                <div
+                  className={`flex flex-col justify-between pt-[18px] font-mono text-[9px] leading-none select-none shrink-0 h-[133px] ${textMuted}`}
+                >
+                  <span className="h-[13px] flex items-center">MON</span>
+                  <span className="h-[13px] flex items-center opacity-50">TUE</span>
+                  <span className="h-[13px] flex items-center">WED</span>
+                  <span className="h-[13px] flex items-center opacity-50">THU</span>
+                  <span className="h-[13px] flex items-center">FRI</span>
+                  <span className="h-[13px] flex items-center opacity-50">SAT</span>
+                  <span className="h-[13px] flex items-center">SUN</span>
+                </div>
+
+                {/* Auto-Measured Horizontal Weeks Stream */}
+                <div
+                  ref={matrixGridContainerRef}
+                  className="flex-1 min-w-0 overflow-x-auto pb-1"
+                  onMouseLeave={() => setHoveredMatrixCell(null)}
+                >
+                  <div className="inline-flex flex-col min-w-full">
+                    {/* Month Markers Row */}
+                    <div className="flex gap-[4px] h-[14px] mb-[4px] font-mono text-[9px] leading-none select-none">
+                      {cadenceMatrixData.weeks.map((wk) => (
+                        <div key={`month-${wk.mondayDate}`} className="w-[13px] shrink-0 relative">
+                          {wk.monthLabel && (
+                            <span className={`absolute left-0 top-0 whitespace-nowrap ${textMuted}`}>
+                              {wk.monthLabel}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Week Columns x 7 Day Cells */}
+                    <div className="flex gap-[4px] justify-between">
+                      {cadenceMatrixData.weeks.map((wk) => (
+                        <div key={wk.mondayDate} className="flex flex-col gap-[4px] shrink-0">
+                          {wk.days.map((cell) => {
+                            const hasCommit = cell.minutes > 0;
+                            let cellStyle: string;
+
+                            if (!hasCommit) {
+                              if (cell.isFuture) {
+                                // Unfilled future capacity slot (dashed/subtle architectural blueprint)
+                                cellStyle = isDark
+                                  ? 'bg-[#0c0c0c] border-zinc-800/50 border-dashed opacity-65'
+                                  : 'bg-zinc-50/70 border-zinc-200/80 border-dashed opacity-75';
+                              } else {
+                                cellStyle = isDark
+                                  ? 'bg-zinc-900/70 border-zinc-800/90'
+                                  : 'bg-zinc-100 border-zinc-200';
+                              }
+                            } else if (matrixColorMode === 'binary') {
+                              // Binary mode: uniform crisp signal whenever any commit log is recorded
+                              cellStyle = isDark
+                                ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.25)]'
+                                : 'bg-emerald-600 border-emerald-700';
+                            } else {
+                              // Shaded intensity mode: 4 architectural telemetry tiers
+                              if (cell.minutes < 45) {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-500/30 border-emerald-500/50'
+                                  : 'bg-emerald-200 border-emerald-300';
+                              } else if (cell.minutes < 90) {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-500/55 border-emerald-500/70'
+                                  : 'bg-emerald-400 border-emerald-500';
+                              } else if (cell.minutes < 180) {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-500/80 border-emerald-400'
+                                  : 'bg-emerald-500 border-emerald-600';
+                              } else {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-400 border-emerald-200 shadow-[0_0_6px_rgba(52,211,153,0.35)]'
+                                  : 'bg-emerald-700 border-emerald-900';
+                              }
+                            }
+
+                            const todayHighlight = cell.isToday
+                              ? isDark
+                                ? 'ring-1 ring-amber-400 ring-offset-1 ring-offset-[#111111]'
+                                : 'ring-1 ring-amber-600 ring-offset-1 ring-offset-white'
+                              : '';
+
+                            return (
+                              <div
+                                key={cell.date}
+                                onMouseEnter={() =>
+                                  setHoveredMatrixCell({
+                                    date: cell.date,
+                                    minutes: cell.minutes,
+                                    count: cell.count,
+                                    topics: cell.topics,
+                                  })
+                                }
+                                onClick={() => {
+                                  setLogDate(cell.date);
+                                }}
+                                className={`w-[13px] h-[13px] border rounded-none transition-all duration-150 cursor-pointer hover:scale-125 hover:z-10 ${cellStyle} ${todayHighlight}`}
+                                title={`${cell.date}: ${
+                                  cell.minutes > 0
+                                    ? `${cell.minutes} min (${(cell.minutes / 60).toFixed(1)}h) across ${cell.count} log(s)`
+                                    : cell.isFuture
+                                    ? 'Unfilled future slot (Click to set date)'
+                                    : 'No commits logged (Click to set date)'
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Matrix Footer: Live Inspector Readout & Scale Key */}
+              <div
+                className={`pt-3 border-t ${
+                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
+                } flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]`}
+              >
+                <div className="truncate max-w-md">
+                  {hoveredMatrixCell ? (
+                    <div className="flex items-center space-x-2">
+                      <span className="text-emerald-400 font-semibold">[{hoveredMatrixCell.date}]</span>
+                      {hoveredMatrixCell.minutes > 0 ? (
+                        <span>
+                          {hoveredMatrixCell.minutes} MIN ({(hoveredMatrixCell.minutes / 60).toFixed(1)}H) //{' '}
+                          {hoveredMatrixCell.count} COMMIT(S)
+                          {hoveredMatrixCell.topics[0] ? ` — "${hoveredMatrixCell.topics[0]}"` : ''}
+                        </span>
+                      ) : (
+                        <span className={textMuted}>0 MIN // STANDBY SLOT (CLICK CELL TO SELECT DATE)</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className={textMuted}>
+                      TAP OR HOVER ANY CELL TO INSPECT DAILY TELEMETRY // AUTO-EXPANDS WHEN EPOCH FILLS
+                    </span>
+                  )}
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center space-x-2 shrink-0 select-none">
+                  <span className={textMuted}>IDLE</span>
+                  <span
+                    className={`w-2.5 h-2.5 border inline-block ${
+                      isDark ? 'bg-zinc-900/70 border-zinc-800' : 'bg-zinc-100 border-zinc-200'
+                    }`}
+                  />
+                  {matrixColorMode === 'intensity' ? (
+                    <>
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-500/30 border-emerald-500/50' : 'bg-emerald-200 border-emerald-300'
+                        }`}
+                      />
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-500/55 border-emerald-500/70' : 'bg-emerald-400 border-emerald-500'
+                        }`}
+                      />
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-500/80 border-emerald-400' : 'bg-emerald-500 border-emerald-600'
+                        }`}
+                      />
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-400 border-emerald-200' : 'bg-emerald-700 border-emerald-900'
+                        }`}
+                      />
+                    </>
+                  ) : (
+                    <span
+                      className={`w-2.5 h-2.5 border inline-block ${
+                        isDark ? 'bg-emerald-500 border-emerald-400' : 'bg-emerald-600 border-emerald-700'
+                      }`}
+                    />
+                  )}
+                  <span className={textMuted}>COMMITTED</span>
+                </div>
+              </div>
+            </div>
+
             {/* CHRONOLOGICAL LOG STREAM */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-5 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 order-7 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className="w-4 h-4" />
@@ -2330,13 +2981,9 @@ export default function App() {
                     {t.recentLogs}
                   </h2>
                 </div>
-                <button
-                  onClick={() => setShowHubModal(true)}
-                  className="font-mono text-[11px] text-emerald-500 hover:underline flex items-center space-x-1 cursor-pointer"
-                >
-                  <span>{t.hubPreviewBtn}</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
+                <span className={`font-mono text-[11px] ${textMuted}`}>
+                  {user ? `${logs.length} RECORDS` : 'STANDBY'}
+                </span>
               </div>
 
               {dataLoading ? (
@@ -2353,38 +3000,156 @@ export default function App() {
                   <div className={`divide-y ${isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'}`}>
                     {logs.slice(0, visibleLogCount).map((log) => {
                       const cat = categories.find((c) => String(c.id) === String(log.categoryId));
+                      const isEditingLog = String(editingLogId) === String(log.id);
                       return (
-                        <div
-                          key={log.id}
-                          className="py-3.5 flex items-start sm:items-center justify-between gap-4 group"
-                        >
-                          <div className="space-y-1 flex-1 min-w-0">
-                            <div className="flex items-center space-x-2.5 font-mono text-xs">
-                              <span
-                                className="w-2 h-2 rounded-full shrink-0"
-                                style={{ backgroundColor: cat?.color || log.categoryColor || '#71717a' }}
-                              />
-                              <span className="font-semibold">
-                                [{cat?.code || log.categoryCode || 'LOG'}]
-                              </span>
-                              <span className={textMuted}>{log.date}</span>
-                              <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60">
-                                {log.durationMinutes} MIN
-                              </span>
+                        <div key={log.id} className="py-3.5 space-y-3 group">
+                          <div className="flex items-start sm:items-center justify-between gap-4">
+                            <div className="space-y-1 flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                                <span
+                                  className="w-2 h-2 rounded-full shrink-0"
+                                  style={{ backgroundColor: cat?.color || log.categoryColor || '#71717a' }}
+                                />
+                                <span className="font-semibold">
+                                  [{cat?.code || log.categoryCode || 'LOG'}]
+                                </span>
+                                <span className={textMuted}>{log.date}</span>
+                                <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60">
+                                  {log.durationMinutes} MIN
+                                </span>
+                              </div>
+                              <p className="text-sm truncate pl-4">{log.topic}</p>
                             </div>
-                            <p className="text-sm truncate pl-4">{log.topic}</p>
+
+                            <div className="flex items-center space-x-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isEditingLog ? handleCancelEditLog() : handleStartEditLog(log)
+                                }
+                                className={`p-1.5 border transition-colors cursor-pointer ${
+                                  isEditingLog
+                                    ? 'border-emerald-500/60 text-emerald-400'
+                                    : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
+                                }`}
+                                title={isEditingLog ? 'Close Editor' : 'Edit Log'}
+                                aria-label="Edit Log"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLog(log.id)}
+                                className={`p-1.5 border ${borderCol} ${textMuted} hover:text-rose-500 hover:border-rose-500/50 transition-colors cursor-pointer`}
+                                title="Delete Log"
+                                aria-label="Delete Log"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="flex items-center space-x-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteLog(log.id)}
-                              className={`p-1.5 border ${borderCol} ${textMuted} hover:text-rose-500 hover:border-rose-500/50 transition-colors cursor-pointer`}
-                              title="Delete Log"
+                          {/* Inline Log Editor */}
+                          {isEditingLog && (
+                            <form
+                              onSubmit={handleUpdateLog}
+                              className={`p-3.5 border ${borderCol} ${
+                                isDark ? 'bg-[#0a0a0a]/90' : 'bg-zinc-50/90'
+                              } space-y-3 font-mono text-xs`}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
+                                  EDIT TELEMETRY RECORD // #{log.id}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditLog}
+                                  className={`text-[10px] uppercase ${textMuted} hover:underline cursor-pointer`}
+                                >
+                                  [CANCEL]
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <div>
+                                  <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                                    {t.category}
+                                  </label>
+                                  <select
+                                    value={editLogCatId}
+                                    onChange={(e) => setEditLogCatId(e.target.value)}
+                                    className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                  >
+                                    {categories.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        [{c.code}] {c.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                                    {t.durationMin}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={1440}
+                                    required
+                                    value={editLogDuration}
+                                    onChange={(e) => setEditLogDuration(Number(e.target.value))}
+                                    className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                                    {t.date}
+                                  </label>
+                                  <input
+                                    type="date"
+                                    required
+                                    value={editLogDate}
+                                    onChange={(e) => setEditLogDate(e.target.value)}
+                                    className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                                  {t.topicMemo}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editLogTopic}
+                                  onChange={(e) => setEditLogTopic(e.target.value)}
+                                  className={`w-full px-2.5 py-1.5 text-xs font-sans border outline-none ${inputBg}`}
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-end space-x-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditLog}
+                                  className={`px-3 py-1.5 text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
+                                >
+                                  CANCEL
+                                </button>
+                                <button
+                                  type="submit"
+                                  className={`px-3.5 py-1.5 text-xs uppercase font-semibold cursor-pointer ${
+                                    isDark
+                                      ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300'
+                                      : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                                  }`}
+                                >
+                                  SAVE CHANGES
+                                </button>
+                              </div>
+                            </form>
+                          )}
                         </div>
                       );
                     })}
@@ -2496,39 +3261,6 @@ export default function App() {
           </div>
         </div>
       </footer>
-
-      {/* ==========================================
-          MODAL 1: DJANGO HUB PAYLOAD INSPECTOR
-      ========================================== */}
-      {showHubModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-2xl border ${borderCol} ${bgCard} p-6 space-y-4`}>
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center space-x-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                  DJANGO HUB AGGREGATOR // JSON PAYLOAD PREVIEW
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowHubModal(false)}
-                className="font-mono text-xs hover:underline cursor-pointer"
-              >
-                [ESC / CLOSE]
-              </button>
-            </div>
-
-            <p className={`text-xs ${textMuted}`}>
-              Data payload structure ready for Django ingestion via `GET /api/hub/telemetry/` or webhook dispatch.
-              Contains only logs flagged as `PUBLIC`.
-            </p>
-
-            <pre className="p-4 bg-[#080808] text-emerald-400 font-mono text-xs overflow-x-auto border border-zinc-800 max-h-80">
-              {JSON.stringify(hubPayloadPreview, null, 2)}
-            </pre>
-          </div>
-        </div>
-      )}
 
       {/* ==========================================
           MODAL 2: AUTHENTICATION MODAL (REAL JWT)

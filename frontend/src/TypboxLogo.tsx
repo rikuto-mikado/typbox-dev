@@ -15,11 +15,12 @@ export interface TypboxLogoProps {
  */
 export const TypboxLogo: React.FC<TypboxLogoProps> = ({
   className = 'w-5 h-5',
+  isDark = true,
   isRunning = false,
 }) => {
-  const outerFill = '#F6F4F0';
-  const outerStroke = 'rgba(0, 0, 0, 0.14)';
-  const innerFill = isRunning ? '#10b981' : '#000000';
+  const outerFill = isDark ? '#F6F4F0' : '#0a0a0a';
+  const outerStroke = isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.14)';
+  const innerFill = isRunning ? '#10b981' : isDark ? '#000000' : '#F6F4F0';
 
   return (
     <svg
