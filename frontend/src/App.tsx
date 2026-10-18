@@ -56,6 +56,8 @@ import {
   getSurfaceThemeById,
   getSurfaceBackgroundStyle,
   SURFACE_THEME_PAIRS,
+  isThemeUnlocked,
+  getPrestigeBadge,
   Award,
   type AnalyticsHorizonMode,
 } from './telemetryFeatures';
@@ -263,6 +265,77 @@ const getRecentDateString = (daysAgo: number): string => {
 
 const THEME_STORAGE_KEY = 'typbox_theme';
 const SURFACE_THEME_STORAGE_KEY = 'typbox_surface_theme';
+const ASCENSION_STORAGE_PREFIX = 'typbox_ascension_';
+
+// Ascension (Prestige) claims are device-local, same as theme/sound prefs —
+// there is no dedicated backend field for this yet, so a claim made on one
+// device won't sync to another. Nothing destructive happens either way:
+// worst case is being re-prompted to claim an already-claimed cycle.
+const getStoredAscensions = (username: string | undefined): number => {
+  if (typeof window === 'undefined' || !username) return 0;
+  const raw = localStorage.getItem(`${ASCENSION_STORAGE_PREFIX}${username}`);
+  const parsed = raw ? parseInt(raw, 10) : 0;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const PrestigeChip: React.FC<{ totalAscensions: number; className?: string }> = ({
+  totalAscensions,
+  className = '',
+}) => {
+  const badge = getPrestigeBadge(totalAscensions);
+  if (!badge) return null;
+  return (
+    <span
+      className={`px-1.5 py-0.5 text-[10px] font-bold border tracking-wider shrink-0 ${
+        badge.isPrism ? 'prestige-prism-text border-white/30' : ''
+      } ${className}`}
+      style={badge.isPrism ? undefined : { color: badge.colorHex, borderColor: `${badge.colorHex}80` }}
+      title={`Ascended ${totalAscensions} time${totalAscensions === 1 ? '' : 's'}`}
+    >
+      {badge.label}
+    </span>
+  );
+};
+
+// Deterministic particle field generated once at module load (not per
+// render) so the "sensor dust" drift stays stable across Ambient Mode
+// entries instead of jumping to new random positions every time.
+const AMBIENT_PARTICLES = Array.from({ length: 26 }, (_, i) => ({
+  id: i,
+  left: Math.random() * 100,
+  top: Math.random() * 100,
+  size: 1 + Math.random() * 1.8,
+  duration: 16 + Math.random() * 20,
+  delay: Math.random() * 20,
+  dx: (Math.random() - 0.5) * 140,
+  dy: -(50 + Math.random() * 120),
+  opacity: 0.15 + Math.random() * 0.3,
+}));
+
+const AmbientOverlay: React.FC = () => (
+  <div className="fixed inset-0 z-30 pointer-events-none transition-opacity duration-1000">
+    <div className="absolute inset-0 bg-black/35" />
+    {AMBIENT_PARTICLES.map((p) => (
+      <span
+        key={p.id}
+        className="ambient-dust"
+        style={
+          {
+            left: `${p.left}%`,
+            top: `${p.top}%`,
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            animationDuration: `${p.duration}s`,
+            animationDelay: `${p.delay}s`,
+            '--dust-dx': `${p.dx}px`,
+            '--dust-dy': `${p.dy}px`,
+            '--dust-opacity': p.opacity,
+          } as React.CSSProperties
+        }
+      />
+    ))}
+  </div>
+);
 
 const getInitialTheme = (): Theme => {
   if (typeof window !== 'undefined') {
@@ -436,6 +509,20 @@ export default function App() {
 
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+
+  // Prestige / Ascension cycle claim count (device-local, see getStoredAscensions).
+  // Re-synced from localStorage during render (not an Effect) whenever the
+  // signed-in username changes, following React's "adjusting state when a
+  // prop changes" pattern — the guard prevents any re-render loop.
+  const [claimedCycles, setClaimedCycles] = useState<number>(0);
+  const [ascensionSyncedUsername, setAscensionSyncedUsername] = useState<string | undefined>(
+    undefined
+  );
+  const [showAscensionModal, setShowAscensionModal] = useState<boolean>(false);
+  if (user?.username !== ascensionSyncedUsername) {
+    setAscensionSyncedUsername(user?.username);
+    setClaimedCycles(getStoredAscensions(user?.username));
+  }
   // Full-Screen Site Access Splash Screen
   const [isSiteLoading, setIsSiteLoading] = useState<boolean>(true);
   const [fadeLoader, setFadeLoader] = useState<boolean>(false);
@@ -683,6 +770,89 @@ export default function App() {
         accumulatedSecondsRef.current = baseSec + deltaSec;
       }
       clearInterval(interval);
+    };
+  }, [isRunning]);
+
+  // Wake Lock: keep the screen on for as long as the stopwatch is running.
+  // The Wake Lock API auto-releases when the tab is backgrounded, so it's
+  // re-acquired on visibilitychange if the timer is still active.
+  const wakeLockRef = React.useRef<WakeLockSentinel | null>(null);
+  useEffect(() => {
+    if (!('wakeLock' in navigator)) return;
+    let cancelled = false;
+
+    const releaseLock = () => {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    };
+
+    const acquireLock = async () => {
+      try {
+        const sentinel = await navigator.wakeLock.request('screen');
+        if (cancelled) {
+          sentinel.release().catch(() => {});
+          return;
+        }
+        wakeLockRef.current = sentinel;
+      } catch {
+        // Permission denied, unsupported context, or page not visible — fine
+        // to silently skip; the timer still works without the wake lock.
+      }
+    };
+
+    if (isRunning) {
+      acquireLock();
+    } else {
+      releaseLock();
+    }
+
+    const handleVisibilityChange = () => {
+      if (isRunning && document.visibilityState === 'visible' && !wakeLockRef.current) {
+        acquireLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseLock();
+    };
+  }, [isRunning]);
+
+  // Ambient Mode: after a stretch of no user interaction while the stopwatch
+  // is running, dim the UI and switch to a low-key decorative "still
+  // working" presentation instead of leaving the full-brightness dashboard
+  // lit (and the mouse/keyboard untouched) for long unattended stretches.
+  const AMBIENT_IDLE_MS = 45000;
+  const [isAmbientMode, setIsAmbientMode] = useState<boolean>(false);
+  useEffect(() => {
+    if (!isRunning) return;
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const scheduleAmbient = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => setIsAmbientMode(true), AMBIENT_IDLE_MS);
+    };
+    const handleActivity = () => {
+      setIsAmbientMode(false);
+      scheduleAmbient();
+    };
+    const activityEvents: Array<keyof WindowEventMap> = [
+      'mousemove',
+      'mousedown',
+      'keydown',
+      'touchstart',
+      'wheel',
+    ];
+    activityEvents.forEach((evt) => window.addEventListener(evt, handleActivity, { passive: true }));
+    scheduleAmbient();
+
+    return () => {
+      setIsAmbientMode(false);
+      clearTimeout(idleTimer);
+      activityEvents.forEach((evt) => window.removeEventListener(evt, handleActivity));
     };
   }, [isRunning]);
 
@@ -1353,13 +1523,24 @@ export default function App() {
   }, [logs, currentMonthPrefix]);
 
   const clearanceStatus = useMemo(() => {
-    return getClearanceStatus(user ? stats.totalMin : 0);
-  }, [user, stats.totalMin]);
+    return getClearanceStatus(user ? stats.totalMin : 0, claimedCycles);
+  }, [user, stats.totalMin, claimedCycles]);
 
-  // Enforce Clearance Rank Unlock restriction on active Dual-Polarity Surface Theme Pair
+  // Claims one pending Ascension: persists the new cycle count (device-local)
+  // and shows the celebration modal. Safe to call repeatedly — it's a no-op
+  // once `ascensionAvailable` goes false.
+  const claimAscension = useCallback(() => {
+    if (!user?.username || !clearanceStatus.ascensionAvailable) return;
+    const nextClaimed = claimedCycles + 1;
+    localStorage.setItem(`${ASCENSION_STORAGE_PREFIX}${user.username}`, String(nextClaimed));
+    setClaimedCycles(nextClaimed);
+    setShowAscensionModal(true);
+  }, [user?.username, clearanceStatus.ascensionAvailable, claimedCycles]);
+
+  // Enforce Clearance/Ascension unlock restriction on active Surface Theme Pair
   const activeSurfacePair = useMemo(() => {
     const candidate = getSurfaceThemeById(surfaceThemeId);
-    if (!authLoading && !dataLoading && candidate.clearanceHintLv > clearanceStatus.current.level) {
+    if (!authLoading && !dataLoading && !isThemeUnlocked(candidate, clearanceStatus)) {
       return getSurfaceThemeById('monolith');
     }
     return candidate;
@@ -1950,6 +2131,10 @@ export default function App() {
       className={`min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
     >
+      {/* Ambient Mode: dimmed overlay + drifting sensor dust while the
+          stopwatch runs unattended (see the Wake Lock effect above). */}
+      {isAmbientMode && <AmbientOverlay />}
+
       {/* ==========================================
           FULL-SCREEN SITE ACCESS SPLASH LOADER
       ========================================== */}
@@ -2032,6 +2217,8 @@ export default function App() {
               borderCol={borderCol}
               bgCard={bgCard}
               textMuted={textMuted}
+              userClearanceLevel={clearanceStatus.rewardUnlockLevel}
+              userTotalHours={clearanceStatus.totalHours}
             />
 
             {/* Theme Polarity Toggle (Dark ⇄ Light of active Surface Theme Pair) */}
@@ -2116,16 +2303,26 @@ export default function App() {
                       {/* Clearance Badge inside Dropdown */}
                       <div className={`pt-2 border-t ${borderCol} flex items-center justify-between text-[10px]`}>
                         <span
-                          className="px-1.5 py-0.5 font-bold text-zinc-950"
+                          className="px-1.5 py-0.5 font-bold text-zinc-950 shrink-0"
                           style={{ backgroundColor: clearanceStatus.current.color }}
                         >
                           LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                         </span>
+                        <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} className="ml-1.5" />
                         <span className="font-bold truncate ml-2 flex-1">
                           {clearanceStatus.current.title}
                         </span>
                         <span className={textMuted}>{clearanceStatus.progressPct}%</span>
                       </div>
+                      {clearanceStatus.ascensionAvailable && (
+                        <button
+                          type="button"
+                          onClick={claimAscension}
+                          className="mt-1.5 w-full py-1.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer animate-pulse"
+                        >
+                          ⚡ ASCEND TO CYCLE {String(clearanceStatus.cycleNumber + 1).padStart(2, '0')}
+                        </button>
+                      )}
                     </div>
 
                     {/* Quick Actions */}
@@ -2366,7 +2563,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* TELEMETRY CLEARANCE LEVEL BAR (3,000 RANKS // 0H TO 30,000H) */}
+          {/* TELEMETRY CLEARANCE LEVEL BAR (3,000 RANKS // 0H-1,000H PER CYCLE) */}
           <div className={`border-x border-b ${borderCol} ${bgCard} px-3.5 sm:px-5 py-2.5 sm:py-3.5 font-mono text-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-3`}>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
               <div className="flex items-center space-x-2 shrink-0">
@@ -2379,6 +2576,10 @@ export default function App() {
                 >
                   LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                 </span>
+                <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} ${textMuted}`}>
+                  CYCLE {String(clearanceStatus.cycleNumber).padStart(2, '0')}
+                </span>
+                <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} />
               </div>
 
               <div className="flex items-center space-x-2 min-w-0">
@@ -2414,11 +2615,21 @@ export default function App() {
                       PHASE {clearanceStatus.subPhase}/5
                     </span>
                   </div>
-                  <span className={textMuted}>
-                    {clearanceStatus.next
-                      ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(4, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
-                      : 'OMEGA MONOLITH (30,000H+)'}
-                  </span>
+                  {clearanceStatus.ascensionAvailable ? (
+                    <button
+                      type="button"
+                      onClick={claimAscension}
+                      className="text-amber-400 font-bold uppercase tracking-wider animate-pulse cursor-pointer hover:text-amber-300"
+                    >
+                      ⚡ ASCENSION AVAILABLE — CLAIM NOW
+                    </button>
+                  ) : (
+                    <span className={textMuted}>
+                      {clearanceStatus.next
+                        ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(4, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
+                        : 'CYCLE COMPLETE (1,000H+)'}
+                    </span>
+                  )}
                 </div>
                 <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
                   <div
@@ -3933,6 +4144,9 @@ export default function App() {
                                 ? 'ring-1 ring-amber-400 ring-offset-1 ring-offset-[#111111]'
                                 : 'ring-1 ring-amber-600 ring-offset-1 ring-offset-white'
                               : '';
+                            // Ambient Mode: the cell actively being recorded
+                            // into breathes slowly instead of sitting static.
+                            const ambientPulse = cell.isToday && isAmbientMode ? 'cadence-cell-pulse' : '';
 
                             return (
                               <div
@@ -3948,7 +4162,7 @@ export default function App() {
                                 onClick={() => {
                                   setLogDate(cell.date);
                                 }}
-                                className={`w-[13px] h-[13px] border rounded-none transition-all duration-150 cursor-pointer hover:scale-125 hover:z-10 ${cellStyle} ${todayHighlight}`}
+                                className={`w-[13px] h-[13px] border rounded-none transition-all duration-150 cursor-pointer hover:scale-125 hover:z-10 ${cellStyle} ${todayHighlight} ${ambientPulse}`}
                                 title={`${cell.date}: ${
                                   cell.minutes > 0
                                     ? `${cell.minutes} min (${(cell.minutes / 60).toFixed(1)}h) across ${cell.count} log(s)`
@@ -4673,27 +4887,29 @@ export default function App() {
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
             <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1">
-              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (144 PAIRS = 288 SURFACES) */}
+              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (288 PAIRS = 576 SURFACES) */}
               {settingsTab === 'themes' && (
                 <SurfaceThemeSelectorPanel
                   activeThemeId={surfaceThemeId}
                   onSelectThemeId={(id) => setSurfaceThemeId(id)}
                   isDark={isDark}
                   onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-                  userClearanceLevel={clearanceStatus.current.level}
+                  userClearanceLevel={clearanceStatus.rewardUnlockLevel}
+                  userTotalAscensions={clearanceStatus.totalAscensions}
                   userTotalHours={clearanceStatus.totalHours}
                   borderCol={borderCol}
                   textMuted={textMuted}
                 />
               )}
 
-              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-30,000H) */}
+              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-1,000H PER CYCLE) */}
               {settingsTab === 'clearance' && (
                 <ClearanceBrowserPanel
                   clearance={clearanceStatus}
                   isDark={isDark}
                   borderCol={borderCol}
                   textMuted={textMuted}
+                  onClaimAscension={claimAscension}
                 />
               )}
 
@@ -5179,6 +5395,47 @@ export default function App() {
         bgCard={bgCard}
         textMuted={textMuted}
       />
+
+      {/* ==========================================
+          MODAL: ASCENSION CELEBRATION (Prestige cycle claimed)
+      ========================================== */}
+      {showAscensionModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
+          onClick={() => setShowAscensionModal(false)}
+        >
+          <div
+            className={`w-full max-w-md border ${borderCol} ${bgCard} p-6 shadow-2xl text-center space-y-4 font-mono`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-amber-400 text-[10px] uppercase tracking-[0.2em] font-bold">
+              ⚡ ASCENSION COMPLETE
+            </div>
+            <div className="text-2xl font-bold tracking-wider">
+              WELCOME TO CYCLE {String(clearanceStatus.cycleNumber).padStart(2, '0')}
+            </div>
+            <div className="flex justify-center">
+              <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} />
+            </div>
+            <p className={`text-xs leading-relaxed ${textMuted}`}>
+              Your rank readout resets to LV.0001, but every title, Surface Theme, Noise profile and log
+              you have ever earned stays permanently unlocked.
+            </p>
+            {clearanceStatus.totalAscensions >= 1 && (
+              <div className="text-[11px] text-emerald-400 border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                New Prestige-exclusive Surface Themes may now be available — check 02 / THEMES.
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowAscensionModal(false)}
+              className="w-full py-2.5 bg-amber-500 text-zinc-950 font-bold text-xs uppercase tracking-wider cursor-pointer hover:bg-amber-400"
+            >
+              CONTINUE
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ==========================================
           MODAL 5: COMMAND PALETTE (Cmd + K / Ctrl + K)

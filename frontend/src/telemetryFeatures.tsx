@@ -21,8 +21,30 @@ import {
 import type { Category, StudyLog } from './App';
 
 // ==========================================
-// 1. TELEMETRY CLEARANCE LEVEL SYSTEM (3,000 RANKS // 0H-30,000H // 100% ENGLISH)
+// 0. DEVELOPMENT DEMO MODE
 // ==========================================
+// Flip to `true` only in local development to force-unlock every Surface
+// Theme, Noise profile, and Clearance reward regardless of the signed-in
+// user's actual level — lets you preview the full catalog without grinding
+// real study hours. Must stay `false` for any real build/deploy.
+export const IS_DEMO_MODE = false;
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function isRewardUnlocked(userClearanceLevel: number, requiredLevel: number): boolean {
+  return IS_DEMO_MODE || userClearanceLevel >= requiredLevel;
+}
+
+// ==========================================
+// 1. TELEMETRY CLEARANCE LEVEL SYSTEM (3,000 RANKS // 0H-1,000H PER CYCLE)
+// ==========================================
+// Prestige / Ascension model: rather than one 30,000H lifetime climb, the
+// full 10-division / 3,000-rank ladder now repeats every CYCLE_HOURS worth
+// of lifetime study. Reaching the end of a cycle (LV.3000 / 1,000H) makes
+// ASCENSION available — a deliberate, user-triggered reset of the *display*
+// back to LV.1 under a new cycle number. Nothing is actually deleted:
+// titles, Surface Themes and log history all persist forever; only the
+// current-cycle level readout restarts, exactly like a Prestige reset.
+export const CYCLE_HOURS = 1000;
 
 export interface ClearanceLevel {
   level: number;
@@ -47,21 +69,25 @@ export interface ClearanceDivision {
   color: string;
 }
 
-// Each division now spans 300 ranks (doubled from 150) and its hour range is
-// scaled ×10 so the full ladder reaches the new 30,000H virtual ceiling.
+// Each division spans 300 ranks (10 divisions × 300 = 3,000 ranks total),
+// and its hour range is scaled so the full 10-division ladder exactly fills
+// one CYCLE_HOURS (1,000H) cycle. The division/rank *shape* is unchanged
+// from the old 30,000H design — every bound below is simply the legacy
+// value ÷30 — so all 3,000 hand-authored rank titles stay intact, they just
+// now repeat once per cycle instead of spanning a whole lifetime.
 const RANKS_PER_DIVISION = 300;
 
 const CLEARANCE_DIVISIONS: ClearanceDivision[] = [
-  { index: 1, code: 'DIV-01', name: 'INITIATE', sectorName: 'Initial Observation Sector', minLevel: 1, maxLevel: 300, minHours: 0, maxHours: 1500, color: '#a1a1aa' },
-  { index: 2, code: 'DIV-02', name: 'CADET', sectorName: 'Orbital Training Sector', minLevel: 301, maxLevel: 600, minHours: 1520, maxHours: 4500, color: '#38bdf8' },
-  { index: 3, code: 'DIV-03', name: 'OPERATOR', sectorName: 'Field Communications Sector', minLevel: 601, maxLevel: 900, minHours: 4520, maxHours: 7500, color: '#10b981' },
-  { index: 4, code: 'DIV-04', name: 'SPECIALIST', sectorName: 'Deep Analytics Sector', minLevel: 901, maxLevel: 1200, minHours: 7520, maxHours: 10500, color: '#06b6d4' },
-  { index: 5, code: 'DIV-05', name: 'VANGUARD', sectorName: 'Frontier Vanguard Sector', minLevel: 1201, maxLevel: 1500, minHours: 10520, maxHours: 13500, color: '#6366f1' },
-  { index: 6, code: 'DIV-06', name: 'ARCHITECT', sectorName: 'Structural Systems Sector', minLevel: 1501, maxLevel: 1800, minHours: 13520, maxHours: 16500, color: '#a855f7' },
-  { index: 7, code: 'DIV-07', name: 'OVERSEER', sectorName: 'High Command Sector', minLevel: 1801, maxLevel: 2100, minHours: 16520, maxHours: 19500, color: '#ec4899' },
-  { index: 8, code: 'DIV-08', name: 'SENTINEL', sectorName: 'Aegis Citadel Sector', minLevel: 2101, maxLevel: 2400, minHours: 19520, maxHours: 22500, color: '#f97316' },
-  { index: 9, code: 'DIV-09', name: 'SOVEREIGN', sectorName: 'Imperial Dominion Sector', minLevel: 2401, maxLevel: 2700, minHours: 22520, maxHours: 26250, color: '#eab308' },
-  { index: 10, code: 'DIV-10', name: 'MONOLITH', sectorName: 'Transcendent Monolith Sector', minLevel: 2701, maxLevel: 3000, minHours: 26280, maxHours: 30000, color: '#f43f5e' },
+  { index: 1, code: 'DIV-01', name: 'INITIATE', sectorName: 'Initial Observation Sector', minLevel: 1, maxLevel: 300, minHours: 0, maxHours: 50, color: '#a1a1aa' },
+  { index: 2, code: 'DIV-02', name: 'CADET', sectorName: 'Orbital Training Sector', minLevel: 301, maxLevel: 600, minHours: 50.7, maxHours: 150, color: '#38bdf8' },
+  { index: 3, code: 'DIV-03', name: 'OPERATOR', sectorName: 'Field Communications Sector', minLevel: 601, maxLevel: 900, minHours: 150.7, maxHours: 250, color: '#10b981' },
+  { index: 4, code: 'DIV-04', name: 'SPECIALIST', sectorName: 'Deep Analytics Sector', minLevel: 901, maxLevel: 1200, minHours: 250.7, maxHours: 350, color: '#06b6d4' },
+  { index: 5, code: 'DIV-05', name: 'VANGUARD', sectorName: 'Frontier Vanguard Sector', minLevel: 1201, maxLevel: 1500, minHours: 350.7, maxHours: 450, color: '#6366f1' },
+  { index: 6, code: 'DIV-06', name: 'ARCHITECT', sectorName: 'Structural Systems Sector', minLevel: 1501, maxLevel: 1800, minHours: 450.7, maxHours: 550, color: '#a855f7' },
+  { index: 7, code: 'DIV-07', name: 'OVERSEER', sectorName: 'High Command Sector', minLevel: 1801, maxLevel: 2100, minHours: 550.7, maxHours: 650, color: '#ec4899' },
+  { index: 8, code: 'DIV-08', name: 'SENTINEL', sectorName: 'Aegis Citadel Sector', minLevel: 2101, maxLevel: 2400, minHours: 650.7, maxHours: 750, color: '#f97316' },
+  { index: 9, code: 'DIV-09', name: 'SOVEREIGN', sectorName: 'Imperial Dominion Sector', minLevel: 2401, maxLevel: 2700, minHours: 750.7, maxHours: 875, color: '#eab308' },
+  { index: 10, code: 'DIV-10', name: 'MONOLITH', sectorName: 'Transcendent Monolith Sector', minLevel: 2701, maxLevel: 3000, minHours: 876, maxHours: 1000, color: '#f43f5e' },
 ];
 
 // 15 Archetypes per Division × 20 Grades (I..XX) = 300 Ranks per Division × 10 Divisions = 3,000 Ranks
@@ -131,7 +157,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['KERNEL ANALYST', 'Dissecting core theoretical foundations'],
     ['TENSOR NAVIGATOR', 'Multi-dimensional analytical fluency'],
     ['OPTIC CALIBRATOR', 'Crystal-clear conceptual resolution'],
-    ['KILO-HOUR VANGUARD', 'Crossing the 10,000-hour threshold'],
+    ['KILO-HOUR VANGUARD', 'Crossing the 300-hour threshold'],
     ['SPECIALIST PRIME', 'Grand Specialist of Division 04'],
   ],
   5: [
@@ -157,7 +183,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['SCHEMA DIRECTOR', 'Governing high-level structural schemas'],
     ['NEURAL CARTOGRAPHER', 'Mapping deep cognitive architectures'],
     ['MONOLITH DRAFTER', 'Drafting monumental study frameworks'],
-    ['SESQUI-KILO ARCHITECT', 'Fifteen-thousand-hour structural veteran'],
+    ['SESQUI-KILO ARCHITECT', 'Five-hundred-hour structural veteran'],
     ['CITADEL ENGINEER', 'Fortifying unshakeable domain expertise'],
     ['NEXUS STRUCTURALIST', 'Connecting core theoretical nexuses'],
     ['LATTICE MASTER', 'Crystal-lattice precision & endurance'],
@@ -165,7 +191,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['VAULT DESIGNER', 'Constructing permanent memory vaults'],
     ['GRID SOVEREIGN', 'Total command of the cadence matrix'],
     ['BLUEPRINT GRANDMASTER', 'Mastery of macro-scale study plans'],
-    ['SPIRE ARCHITECT', 'Building toward the 20,000-hour sky'],
+    ['SPIRE ARCHITECT', 'Building toward the 500-hour sky'],
     ['ARCHITECT PRIME', 'Chief Architect of Division 06'],
   ],
   7: [
@@ -187,7 +213,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
   ],
   8: [
     ['AEGIS SENTINEL', 'Unyielding guardian of deep focus'],
-    ['BI-MILLENNIUM BASTION', 'Twenty-thousand-hour fortress of habit'],
+    ['BI-MILLENNIUM BASTION', 'Seven-hundred-hour fortress of habit'],
     ['SOLAR WARDEN', 'Relentless daily illumination & output'],
     ['VOID SENTINEL', 'Unmoved by distraction or entropy'],
     ['ASTRAL PALADIN', 'Champion of long-horizon dedication'],
@@ -208,7 +234,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['IMPERIAL REGENT', 'Ruling the highest altitudes of focus'],
     ['EMPYREAN ARCHON', 'Imperial-grade analytical command'],
     ['ASTRAL MONARCH', 'Monarch of the deep-archive realm'],
-    ['QUARTER-MYRIAD LORD', '25,000-hour sovereign milestone achieved'],
+    ['QUARTER-MYRIAD LORD', '800-hour sovereign milestone achieved'],
     ['DYNASTY FOUNDER', 'Forging an enduring intellectual legacy'],
     ['SOLAR EMPEROR', 'Commanding a vast empire of knowledge'],
     ['THRONE OF AXIOMS', 'Seated atop foundational truths'],
@@ -228,58 +254,60 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['DIMENSION WEAVER', 'Weaving mastery across all disciplines'],
     ['EVENT HORIZON', 'Point of no return in pursuit of mastery'],
     ['QUASAR ENGINE', 'Outshining entire galaxies of effort'],
-    ['ETERNAL OBELISK', 'Towering monument of 28,000+ hours'],
+    ['ETERNAL OBELISK', 'Towering monument of 900+ cycle-hours'],
     ['CHRONO DEITY', 'Master of time and cognitive flow'],
     ['ASTRAL PANTHEON', 'Dwelling among the legends of focus'],
     ['TRANSCENDENT CORE', 'Pure synthesis of habit and intellect'],
     ['INFINITY ARCHITECT', 'Boundless horizon of continuous growth'],
-    ['APEX OF ETERNITY', 'The final steps before the 30,000h summit'],
-    ['OMEGA MONOLITH', 'Ultimate 30,000-hour Monolith perfection'],
+    ['APEX OF ETERNITY', 'The final steps before the 1,000h cycle summit'],
+    ['OMEGA MONOLITH', 'Ultimate 1,000-hour cycle Monolith perfection'],
   ],
 };
 
-// Special exact hour milestones to highlight across 0H..30,000H (×10 scale vs. the legacy 3,000H cap)
+// Special exact hour milestones within a single CYCLE_HOURS (1,000H) cycle.
+// Every rank's reqHours is now cycle-relative, so these fire once per cycle.
 const SPECIAL_HOUR_OVERRIDES: Record<number, { title: string; sub: string }> = {
   0: { title: 'ZERO-HOUR INITIALIZATION', sub: '0H MILESTONE // Telemetry archive initialized' },
-  10: { title: 'FIRST IGNITION // 10H', sub: '10H MILESTONE // First ten hours committed to archive' },
-  50: { title: 'PENTA-DECA SPARK // 50H', sub: '50H MILESTONE // Early study routine ignited' },
-  100: { title: 'DECA-HOUR LOCK // 100H', sub: '100H MILESTONE // Initial orbital lock achieved' },
-  250: { title: 'QUARTER-CENTURY NODE // 250H', sub: '250H MILESTONE // Two hundred fifty hours recorded' },
-  500: { title: 'HALF-CENTURY CORE // 500H', sub: '500H MILESTONE // Half-century foundation complete' },
-  750: { title: 'THREE-QUARTER CENTURY // 750H', sub: '750H MILESTONE // Approaching the first kilo-hour' },
-  1000: { title: 'CENTURION MILESTONE // 1,000H', sub: '1,000H MILESTONE // Four-digit telemetry unlocked' },
-  1500: { title: 'INITIATE SUMMIT // 1,500H', sub: '1,500H MILESTONE // Division 01 complete' },
-  2000: { title: 'BI-MILLENNIUM OPERATOR // 2,000H', sub: '2,000H MILESTONE // Two thousand hours of verified focus' },
-  2500: { title: 'QUARTER-MYRIAD NODE // 2,500H', sub: '2,500H MILESTONE // One-fourth of ten thousand hours' },
-  4500: { title: 'CADET SUMMIT // 4,500H', sub: '4,500H MILESTONE // Division 02 complete' },
-  5000: { title: 'HALF-MYRIAD TITAN // 5,000H', sub: '5,000H MILESTONE // Five thousand hours of discipline' },
-  7500: { title: 'OPERATOR SUMMIT // 7,500H', sub: '7,500H MILESTONE // Division 03 complete' },
-  10000: { title: 'MILLENNIUM ASCENSION // 10,000H', sub: '10,000H MILESTONE // Five-digit telemetry landmark' },
-  10500: { title: 'SPECIALIST SUMMIT // 10,500H', sub: '10,500H MILESTONE // Division 04 complete' },
-  13500: { title: 'VANGUARD SUMMIT // 13,500H', sub: '13,500H MILESTONE // Division 05 complete' },
-  15000: { title: 'SESQUI-MYRIAD CORE // 15,000H', sub: '15,000H MILESTONE // Halfway to the 30,000H Monolith' },
-  16500: { title: 'ARCHITECT SUMMIT // 16,500H', sub: '16,500H MILESTONE // Division 06 complete' },
-  19500: { title: 'OVERSEER SUMMIT // 19,500H', sub: '19,500H MILESTONE // Division 07 complete' },
-  20000: { title: 'BI-MYRIAD ARCHITECT // 20,000H', sub: '20,000H MILESTONE // Twenty thousand hours of mastery' },
-  22500: { title: 'SENTINEL SUMMIT // 22,500H', sub: '22,500H MILESTONE // Division 08 complete' },
-  25000: { title: 'QUARTER-LAKH SOVEREIGN // 25,000H', sub: '25,000H MILESTONE // Twenty-five thousand hours committed' },
-  26250: { title: 'SOVEREIGN SUMMIT // 26,250H', sub: '26,250H MILESTONE // Entering the final Monolith Sector' },
-  27500: { title: 'ASTRAL HORIZON // 27,500H', sub: '27,500H MILESTONE // Final 2,500 hours to Omega Monolith' },
-  30000: { title: 'OMEGA MONOLITH // 30,000H', sub: '30,000H MILESTONE // Supreme 3,000th Clearance Pinnacle' },
+  50: { title: 'INITIATE SUMMIT // 50H', sub: '50H MILESTONE // Division 01 complete' },
+  100: { title: 'CENTURY LOCK // 100H', sub: '100H MILESTONE // Triple-digit cycle telemetry unlocked' },
+  150: { title: 'CADET SUMMIT // 150H', sub: '150H MILESTONE // Division 02 complete' },
+  200: { title: 'BI-CENTURY NODE // 200H', sub: '200H MILESTONE // Two hundred hours of verified focus' },
+  250: { title: 'OPERATOR SUMMIT // 250H', sub: '250H MILESTONE // Division 03 complete' },
+  300: { title: 'TRI-CENTURY CORE // 300H', sub: '300H MILESTONE // Three hundred cycle hours archived' },
+  350: { title: 'SPECIALIST SUMMIT // 350H', sub: '350H MILESTONE // Division 04 complete' },
+  400: { title: 'QUAD-CENTURY ENGINE // 400H', sub: '400H MILESTONE // Four hundred hours of discipline' },
+  450: { title: 'VANGUARD SUMMIT // 450H', sub: '450H MILESTONE // Division 05 complete' },
+  500: { title: 'HALF-CYCLE MERIDIAN // 500H', sub: '500H MILESTONE // Exact halfway point of the cycle' },
+  550: { title: 'ARCHITECT SUMMIT // 550H', sub: '550H MILESTONE // Division 06 complete' },
+  600: { title: 'HEXA-CENTURY GUARD // 600H', sub: '600H MILESTONE // Six hundred cycle hours committed' },
+  650: { title: 'OVERSEER SUMMIT // 650H', sub: '650H MILESTONE // Division 07 complete' },
+  700: { title: 'SEPTA-CENTURY RELAY // 700H', sub: '700H MILESTONE // Seven hundred hours of focus' },
+  750: { title: 'SENTINEL SUMMIT // 750H', sub: '750H MILESTONE // Division 08 complete' },
+  800: { title: 'OCTO-CENTURY VAULT // 800H', sub: '800H MILESTONE // Eight hundred cycle hours archived' },
+  875: { title: 'SOVEREIGN SUMMIT // 875H', sub: '875H MILESTONE // Division 09 complete' },
+  900: { title: 'ASTRAL HORIZON // 900H', sub: '900H MILESTONE // Final 100 hours to cycle completion' },
+  950: { title: 'FINAL APPROACH // 950H', sub: '950H MILESTONE // Fifty hours from Ascension' },
+  1000: {
+    title: 'OMEGA MONOLITH // CYCLE COMPLETE',
+    sub: '1,000H MILESTONE // Supreme 3,000th rank — ASCENSION available',
+  },
 };
 
 function buildClearanceLevels(): ClearanceLevel[] {
+  // One cycle (CYCLE_HOURS = 1,000H) spans all 10 divisions; each bound here
+  // is the legacy 30,000H-ladder value ÷30, keeping the original pacing
+  // shape (division 1 fastest, division 10 the big finale) intact.
   const divisionHourBounds: Array<[number, number]> = [
-    [0, 1500],       // DIV 1: LV 1..300 (5H per rank)
-    [1500, 4500],    // DIV 2: LV 301..600 (10H per rank)
-    [4500, 7500],    // DIV 3: LV 601..900 (10H per rank)
-    [7500, 10500],   // DIV 4: LV 901..1200 (10H per rank)
-    [10500, 13500],  // DIV 5: LV 1201..1500 (10H per rank)
-    [13500, 16500],  // DIV 6: LV 1501..1800 (10H per rank)
-    [16500, 19500],  // DIV 7: LV 1801..2100 (10H per rank)
-    [19500, 22500],  // DIV 8: LV 2101..2400 (10H per rank)
-    [22500, 26250],  // DIV 9: LV 2401..2700 (12.5H per rank)
-    [26250, 30000],  // DIV 10: LV 2701..3000 (12.5H per rank)
+    [0, 50],       // DIV 1: LV 1..300 (1/6H per rank, ~10 min)
+    [50, 150],     // DIV 2: LV 301..600 (1/3H per rank, ~20 min)
+    [150, 250],    // DIV 3: LV 601..900 (1/3H per rank)
+    [250, 350],    // DIV 4: LV 901..1200 (1/3H per rank)
+    [350, 450],    // DIV 5: LV 1201..1500 (1/3H per rank)
+    [450, 550],    // DIV 6: LV 1501..1800 (1/3H per rank)
+    [550, 650],    // DIV 7: LV 1801..2100 (1/3H per rank)
+    [650, 750],    // DIV 8: LV 2101..2400 (1/3H per rank)
+    [750, 875],    // DIV 9: LV 2401..2700 (5/12H per rank, 25 min)
+    [875, 1000],   // DIV 10: LV 2701..3000 (5/12H per rank)
   ];
 
   // 20 grades per archetype (doubled from 10) so each of the existing 15
@@ -352,7 +380,7 @@ export const CLEARANCE_LEVELS: ClearanceLevel[] = buildClearanceLevels();
 export interface UserClearanceStatus {
   current: ClearanceLevel;
   next: ClearanceLevel | null;
-  totalHours: number;
+  totalHours: number; // lifetime hours — never resets, even across Ascensions
   hoursIntoLevel: number;
   levelSpanHours: number;
   progressPct: number;
@@ -361,15 +389,32 @@ export interface UserClearanceStatus {
   hoursToNextSubPhase: number;
   unlockedCount: number;
   totalRanks: number;
+  cycleNumber: number; // the cycle currently on display (claimedCycles + 1)
+  cycleHours: number; // hours earned toward the displayed cycle, capped at CYCLE_HOURS
+  rawCycleNumber: number; // cycles actually earned from lifetime hours, ignoring claim state
+  ascensionAvailable: boolean; // an unclaimed cycle-complete is ready to Ascend
+  totalAscensions: number; // = claimedCycles
+  rewardUnlockLevel: number; // use this (not `current.level`) to gate Theme/Noise unlocks —
+  // stays maxed at 3,000 forever once the first Ascension is claimed, since
+  // reaching LV.3000 at least once is required to Ascend in the first place.
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function getClearanceStatus(totalMinutes: number): UserClearanceStatus {
-  const totalHours = Math.max(0, totalMinutes / 60);
+export function getClearanceStatus(
+  totalMinutes: number,
+  claimedCycles: number = 0
+): UserClearanceStatus {
+  const totalHoursLifetime = Math.max(0, totalMinutes / 60);
+  const safeClaimedCycles = Math.max(0, Math.floor(claimedCycles));
+  const cycleNumber = safeClaimedCycles + 1;
+  const rawCycleNumber = Math.floor(totalHoursLifetime / CYCLE_HOURS) + 1;
+  const cycleStartHours = safeClaimedCycles * CYCLE_HOURS;
+  const cycleHours = Math.min(CYCLE_HOURS, Math.max(0, totalHoursLifetime - cycleStartHours));
+  const ascensionAvailable = rawCycleNumber > cycleNumber;
 
   let currentIdx = 0;
   for (let i = CLEARANCE_LEVELS.length - 1; i >= 0; i--) {
-    if (totalHours >= CLEARANCE_LEVELS[i].requiredHours) {
+    if (cycleHours >= CLEARANCE_LEVELS[i].requiredHours) {
       currentIdx = i;
       break;
     }
@@ -377,13 +422,14 @@ export function getClearanceStatus(totalMinutes: number): UserClearanceStatus {
 
   const current = CLEARANCE_LEVELS[currentIdx];
   const next = currentIdx + 1 < CLEARANCE_LEVELS.length ? CLEARANCE_LEVELS[currentIdx + 1] : null;
+  const rewardUnlockLevel = safeClaimedCycles >= 1 ? CLEARANCE_LEVELS.length : current.level;
 
   if (!next) {
     return {
       current,
       next: null,
-      totalHours: +totalHours.toFixed(1),
-      hoursIntoLevel: +(totalHours - current.requiredHours).toFixed(1),
+      totalHours: +totalHoursLifetime.toFixed(1),
+      hoursIntoLevel: +(cycleHours - current.requiredHours).toFixed(1),
       levelSpanHours: 0,
       progressPct: 100,
       hoursRemainingToNext: 0,
@@ -391,23 +437,29 @@ export function getClearanceStatus(totalMinutes: number): UserClearanceStatus {
       hoursToNextSubPhase: 0,
       unlockedCount: CLEARANCE_LEVELS.length,
       totalRanks: CLEARANCE_LEVELS.length,
+      cycleNumber,
+      cycleHours: +cycleHours.toFixed(1),
+      rawCycleNumber,
+      ascensionAvailable,
+      totalAscensions: safeClaimedCycles,
+      rewardUnlockLevel,
     };
   }
 
   const span = Math.max(0.1, next.requiredHours - current.requiredHours);
-  const into = Math.max(0, totalHours - current.requiredHours);
+  const into = Math.max(0, cycleHours - current.requiredHours);
   const rawPct = Math.min(100, Math.max(0, (into / span) * 100));
   const progressPct = Math.round(rawPct * 10) / 10;
-  const hoursRemainingToNext = Math.max(0, +(next.requiredHours - totalHours).toFixed(1));
+  const hoursRemainingToNext = Math.max(0, +(next.requiredHours - cycleHours).toFixed(1));
 
   const subPhase = Math.min(5, Math.floor(rawPct / 20) + 1);
   const nextSubPhaseTargetHours = current.requiredHours + (span * subPhase) / 5;
-  const hoursToNextSubPhase = Math.max(0, +(nextSubPhaseTargetHours - totalHours).toFixed(1));
+  const hoursToNextSubPhase = Math.max(0, +(nextSubPhaseTargetHours - cycleHours).toFixed(1));
 
   return {
     current,
     next,
-    totalHours: +totalHours.toFixed(1),
+    totalHours: +totalHoursLifetime.toFixed(1),
     hoursIntoLevel: +into.toFixed(1),
     levelSpanHours: span,
     progressPct,
@@ -416,52 +468,291 @@ export function getClearanceStatus(totalMinutes: number): UserClearanceStatus {
     hoursToNextSubPhase,
     unlockedCount: currentIdx + 1,
     totalRanks: CLEARANCE_LEVELS.length,
+    cycleNumber,
+    cycleHours: +cycleHours.toFixed(1),
+    rawCycleNumber,
+    ascensionAvailable,
+    totalAscensions: safeClaimedCycles,
+    rewardUnlockLevel,
   };
+}
+
+export interface PrestigeBadge {
+  label: string;
+  colorHex: string;
+  isPrism: boolean;
+}
+
+// Escalating cosmetic tiers for repeat Ascension: gold -> platinum -> an
+// animated prismatic treatment (CSS class `.prestige-prism-text`, index.css)
+// for players who have cycled three or more times.
+// eslint-disable-next-line react-refresh/only-export-components
+export function getPrestigeBadge(totalAscensions: number): PrestigeBadge | null {
+  if (totalAscensions <= 0) return null;
+  const label = `✦ CYCLE ${String(totalAscensions + 1).padStart(2, '0')}`;
+  if (totalAscensions === 1) return { label, colorHex: '#eab308', isPrism: false };
+  if (totalAscensions === 2) return { label, colorHex: '#e5e7eb', isPrism: false };
+  return { label, colorHex: '#ffffff', isPrism: true };
 }
 
 // ==========================================
 // 2. WEB AUDIO API AMBIENT NOISE SYNTHESIZER
 // ==========================================
 
-export type NoiseMode = 'brown' | 'pink' | 'white' | 'drone';
+export type NoiseMode = string;
 
-const NOISE_PROFILES: Array<{
+type NoiseBaseColor = 'white' | 'pink' | 'brown' | 'blue' | 'violet';
+
+interface NoiseDroneTone {
+  freq: number;
+  type: OscillatorType;
+  gain: number;
+}
+
+interface NoiseSynthParams {
+  baseColor: NoiseBaseColor;
+  filterType: BiquadFilterType;
+  cutoffHz: number;
+  q?: number;
+  drone?: NoiseDroneTone[];
+  droneFilterHz?: number;
+  lfo?: { rate: number; depth: number; target: 'cutoff' | 'gain' };
+  trim?: number;
+}
+
+export interface NoiseProfile {
   id: NoiseMode;
   code: string;
   name: string;
   desc: string;
-}> = [
-  {
-    id: 'brown',
-    code: 'BRN',
-    name: 'DEEP BROWN NOISE',
-    desc: 'Warm low-frequency rumble (Cabin / Waterfall) for deep concentration',
-  },
-  {
-    id: 'pink',
-    code: 'PNK',
-    name: 'WARM PINK RAIN',
-    desc: 'Balanced 1/f natural rain spectrum for steady study sessions',
-  },
-  {
-    id: 'white',
-    code: 'WHT',
-    name: 'SOFT WHITE STATIC',
-    desc: 'Filtered air-flow static to mask background voices & distractions',
-  },
-  {
-    id: 'drone',
-    code: 'DRN',
-    name: '40Hz FOCUS DRONE',
-    desc: 'Subtle binaural ambient synth pad blended with warm brown noise',
-  },
+  family: string;
+  clearanceHintLv: number;
+  synth: NoiseSynthParams;
+}
+
+type NoisePreset = Omit<NoiseProfile, 'clearanceHintLv'>;
+
+function mkNoise(
+  id: string,
+  code: string,
+  name: string,
+  desc: string,
+  family: string,
+  synth: NoiseSynthParams
+): NoisePreset {
+  return { id, code, name, desc, family, synth };
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const NOISE_FAMILIES: Array<{ id: string; label: string; color: string }> = [
+  { id: 'BROWN', label: 'Brown / Rumble', color: '#b45309' },
+  { id: 'PINK', label: 'Pink / Rain', color: '#ec4899' },
+  { id: 'WHITE', label: 'White / Static', color: '#a1a1aa' },
+  { id: 'BLUE', label: 'Blue / Shimmer', color: '#38bdf8' },
+  { id: 'VIOLET', label: 'Violet / Sizzle', color: '#a855f7' },
+  { id: 'NATURE', label: 'Nature / LFO', color: '#22c55e' },
+  { id: 'MECHANICAL', label: 'Mechanical', color: '#64748b' },
+  { id: 'DRONE', label: 'Drone / Pad', color: '#6366f1' },
 ];
+
+// Deep rumble & low-frequency sources (lowpass-filtered brown noise).
+const BROWN_FAMILY: NoisePreset[] = [
+  mkNoise('brown', 'BRN', 'DEEP BROWN NOISE', 'Warm low-frequency rumble (Cabin / Waterfall) for deep concentration', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 950 }),
+  mkNoise('submarine-hum', 'SUB', 'SUBMARINE ENGINE HUM', 'Pressurized hull throb beneath the waterline for isolation-grade focus', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 500, q: 1.2 }),
+  mkNoise('underground-bunker', 'BNK', 'UNDERGROUND BUNKER DRONE', 'Thick concrete-shielded silence with a deep subterranean hum', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 350 }),
+  mkNoise('distant-thunder', 'THU', 'DISTANT THUNDER ROLL', 'Slow rolling thunder swell far beyond the horizon', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 300, lfo: { rate: 0.08, depth: 200, target: 'cutoff' } }),
+  mkNoise('boiler-room', 'BLR', 'INDUSTRIAL BOILER ROOM', 'Heavy pressurized boiler plant throb for mechanical focus', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 700, q: 2 }),
+  mkNoise('cave-depths', 'CAV', 'DEEP CAVE RESONANCE', 'Resonant limestone cavern air for still, echoing concentration', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 400, q: 1.5 }),
+  mkNoise('power-plant-hum', 'PWR', 'POWER PLANT TRANSFORMER HUM', 'Heavy electrical substation hum, steady and grounding', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 550 }),
+  mkNoise('earth-core', 'COR', 'EARTH CORE VIBRATION', 'Impossibly deep planetary rumble beneath the crust', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 250 }),
+  mkNoise('tunnel-wind', 'TUN', 'TUNNEL WIND RUMBLE', 'Pressurized subway tunnel air pushed ahead of an arriving train', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 600, lfo: { rate: 0.15, depth: 150, target: 'cutoff' } }),
+  mkNoise('bass-cocoon', 'COC', 'BASS COCOON WRAP', 'Enveloping low-end wrap for total sensory cocooning', 'BROWN', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 850, trim: 0.9 }),
+];
+
+// Balanced 1/f spectrum — rain, flowing water, paper, steady natural sources.
+const PINK_FAMILY: NoisePreset[] = [
+  mkNoise('pink', 'PNK', 'WARM PINK RAIN', 'Balanced 1/f natural rain spectrum for steady study sessions', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2400 }),
+  mkNoise('forest-canopy-rain', 'FOR', 'FOREST CANOPY RAIN', 'Rain filtering gently through a dense summer forest canopy', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2000 }),
+  mkNoise('tin-roof-rain', 'TIN', 'TIN ROOF RAINFALL', 'Crisp rainfall drumming on a corrugated tin roof', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2800, q: 1.3 }),
+  mkNoise('river-flow', 'RIV', 'STEADY RIVER FLOW', 'Wide steady river current with a slow natural swell', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 1800, lfo: { rate: 0.1, depth: 300, target: 'cutoff' } }),
+  mkNoise('waterfall-mist', 'MST', 'WATERFALL MIST VEIL', 'Soft diffuse waterfall mist spray, cool and continuous', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2200 }),
+  mkNoise('monsoon-downpour', 'MON', 'MONSOON DOWNPOUR', 'Heavy tropical monsoon downpour at full intensity', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 3000, trim: 1.05 }),
+  mkNoise('vinyl-hiss', 'VNY', 'VINTAGE VINYL HISS', 'Warm analog record-player surface hiss between tracks', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2600, q: 0.8 }),
+  mkNoise('library-murmur', 'LIB', 'LIBRARY PAPER MURMUR', 'Hushed reading-room air and distant turning pages', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 1600 }),
+  mkNoise('autumn-leaves', 'LEA', 'AUTUMN LEAVES RUSTLE', 'Dry autumn leaves rustling in a slow intermittent breeze', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2400, lfo: { rate: 0.2, depth: 0.06, target: 'gain' } }),
+  mkNoise('seashell-echo', 'SEA', 'SEASHELL OCEAN ECHO', 'The soft oceanic hush captured inside a held seashell', 'PINK', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 1900 }),
+];
+
+// Bright masking static — airflow, electronics, crisp full-spectrum hiss.
+const WHITE_FAMILY: NoisePreset[] = [
+  mkNoise('white', 'WHT', 'SOFT WHITE STATIC', 'Filtered air-flow static to mask background voices & distractions', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 4200 }),
+  mkNoise('air-conditioner', 'AIR', 'AIR CONDITIONER HUM', 'Steady climate-control airflow hum for office-grade masking', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 3800, q: 1.1 }),
+  mkNoise('box-fan-breeze', 'FAN', 'BOX FAN BREEZE', 'Oscillating box-fan breeze with a gentle rotating sweep', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 4500, lfo: { rate: 0.25, depth: 0.08, target: 'gain' } }),
+  mkNoise('jet-cabin', 'JET', 'JET CABIN CRUISE HUM', 'Cruising-altitude airliner cabin hum, muffled and distant', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 3200 }),
+  mkNoise('server-room', 'SRV', 'DATA SERVER ROOM', 'Dense server-rack cooling fans at full industrial load', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 5000, q: 1.4 }),
+  mkNoise('wind-tunnel', 'WND', 'WIND TUNNEL TEST', 'High-velocity laminar wind-tunnel airflow, perfectly even', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 4800 }),
+  mkNoise('hairdryer-steady', 'HRD', 'STEADY HAIRDRYER FLOW', 'Continuous hairdryer airflow held at a fixed distance', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 5200 }),
+  mkNoise('ventilation-duct', 'VNT', 'VENTILATION DUCT FLOW', 'Building ventilation duct airflow echoing down a corridor', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 3600 }),
+  mkNoise('aerosol-static', 'AER', 'AEROSOL MIST STATIC', 'Fine atomized mist static, light and airy', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 4000, trim: 0.85 }),
+  mkNoise('hospital-monitor', 'HOS', 'HOSPITAL MONITOR HISS', 'Clinical equipment hiss, clean and unobtrusive', 'WHITE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 4400 }),
+];
+
+// Bright high-frequency-emphasized textures (differentiated white noise).
+const BLUE_FAMILY: NoisePreset[] = [
+  mkNoise('digital-shimmer', 'DIG', 'DIGITAL SHIMMER STATIC', 'Crisp high-frequency digital shimmer, cool and precise', 'BLUE', { baseColor: 'blue', filterType: 'highpass', cutoffHz: 1200 }),
+  mkNoise('satellite-uplink', 'SAT', 'SATELLITE UPLINK HISS', 'Thin high-band carrier hiss from an orbital relay', 'BLUE', { baseColor: 'blue', filterType: 'highpass', cutoffHz: 1800 }),
+  mkNoise('glass-harmonics', 'GLS', 'GLASS HARMONIC RING', 'Resonant glass-rim harmonics sustained into static', 'BLUE', { baseColor: 'blue', filterType: 'highpass', cutoffHz: 2200, q: 2 }),
+  mkNoise('crystal-chime-static', 'CRY', 'CRYSTAL CHIME STATIC', 'Delicate crystalline chime texture dissolved into hiss', 'BLUE', { baseColor: 'blue', filterType: 'highpass', cutoffHz: 1500 }),
+  mkNoise('cyber-static', 'CYB', 'CYBER NEON STATIC', 'Neon-lit cyberpunk alley static, bright and synthetic', 'BLUE', { baseColor: 'blue', filterType: 'highpass', cutoffHz: 2000 }),
+  mkNoise('tinnitus-masker', 'TNM', 'GENTLE MASKING SHIMMER', 'Soft therapeutic shimmer tuned for light ear masking', 'BLUE', { baseColor: 'blue', filterType: 'highpass', cutoffHz: 1000, trim: 0.8 }),
+];
+
+// Sharper, sizzling high-frequency-emphasized textures (double-differentiated).
+const VIOLET_FAMILY: NoisePreset[] = [
+  mkNoise('starlight-sizzle', 'STR', 'STARLIGHT SIZZLE', 'Fine cosmic sizzle like starlight crackling through static', 'VIOLET', { baseColor: 'violet', filterType: 'highpass', cutoffHz: 2500 }),
+  mkNoise('plasma-field', 'PLS', 'PLASMA FIELD CRACKLE', 'Charged plasma-field crackle, sharp and electric', 'VIOLET', { baseColor: 'violet', filterType: 'highpass', cutoffHz: 3000, q: 1.5 }),
+  mkNoise('quartz-oscillation', 'QTZ', 'QUARTZ OSCILLATION', 'High-precision quartz-crystal oscillator whine', 'VIOLET', { baseColor: 'violet', filterType: 'highpass', cutoffHz: 2800 }),
+  mkNoise('ion-storm', 'ION', 'ION STORM STATIC', 'Charged upper-atmosphere ion storm static', 'VIOLET', { baseColor: 'violet', filterType: 'highpass', cutoffHz: 3500 }),
+  mkNoise('needle-rain', 'NDL', 'FINE NEEDLE RAIN', 'Fine needle-sharp rain on a metal awning', 'VIOLET', { baseColor: 'violet', filterType: 'highpass', cutoffHz: 2200 }),
+  mkNoise('spark-gap', 'SPK', 'SPARK GAP HISS', 'Tesla-coil spark-gap hiss, bright and brittle', 'VIOLET', { baseColor: 'violet', filterType: 'highpass', cutoffHz: 4000, trim: 0.75 }),
+];
+
+// Slowly modulated organic textures — waves, wind, weather (LFO-driven).
+const NATURE_FAMILY: NoisePreset[] = [
+  mkNoise('ocean-waves', 'OCN', 'OCEAN WAVE SWELL', 'Rolling ocean swell rising and receding on an open shore', 'NATURE', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 700, lfo: { rate: 0.06, depth: 350, target: 'cutoff' } }),
+  mkNoise('wind-through-trees', 'WTR', 'WIND THROUGH TREES', 'Gusting wind moving through a tall pine forest', 'NATURE', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2200, lfo: { rate: 0.18, depth: 500, target: 'cutoff' } }),
+  mkNoise('mountain-breeze', 'MTN', 'MOUNTAIN BREEZE DRIFT', 'Thin crisp high-altitude breeze drifting across a ridge', 'NATURE', { baseColor: 'white', filterType: 'highpass', cutoffHz: 1200, lfo: { rate: 0.12, depth: 0.07, target: 'gain' } }),
+  mkNoise('snowfall-hush', 'SNW', 'SNOWFALL HUSH', 'The near-total silence of snow falling on snow', 'NATURE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 2800, trim: 0.7 }),
+  mkNoise('babbling-brook', 'BRK', 'BABBLING BROOK FLOW', 'A small rocky brook babbling over smooth stones', 'NATURE', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2000, lfo: { rate: 0.35, depth: 300, target: 'cutoff' } }),
+  mkNoise('desert-wind', 'DSW', 'DESERT WIND GUST', 'Dry desert wind gusting across open dunes', 'NATURE', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 3400, lfo: { rate: 0.09, depth: 0.09, target: 'gain' } }),
+  mkNoise('rainforest-canopy', 'RFC', 'RAINFOREST CANOPY DRIP', 'Dripping humid canopy long after the rain has passed', 'NATURE', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2600, lfo: { rate: 0.22, depth: 0.05, target: 'gain' } }),
+  mkNoise('arctic-wind', 'ARC', 'ARCTIC WIND HOWL', 'Low howling arctic wind across an exposed ice shelf', 'NATURE', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 900, lfo: { rate: 0.07, depth: 300, target: 'cutoff' } }),
+];
+
+// Everyday mechanical / ambient environments.
+const MECHANICAL_FAMILY: NoisePreset[] = [
+  mkNoise('train-carriage', 'TRN', 'TRAIN CARRIAGE RATTLE', 'Rhythmic commuter-train carriage rattle over the rails', 'MECHANICAL', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 650, lfo: { rate: 0.5, depth: 0.04, target: 'gain' } }),
+  mkNoise('coffee-shop-murmur', 'CAF', 'COFFEE SHOP MURMUR', 'Indistinct cafe chatter and espresso machine hiss', 'MECHANICAL', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 1800, q: 1.6 }),
+  mkNoise('office-hum', 'OFC', 'OPEN OFFICE HUM', 'Open-plan office hum of keyboards, HVAC, and distant talk', 'MECHANICAL', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 2600, q: 1.3 }),
+  mkNoise('engine-room', 'ENG', 'SHIP ENGINE ROOM', 'Deep cargo-ship engine room throb below deck', 'MECHANICAL', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 500, q: 1.8 }),
+  mkNoise('airplane-cabin', 'PLN', 'AIRPLANE CABIN DRONE', 'Mid-flight cabin drone with a faint engine whine', 'MECHANICAL', { baseColor: 'white', filterType: 'lowpass', cutoffHz: 2000 }),
+  mkNoise('city-rain-window', 'CTY', 'CITY RAIN ON WINDOW', 'City rain tapping against a high-rise apartment window', 'MECHANICAL', { baseColor: 'pink', filterType: 'lowpass', cutoffHz: 2400, lfo: { rate: 0.3, depth: 0.05, target: 'gain' } }),
+];
+
+// Quiet filtered noise bed + layered oscillator tones for ambient focus pads.
+const DRONE_FAMILY: NoisePreset[] = [
+  mkNoise('drone', 'DRN', '40Hz FOCUS DRONE', 'Subtle binaural ambient synth pad blended with warm brown noise', 'DRONE', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 950, trim: 0.5, drone: [{ freq: 110, type: 'sine', gain: 0.08 }, { freq: 164.81, type: 'triangle', gain: 0.05 }], droneFilterHz: 320 }),
+  mkNoise('theta-wave-pad', 'THT', 'THETA WAVE FOCUS PAD', 'Slow layered theta-range pad for deep flow states', 'DRONE', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 850, trim: 0.5, drone: [{ freq: 136.1, type: 'sine', gain: 0.07 }, { freq: 144.1, type: 'triangle', gain: 0.05 }], droneFilterHz: 300 }),
+  mkNoise('tibetan-bowl', 'TIB', 'TIBETAN SINGING BOWL', 'Sustained singing-bowl resonance over a quiet noise bed', 'DRONE', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 900, trim: 0.5, drone: [{ freq: 220, type: 'sine', gain: 0.09 }, { freq: 330, type: 'sine', gain: 0.04 }], droneFilterHz: 500 }),
+  mkNoise('cosmic-hum-pad', 'COS', 'COSMIC DEEP HUM PAD', 'Vast sub-bass cosmic hum layered with a soft overtone', 'DRONE', { baseColor: 'brown', filterType: 'lowpass', cutoffHz: 800, trim: 0.5, drone: [{ freq: 55, type: 'sine', gain: 0.1 }, { freq: 82.5, type: 'triangle', gain: 0.06 }], droneFilterHz: 250 }),
+];
+
+function interleaveNoiseFamilies(families: NoisePreset[][]): NoisePreset[] {
+  const result: NoisePreset[] = [];
+  const maxLen = Math.max(...families.map((f) => f.length));
+  for (let i = 0; i < maxLen; i++) {
+    families.forEach((fam) => {
+      if (i < fam.length) result.push(fam[i]);
+    });
+  }
+  return result;
+}
+
+const NOISE_ORDER = interleaveNoiseFamilies([
+  BROWN_FAMILY,
+  PINK_FAMILY,
+  WHITE_FAMILY,
+  BLUE_FAMILY,
+  VIOLET_FAMILY,
+  NATURE_FAMILY,
+  MECHANICAL_FAMILY,
+  DRONE_FAMILY,
+]);
+
+// The original 4 presets stay available from LV.0001 (unchanged default
+// behavior); the remaining ~56 unlock progressively, evenly spread across
+// the full 1..3,000 rank ladder so a new Noise profile lands roughly every
+// ~50 ranks — a steady secondary reward track alongside Surface Themes.
+const DEFAULT_UNLOCKED_NOISE_IDS = new Set(['brown', 'pink', 'white', 'drone']);
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const NOISE_PROFILES: NoiseProfile[] = NOISE_ORDER.map((preset, idx) => ({
+  ...preset,
+  clearanceHintLv: DEFAULT_UNLOCKED_NOISE_IDS.has(preset.id)
+    ? 1
+    : Math.max(2, Math.round(((idx + 1) / NOISE_ORDER.length) * 3000)),
+}));
+
+function generateColorNoise(output: Float32Array, bufferSize: number, baseColor: NoiseBaseColor) {
+  if (baseColor === 'white') {
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * 0.28;
+    }
+  } else if (baseColor === 'pink') {
+    let b0 = 0,
+      b1 = 0,
+      b2 = 0,
+      b3 = 0,
+      b4 = 0,
+      b5 = 0,
+      b6 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.055;
+      b6 = white * 0.115926;
+    }
+  } else if (baseColor === 'brown') {
+    let lastOut = 0.0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      output[i] = (lastOut + 0.02 * white) / 1.02;
+      lastOut = output[i];
+      output[i] *= 3.2 * 0.45;
+    }
+  } else if (baseColor === 'blue') {
+    // Differentiated white noise: +3dB/octave high-frequency emphasis.
+    let prev = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      output[i] = (white - prev) * 0.5;
+      prev = white;
+    }
+  } else {
+    // violet: double-differentiated white noise, steeper +6dB/octave sizzle.
+    let p1 = 0,
+      p2 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      output[i] = (white - 2 * p1 + p2) * 0.25;
+      p2 = p1;
+      p1 = white;
+    }
+  }
+}
 
 interface AmbientSoundControlProps {
   isDark: boolean;
   borderCol: string;
   bgCard: string;
   textMuted: string;
+  userClearanceLevel: number;
+  userTotalHours: number;
+}
+
+// Soundscape Mixer: up to this many procedural layers can play at once, each
+// with its own fader, mixed into one shared master output. Capped to keep
+// the UI legible and avoid the mix collapsing into indistinct static.
+const MAX_MIX_LAYERS = 5;
+
+interface MixLayer {
+  id: string; // NoiseProfile.id
+  volume: number; // 0..1, this layer's own fader
 }
 
 export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
@@ -469,90 +760,80 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   borderCol,
   bgCard,
   textMuted,
+  userClearanceLevel,
+  userTotalHours,
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [mode, setMode] = useState<NoiseMode>('brown');
-  const [volume, setVolume] = useState<number>(0.35);
+  const [layers, setLayers] = useState<MixLayer[]>([]);
+  const [masterVolume, setMasterVolume] = useState<number>(0.35);
   const [showPopover, setShowPopover] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [familyFilter, setFamilyFilter] = useState<string>('ALL');
+  const [lockedNotice, setLockedNotice] = useState<string | null>(null);
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
-  const activeNodesRef = useRef<AudioNode[]>([]);
+  // Node-based audio graph, keyed per layer so one layer can be added/removed
+  // or have its fader adjusted without touching any other active layer.
+  const layerNodesRef = useRef<Map<string, AudioNode[]>>(new Map());
+  const layerGainRef = useRef<Map<string, GainNode>>(new Map());
 
-  const stopAudioNodes = useCallback(() => {
-    activeNodesRef.current.forEach((node) => {
-      try {
-        if ('stop' in node && typeof (node as AudioScheduledSourceNode).stop === 'function') {
-          (node as AudioScheduledSourceNode).stop();
+  const ensureAudioCtx = useCallback((): AudioContext => {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioCtx();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+    if (!masterGainRef.current) {
+      masterGainRef.current = ctx.createGain();
+      masterGainRef.current.gain.value = masterVolume;
+      masterGainRef.current.connect(ctx.destination);
+    }
+    return ctx;
+  }, [masterVolume]);
+
+  const stopLayerNodes = useCallback((id: string) => {
+    const nodes = layerNodesRef.current.get(id);
+    if (nodes) {
+      nodes.forEach((node) => {
+        try {
+          if ('stop' in node && typeof (node as AudioScheduledSourceNode).stop === 'function') {
+            (node as AudioScheduledSourceNode).stop();
+          }
+          node.disconnect();
+        } catch {
+          // ignore already-stopped nodes
         }
-        node.disconnect();
-      } catch {
-        // ignore already stopped nodes
-      }
-    });
-    activeNodesRef.current = [];
+      });
+    }
+    layerNodesRef.current.delete(id);
+    layerGainRef.current.delete(id);
   }, []);
 
-  const buildAndStartGraph = useCallback(
-    (targetMode: NoiseMode, targetVol: number) => {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioCtx();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
+  const buildLayerGraph = useCallback(
+    (profile: NoiseProfile, volume: number) => {
+      const ctx = ensureAudioCtx();
+      const master = masterGainRef.current;
+      if (!master) return;
+      const nodes: AudioNode[] = [];
 
-      stopAudioNodes();
-
-      if (!masterGainRef.current) {
-        masterGainRef.current = ctx.createGain();
-        masterGainRef.current.connect(ctx.destination);
-      }
-      masterGainRef.current.gain.setValueAtTime(targetVol, ctx.currentTime);
+      // Per-layer fader: every profile gets its own gain stage feeding into
+      // the shared master output, so each layer can be balanced
+      // independently without rebuilding the rest of the mix.
+      const layerGain = ctx.createGain();
+      const trim = profile.synth.trim ?? 1;
+      layerGain.gain.value = volume * trim;
+      layerGain.connect(master);
 
       const bufferSize = ctx.sampleRate * 5;
       const buffer = ctx.createBuffer(2, bufferSize, ctx.sampleRate);
-
       for (let ch = 0; ch < 2; ch++) {
-        const output = buffer.getChannelData(ch);
-        if (targetMode === 'white') {
-          for (let i = 0; i < bufferSize; i++) {
-            output[i] = (Math.random() * 2 - 1) * 0.28;
-          }
-        } else if (targetMode === 'pink') {
-          let b0 = 0,
-            b1 = 0,
-            b2 = 0,
-            b3 = 0,
-            b4 = 0,
-            b5 = 0,
-            b6 = 0;
-          for (let i = 0; i < bufferSize; i++) {
-            const white = Math.random() * 2 - 1;
-            b0 = 0.99886 * b0 + white * 0.0555179;
-            b1 = 0.99332 * b1 + white * 0.0750759;
-            b2 = 0.96900 * b2 + white * 0.1538520;
-            b3 = 0.86650 * b3 + white * 0.3104856;
-            b4 = 0.55000 * b4 + white * 0.5329522;
-            b5 = -0.7616 * b5 - white * 0.0168980;
-            output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.055;
-            b6 = white * 0.115926;
-          }
-        } else {
-          let lastOut = 0.0;
-          const scale = targetMode === 'drone' ? 0.25 : 0.45;
-          for (let i = 0; i < bufferSize; i++) {
-            const white = Math.random() * 2 - 1;
-            output[i] = (lastOut + 0.02 * white) / 1.02;
-            lastOut = output[i];
-            output[i] *= 3.2 * scale;
-          }
-        }
+        generateColorNoise(buffer.getChannelData(ch), bufferSize, profile.synth.baseColor);
       }
 
       const noiseSource = ctx.createBufferSource();
@@ -560,61 +841,109 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       noiseSource.loop = true;
 
       const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value =
-        targetMode === 'white' ? 4200 : targetMode === 'pink' ? 2400 : 950;
+      filter.type = profile.synth.filterType;
+      filter.frequency.value = profile.synth.cutoffHz;
+      if (profile.synth.q) filter.Q.value = profile.synth.q;
 
       noiseSource.connect(filter);
-      filter.connect(masterGainRef.current);
+      filter.connect(layerGain);
       noiseSource.start(0);
-      activeNodesRef.current.push(noiseSource, filter);
+      nodes.push(noiseSource, filter);
 
-      if (targetMode === 'drone') {
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
+      if (profile.synth.lfo) {
+        const lfoOsc = ctx.createOscillator();
+        lfoOsc.type = 'sine';
+        lfoOsc.frequency.value = profile.synth.lfo.rate;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = profile.synth.lfo.depth;
+        lfoOsc.connect(lfoGain);
+        lfoGain.connect(profile.synth.lfo.target === 'cutoff' ? filter.frequency : layerGain.gain);
+        lfoOsc.start(0);
+        nodes.push(lfoOsc, lfoGain);
+      }
+
+      if (profile.synth.drone && profile.synth.drone.length > 0) {
         const droneGain = ctx.createGain();
-
-        osc1.type = 'sine';
-        osc2.type = 'triangle';
-        osc1.frequency.value = 110;
-        osc2.frequency.value = 164.81;
-
         const droneFilter = ctx.createBiquadFilter();
         droneFilter.type = 'lowpass';
-        droneFilter.frequency.value = 320;
-
-        droneGain.gain.value = 0.08;
-        osc1.connect(droneFilter);
-        osc2.connect(droneFilter);
+        droneFilter.frequency.value = profile.synth.droneFilterHz ?? 320;
         droneFilter.connect(droneGain);
-        droneGain.connect(masterGainRef.current);
+        droneGain.connect(layerGain);
+        nodes.push(droneFilter, droneGain);
 
-        osc1.start(0);
-        osc2.start(0);
-        activeNodesRef.current.push(osc1, osc2, droneFilter, droneGain);
+        profile.synth.drone.forEach((tone) => {
+          const osc = ctx.createOscillator();
+          osc.type = tone.type;
+          osc.frequency.value = tone.freq;
+          const toneGain = ctx.createGain();
+          toneGain.gain.value = tone.gain;
+          osc.connect(toneGain);
+          toneGain.connect(droneFilter);
+          osc.start(0);
+          nodes.push(osc, toneGain);
+        });
       }
+
+      layerNodesRef.current.set(profile.id, nodes);
+      layerGainRef.current.set(profile.id, layerGain);
     },
-    [stopAudioNodes]
+    [ensureAudioCtx]
   );
 
-  const togglePlay = () => {
-    if (isPlaying) {
-      stopAudioNodes();
-      setIsPlaying(false);
-    } else {
-      buildAndStartGraph(mode, volume);
-      setIsPlaying(true);
+  const isProfileUnlocked = useCallback(
+    (profile: NoiseProfile) => isRewardUnlocked(userClearanceLevel, profile.clearanceHintLv),
+    [userClearanceLevel]
+  );
+
+  const stopAllLayers = useCallback(() => {
+    layerNodesRef.current.forEach((_nodes, id) => stopLayerNodes(id));
+    setLayers([]);
+  }, [stopLayerNodes]);
+
+  const toggleLayer = (profile: NoiseProfile) => {
+    const alreadyActive = layers.some((l) => l.id === profile.id);
+    if (alreadyActive) {
+      stopLayerNodes(profile.id);
+      setLayers((prev) => prev.filter((l) => l.id !== profile.id));
+      return;
+    }
+
+    if (!isProfileUnlocked(profile)) {
+      const reqHours = CLEARANCE_LEVELS[profile.clearanceHintLv - 1]?.requiredHours ?? 0;
+      const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
+      setLockedNotice(
+        `[${profile.code} // ${profile.name}] unlocks at CLEARANCE LV.${String(
+          profile.clearanceHintLv
+        ).padStart(4, '0')} (${reqHours}H — need ${hoursRemaining}H more).`
+      );
+      return;
+    }
+
+    if (layers.length >= MAX_MIX_LAYERS) {
+      setLockedNotice(
+        `Mix is full (${MAX_MIX_LAYERS}/${MAX_MIX_LAYERS}) — remove a layer before adding another.`
+      );
+      return;
+    }
+
+    setLockedNotice(null);
+    const defaultVolume = 0.5;
+    buildLayerGraph(profile, defaultVolume);
+    setLayers((prev) => [...prev, { id: profile.id, volume: defaultVolume }]);
+  };
+
+  const setLayerVolume = (id: string, vol: number) => {
+    setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, volume: vol } : l)));
+    const gainNode = layerGainRef.current.get(id);
+    const profile = NOISE_PROFILES.find((p) => p.id === id);
+    if (gainNode && audioCtxRef.current && profile) {
+      const trim = profile.synth.trim ?? 1;
+      gainNode.gain.setTargetAtTime(vol * trim, audioCtxRef.current.currentTime, 0.03);
     }
   };
 
-  const handleModeSelect = (newMode: NoiseMode) => {
-    setMode(newMode);
-    buildAndStartGraph(newMode, volume);
-    setIsPlaying(true);
-  };
-
-  const handleVolumeChange = (newVol: number) => {
-    setVolume(newVol);
+  const handleMasterVolumeChange = (newVol: number) => {
+    setMasterVolume(newVol);
     if (masterGainRef.current && audioCtxRef.current) {
       masterGainRef.current.gain.setTargetAtTime(newVol, audioCtxRef.current.currentTime, 0.03);
     }
@@ -631,42 +960,71 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showPopover]);
 
+  // Command-palette quick actions ("Play Brown Noise" etc.) replace the
+  // whole mix with just that one profile — a predictable "quick switch"
+  // rather than silently layering onto whatever is already playing.
   useEffect(() => {
     const handleExternalSoundCmd = (e: Event) => {
       const custom = e as CustomEvent<{ action: 'play' | 'stop' | 'toggle'; mode?: NoiseMode }>;
       if (!custom.detail) return;
       if (custom.detail.action === 'stop') {
-        stopAudioNodes();
-        setIsPlaying(false);
+        stopAllLayers();
       } else if (custom.detail.action === 'toggle') {
-        if (isPlaying) {
-          stopAudioNodes();
-          setIsPlaying(false);
+        if (layers.length > 0) {
+          stopAllLayers();
         } else {
-          buildAndStartGraph(mode, volume);
-          setIsPlaying(true);
+          const profile = NOISE_PROFILES[0];
+          if (isRewardUnlocked(userClearanceLevel, profile.clearanceHintLv)) {
+            buildLayerGraph(profile, 0.5);
+            setLayers([{ id: profile.id, volume: 0.5 }]);
+          }
         }
       } else if (custom.detail.action === 'play') {
-        const targetMode = custom.detail.mode || mode;
-        setMode(targetMode);
-        buildAndStartGraph(targetMode, volume);
-        setIsPlaying(true);
+        const targetId = custom.detail.mode || NOISE_PROFILES[0].id;
+        const profile = NOISE_PROFILES.find((p) => p.id === targetId) || NOISE_PROFILES[0];
+        if (!isRewardUnlocked(userClearanceLevel, profile.clearanceHintLv)) return;
+        layerNodesRef.current.forEach((_nodes, id) => stopLayerNodes(id));
+        buildLayerGraph(profile, 0.5);
+        setLayers([{ id: profile.id, volume: 0.5 }]);
       }
     };
     window.addEventListener('typbox:ambient-sound', handleExternalSoundCmd);
     return () => window.removeEventListener('typbox:ambient-sound', handleExternalSoundCmd);
-  }, [buildAndStartGraph, isPlaying, mode, stopAudioNodes, volume]);
+  }, [buildLayerGraph, layers.length, stopAllLayers, stopLayerNodes, userClearanceLevel]);
 
   useEffect(() => {
+    const nodesMap = layerNodesRef.current;
     return () => {
-      stopAudioNodes();
+      nodesMap.forEach((_nodes, id) => stopLayerNodes(id));
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {});
       }
     };
-  }, [stopAudioNodes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const activeProfile = NOISE_PROFILES.find((p) => p.id === mode) || NOISE_PROFILES[0];
+  const unlockedCount = useMemo(
+    () => NOISE_PROFILES.filter((p) => isRewardUnlocked(userClearanceLevel, p.clearanceHintLv)).length,
+    [userClearanceLevel]
+  );
+
+  const filteredProfiles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return NOISE_PROFILES.filter((p) => {
+      if (familyFilter !== 'ALL' && p.family !== familyFilter) return false;
+      if (q) {
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.code.toLowerCase().includes(q) ||
+          p.desc.toLowerCase().includes(q) ||
+          p.family.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [familyFilter, searchQuery]);
+
+  const isPlaying = layers.length > 0;
 
   return (
     <div className="relative" ref={popoverRef}>
@@ -678,13 +1036,17 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
             ? 'border-emerald-500/70 bg-emerald-500/10 text-emerald-400'
             : `${borderCol} hover:opacity-80`
         }`}
-        aria-label="Ambient Focus Sound Generator"
-        title="Ambient Noise / Focus Sound Generator"
+        aria-label="Ambient Soundscape Mixer"
+        title="Ambient Soundscape Mixer"
       >
         {isPlaying ? (
           <>
             <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="hidden md:inline font-semibold tracking-wider">{activeProfile.code}</span>
+            <span className="hidden md:inline font-semibold tracking-wider">
+              {layers.length === 1
+                ? NOISE_PROFILES.find((p) => p.id === layers[0].id)?.code
+                : `MIX ×${layers.length}`}
+            </span>
             <span className="flex items-end space-x-0.5 h-3 ml-0.5">
               <span className="w-0.5 h-2 bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-0.5 h-3 bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -701,84 +1063,206 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 
       {showPopover && (
         <div
-          className={`fixed left-3 right-3 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 border ${borderCol} ${bgCard} shadow-2xl z-50 p-4 font-mono text-xs space-y-3.5`}
+          className={`fixed left-3 right-3 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] border ${borderCol} ${bgCard} shadow-2xl z-50 p-4 font-mono text-xs space-y-3`}
         >
           <div className="flex items-center justify-between border-b pb-2.5 border-zinc-800/60">
             <div className="flex items-center space-x-2">
               <Radio className={`w-3.5 h-3.5 ${isPlaying ? 'text-emerald-400 animate-pulse' : textMuted}`} />
-              <span className="text-[11px] font-bold uppercase tracking-widest">
-                ACOUSTIC FOCUS ENGINE
+              <span className="text-[11px] font-bold uppercase tracking-widest">SOUNDSCAPE MIXER</span>
+              <span className={`text-[9px] px-1.5 py-0.2 border ${borderCol} text-emerald-400`}>
+                {unlockedCount} / {NOISE_PROFILES.length}
               </span>
             </div>
             <button
               type="button"
-              onClick={togglePlay}
-              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+              onClick={stopAllLayers}
+              disabled={!isPlaying}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
                 isPlaying
-                  ? 'bg-amber-500 text-zinc-950 hover:bg-amber-400'
-                  : 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400'
+                  ? 'bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer'
+                  : `border ${borderCol} ${textMuted} cursor-default`
               }`}
             >
-              {isPlaying ? 'STOP // MUTE' : 'START NOISE'}
+              {isPlaying ? `STOP ALL (${layers.length})` : 'MIX EMPTY'}
             </button>
           </div>
 
-          <div className="space-y-1.5">
-            <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>
-              Select Procedural Spectrum
+          {lockedNotice && (
+            <div className="p-2 border border-amber-500/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center justify-between">
+              <span className="flex items-center space-x-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>{lockedNotice}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setLockedNotice(null)}
+                className="text-[9px] underline ml-2 cursor-pointer"
+              >
+                DISMISS
+              </button>
             </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {NOISE_PROFILES.map((prof) => {
-                const active = mode === prof.id;
-                return (
-                  <button
-                    key={prof.id}
-                    type="button"
-                    onClick={() => handleModeSelect(prof.id)}
-                    className={`p-2.5 border text-left transition-colors cursor-pointer flex items-start justify-between ${
-                      active
-                        ? 'border-emerald-500/70 bg-emerald-500/10'
-                        : `${borderCol} hover:border-zinc-500`
-                    }`}
-                  >
-                    <div className="space-y-0.5 pr-2">
-                      <div className="flex items-center space-x-2">
-                        <span
-                          className={`text-[10px] px-1 py-0.2 border ${
-                            active
-                              ? 'border-emerald-500 text-emerald-400 font-bold'
-                              : `${borderCol} ${textMuted}`
-                          }`}
-                        >
-                          {prof.code}
+          )}
+
+          {layers.length > 0 && (
+            <div className="space-y-1.5">
+              <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>
+                Active Mix ({layers.length}/{MAX_MIX_LAYERS})
+              </div>
+              <div className="space-y-1.5">
+                {layers.map((layer) => {
+                  const profile = NOISE_PROFILES.find((p) => p.id === layer.id);
+                  if (!profile) return null;
+                  return (
+                    <div
+                      key={layer.id}
+                      className="p-2 border border-emerald-500/40 bg-emerald-500/5 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center space-x-1.5 min-w-0">
+                          <span className="text-[9px] px-1 py-0.2 border border-emerald-500 text-emerald-400 font-bold shrink-0">
+                            {profile.code}
+                          </span>
+                          <span className="text-[11px] font-bold truncate">{profile.name}</span>
                         </span>
-                        <span className={`text-[11px] font-bold ${active ? 'text-emerald-400' : ''}`}>
-                          {prof.name}
+                        <button
+                          type="button"
+                          onClick={() => toggleLayer(profile)}
+                          className="text-[9px] text-amber-400 hover:text-amber-300 cursor-pointer shrink-0 uppercase font-bold"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="range"
+                          min={0.02}
+                          max={1}
+                          step={0.01}
+                          value={layer.volume}
+                          onChange={(e) => setLayerVolume(layer.id, Number(e.target.value))}
+                          className={`flex-1 h-1 appearance-none cursor-pointer accent-emerald-500 ${
+                            isDark ? 'bg-zinc-800' : 'bg-zinc-200'
+                          }`}
+                        />
+                        <span className="text-[9px] text-emerald-400 font-bold w-8 text-right">
+                          {Math.round(layer.volume * 100)}%
                         </span>
                       </div>
-                      <p className={`text-[10px] font-sans leading-snug ${textMuted}`}>{prof.desc}</p>
                     </div>
-                    {active && isPlaying && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping mt-1 shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
+          )}
+
+          <div className="space-y-1.5">
+            <div className={`flex items-center border ${borderCol} px-2 py-1`}>
+              <Search className={`w-3.5 h-3.5 mr-1.5 ${textMuted}`} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={`Search ${NOISE_PROFILES.length} procedural spectra...`}
+                className="w-full bg-transparent text-xs outline-none"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setFamilyFilter('ALL')}
+                className={`px-1.5 py-0.5 text-[9px] border cursor-pointer ${
+                  familyFilter === 'ALL'
+                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                    : `${borderCol} ${textMuted}`
+                }`}
+              >
+                ALL
+              </button>
+              {NOISE_FAMILIES.map((fam) => (
+                <button
+                  key={fam.id}
+                  type="button"
+                  onClick={() => setFamilyFilter(familyFilter === fam.id ? 'ALL' : fam.id)}
+                  className={`px-1.5 py-0.5 text-[9px] border flex items-center space-x-1 cursor-pointer ${
+                    familyFilter === fam.id
+                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                      : `${borderCol} ${textMuted} hover:opacity-100`
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: fam.color }} />
+                  <span>{fam.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto grid grid-cols-1 gap-1.5 pr-1">
+            {filteredProfiles.map((prof) => {
+              const inMix = layers.some((l) => l.id === prof.id);
+              const unlocked = isProfileUnlocked(prof);
+              return (
+                <button
+                  key={prof.id}
+                  type="button"
+                  onClick={() => toggleLayer(prof)}
+                  className={`p-2.5 border text-left transition-colors cursor-pointer flex items-start justify-between ${
+                    inMix
+                      ? 'border-emerald-500/70 bg-emerald-500/10'
+                      : unlocked
+                      ? `${borderCol} hover:border-zinc-500`
+                      : `${borderCol} opacity-65 hover:opacity-90`
+                  }`}
+                >
+                  <div className="space-y-0.5 pr-2 min-w-0">
+                    <div className="flex items-center space-x-2 flex-wrap gap-y-0.5">
+                      <span
+                        className={`text-[10px] px-1 py-0.2 border ${
+                          inMix
+                            ? 'border-emerald-500 text-emerald-400 font-bold'
+                            : `${borderCol} ${textMuted}`
+                        }`}
+                      >
+                        {prof.code}
+                      </span>
+                      <span className={`text-[11px] font-bold ${inMix ? 'text-emerald-400' : ''}`}>
+                        {prof.name}
+                      </span>
+                      {inMix && (
+                        <span className="text-[9px] px-1 py-0.2 bg-emerald-500 text-zinc-950 font-bold uppercase">
+                          In Mix
+                        </span>
+                      )}
+                      {!unlocked && (
+                        <span
+                          className={`text-[9px] px-1 py-0.2 border ${borderCol} text-amber-400 flex items-center space-x-1`}
+                        >
+                          <Lock className="w-2.5 h-2.5" />
+                          <span>LV.{String(prof.clearanceHintLv).padStart(4, '0')}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-[10px] font-sans leading-snug ${textMuted}`}>{prof.desc}</p>
+                  </div>
+                  {inMix && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping mt-1 shrink-0" />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-[10px]">
-              <span className={`uppercase ${textMuted}`}>Output Gain</span>
-              <span className="font-bold text-emerald-400">{Math.round(volume * 100)}%</span>
+              <span className={`uppercase ${textMuted}`}>Master Output</span>
+              <span className="font-bold text-emerald-400">{Math.round(masterVolume * 100)}%</span>
             </div>
             <input
               type="range"
               min={0.02}
               max={1}
               step={0.01}
-              value={volume}
-              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              value={masterVolume}
+              onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
               className={`w-full h-1.5 appearance-none cursor-pointer accent-emerald-500 ${
                 isDark ? 'bg-zinc-800' : 'bg-zinc-200'
               }`}
@@ -799,6 +1283,7 @@ interface ClearanceBrowserProps {
   isDark: boolean;
   borderCol: string;
   textMuted: string;
+  onClaimAscension?: () => void;
 }
 
 export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
@@ -806,6 +1291,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
   isDark,
   borderCol,
   textMuted,
+  onClaimAscension,
 }) => {
   const [filterMode, setFilterMode] = useState<
     'all' | 'rewards' | 'milestones' | 'unlocked' | 'locked'
@@ -855,14 +1341,18 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
               LV.{String(clearance.current.level).padStart(4, '0')}
             </span>
             <div>
-              <div className="text-sm font-bold tracking-wider flex items-center space-x-2">
+              <div className="text-sm font-bold tracking-wider flex items-center space-x-2 flex-wrap gap-y-1">
                 <span>{clearance.current.title}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
                   {clearance.current.division}
                 </span>
+                <span className={`text-[10px] px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
+                  CYCLE {String(clearance.cycleNumber).padStart(2, '0')}
+                </span>
               </div>
               <div className={`text-[10px] ${textMuted}`}>
-                TOTAL ARCHIVED: <strong className="text-emerald-400">{clearance.totalHours}H</strong> //{' '}
+                LIFETIME ARCHIVED: <strong className="text-emerald-400">{clearance.totalHours}H</strong> //{' '}
+                CYCLE: <strong className="text-emerald-400">{clearance.cycleHours}H / 1,000H</strong> //{' '}
                 {clearance.unlockedCount} OF {clearance.totalRanks.toLocaleString()} CLEARANCE RANKS UNLOCKED
               </div>
             </div>
@@ -901,13 +1391,21 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
               CURRENT: LV.{String(clearance.current.level).padStart(4, '0')} (
               {clearance.current.requiredHours}H)
             </span>
-            {clearance.next ? (
+            {clearance.ascensionAvailable && onClaimAscension ? (
+              <button
+                type="button"
+                onClick={onClaimAscension}
+                className="text-amber-400 font-bold uppercase tracking-wider animate-pulse cursor-pointer hover:text-amber-300"
+              >
+                ⚡ ASCENSION AVAILABLE — CLAIM NOW
+              </button>
+            ) : clearance.next ? (
               <span>
                 NEXT: LV.{String(clearance.next.level).padStart(4, '0')} {clearance.next.title} (
                 {clearance.next.requiredHours}H) — {clearance.progressPct}%
               </span>
             ) : (
-              <span className="text-emerald-400 font-bold">MAX CLEARANCE ACHIEVED (30,000H+)</span>
+              <span className="text-emerald-400 font-bold">CYCLE COMPLETE (1,000H+)</span>
             )}
           </div>
           <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
@@ -1272,8 +1770,12 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
 
     ctx.fillStyle = textSub;
     ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    const cycleTag =
+      clearance.totalAscensions > 0
+        ? `CYCLE ${String(clearance.cycleNumber).padStart(2, '0')} (✦${clearance.totalAscensions})`
+        : `CYCLE ${String(clearance.cycleNumber).padStart(2, '0')}`;
     ctx.fillText(
-      `DIVISION: ${clearance.current.division}  •  PHASE ${clearance.subPhase}/5`,
+      `${cycleTag}  •  DIVISION: ${clearance.current.division}  •  PHASE ${clearance.subPhase}/5`,
       156 + pillWidth + 16,
       195
     );
@@ -1284,9 +1786,11 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     ctx.fillStyle = textSub;
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     ctx.fillText(
-      clearance.next
+      clearance.ascensionAvailable
+        ? 'CLEARANCE PROGRESS // ASCENSION AVAILABLE'
+        : clearance.next
         ? `CLEARANCE PROGRESS // NEXT: LV.${String(clearance.next.level).padStart(4, '0')} (${clearance.next.requiredHours}H)`
-        : 'CLEARANCE STATUS // MAXIMUM MONOLITH LEVEL',
+        : 'CLEARANCE STATUS // CYCLE COMPLETE',
       progX,
       progY
     );
@@ -1357,7 +1861,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     );
 
     const activeDateSet = new Set(logs.filter((l) => l.durationMinutes > 0).map((l) => l.date));
-    const cols = showCategoriesOnCard ? 28 : 48;
+    const maxCols = showCategoriesOnCard ? 28 : 48;
     const cellSize = 16;
     const cellGap = 4;
     const gridStartX = 80;
@@ -1366,6 +1870,28 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     const now = new Date();
     const dayOfWeek = (now.getDay() + 6) % 7;
     const currentMon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+
+    // Mirror the live dashboard's adaptive window: the grid starts at the
+    // Monday of the user's FIRST logged week (not a fixed lookback ending
+    // today), so a newer account's cadence visibly fills in from the
+    // top-left instead of being squeezed into the right-hand columns of an
+    // otherwise-empty fixed-size grid.
+    let originMon = new Date(currentMon);
+    if (logs.length > 0) {
+      const oldestStr = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
+      const oldestDate = new Date(`${oldestStr}T00:00:00`);
+      if (!isNaN(oldestDate.getTime())) {
+        const oldestDow = (oldestDate.getDay() + 6) % 7;
+        originMon = new Date(
+          oldestDate.getFullYear(),
+          oldestDate.getMonth(),
+          oldestDate.getDate() - oldestDow
+        );
+      }
+    }
+    const weeksOfHistory =
+      Math.round((currentMon.getTime() - originMon.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    const cols = Math.min(maxCols, Math.max(1, weeksOfHistory));
 
     for (let c = 0; c < cols; c++) {
       const weekOffset = cols - 1 - c;
@@ -2042,7 +2568,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       {
         id: 'system-clearance',
         group: 'SYSTEM & TELEMETRY',
-        title: `Clearance: Open ${CLEARANCE_LEVELS.length.toLocaleString()} Ranks Directory (0h – 30,000h)`,
+        title: `Clearance: Open ${CLEARANCE_LEVELS.length.toLocaleString()} Ranks Directory (0h – ${CYCLE_HOURS.toLocaleString()}h per cycle)`,
         subtitle: `Inspect all ${CLEARANCE_LEVELS.length.toLocaleString()} telemetry clearance titles, milestones, and ${SURFACE_THEME_PAIRS.length} theme rewards`,
         badge: `${CLEARANCE_LEVELS.length.toLocaleString()} RANKS`,
         keywords: 'clearance ranks levels titles 3000 progression badge rewards',
@@ -2374,7 +2900,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 };
 
 // ==========================================
-// 6. DUAL-POLARITY SURFACE THEME PAIRS (144 PAIRS = 288 DARK/LIGHT SURFACES)
+// 6. DUAL-POLARITY SURFACE THEME PAIRS (288 PAIRS = 576 DARK/LIGHT SURFACES)
 // ==========================================
 
 export type SurfacePatternType =
@@ -2402,7 +2928,11 @@ export type SurfacePatternType =
   | 'polygon'
   | 'sigil'
   | 'rings'
-  | 'weave';
+  | 'weave'
+  // Prestige-exclusive patterns (Ascension-gated themes only)
+  | 'aurum'
+  | 'argentum'
+  | 'prism';
 
 export interface SurfacePolarityPalette {
   label: string;
@@ -2428,6 +2958,27 @@ export interface SurfaceThemePair {
   clearanceHintLv: number;
   dark: SurfacePolarityPalette;
   light: SurfacePolarityPalette;
+  // Prestige-exclusive themes ignore clearanceHintLv entirely and gate on
+  // Ascension count instead — a reward track that only grows for players
+  // who keep cycling past LV.3000, independent of in-cycle rank.
+  requiredAscensions?: number;
+}
+
+// Centralized unlock check for a Surface Theme: prestige-exclusive themes
+// gate on lifetime Ascension count, everything else gates on
+// UserClearanceStatus.rewardUnlockLevel (which stays maxed forever once the
+// first Ascension is claimed, since completing a cycle requires passing
+// every normal reward threshold at least once).
+// eslint-disable-next-line react-refresh/only-export-components
+export function isThemeUnlocked(
+  pair: SurfaceThemePair,
+  status: { rewardUnlockLevel: number; totalAscensions: number }
+): boolean {
+  if (IS_DEMO_MODE) return true;
+  if (pair.requiredAscensions && pair.requiredAscensions > 0) {
+    return status.totalAscensions >= pair.requiredAscensions;
+  }
+  return status.rewardUnlockLevel >= pair.clearanceHintLv;
 }
 
 function hslToHex(h: number, s: number, l: number): string {
@@ -2439,6 +2990,19 @@ function hslToHex(h: number, s: number, l: number): string {
   const f = (n: number) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
   const toHex = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0');
   return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+// Linearly interpolates between two #rrggbb hex colors (t=0 -> hexA, t=1 -> hexB).
+function mixHex(hexA: string, hexB: string, t: number): string {
+  const parse = (hex: string) => {
+    const clean = hex.replace('#', '');
+    return [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16));
+  };
+  const [ar, ag, ab] = parse(hexA);
+  const [br, bg, bb] = parse(hexB);
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t);
+  const toHex = (x: number) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0');
+  return `#${toHex(lerp(ar, br))}${toHex(lerp(ag, bg))}${toHex(lerp(ab, bb))}`;
 }
 
 // Deterministically derives a dark/light surface palette from a single hue so
@@ -2603,6 +3167,176 @@ const EXTRA_THEME_SPECS: ExtraThemeSpec[] = [
   ['antimatter-ceramic', 'THM-142', 'ANTIMATTER CONTAINMENT & LAB CERAMIC', 'ANTIMATTER CONTAINMENT', 'LAB CERAMIC WHITE', 'Magnetically sealed antimatter containment ring paired with lab-ceramic white.', 'DIV-10', 2900, 140, -18],
   ['terminalvelocity-heatshield', 'THM-143', 'TERMINAL VELOCITY & HEAT SHIELD', 'TERMINAL VELOCITY NIGHT', 'HEAT SHIELD WHITE', 'Re-entry terminal-velocity plasma trail paired with scorched heat-shield white.', 'DIV-10', 2925, 160, -18],
   ['lastlight-aurora', 'THM-144', 'LAST LIGHT BEACON & POLAR AURORA', 'LAST LIGHT BEACON', 'POLAR AURORA DAY', 'The final deep-space beacon signal paired with a pale polar-aurora sky.', 'DIV-10', 2985, 180, -18],
+
+  // ==========================================
+  // SECOND EXPANSION WAVE — another 144 pairs (doubles 144 -> 288 total).
+  // Levels below are placeholders; buildClearanceLadderForThemes() recomputes
+  // every pair's clearanceHintLv with even spacing right after this table.
+  // ==========================================
+
+  // DIV-01 — 18 more pairs
+  ['galvanized-zinc', 'THM-145', 'GALVANIZED STEEL & FROSTED ZINC', 'GALVANIZED STEEL', 'FROSTED ZINC', 'Raw galvanized steel sheet paired with soft frosted zinc coating.', 'DIV-01', 0, 207, -8],
+  ['pewter-bonechina', 'THM-146', 'HAMMERED PEWTER & BONE CHINA', 'HAMMERED PEWTER', 'BONE CHINA', 'Hand-hammered pewter vessel paired with translucent bone china.', 'DIV-01', 0, 221, -8],
+  ['rawlinen-oatcanvas', 'THM-147', 'RAW LINEN & OAT CANVAS', 'RAW LINEN NIGHT', 'OAT CANVAS', 'Unbleached raw linen weave paired with warm oat-toned canvas.', 'DIV-01', 0, 235, -8],
+  ['waxedcanvas-cork', 'THM-148', 'WAXED CANVAS & NATURAL CORK', 'WAXED CANVAS', 'NATURAL CORK', 'Weatherproof waxed canvas field pack paired with natural cork board.', 'DIV-01', 0, 249, -8],
+  ['driftwoodash-seasalt', 'THM-149', 'DRIFTWOOD ASH & SEA SALT', 'DRIFTWOOD ASH', 'SEA SALT CRYSTAL', 'Sun-grayed driftwood ash paired with coarse sea salt crystal.', 'DIV-01', 0, 263, -8],
+  ['pumice-quartzsand', 'THM-150', 'VOLCANIC PUMICE & QUARTZ SAND', 'VOLCANIC PUMICE', 'QUARTZ SAND', 'Porous volcanic pumice stone paired with pale quartz sand.', 'DIV-01', 0, 277, -8],
+  ['castiron-buttermilk', 'THM-151', 'CAST IRON SKILLET & BUTTERMILK', 'CAST IRON SKILLET', 'BUTTERMILK CREAM', 'Seasoned cast-iron skillet paired with soft buttermilk cream.', 'DIV-01', 0, 291, -8],
+  ['nickel-eggshell', 'THM-152', 'BRUSHED NICKEL & EGGSHELL', 'BRUSHED NICKEL', 'EGGSHELL WHITE', 'Satin-brushed nickel fixture paired with warm eggshell white.', 'DIV-01', 0, 305, -8],
+  ['flannel-rawcotton', 'THM-153', 'FLANNEL WOOL & RAW COTTON', 'FLANNEL WOOL', 'RAW COTTON BOLL', 'Brushed flannel wool weave paired with raw unspun cotton.', 'DIV-01', 0, 319, -8],
+  ['sandblast-limewash', 'THM-154', 'SANDBLASTED CONCRETE & LIMEWASH', 'SANDBLASTED CONCRETE', 'LIMEWASH PLASTER', 'Textured sandblasted concrete paired with soft limewash plaster.', 'DIV-01', 0, 333, -8],
+  ['teak-birchbark', 'THM-155', 'WEATHERED TEAK & BIRCH BARK', 'WEATHERED TEAK', 'BIRCH BARK PAPER', 'Silvered weathered teak decking paired with pale birch bark paper.', 'DIV-01', 0, 347, -8],
+  ['powdercoat-gesso', 'THM-156', 'POWDER-COATED STEEL & GESSO PANEL', 'POWDER-COATED STEEL', 'GESSO PANEL', 'Matte powder-coated steel frame paired with primed gesso panel.', 'DIV-01', 0, 1, -8],
+  ['pencil-vellum', 'THM-157', 'GRAPHITE PENCIL & DRAFTING VELLUM', 'GRAPHITE PENCIL', 'DRAFTING VELLUM', 'Soft graphite pencil shading paired with translucent drafting vellum.', 'DIV-01', 0, 15, -8],
+  ['jute-muslin', 'THM-158', 'WOVEN JUTE & UNBLEACHED MUSLIN', 'WOVEN JUTE', 'UNBLEACHED MUSLIN', 'Coarse woven jute fiber paired with soft unbleached muslin cloth.', 'DIV-01', 0, 29, -8],
+  ['temperedglass-milkglass', 'THM-159', 'TEMPERED GLASS & MILK GLASS', 'TEMPERED GLASS', 'MILK GLASS', 'Clear tempered safety glass paired with opaque vintage milk glass.', 'DIV-01', 0, 43, -8],
+  ['saltflat-desertbone', 'THM-160', 'SALT FLAT CRUST & DESERT BONE', 'SALT FLAT CRUST', 'DESERT BONE WHITE', 'Cracked salt flat crust paired with sun-bleached desert bone white.', 'DIV-01', 0, 57, -8],
+  ['riverstone-paleclay', 'THM-161', 'RIVER STONE & PALE CLAY', 'RIVER STONE NIGHT', 'PALE CLAY', 'Smooth river-worn stone paired with pale unfired clay.', 'DIV-01', 0, 71, -8],
+  ['charcoalbrick-ashlinen', 'THM-162', 'CHARCOAL BRIQUETTE & ASH LINEN', 'CHARCOAL BRIQUETTE', 'ASH LINEN', 'Compressed charcoal briquette paired with soft ash-gray linen.', 'DIV-01', 0, 85, -8],
+
+  // DIV-02 — 15 more pairs
+  ['iceaxe-cornice', 'THM-163', "ICE CLIMBER'S AXE & CORNICE SNOW", 'ICE AXE STEEL', 'CORNICE SNOW', "An ice climber's steel axe edge paired with wind-carved cornice snow.", 'DIV-02', 0, 194, 0],
+  ['research-packice', 'THM-164', 'POLAR RESEARCH VESSEL & PACK ICE', 'RESEARCH VESSEL NIGHT', 'PACK ICE FIELD', 'A polar research vessel hull at night paired with a sunlit pack-ice field.', 'DIV-02', 0, 202, 0],
+  ['frozenfall-powder', 'THM-165', 'FROZEN WATERFALL & POWDER SNOW', 'FROZEN WATERFALL', 'POWDER SNOW', 'A suspended frozen waterfall paired with fresh untouched powder snow.', 'DIV-02', 0, 210, 0],
+  ['nordicski-birchfrost', 'THM-166', 'NORDIC SKI TRAIL & BIRCH FROST', 'NORDIC SKI TRAIL', 'BIRCH FROST', 'A groomed Nordic ski trail at dusk paired with frost-rimed birch trees.', 'DIV-02', 0, 218, 0],
+  ['hockeyrink-zamboni', 'THM-167', 'ICE HOCKEY RINK & ZAMBONI SHEEN', 'HOCKEY RINK NIGHT', 'ZAMBONI SHEEN', 'A floodlit ice hockey rink paired with the fresh sheen of a resurfaced floor.', 'DIV-02', 0, 226, 0],
+  ['snowglobe-porcelain', 'THM-168', 'SNOW GLOBE INTERIOR & PORCELAIN FLURRY', 'SNOW GLOBE NIGHT', 'PORCELAIN FLURRY', 'The hushed interior of a snow globe paired with porcelain-white flurries.', 'DIV-02', 0, 234, 0],
+  ['crevasse-glacialblue', 'THM-169', 'CREVASSE SHADOW & GLACIAL BLUE', 'CREVASSE SHADOW', 'GLACIAL BLUE ICE', 'A deep crevasse shadow paired with luminous glacial-blue ice.', 'DIV-02', 0, 242, 0],
+  ['wintergreen-frostpane', 'THM-170', 'WINTER GREENHOUSE & FROSTED PANE', 'WINTER GREENHOUSE', 'FROSTED PANE', 'A warm winter greenhouse glow paired with a frosted glass pane.', 'DIV-02', 0, 250, 0],
+  ['icebreaker-floefield', 'THM-171', 'ICEBREAKER HULL & FLOE FIELD', 'ICEBREAKER HULL', 'FLOE FIELD', 'A reinforced icebreaker hull paired with a drifting arctic floe field.', 'DIV-02', 0, 258, 0],
+  ['cryovault-dryicefog', 'THM-172', 'CRYOGENIC VAULT & DRY ICE FOG', 'CRYOGENIC VAULT', 'DRY ICE FOG', 'A sealed cryogenic storage vault paired with billowing dry-ice fog.', 'DIV-02', 0, 266, 0],
+  ['chairlift-freshpowder', 'THM-173', 'ALPINE CHAIRLIFT & FRESH POWDER', 'ALPINE CHAIRLIFT NIGHT', 'FRESH POWDER DAY', 'A swaying alpine chairlift at dusk paired with bright fresh powder.', 'DIV-02', 0, 274, 0],
+  ['frostflower-paledawn', 'THM-174', 'FROST FLOWER WINDOW & PALE DAWN', 'FROST FLOWER WINDOW', 'PALE DAWN LIGHT', 'Intricate frost-flower window patterns paired with pale winter dawn light.', 'DIV-02', 0, 282, 0],
+  ['polarbear-snowdrift', 'THM-175', 'POLAR BEAR DEN & SNOWDRIFT', 'POLAR BEAR DEN', 'SNOWDRIFT WHITE', 'A sheltered polar bear den paired with a wind-sculpted snowdrift.', 'DIV-02', 0, 290, 0],
+  ['icesculpture-crystal', 'THM-176', 'ICE SCULPTURE GALLERY & FROSTED CRYSTAL', 'ICE SCULPTURE NIGHT', 'FROSTED CRYSTAL', 'A floodlit ice sculpture gallery paired with frosted crystal facets.', 'DIV-02', 0, 298, 0],
+  ['snowcat-corduroy', 'THM-177', 'SNOWCAT GROOMER & CORDUROY TRAIL', 'SNOWCAT GROOMER NIGHT', 'CORDUROY TRAIL', 'A pre-dawn snowcat groomer pass paired with a freshly cut corduroy trail.', 'DIV-02', 0, 306, 0],
+
+  // DIV-03 — 15 more pairs
+  ['greenhouse-terracotta', 'THM-178', 'BOTANICAL GREENHOUSE & TERRACOTTA POT', 'GREENHOUSE NIGHT', 'TERRACOTTA POT', 'A humid botanical greenhouse at dusk paired with sun-warmed terracotta.', 'DIV-03', 0, 94, 0],
+  ['wasabi-ricepaper', 'THM-179', 'WASABI ROOT & RICE PAPER', 'WASABI ROOT', 'RICE PAPER SHEET', 'Freshly grated wasabi root paired with translucent rice paper.', 'DIV-03', 0, 100, 0],
+  ['matcha-teaceremony', 'THM-180', 'EMERALD TEA CEREMONY & MATCHA FOAM', 'TEA CEREMONY NIGHT', 'MATCHA FOAM', 'A quiet emerald tea-ceremony room paired with whisked matcha foam.', 'DIV-03', 0, 106, 0],
+  ['junglevine-orchid', 'THM-181', 'JUNGLE VINE CANOPY & ORCHID PETAL', 'JUNGLE CANOPY NIGHT', 'ORCHID PETAL', 'A dense jungle vine canopy at night paired with a pale orchid petal.', 'DIV-03', 0, 112, 0],
+  ['fairway-chalkline', 'THM-182', 'GOLF COURSE FAIRWAY & CHALK LINE', 'FAIRWAY NIGHT DEW', 'CHALK BOUNDARY LINE', 'Dew-laden fairway turf at dawn paired with a crisp chalk boundary line.', 'DIV-03', 0, 118, 0],
+  ['pineneedle-birchgrove', 'THM-183', 'PINE NEEDLE CARPET & BIRCH GROVE', 'PINE NEEDLE CARPET', 'BIRCH GROVE LIGHT', 'A soft fallen pine-needle forest floor paired with sunlit birch grove light.', 'DIV-03', 0, 124, 0],
+  ['spinach-farmhouse', 'THM-184', 'SPINACH LEAF & FARMHOUSE LINEN', 'SPINACH LEAF NIGHT', 'FARMHOUSE LINEN', 'Deep spinach-leaf green paired with rustic farmhouse linen.', 'DIV-03', 0, 130, 0],
+  ['celadon-jadevase', 'THM-185', 'CELADON POTTERY & JADE VASE', 'CELADON GLAZE NIGHT', 'JADE VASE LIGHT', 'Glossy celadon pottery glaze paired with pale carved-jade vase light.', 'DIV-03', 0, 136, 0],
+  ['limezest-coconutcream', 'THM-186', 'LIME ZEST & COCONUT CREAM', 'LIME ZEST NIGHT', 'COCONUT CREAM', 'Bright grated lime zest paired with smooth tropical coconut cream.', 'DIV-03', 0, 142, 0],
+  ['mintjulep-silvercup', 'THM-187', 'MINT JULEP & SILVER CUP', 'MINT JULEP NIGHT', 'SILVER CUP FROST', 'A muddled mint julep paired with a frosted silver cup.', 'DIV-03', 0, 148, 0],
+  ['ferngrotto-mossstone', 'THM-188', 'FERN GROTTO & MOSSY STONE', 'FERN GROTTO SHADOW', 'MOSSY STONE LIGHT', 'A shaded fern grotto paired with sunlit moss-covered stone.', 'DIV-03', 0, 154, 0],
+  ['bowlinggreen-chalk', 'THM-189', 'BOWLING GREEN LAWN & CHALK BOUNDARY', 'BOWLING GREEN NIGHT', 'CHALK BOUNDARY', 'A manicured bowling-green lawn at dusk paired with a crisp chalk boundary.', 'DIV-03', 0, 160, 0],
+  ['kelpforest-seaglass', 'THM-190', 'KELP FOREST SHADE & SEA GLASS', 'KELP FOREST SHADE', 'SEA GLASS GREEN', 'Swaying kelp forest shade paired with weathered sea-glass green.', 'DIV-03', 0, 166, 0],
+  ['avocado-linen', 'THM-191', 'AVOCADO TOAST & LINEN NAPKIN', 'AVOCADO TOAST NIGHT', 'LINEN NAPKIN', 'Rich mashed avocado tone paired with a crisp folded linen napkin.', 'DIV-03', 0, 172, 0],
+  ['clovermeadow-mist', 'THM-192', 'CLOVER MEADOW & MORNING MIST', 'CLOVER MEADOW NIGHT', 'MORNING MIST', 'A dew-dark clover meadow at night paired with pale morning mist.', 'DIV-03', 0, 178, 0],
+
+  // DIV-04 — 15 more pairs
+  ['scuba-reefsunbeam', 'THM-193', 'SCUBA DIVE COMPUTER & REEF SUNBEAM', 'DIVE COMPUTER NIGHT', 'REEF SUNBEAM', 'A glowing scuba dive-computer readout paired with a sunbeam through reef water.', 'DIV-04', 0, 188, 0],
+  ['ropelocker-canvassail', 'THM-194', "SAILOR'S ROPE LOCKER & CANVAS SAIL", 'ROPE LOCKER SHADOW', 'CANVAS SAIL LIGHT', "A coiled sailor's rope locker paired with a sun-bleached canvas sail.", 'DIV-04', 0, 194, 0],
+  ['harborbuoy-saltspray', 'THM-195', "HARBOR BUOY BELL & SALT SPRAY", 'HARBOR BUOY NIGHT', 'SALT SPRAY MIST', 'A clanging harbor buoy bell at night paired with fine salt-spray mist.', 'DIV-04', 0, 200, 0],
+  ['tidechart-nauticalchart', 'THM-196', 'TIDE CHART LEDGER & NAUTICAL CHART', 'TIDE CHART LEDGER', 'NAUTICAL CHART PAPER', 'A worn tide-chart ledger paired with a pale nautical chart.', 'DIV-04', 0, 206, 0],
+  ['pearldiver-shellmidden', 'THM-197', "PEARL DIVER'S COVE & SHELL MIDDEN", 'PEARL DIVER COVE', 'SHELL MIDDEN WHITE', "A pearl diver's shaded cove paired with a sun-bleached shell midden.", 'DIV-04', 0, 212, 0],
+  ['lighthouse-fogbank', 'THM-198', "LIGHTHOUSE KEEPER'S LOG & FOG BANK", 'LIGHTHOUSE LOG NIGHT', 'FOG BANK WHITE', "A lighthouse keeper's logbook at night paired with a rolling fog bank.", 'DIV-04', 0, 218, 0],
+  ['marinelab-specimenjar', 'THM-199', 'MARINE BIOLOGY LAB & SPECIMEN JAR', 'MARINE LAB NIGHT', 'SPECIMEN JAR GLASS', 'A quiet marine-biology lab at night paired with a clear specimen jar.', 'DIV-04', 0, 224, 0],
+  ['yachtdeck-teakrail', 'THM-200', 'YACHT CLUB DECK & TEAK RAIL', 'YACHT DECK NIGHT', 'TEAK RAIL LIGHT', 'A moonlit yacht-club deck paired with sun-warmed teak railing.', 'DIV-04', 0, 230, 0],
+  ['trawlerhold-morningcatch', 'THM-201', 'FISHING TRAWLER HOLD & MORNING CATCH', 'TRAWLER HOLD NIGHT', 'MORNING CATCH', "A dockside fishing trawler's hold paired with the morning's fresh catch.", 'DIV-04', 0, 236, 0],
+  ['anchorchain-ropefiber', 'THM-202', 'ANCHOR CHAIN LOCKER & ROPE FIBER', 'ANCHOR CHAIN LOCKER', 'ROPE FIBER LIGHT', 'A rusted anchor-chain locker paired with pale natural rope fiber.', 'DIV-04', 0, 242, 0],
+  ['coralnursery-reefglass', 'THM-203', 'CORAL NURSERY TANK & REEF GLASS', 'CORAL NURSERY NIGHT', 'REEF GLASS LIGHT', 'A dim coral nursery tank paired with sunlit reef-glass water.', 'DIV-04', 0, 248, 0],
+  ['deepcurrent-buoymarker', 'THM-204', 'DEEP CURRENT RESEARCH & BUOY MARKER', 'DEEP CURRENT NIGHT', 'BUOY MARKER WHITE', 'A deep-current research station paired with a bright buoy marker.', 'DIV-04', 0, 254, 0],
+  ['seaplane-harbordawn', 'THM-205', 'SEAPLANE DOCK & HARBOR DAWN', 'SEAPLANE DOCK NIGHT', 'HARBOR DAWN LIGHT', 'A quiet seaplane dock at night paired with a pale harbor dawn.', 'DIV-04', 0, 260, 0],
+  ['oysterbed-motherpearl', 'THM-206', 'OYSTER BED & MOTHER OF PEARL', 'OYSTER BED SHADOW', 'MOTHER OF PEARL', 'A shadowed tidal oyster bed paired with iridescent mother-of-pearl.', 'DIV-04', 0, 266, 0],
+  ['tidewatermarsh-reedlight', 'THM-207', 'TIDEWATER MARSH & REED LIGHT', 'TIDEWATER MARSH NIGHT', 'REED LIGHT DAY', 'A dark tidewater marsh at dusk paired with sunlit marsh-reed light.', 'DIV-04', 0, 272, 0],
+
+  // DIV-05 — 15 more pairs
+  ['exoplanet-aliendawn', 'THM-208', 'EXOPLANET SURVEY & ALIEN DAWN', 'EXOPLANET SURVEY NIGHT', 'ALIEN DAWN LIGHT', 'A distant exoplanet survey feed paired with an alien dawn horizon.', 'DIV-05', 0, 258, 0],
+  ['radiotelescope-signalnoise', 'THM-209', 'RADIO TELESCOPE ARRAY & SIGNAL NOISE', 'RADIO ARRAY NIGHT', 'SIGNAL NOISE WHITE', 'A sprawling radio-telescope array at night paired with bright signal noise.', 'DIV-05', 0, 262, 0],
+  ['astronauttraining-zerogravity', 'THM-210', 'ASTRONAUT TRAINING POOL & ZERO-G LIGHT', 'TRAINING POOL NIGHT', 'ZERO-G LIGHT', 'A deep astronaut training pool paired with weightless simulation light.', 'DIV-05', 0, 266, 0],
+  ['meteorshower-comettail', 'THM-211', 'METEOR SHOWER NIGHT & COMET TAIL', 'METEOR SHOWER NIGHT', 'COMET TAIL GLOW', 'A blazing meteor-shower night paired with a glowing comet tail.', 'DIV-05', 0, 270, 0],
+  ['spaceelevator-orbitaldawn', 'THM-212', 'SPACE ELEVATOR CABLE & ORBITAL DAWN', 'SPACE ELEVATOR NIGHT', 'ORBITAL DAWN LIGHT', 'A towering space-elevator cable paired with orbital dawn light.', 'DIV-05', 0, 274, 0],
+  ['marscolony-rusthorizon', 'THM-213', 'MARS COLONY DOME & RUST HORIZON', 'MARS COLONY NIGHT', 'RUST HORIZON', 'A sealed Mars colony dome at night paired with a rust-red horizon.', 'DIV-05', 0, 278, 0],
+  ['planetarium-starprojector', 'THM-214', 'PLANETARIUM DOME & STAR PROJECTOR', 'PLANETARIUM DOME NIGHT', 'STAR PROJECTOR LIGHT', 'A darkened planetarium dome paired with a bright star-projector beam.', 'DIV-05', 0, 282, 0],
+  ['gravitywell-eventglow', 'THM-215', 'GRAVITY WELL SIMULATOR & EVENT GLOW', 'GRAVITY WELL NIGHT', 'EVENT GLOW LIGHT', 'A spinning gravity-well simulator paired with a soft event-horizon glow.', 'DIV-05', 0, 286, 0],
+  ['deepfield-galaxycluster', 'THM-216', 'DEEP FIELD SURVEY & GALAXY CLUSTER', 'DEEP FIELD NIGHT', 'GALAXY CLUSTER LIGHT', 'A long-exposure deep-field survey paired with a distant galaxy cluster.', 'DIV-05', 0, 290, 0],
+  ['launchpad-ignitionflash', 'THM-217', 'ROCKET LAUNCH PAD & IGNITION FLASH', 'LAUNCH PAD NIGHT', 'IGNITION FLASH', 'A floodlit rocket launch pad paired with a blinding ignition flash.', 'DIV-05', 0, 294, 0],
+  ['lunarbase-regolithdust', 'THM-218', 'LUNAR BASE MODULE & REGOLITH DUST', 'LUNAR BASE NIGHT', 'REGOLITH DUST LIGHT', 'A sealed lunar base module paired with pale lunar regolith dust.', 'DIV-05', 0, 298, 0],
+  ['interstellar-signalpulse', 'THM-219', 'INTERSTELLAR BEACON & SIGNAL PULSE', 'INTERSTELLAR BEACON', 'SIGNAL PULSE LIGHT', 'A lone interstellar beacon transmission paired with a bright signal pulse.', 'DIV-05', 0, 302, 0],
+  ['asteroidmining-oreglint', 'THM-220', 'ASTEROID MINING RIG & ORE GLINT', 'ASTEROID RIG NIGHT', 'ORE GLINT LIGHT', 'A floodlit asteroid mining rig paired with the glint of raw ore.', 'DIV-05', 0, 306, 0],
+  ['cryopodbay-hibernationfrost', 'THM-221', 'CRYO-POD BAY & HIBERNATION FROST', 'CRYO-POD BAY NIGHT', 'HIBERNATION FROST', 'A dim cryo-pod hibernation bay paired with pale hibernation frost.', 'DIV-05', 0, 310, 0],
+  ['celestialnav-starchart', 'THM-222', 'CELESTIAL NAVIGATION & STAR CHART', 'CELESTIAL NAV NIGHT', 'STAR CHART PAPER', 'A ship\'s celestial navigation station paired with a pale star chart.', 'DIV-05', 0, 314, 0],
+
+  // DIV-06 — 15 more pairs
+  ['postmodern-whitecube', 'THM-223', 'POSTMODERN GALLERY & WHITE CUBE', 'POSTMODERN GALLERY NIGHT', 'WHITE CUBE GALLERY', 'A dim postmodern art gallery paired with a pristine white-cube space.', 'DIV-06', 0, 303, 0],
+  ['neonsign-glasstube', 'THM-224', 'NEON SIGN WORKSHOP & GLASS TUBE', 'NEON WORKSHOP NIGHT', 'GLASS TUBE DAYLIGHT', 'A buzzing neon-sign workshop at night paired with bright glass tubing by day.', 'DIV-06', 0, 307, 0],
+  ['runway-spotlight', 'THM-225', 'FASHION RUNWAY BACKSTAGE & SPOTLIGHT', 'RUNWAY BACKSTAGE', 'SPOTLIGHT WHITE', 'A dim fashion-runway backstage area paired with a blazing spotlight.', 'DIV-06', 0, 311, 0],
+  ['architecturalmodel-foamcore', 'THM-226', 'ARCHITECTURAL MODEL STUDIO & FOAM CORE', 'MODEL STUDIO NIGHT', 'FOAM CORE WHITE', 'A late-night architectural model studio paired with clean foam-core board.', 'DIV-06', 0, 315, 0],
+  ['printmaking-inkroller', 'THM-227', 'PRINTMAKING PRESS & INK ROLLER', 'PRINTMAKING PRESS', 'INK ROLLER SHEEN', 'A heavy printmaking press paired with the sheen of a fresh ink roller.', 'DIV-06', 0, 319, 0],
+  ['modernistfacade-travertine', 'THM-228', 'MODERNIST FACADE & TRAVERTINE SLAB', 'MODERNIST FACADE NIGHT', 'TRAVERTINE SLAB', 'A floodlit modernist building facade paired with a pale travertine slab.', 'DIV-06', 0, 323, 0],
+  ['theatrerigging-stagelight', 'THM-229', 'THEATRE RIGGING LOFT & STAGE LIGHT', 'RIGGING LOFT SHADOW', 'STAGE LIGHT WHITE', 'A shadowed theatre rigging loft paired with a blazing stage light.', 'DIV-06', 0, 327, 0],
+  ['kiln-glazetest', 'THM-230', 'CERAMIC KILN STUDIO & GLAZE TEST', 'KILN STUDIO NIGHT', 'GLAZE TEST TILE', 'A warm ceramic kiln studio at night paired with a pale glaze test tile.', 'DIV-06', 0, 331, 0],
+  ['typefoundry-letterpress', 'THM-231', 'TYPOGRAPHY FOUNDRY & LETTERPRESS TRAY', 'TYPE FOUNDRY NIGHT', 'LETTERPRESS TRAY', 'A dim type-foundry casting floor paired with a pale letterpress type tray.', 'DIV-06', 0, 335, 0],
+  ['conceptcar-showroom', 'THM-232', 'CONCEPT CAR SHOWROOM & SHOWROOM WHITE', 'CONCEPT CAR NIGHT', 'SHOWROOM WHITE FLOOR', 'A dim concept-car reveal stage paired with a polished showroom-white floor.', 'DIV-06', 0, 339, 0],
+  ['runwaylighting-diffusiongel', 'THM-233', 'RUNWAY LIGHTING RIG & DIFFUSION GEL', 'LIGHTING RIG NIGHT', 'DIFFUSION GEL WHITE', 'A tangled runway lighting rig paired with soft diffusion-gel white.', 'DIV-06', 0, 343, 0],
+  ['draftingloft-tracepaper', 'THM-234', "ARCHITECT'S DRAFTING LOFT & TRACE PAPER", 'DRAFTING LOFT NIGHT', 'TRACE PAPER LIGHT', "An architect's late-night drafting loft paired with pale trace paper.", 'DIV-06', 0, 347, 0],
+  ['popart-canvasprimer', 'THM-235', 'POP ART STUDIO & CANVAS PRIMER', 'POP ART STUDIO NIGHT', 'CANVAS PRIMER WHITE', 'A bold pop-art studio at night paired with freshly primed canvas white.', 'DIV-06', 0, 351, 0],
+  ['jazzclub-brassshine', 'THM-236', 'JAZZ CLUB STAGE & BRASS SHINE', 'JAZZ CLUB STAGE NIGHT', 'BRASS SHINE LIGHT', 'A smoky jazz-club stage at night paired with the shine of polished brass.', 'DIV-06', 0, 355, 0],
+  ['filmnoir-keylight', 'THM-237', 'FILM NOIR SET & KEY LIGHT', 'FILM NOIR SET NIGHT', 'KEY LIGHT WHITE', 'A shadow-drenched film-noir set paired with a single bright key light.', 'DIV-06', 0, 359, 0],
+
+  // DIV-07 — 12 more pairs
+  ['rosevineyard-chalkterroir', 'THM-238', 'ROSÉ VINEYARD & CHALK TERROIR', 'ROSÉ VINEYARD NIGHT', 'CHALK TERROIR', 'A moonlit rosé vineyard row paired with pale chalk terroir soil.', 'DIV-07', 0, 338, 0],
+  ['macaron-almondcream', 'THM-239', 'MACARON PATISSERIE & ALMOND CREAM', 'PATISSERIE NIGHT', 'ALMOND CREAM', 'A dim macaron patisserie counter paired with soft almond cream.', 'DIV-07', 0, 342, 0],
+  ['cherryblossom-lantern', 'THM-240', 'CHERRY BLOSSOM FESTIVAL & PAPER LANTERN', 'FESTIVAL NIGHT BLOOM', 'PAPER LANTERN GLOW', 'A night cherry-blossom festival paired with warm paper-lantern glow.', 'DIV-07', 0, 346, 0],
+  ['balletstudio-rosindust', 'THM-241', 'BLUSH BALLET STUDIO & ROSIN DUST', 'BALLET STUDIO NIGHT', 'ROSIN DUST LIGHT', 'A dim blush-toned ballet studio paired with a puff of pale rosin dust.', 'DIV-07', 0, 350, 0],
+  ['pinksalt-himalayan', 'THM-242', 'PINK SALT CAVE & HIMALAYAN CRYSTAL', 'PINK SALT CAVE', 'HIMALAYAN CRYSTAL', 'A dim pink salt cave wall paired with a glowing Himalayan salt crystal.', 'DIV-07', 0, 354, 0],
+  ['lipstick-powderpuff', 'THM-243', 'LIPSTICK VANITY & POWDER PUFF', 'LIPSTICK VANITY NIGHT', 'POWDER PUFF WHITE', 'A dim lipstick vanity mirror paired with a soft powder puff.', 'DIV-07', 0, 358, 0],
+  ['rhubarb-vanillacustard', 'THM-244', 'RHUBARB TART & VANILLA CUSTARD', 'RHUBARB TART NIGHT', 'VANILLA CUSTARD', 'A rich rhubarb-tart glaze paired with smooth vanilla custard.', 'DIV-07', 0, 2, 0],
+  ['orchidconservatory-morninglight', 'THM-245', 'ORCHID CONSERVATORY & MORNING LIGHT', 'ORCHID CONSERVATORY', 'MORNING LIGHT SOFT', 'A warm orchid conservatory at dusk paired with soft morning light.', 'DIV-07', 0, 6, 0],
+  ['pinkchampagne-silkribbon', 'THM-246', 'PINK CHAMPAGNE TOAST & SILK RIBBON', 'CHAMPAGNE TOAST NIGHT', 'SILK RIBBON', 'A pink-champagne toast at dusk paired with a pale silk ribbon.', 'DIV-07', 0, 10, 0],
+  ['guavasunset-coconutmilk', 'THM-247', 'GUAVA SUNSET & COCONUT MILK', 'GUAVA SUNSET NIGHT', 'COCONUT MILK', 'A guava-pink tropical sunset paired with smooth coconut milk.', 'DIV-07', 0, 14, 0],
+  ['rosequartz-marblebath', 'THM-248', 'ROSE QUARTZ SPA & MARBLE BATH', 'ROSE QUARTZ SPA NIGHT', 'MARBLE BATH WHITE', 'A dim rose-quartz spa chamber paired with a pale marble bath.', 'DIV-07', 0, 18, 0],
+  ['candyfloss-sugardust', 'THM-249', 'CANDY FLOSS FAIR & SUGAR DUST', 'CANDY FLOSS NIGHT FAIR', 'SUGAR DUST WHITE', 'A pink candy-floss night fair stall paired with fine sugar dust.', 'DIV-07', 0, 22, 0],
+
+  // DIV-08 — 12 more pairs
+  ['potterykiln-terracottadust', 'THM-250', 'POTTERY KILN FIRE & TERRACOTTA DUST', 'POTTERY KILN FIRE', 'TERRACOTTA DUST', 'A glowing pottery kiln fire paired with fine terracotta dust.', 'DIV-08', 0, 23, 0],
+  ['pumpkinspice-creamfroth', 'THM-251', 'PUMPKIN SPICE KITCHEN & CREAM FROTH', 'PUMPKIN SPICE NIGHT', 'CREAM FROTH', 'A warm pumpkin-spice kitchen at dusk paired with soft cream froth.', 'DIV-08', 0, 28, 0],
+  ['coppersmithy-patina', 'THM-252', 'COPPER SMITHY & PATINA BLOOM', 'COPPER SMITHY FIRE', 'PATINA BLOOM', 'A glowing copper smithy forge paired with soft oxidized patina bloom.', 'DIV-08', 0, 33, 0],
+  ['harvestbonfire-haybale', 'THM-253', 'HARVEST FESTIVAL BONFIRE & HAY BALE', 'HARVEST BONFIRE NIGHT', 'HAY BALE DAY', 'A crackling harvest-festival bonfire paired with a sunlit hay bale.', 'DIV-08', 0, 38, 0],
+  ['whiskeybarrel-oakchar', 'THM-254', 'AMBER WHISKEY BARREL & OAK CHAR', 'WHISKEY BARREL NIGHT', 'OAK CHAR LIGHT', 'A dim amber-whiskey barrel cellar paired with toasted oak char.', 'DIV-08', 0, 43, 0],
+  ['marigoldmarket-linensack', 'THM-255', 'MARIGOLD MARKET STALL & LINEN SACK', 'MARIGOLD STALL NIGHT', 'LINEN SACK LIGHT', 'A lantern-lit marigold market stall paired with a pale linen grain sack.', 'DIV-08', 0, 48, 0],
+  ['claybrick-sandstonedust', 'THM-256', 'CLAY BRICK KILN & SANDSTONE DUST', 'BRICK KILN FIRE', 'SANDSTONE DUST', 'A glowing clay-brick kiln fire paired with fine sandstone dust.', 'DIV-08', 0, 53, 0],
+  ['maplesyrup-birchsteam', 'THM-257', 'MAPLE SYRUP BOIL & BIRCH STEAM', 'MAPLE SYRUP BOIL NIGHT', 'BIRCH STEAM LIGHT', 'A bubbling maple-syrup boil at night paired with rising birch steam.', 'DIV-08', 0, 58, 0],
+  ['terracottaroof-siennawash', 'THM-258', 'TERRACOTTA ROOFTOP & SIENNA WASH', 'TERRACOTTA ROOFTOP NIGHT', 'SIENNA WASH LIGHT', 'A moonlit terracotta rooftop paired with a soft sienna wash of dawn.', 'DIV-08', 0, 63, 0],
+  ['chilistring-adobewall', 'THM-259', 'CHILI PEPPER STRING & ADOBE WALL', 'CHILI STRING NIGHT', 'ADOBE WALL LIGHT', 'A dried chili-pepper string in shadow paired with a sunlit adobe wall.', 'DIV-08', 0, 68, 0],
+  ['cinnamonrack-creamlinen', 'THM-260', 'CINNAMON SPICE RACK & CREAM LINEN', 'SPICE RACK NIGHT', 'CREAM LINEN LIGHT', 'A warm cinnamon spice-rack shelf paired with soft cream linen.', 'DIV-08', 0, 73, 0],
+  ['rustbelt-ironoxide', 'THM-261', 'RUST BELT FOUNDRY & IRON OXIDE', 'RUST BELT FOUNDRY', 'IRON OXIDE LIGHT', 'A glowing rust-belt foundry floor paired with pale iron-oxide dust.', 'DIV-08', 0, 78, 0],
+
+  // DIV-09 — 12 more pairs
+  ['gilded-vellumpage', 'THM-262', 'GILDED MANUSCRIPT & VELLUM PAGE', 'GILDED MANUSCRIPT NIGHT', 'VELLUM PAGE LIGHT', 'A candlelit gilded manuscript page paired with pale aged vellum.', 'DIV-09', 0, 48, 0],
+  ['wheatharvest-strawbale', 'THM-263', 'WHEAT HARVEST FIELD & STRAW BALE', 'WHEAT HARVEST NIGHT', 'STRAW BALE DAY', 'A golden wheat field at dusk paired with a sunlit straw bale.', 'DIV-09', 0, 52, 0],
+  ['honeycombextract-beeswax', 'THM-264', 'HONEY COMB EXTRACTION & BEESWAX BLOCK', 'HONEY EXTRACTION NIGHT', 'BEESWAX BLOCK', 'A dim honeycomb extraction room paired with a warm beeswax block.', 'DIV-09', 0, 56, 0],
+  ['brasscompass-chartpaper', 'THM-265', 'ANTIQUE BRASS COMPASS & CHART PAPER', 'BRASS COMPASS NIGHT', 'CHART PAPER LIGHT', 'An antique brass compass under lamplight paired with pale chart paper.', 'DIV-09', 0, 60, 0],
+  ['goldenhour-chardonnay', 'THM-266', 'GOLDEN HOUR VINEYARD & CHARDONNAY', 'VINEYARD DUSK NIGHT', 'CHARDONNAY LIGHT', 'A golden-hour vineyard row paired with pale chardonnay light.', 'DIV-09', 0, 64, 0],
+  ['throneroom-ivorysilk', 'THM-267', 'IMPERIAL THRONE ROOM & IVORY SILK', 'THRONE ROOM NIGHT', 'IVORY SILK LIGHT', 'A grand imperial throne room in shadow paired with pale ivory silk.', 'DIV-09', 0, 68, 0],
+  ['amberjewelry-resinpolish', 'THM-268', 'AMBER JEWELRY WORKSHOP & RESIN POLISH', 'AMBER WORKSHOP NIGHT', 'RESIN POLISH LIGHT', 'A warm amber-jewelry workshop bench paired with polished resin sheen.', 'DIV-09', 0, 72, 0],
+  ['astrolabe-starchart', 'THM-269', 'BRASS ASTROLABE & STAR CHART', 'BRASS ASTROLABE NIGHT', 'STAR CHART LIGHT', 'A brass astrolabe under starlight paired with a pale star chart.', 'DIV-09', 0, 76, 0],
+  ['retrieverfield-wheatchaff', 'THM-270', 'GOLDEN RETRIEVER FIELDS & WHEAT CHAFF', 'FIELD DUSK NIGHT', 'WHEAT CHAFF LIGHT', 'A golden field at dusk paired with drifting pale wheat chaff.', 'DIV-09', 0, 80, 0],
+  ['champagnegold-creamvelvet', 'THM-271', 'CHAMPAGNE GOLD LOUNGE & CREAM VELVET', 'GOLD LOUNGE NIGHT', 'CREAM VELVET LIGHT', 'A dim champagne-gold lounge paired with soft cream velvet upholstery.', 'DIV-09', 0, 84, 0],
+  ['marigolddye-rawsilk', 'THM-272', 'MARIGOLD DYE VAT & RAW SILK', 'MARIGOLD DYE NIGHT', 'RAW SILK LIGHT', 'A steaming marigold dye vat paired with pale undyed raw silk.', 'DIV-09', 0, 88, 0],
+  ['sunflowerfield-creamlinen', 'THM-273', 'SUNFLOWER FIELD & CREAM LINEN', 'SUNFLOWER FIELD NIGHT', 'CREAM LINEN LIGHT', 'A vast sunflower field at dusk paired with soft cream linen cloth.', 'DIV-09', 0, 92, 0],
+
+  // DIV-10 — 15 more pairs
+  ['zeropoint-whitenoise', 'THM-274', 'ZERO POINT ENERGY LAB & WHITE NOISE', 'ZERO POINT LAB NIGHT', 'WHITE NOISE FIELD', 'A sealed zero-point energy lab paired with a field of pure white noise.', 'DIV-10', 0, 10, -18],
+  ['stealthhangar-runwayfog', 'THM-275', 'STEALTH FIGHTER HANGAR & RUNWAY FOG', 'STEALTH HANGAR NIGHT', 'RUNWAY FOG WHITE', 'A blacked-out stealth-fighter hangar paired with pale runway fog.', 'DIV-10', 0, 27, -18],
+  ['hyperlooptube-vacuumseal', 'THM-276', 'HYPERLOOP TUBE & VACUUM SEAL WHITE', 'HYPERLOOP TUBE NIGHT', 'VACUUM SEAL WHITE', 'A sealed hyperloop transit tube paired with sterile vacuum-seal white.', 'DIV-10', 0, 44, -18],
+  ['fusionreactor-containment', 'THM-277', 'FUSION REACTOR CORE & CONTAINMENT WHITE', 'FUSION CORE NIGHT', 'CONTAINMENT WHITE', 'A contained fusion reactor core glow paired with sterile containment white.', 'DIV-10', 0, 61, -18],
+  ['particledetector-cleanroom', 'THM-278', 'PARTICLE DETECTOR ARRAY & CLEAN ROOM', 'DETECTOR ARRAY NIGHT', 'CLEAN ROOM WHITE', 'A vast particle-detector array in shadow paired with sterile clean-room white.', 'DIV-10', 0, 78, -18],
+  ['orbitalshipyard-hullplating', 'THM-279', 'ORBITAL SHIPYARD & HULL PLATING', 'ORBITAL SHIPYARD NIGHT', 'HULL PLATING WHITE', 'A floodlit orbital shipyard frame paired with polished hull plating.', 'DIV-10', 0, 95, -18],
+  ['neuralinterface-ceramic', 'THM-280', 'NEURAL INTERFACE LAB & CERAMIC HOUSING', 'NEURAL LAB NIGHT', 'CERAMIC HOUSING WHITE', 'A quiet neural-interface research lab paired with smooth ceramic housing.', 'DIV-10', 0, 112, -18],
+  ['exosuitbay-polishedalloy', 'THM-281', 'EXOSUIT MAINTENANCE BAY & POLISHED ALLOY', 'EXOSUIT BAY NIGHT', 'POLISHED ALLOY WHITE', 'A dim exosuit maintenance bay paired with polished alloy plating.', 'DIV-10', 0, 129, -18],
+  ['deepspacerelay-signalwhite', 'THM-282', 'DEEP SPACE RELAY & SIGNAL WHITE', 'DEEP SPACE RELAY NIGHT', 'SIGNAL WHITE LIGHT', 'A solitary deep-space relay station paired with a pulse of signal white.', 'DIV-10', 0, 146, -18],
+  ['gravitontest-labwhite', 'THM-283', 'GRAVITON FIELD TEST & LAB WHITE', 'GRAVITON TEST NIGHT', 'LAB WHITE LIGHT', 'A contained graviton field test chamber paired with sterile lab white.', 'DIV-10', 0, 163, -18],
+  ['cryostasis-frostglass', 'THM-284', 'CRYO-STASIS ARRAY & FROST GLASS', 'CRYO-STASIS NIGHT', 'FROST GLASS WHITE', 'A row of cryo-stasis pods in shadow paired with pale frosted glass.', 'DIV-10', 0, 180, -18],
+  ['singularity-eventglow', 'THM-285', 'SINGULARITY CONTAINMENT & EVENT GLOW', 'SINGULARITY NIGHT', 'EVENT GLOW WHITE', 'A contained singularity chamber paired with a faint event-horizon glow.', 'DIV-10', 0, 197, -18],
+  ['terraform-horizonwhite', 'THM-286', 'TERRAFORMING COMMAND & HORIZON WHITE', 'TERRAFORM COMMAND NIGHT', 'HORIZON WHITE LIGHT', 'A dim terraforming command deck paired with a pale new-world horizon.', 'DIV-10', 0, 214, -18],
+  ['orbitalring-starlithull', 'THM-287', 'ORBITAL RING STATION & STARLIT HULL', 'ORBITAL RING NIGHT', 'STARLIT HULL WHITE', 'A vast orbital ring station in shadow paired with a starlit hull plate.', 'DIV-10', 0, 231, -18],
+  ['omegaarchive-platinumseal', 'THM-288', 'OMEGA ARCHIVE VAULT & PLATINUM SEAL', 'OMEGA ARCHIVE NIGHT', 'PLATINUM SEAL WHITE', 'The final omega archive vault in shadow paired with a platinum seal white.', 'DIV-10', 0, 248, -18],
 ];
 
 function buildExtraThemePairs(): SurfaceThemePair[] {
@@ -2626,10 +3360,9 @@ function buildExtraThemePairs(): SurfaceThemePair[] {
   });
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
-export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
+const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   // ==========================================
-  // DIV-01 // INITIATE (LV.1–300 // 0H–1,500H) — 18 PAIRS
+  // DIV-01 // INITIATE (LV.1–300 // 0H–50H per cycle) — 36 PAIRS
   // ==========================================
   {
     id: 'monolith',
@@ -2831,7 +3564,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-02 // CADET (LV.301–600 // 1,520H–4,500H) — 15 PAIRS
+  // DIV-02 // CADET (LV.301–600 // 50H–150H per cycle) — 30 PAIRS
   // ==========================================
   {
     id: 'obsidian-blueprint',
@@ -3000,7 +3733,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-03 // OPERATOR (LV.601–900 // 4,520H–7,500H) — 15 PAIRS
+  // DIV-03 // OPERATOR (LV.601–900 // 150H–250H per cycle) — 30 PAIRS
   // ==========================================
   {
     id: 'phosphor-terminal',
@@ -3169,7 +3902,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-04 // SPECIALIST (LV.901–1,200 // 7,520H–10,500H) — 15 PAIRS
+  // DIV-04 // SPECIALIST (LV.901–1,200 // 250H–350H per cycle) — 30 PAIRS
   // ==========================================
   {
     id: 'abyssal-trench',
@@ -3275,7 +4008,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     code: 'THM-20',
     name: 'CHERENKOV REACTOR CORE',
     pairLabel: 'CHERENKOV RADIATION ⇄ HEAVY WATER',
-    description: '10,000-hour milestone core glowing with ionized Cherenkov blue lattice.',
+    description: '300-hour cycle milestone core glowing with ionized Cherenkov blue lattice.',
     pattern: 'isometric',
     accentHex: '#3b82f6',
     divisionCode: 'DIV-04',
@@ -3338,7 +4071,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-05 // VANGUARD (LV.1,201–1,500 // 10,520H–13,500H) — 15 PAIRS
+  // DIV-05 // VANGUARD (LV.1,201–1,500 // 350H–450H per cycle) — 30 PAIRS
   // ==========================================
   {
     id: 'cobalt-observatory',
@@ -3507,7 +4240,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-06 // ARCHITECT (LV.1,501–1,800 // 13,520H–16,500H) — 15 PAIRS
+  // DIV-06 // ARCHITECT (LV.1,501–1,800 // 450H–550H per cycle) — 30 PAIRS
   // ==========================================
   {
     id: 'cyberpunk-neon',
@@ -3580,7 +4313,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     code: 'THM-29',
     name: 'AMETHYST CITADEL',
     pairLabel: 'ROYAL PLUM DARK ⇄ ORCHID SILK',
-    description: '15,000-hour milestone crystalline amethyst fortress with crosshatch geometry.',
+    description: '500-hour cycle milestone crystalline amethyst fortress with crosshatch geometry.',
     pattern: 'crosshatch',
     accentHex: '#a855f7',
     divisionCode: 'DIV-06',
@@ -3676,7 +4409,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-07 // OVERSEER (LV.1,801–2,100 // 16,520H–19,500H) — 12 PAIRS
+  // DIV-07 // OVERSEER (LV.1,801–2,100 // 550H–650H per cycle) — 24 PAIRS
   // ==========================================
   {
     id: 'sakura-quartz',
@@ -3812,14 +4545,14 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-08 // SENTINEL (LV.2,101–2,400 // 19,520H–22,500H) — 12 PAIRS
+  // DIV-08 // SENTINEL (LV.2,101–2,400 // 650H–750H per cycle) — 24 PAIRS
   // ==========================================
   {
     id: 'volcanic-basalt',
     code: 'THM-36',
     name: 'VOLCANIC MAGMA BASALT',
     pairLabel: 'MAGMA BASALT ⇄ PUMICE TRAVERTINE',
-    description: '20,000-hour milestone tectonic basalt infused with ember warmth and travertine.',
+    description: '700-hour cycle milestone tectonic basalt infused with ember warmth and travertine.',
     pattern: 'grid',
     accentHex: '#f97316',
     divisionCode: 'DIV-08',
@@ -3948,7 +4681,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-09 // SOVEREIGN (LV.2,401–2,700 // 22,520H–26,250H) — 12 PAIRS
+  // DIV-09 // SOVEREIGN (LV.2,401–2,700 // 750H–875H per cycle) — 24 PAIRS
   // ==========================================
   {
     id: 'tungsten-filament',
@@ -4021,7 +4754,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     code: 'THM-42',
     name: 'SAHARA DUNE LIMESTONE',
     pairLabel: 'DESERT NIGHT ⇄ SAHARA LIMESTONE',
-    description: '25,000-hour Quarter-Lakh desert twilight paired with sun-baked limestone.',
+    description: '800-hour cycle Quarter-Lakh desert twilight paired with sun-baked limestone.',
     pattern: 'dots',
     accentHex: '#eab308',
     divisionCode: 'DIV-09',
@@ -4084,7 +4817,7 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-10 // MONOLITH (LV.2,701–3,000 // 26,280H–30,000H) — 15 PAIRS
+  // DIV-10 // MONOLITH (LV.2,701–3,000 // 875H–1,000H per cycle) — 30 PAIRS
   // ==========================================
   {
     id: 'stealth-kevlar',
@@ -4221,9 +4954,9 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   {
     id: 'omega-monolith',
     code: 'THM-48',
-    name: 'OMEGA SINGULARITY // 30,000H',
+    name: 'OMEGA SINGULARITY // 1,000H',
     pairLabel: 'EVENT HORIZON ⇄ ASTRAL DIAMOND',
-    description: 'Apex 30,000-hour (LV.3000) singularity surface combining cosmic void and diamond daylight.',
+    description: 'Apex 1,000-hour (LV.3000) cycle-complete singularity surface combining cosmic void and diamond daylight.',
     pattern: 'blueprint',
     accentHex: '#f43f5e',
     divisionCode: 'DIV-10',
@@ -4253,9 +4986,155 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // 96 GENERATED EXPANSION PAIRS (see EXTRA_THEME_SPECS above)
+  // 240 GENERATED EXPANSION PAIRS (see EXTRA_THEME_SPECS above)
   // ==========================================
   ...buildExtraThemePairs(),
+];
+
+// Rebalances every pair's clearanceHintLv with even spacing across its own
+// division's level range (CLEARANCE_DIVISIONS[].minLevel..maxLevel), rather
+// than the ad-hoc numbers assigned while authoring each batch. With 288
+// pairs spread over 3,000 ranks a new Surface Theme now unlocks roughly
+// every ~10 ranks (and interleaved with the 60 Noise profiles below, a
+// visual or audio reward lands every few dozen ranks instead of droughts
+// stretching across whole divisions). 'monolith' stays pinned to LV.1 since
+// it's the universal unlock-gate fallback theme used for locked selections.
+function rebalanceThemeClearanceLevels(pairs: SurfaceThemePair[]): SurfaceThemePair[] {
+  const groups = new Map<string, SurfaceThemePair[]>();
+  pairs.forEach((pair) => {
+    const list = groups.get(pair.divisionCode) ?? [];
+    list.push(pair);
+    groups.set(pair.divisionCode, list);
+  });
+
+  const result: SurfaceThemePair[] = [];
+  CLEARANCE_DIVISIONS.forEach((div) => {
+    const list = groups.get(div.code) ?? [];
+    const span = div.maxLevel - div.minLevel;
+    list.forEach((pair, i) => {
+      const level =
+        pair.id === 'monolith'
+          ? 1
+          : div.minLevel + Math.round(((i + 1) / (list.length + 1)) * span);
+      result.push({ ...pair, clearanceHintLv: level });
+    });
+  });
+  return result;
+}
+
+// ==========================================
+// PRESTIGE-EXCLUSIVE THEMES — gated by Ascension count, not clearanceHintLv.
+// Not part of the normal 288 (no divisionCode in CLEARANCE_DIVISIONS, so
+// they're excluded from rebalanceThemeClearanceLevels() and appended below).
+// ==========================================
+const PRESTIGE_THEME_PAIRS: SurfaceThemePair[] = (() => {
+  const aurumPal = buildSignaturePalette(45, 25);
+  const argentumPal = buildSignaturePalette(210, -20);
+
+  return [
+    {
+      id: 'prestige-aurum',
+      code: 'PRS-01',
+      name: 'AURUM PRESTIGE // CYCLE I',
+      pairLabel: 'GILDED VAULT NIGHT ⇄ CHAMPAGNE AURUM',
+      description: 'Radiant sunburst gold reserved for players who have completed at least one full Ascension cycle.',
+      pattern: 'aurum',
+      accentHex: hslToHex(45, 85, 55),
+      divisionCode: 'PRESTIGE',
+      clearanceHintLv: 3000,
+      requiredAscensions: 1,
+      dark: { label: 'GILDED VAULT NIGHT', ...aurumPal.dark },
+      light: { label: 'CHAMPAGNE AURUM', ...aurumPal.light },
+    },
+    {
+      id: 'prestige-argentum',
+      code: 'PRS-02',
+      name: 'ARGENTUM PRESTIGE // CYCLE II',
+      pairLabel: 'ENGRAVED PLATINUM NIGHT ⇄ BRUSHED ARGENTUM',
+      description: 'An engraved platinum diamond-lattice finish unlocked after two full Ascension cycles.',
+      pattern: 'argentum',
+      accentHex: hslToHex(210, 15, 70),
+      divisionCode: 'PRESTIGE',
+      clearanceHintLv: 3000,
+      requiredAscensions: 2,
+      dark: { label: 'ENGRAVED PLATINUM', ...argentumPal.dark },
+      light: { label: 'BRUSHED ARGENTUM', ...argentumPal.light },
+    },
+    {
+      id: 'prestige-prism',
+      code: 'PRS-03',
+      name: 'CHROMATIC PRESTIGE // CYCLE III',
+      pairLabel: 'HOLOGRAPHIC VOID ⇄ IRIDESCENT WHITE',
+      description: 'A holographic rainbow sweep — the only surface in the archive not built from a single accent hue. Three cycles earned.',
+      pattern: 'prism',
+      accentHex: '#f4f4f5',
+      divisionCode: 'PRESTIGE',
+      clearanceHintLv: 3000,
+      requiredAscensions: 3,
+      dark: {
+        label: 'HOLOGRAPHIC VOID',
+        bgMain: '#060608',
+        bgCard: '#0d0d10',
+        bgInput: '#040405',
+        border: '#2a2a32',
+        textMain: '#fafafa',
+        textMuted: '#9a9aa5',
+        patternTint: 'rgba(255,255,255,0.05)',
+        glowTint: 'rgba(255,255,255,0.08)',
+      },
+      light: {
+        label: 'IRIDESCENT WHITE',
+        bgMain: '#fcfcfd',
+        bgCard: '#ffffff',
+        bgInput: '#f1f1f4',
+        border: '#e2e2ea',
+        textMain: '#0a0a0c',
+        textMuted: '#6b6b76',
+        patternTint: 'rgba(10,10,12,0.04)',
+        glowTint: 'rgba(0,0,0,0.04)',
+      },
+    },
+    {
+      id: 'prestige-omega',
+      code: 'PRS-04',
+      name: 'OMEGA PRESTIGE // INFINITE CYCLE',
+      pairLabel: 'ABSOLUTE ZERO ⇄ ABSOLUTE WHITE',
+      description: 'Pure maximal-contrast black and white, reserved for players who have Ascended five or more times.',
+      pattern: 'starburst',
+      accentHex: '#ffffff',
+      divisionCode: 'PRESTIGE',
+      clearanceHintLv: 3000,
+      requiredAscensions: 5,
+      dark: {
+        label: 'ABSOLUTE ZERO',
+        bgMain: '#000000',
+        bgCard: '#0a0a0a',
+        bgInput: '#000000',
+        border: '#3f3f3f',
+        textMain: '#ffffff',
+        textMuted: '#8a8a8a',
+        patternTint: 'rgba(255,255,255,0.08)',
+        glowTint: 'rgba(255,255,255,0.1)',
+      },
+      light: {
+        label: 'ABSOLUTE WHITE',
+        bgMain: '#ffffff',
+        bgCard: '#ffffff',
+        bgInput: '#f4f4f4',
+        border: '#1a1a1a',
+        textMain: '#000000',
+        textMuted: '#5a5a5a',
+        patternTint: 'rgba(0,0,0,0.07)',
+        glowTint: 'rgba(0,0,0,0.05)',
+      },
+    },
+  ];
+})();
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
+  ...rebalanceThemeClearanceLevels(RAW_SURFACE_THEME_PAIRS),
+  ...PRESTIGE_THEME_PAIRS,
 ];
 
 // Fast lookup of theme reward by Clearance Level
@@ -4275,79 +5154,203 @@ export function getSurfaceBackgroundStyle(
   isDark: boolean
 ): React.CSSProperties {
   const pal = isDark ? pair.dark : pair.light;
-  const base: React.CSSProperties = {
-    backgroundColor: pal.bgMain,
-    color: pal.textMain,
+  const glow = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%)`;
+  const images: string[] = [];
+  const sizes: string[] = [];
+  const push = (image: string, size = '100% 100%') => {
+    images.push(image);
+    sizes.push(size);
   };
 
-  if (pair.pattern === 'grid') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), linear-gradient(to right, ${pal.patternTint} 1px, transparent 1px), linear-gradient(to bottom, ${pal.patternTint} 1px, transparent 1px)`;
-    base.backgroundSize = '100% 100%, 28px 28px, 28px 28px';
-  } else if (pair.pattern === 'dots') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), radial-gradient(${pal.patternTint} 1.25px, transparent 1.25px)`;
-    base.backgroundSize = '100% 100%, 20px 20px';
-  } else if (pair.pattern === 'blueprint') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%), linear-gradient(to right, ${pal.patternTint} 1px, transparent 1px), linear-gradient(to bottom, ${pal.patternTint} 1px, transparent 1px)`;
-    base.backgroundSize = '100% 100%, 48px 48px, 48px 48px';
-  } else if (pair.pattern === 'scanline') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(to bottom, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 4px)`;
-  } else if (pair.pattern === 'radial') {
-    base.backgroundImage = `radial-gradient(circle at 18% 12%, ${pal.glowTint}, transparent 55%), radial-gradient(circle at 82% 85%, ${pal.glowTint}, transparent 55%)`;
-  } else if (pair.pattern === 'diagonal') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(135deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 14px)`;
-  } else if (pair.pattern === 'crosshatch') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 22px), repeating-linear-gradient(-45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 22px)`;
-  } else if (pair.pattern === 'isometric') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%), repeating-linear-gradient(60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 26px)`;
-  } else if (pair.pattern === 'horizon') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), linear-gradient(to bottom, ${pal.patternTint} 1px, transparent 1px)`;
-    base.backgroundSize = '100% 100%, 100% 24px';
-  } else if (pair.pattern === 'circuit') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), linear-gradient(to right, ${pal.patternTint} 1px, transparent 1px)`;
-    base.backgroundSize = '100% 100%, 32px 100%';
-  } else if (pair.pattern === 'vignette') {
-    base.backgroundImage = `radial-gradient(circle at 50% 15%, ${pal.glowTint}, transparent 65%), radial-gradient(${pal.patternTint} 1px, transparent 1px)`;
-    base.backgroundSize = '100% 100%, 30px 30px';
-  } else if (pair.pattern === 'hexgrid') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px), repeating-linear-gradient(60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px), repeating-linear-gradient(120deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px)`;
-  } else if (pair.pattern === 'triangulate') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), repeating-linear-gradient(30deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px), repeating-linear-gradient(150deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px), repeating-linear-gradient(90deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px)`;
-  } else if (pair.pattern === 'polygon') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px), repeating-linear-gradient(72deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px), repeating-linear-gradient(144deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px)`;
-  } else if (pair.pattern === 'chevron') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 13px), repeating-linear-gradient(-45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 13px)`;
-  } else if (pair.pattern === 'weave') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 5px, transparent 5px, transparent 13px), repeating-linear-gradient(90deg, ${pal.patternTint} 0px, ${pal.patternTint} 5px, transparent 5px, transparent 13px)`;
-  } else if (pair.pattern === 'rings') {
-    base.backgroundImage = `repeating-radial-gradient(circle at 50% 35%, transparent 0px, transparent 17px, ${pal.patternTint} 17px, ${pal.patternTint} 18px), radial-gradient(circle at 50% 35%, ${pal.glowTint}, transparent 60%)`;
-  } else if (pair.pattern === 'topographic') {
-    base.backgroundImage = `repeating-radial-gradient(circle at 28% 22%, transparent 0px, transparent 20px, ${pal.patternTint} 20px, ${pal.patternTint} 21px), repeating-radial-gradient(circle at 76% 82%, transparent 0px, transparent 26px, ${pal.patternTint} 26px, ${pal.patternTint} 27px), radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`;
-  } else if (pair.pattern === 'starburst') {
-    base.backgroundImage = `repeating-conic-gradient(from 0deg at 50% 0%, ${pal.patternTint} 0deg 1deg, transparent 1deg 15deg), radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%)`;
-  } else if (pair.pattern === 'constellation') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), radial-gradient(circle at 15% 20%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 68% 14%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 38% 52%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 84% 68%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 24% 86%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 58% 92%, ${pal.patternTint} 1.4px, transparent 2px)`;
-    base.backgroundSize = '100% 100%, 150px 150px, 150px 150px, 150px 150px, 150px 150px, 150px 150px, 150px 150px';
-  } else if (pair.pattern === 'waveform') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), radial-gradient(circle at 8% 50%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 28% 15%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 50% 85%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 72% 15%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 92% 85%, ${pal.patternTint} 2px, transparent 3px)`;
-    base.backgroundSize = '100% 100%, 110px 54px, 110px 54px, 110px 54px, 110px 54px, 110px 54px';
-  } else if (pair.pattern === 'sigil') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%), radial-gradient(circle at 50% 50%, transparent 0px, transparent 21px, ${pal.patternTint} 21px, ${pal.patternTint} 22px, transparent 22px), linear-gradient(0deg, transparent 48%, ${pal.patternTint} 48%, ${pal.patternTint} 52%, transparent 52%), linear-gradient(90deg, transparent 48%, ${pal.patternTint} 48%, ${pal.patternTint} 52%, transparent 52%)`;
-    base.backgroundSize = '100% 100%, 96px 96px, 96px 96px, 96px 96px';
-  } else if (pair.pattern === 'honeycomb') {
-    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), radial-gradient(${pal.patternTint} 1.6px, transparent 1.6px), radial-gradient(${pal.patternTint} 1.1px, transparent 1.1px)`;
-    base.backgroundSize = '100% 100%, 26px 26px, 38px 38px';
+  if (isDark) {
+    // Rich dark-mode identity layer: every dark surface gets a soft
+    // accent-tinted corner gradient (not a flat near-black fill) so the
+    // catalog reads as deliberately styled rather than a basic near-black
+    // placeholder — distinct at a glance from the plain factory default.
+    const richCorner = mixHex(pal.bgMain, pair.accentHex, 0.15);
+    // Anchored at the TOP (not bottom) of the box: this style is applied to
+    // the page's root wrapper, whose box height grows with scrollable
+    // content, so a bottom-anchored gradient would sit far off-screen.
+    push(`radial-gradient(circle at 100% 0%, ${richCorner}, ${pal.bgMain} 55%)`);
+  }
+
+  switch (pair.pattern) {
+    case 'grid':
+      push(glow);
+      push(`linear-gradient(to right, ${pal.patternTint} 1px, transparent 1px)`, '28px 28px');
+      push(`linear-gradient(to bottom, ${pal.patternTint} 1px, transparent 1px)`, '28px 28px');
+      break;
+    case 'dots':
+      push(glow);
+      push(`radial-gradient(${pal.patternTint} 1.25px, transparent 1.25px)`, '20px 20px');
+      break;
+    case 'blueprint':
+      push(glow);
+      push(`linear-gradient(to right, ${pal.patternTint} 1px, transparent 1px)`, '48px 48px');
+      push(`linear-gradient(to bottom, ${pal.patternTint} 1px, transparent 1px)`, '48px 48px');
+      break;
+    case 'scanline':
+      push(glow);
+      push(
+        `repeating-linear-gradient(to bottom, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 4px)`,
+        'auto'
+      );
+      break;
+    case 'radial':
+      push(`radial-gradient(circle at 18% 12%, ${pal.glowTint}, transparent 55%)`);
+      push(`radial-gradient(circle at 82% 85%, ${pal.glowTint}, transparent 55%)`);
+      break;
+    case 'diagonal':
+      push(glow);
+      push(
+        `repeating-linear-gradient(135deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 14px)`,
+        'auto'
+      );
+      break;
+    case 'crosshatch':
+      push(glow);
+      push(`repeating-linear-gradient(45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 22px)`, 'auto');
+      push(`repeating-linear-gradient(-45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 22px)`, 'auto');
+      break;
+    case 'isometric':
+      push(glow);
+      push(`repeating-linear-gradient(60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 26px)`, 'auto');
+      push(`repeating-linear-gradient(-60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 26px)`, 'auto');
+      break;
+    case 'horizon':
+      push(glow);
+      push(`linear-gradient(to bottom, ${pal.patternTint} 1px, transparent 1px)`, '100% 24px');
+      break;
+    case 'circuit':
+      push(glow);
+      push(`linear-gradient(to right, ${pal.patternTint} 1px, transparent 1px)`, '32px 100%');
+      break;
+    case 'vignette':
+      push(`radial-gradient(circle at 50% 15%, ${pal.glowTint}, transparent 65%)`);
+      push(`radial-gradient(${pal.patternTint} 1px, transparent 1px)`, '30px 30px');
+      break;
+    case 'hexgrid':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      push(`repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px)`, 'auto');
+      push(`repeating-linear-gradient(60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px)`, 'auto');
+      push(`repeating-linear-gradient(120deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px)`, 'auto');
+      break;
+    case 'triangulate':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      push(`repeating-linear-gradient(30deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px)`, 'auto');
+      push(`repeating-linear-gradient(150deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px)`, 'auto');
+      push(`repeating-linear-gradient(90deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px)`, 'auto');
+      break;
+    case 'polygon':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      push(`repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px)`, 'auto');
+      push(`repeating-linear-gradient(72deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px)`, 'auto');
+      push(`repeating-linear-gradient(144deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px)`, 'auto');
+      break;
+    case 'chevron':
+      push(glow);
+      push(`repeating-linear-gradient(45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 13px)`, 'auto');
+      push(`repeating-linear-gradient(-45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 13px)`, 'auto');
+      break;
+    case 'weave':
+      push(glow);
+      push(`repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 5px, transparent 5px, transparent 13px)`, 'auto');
+      push(`repeating-linear-gradient(90deg, ${pal.patternTint} 0px, ${pal.patternTint} 5px, transparent 5px, transparent 13px)`, 'auto');
+      break;
+    case 'rings':
+      push(`repeating-radial-gradient(circle at 50% 35%, transparent 0px, transparent 17px, ${pal.patternTint} 17px, ${pal.patternTint} 18px)`, 'auto');
+      push(`radial-gradient(circle at 50% 35%, ${pal.glowTint}, transparent 60%)`);
+      break;
+    case 'topographic':
+      push(`repeating-radial-gradient(circle at 28% 22%, transparent 0px, transparent 20px, ${pal.patternTint} 20px, ${pal.patternTint} 21px)`, 'auto');
+      push(`repeating-radial-gradient(circle at 76% 82%, transparent 0px, transparent 26px, ${pal.patternTint} 26px, ${pal.patternTint} 27px)`, 'auto');
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      break;
+    case 'starburst':
+      push(`repeating-conic-gradient(from 0deg at 50% 0%, ${pal.patternTint} 0deg 1deg, transparent 1deg 15deg)`, 'auto');
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%)`);
+      break;
+    case 'constellation':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      [
+        [15, 20],
+        [68, 14],
+        [38, 52],
+        [84, 68],
+        [24, 86],
+        [58, 92],
+      ].forEach(([x, y]) => push(`radial-gradient(circle at ${x}% ${y}%, ${pal.patternTint} 1.4px, transparent 2px)`, '150px 150px'));
+      break;
+    case 'waveform':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      [
+        [8, 50],
+        [28, 15],
+        [50, 85],
+        [72, 15],
+        [92, 85],
+      ].forEach(([x, y]) => push(`radial-gradient(circle at ${x}% ${y}%, ${pal.patternTint} 2px, transparent 3px)`, '110px 54px'));
+      break;
+    case 'sigil':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%)`);
+      push(
+        `radial-gradient(circle at 50% 50%, transparent 0px, transparent 21px, ${pal.patternTint} 21px, ${pal.patternTint} 22px, transparent 22px)`,
+        '96px 96px'
+      );
+      push(`linear-gradient(0deg, transparent 48%, ${pal.patternTint} 48%, ${pal.patternTint} 52%, transparent 52%)`, '96px 96px');
+      push(`linear-gradient(90deg, transparent 48%, ${pal.patternTint} 48%, ${pal.patternTint} 52%, transparent 52%)`, '96px 96px');
+      break;
+    case 'honeycomb':
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`);
+      push(`radial-gradient(${pal.patternTint} 1.6px, transparent 1.6px)`, '26px 26px');
+      push(`radial-gradient(${pal.patternTint} 1.1px, transparent 1.1px)`, '38px 38px');
+      break;
+    case 'aurum':
+      // Prestige Cycle I: a radiant gold sunburst — dramatically brighter
+      // than any normal-rank theme, reserved for repeat-Ascension players.
+      push(`repeating-conic-gradient(from 0deg at 50% 50%, ${pal.patternTint} 0deg 2deg, transparent 2deg 18deg)`, 'auto');
+      push(`radial-gradient(circle at 50% 50%, ${pal.glowTint}, transparent 72%)`);
+      break;
+    case 'argentum':
+      // Prestige Cycle II: an engraved platinum diamond-lattice finish.
+      push(glow);
+      push(`repeating-linear-gradient(45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 10px)`, 'auto');
+      push(`repeating-linear-gradient(-45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 10px)`, 'auto');
+      break;
+    case 'prism':
+      // Prestige Cycle III+: a static holographic rainbow sweep — the only
+      // theme in the catalog that isn't built from a single accent hue.
+      push(
+        'conic-gradient(from 0deg at 50% 50%, rgba(244,63,94,0.12), rgba(249,115,22,0.12), rgba(234,179,8,0.12), rgba(34,197,94,0.12), rgba(6,182,212,0.12), rgba(99,102,241,0.12), rgba(168,85,247,0.12), rgba(244,63,94,0.12))'
+      );
+      push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%)`);
+      break;
+    case 'none':
+    default:
+      push(glow);
+      break;
   }
 
   // Signature dark-mode geometric watermark: a faint white isometric mesh
   // layered on top of every dark surface, so black mode always has its own
   // identity regardless of which per-theme `pattern` is assigned above.
   if (isDark) {
-    const watermark = `repeating-linear-gradient(55deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 64px), repeating-linear-gradient(-55deg, rgba(255,255,255,0.022) 0px, rgba(255,255,255,0.022) 1px, transparent 1px, transparent 64px)`;
-    base.backgroundImage = base.backgroundImage ? `${base.backgroundImage}, ${watermark}` : watermark;
-    base.backgroundSize = base.backgroundSize ? `${base.backgroundSize}, auto, auto` : 'auto, auto';
+    push(
+      'repeating-linear-gradient(55deg, rgba(255,255,255,0.045) 0px, rgba(255,255,255,0.045) 1px, transparent 1px, transparent 64px)',
+      'auto'
+    );
+    push(
+      'repeating-linear-gradient(-55deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 64px)',
+      'auto'
+    );
   }
 
-  return base;
+  return {
+    backgroundColor: pal.bgMain,
+    color: pal.textMain,
+    backgroundImage: images.join(', '),
+    backgroundSize: sizes.join(', '),
+  };
 }
 
 interface SurfaceThemeSelectorPanelProps {
@@ -4356,6 +5359,7 @@ interface SurfaceThemeSelectorPanelProps {
   isDark: boolean;
   onTogglePolarity: () => void;
   userClearanceLevel: number;
+  userTotalAscensions: number;
   userTotalHours: number;
   borderCol: string;
   textMuted: string;
@@ -4367,6 +5371,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   isDark,
   onTogglePolarity,
   userClearanceLevel,
+  userTotalAscensions,
   userTotalHours,
   borderCol,
   textMuted,
@@ -4378,15 +5383,21 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
 
   const activePair = useMemo(() => getSurfaceThemeById(activeThemeId), [activeThemeId]);
 
+  const checkUnlocked = useCallback(
+    (item: SurfaceThemePair) =>
+      isThemeUnlocked(item, { rewardUnlockLevel: userClearanceLevel, totalAscensions: userTotalAscensions }),
+    [userClearanceLevel, userTotalAscensions]
+  );
+
   const unlockedCount = useMemo(
-    () => SURFACE_THEME_PAIRS.filter((t) => userClearanceLevel >= t.clearanceHintLv).length,
-    [userClearanceLevel]
+    () => SURFACE_THEME_PAIRS.filter((t) => checkUnlocked(t)).length,
+    [checkUnlocked]
   );
 
   const filteredThemes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return SURFACE_THEME_PAIRS.filter((item) => {
-      const isUnlocked = userClearanceLevel >= item.clearanceHintLv;
+      const isUnlocked = checkUnlocked(item);
       if (unlockFilter === 'unlocked' && !isUnlocked) return false;
       if (unlockFilter === 'locked' && isUnlocked) return false;
       if (selectedDiv !== 'ALL' && item.divisionCode !== selectedDiv) return false;
@@ -4401,7 +5412,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       }
       return true;
     });
-  }, [unlockFilter, selectedDiv, searchQuery, userClearanceLevel]);
+  }, [unlockFilter, selectedDiv, searchQuery, checkUnlocked]);
 
   const getReqHoursForLevel = (lv: number): number => {
     const found = CLEARANCE_LEVELS[lv - 1];
@@ -4600,7 +5611,8 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       <div className="flex-1 min-h-80 sm:min-h-55 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
         {filteredThemes.map((item) => {
           const isSelected = item.id === activeThemeId;
-          const isUnlocked = userClearanceLevel >= item.clearanceHintLv;
+          const isUnlocked = checkUnlocked(item);
+          const isPrestigeExclusive = Boolean(item.requiredAscensions && item.requiredAscensions > 0);
           const reqHours = getReqHoursForLevel(item.clearanceHintLv);
           const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
 
@@ -4612,6 +5624,10 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 if (isUnlocked) {
                   setLockedNotice(null);
                   onSelectThemeId(item.id);
+                } else if (isPrestigeExclusive) {
+                  setLockedNotice(
+                    `[${item.code} // ${item.name}] is a PRESTIGE-EXCLUSIVE reward — requires ${item.requiredAscensions} Ascension(s) (you have ${userTotalAscensions}).`
+                  );
                 } else {
                   setLockedNotice(
                     `[${item.code} // ${item.name}] unlocks at CLEARANCE LV.${String(
@@ -4646,6 +5662,14 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   ) : isUnlocked ? (
                     <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
                       UNLOCKED
+                    </span>
+                  ) : isPrestigeExclusive ? (
+                    <span
+                      className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
+                      title={`Prestige-exclusive — requires ${item.requiredAscensions} Ascension(s)`}
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>✦ ×{item.requiredAscensions}</span>
                     </span>
                   ) : (
                     <span
