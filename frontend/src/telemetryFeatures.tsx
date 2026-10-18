@@ -21,7 +21,7 @@ import {
 import type { Category, StudyLog } from './App';
 
 // ==========================================
-// 1. TELEMETRY CLEARANCE LEVEL SYSTEM (500 RANKS // 100% ENGLISH)
+// 1. TELEMETRY CLEARANCE LEVEL SYSTEM (3,000 RANKS // 0H-30,000H // 100% ENGLISH)
 // ==========================================
 
 export interface ClearanceLevel {
@@ -47,20 +47,24 @@ export interface ClearanceDivision {
   color: string;
 }
 
+// Each division now spans 300 ranks (doubled from 150) and its hour range is
+// scaled ×10 so the full ladder reaches the new 30,000H virtual ceiling.
+const RANKS_PER_DIVISION = 300;
+
 const CLEARANCE_DIVISIONS: ClearanceDivision[] = [
-  { index: 1, code: 'DIV-01', name: 'INITIATE', sectorName: 'Initial Observation Sector', minLevel: 1, maxLevel: 150, minHours: 0, maxHours: 150, color: '#a1a1aa' },
-  { index: 2, code: 'DIV-02', name: 'CADET', sectorName: 'Orbital Training Sector', minLevel: 151, maxLevel: 300, minHours: 152, maxHours: 450, color: '#38bdf8' },
-  { index: 3, code: 'DIV-03', name: 'OPERATOR', sectorName: 'Field Communications Sector', minLevel: 301, maxLevel: 450, minHours: 452, maxHours: 750, color: '#10b981' },
-  { index: 4, code: 'DIV-04', name: 'SPECIALIST', sectorName: 'Deep Analytics Sector', minLevel: 451, maxLevel: 600, minHours: 752, maxHours: 1050, color: '#06b6d4' },
-  { index: 5, code: 'DIV-05', name: 'VANGUARD', sectorName: 'Frontier Vanguard Sector', minLevel: 601, maxLevel: 750, minHours: 1052, maxHours: 1350, color: '#6366f1' },
-  { index: 6, code: 'DIV-06', name: 'ARCHITECT', sectorName: 'Structural Systems Sector', minLevel: 751, maxLevel: 900, minHours: 1352, maxHours: 1650, color: '#a855f7' },
-  { index: 7, code: 'DIV-07', name: 'OVERSEER', sectorName: 'High Command Sector', minLevel: 901, maxLevel: 1050, minHours: 1652, maxHours: 1950, color: '#ec4899' },
-  { index: 8, code: 'DIV-08', name: 'SENTINEL', sectorName: 'Aegis Citadel Sector', minLevel: 1051, maxLevel: 1200, minHours: 1952, maxHours: 2250, color: '#f97316' },
-  { index: 9, code: 'DIV-09', name: 'SOVEREIGN', sectorName: 'Imperial Dominion Sector', minLevel: 1201, maxLevel: 1350, minHours: 2252, maxHours: 2625, color: '#eab308' },
-  { index: 10, code: 'DIV-10', name: 'MONOLITH', sectorName: 'Transcendent Monolith Sector', minLevel: 1351, maxLevel: 1500, minHours: 2628, maxHours: 3000, color: '#f43f5e' },
+  { index: 1, code: 'DIV-01', name: 'INITIATE', sectorName: 'Initial Observation Sector', minLevel: 1, maxLevel: 300, minHours: 0, maxHours: 1500, color: '#a1a1aa' },
+  { index: 2, code: 'DIV-02', name: 'CADET', sectorName: 'Orbital Training Sector', minLevel: 301, maxLevel: 600, minHours: 1520, maxHours: 4500, color: '#38bdf8' },
+  { index: 3, code: 'DIV-03', name: 'OPERATOR', sectorName: 'Field Communications Sector', minLevel: 601, maxLevel: 900, minHours: 4520, maxHours: 7500, color: '#10b981' },
+  { index: 4, code: 'DIV-04', name: 'SPECIALIST', sectorName: 'Deep Analytics Sector', minLevel: 901, maxLevel: 1200, minHours: 7520, maxHours: 10500, color: '#06b6d4' },
+  { index: 5, code: 'DIV-05', name: 'VANGUARD', sectorName: 'Frontier Vanguard Sector', minLevel: 1201, maxLevel: 1500, minHours: 10520, maxHours: 13500, color: '#6366f1' },
+  { index: 6, code: 'DIV-06', name: 'ARCHITECT', sectorName: 'Structural Systems Sector', minLevel: 1501, maxLevel: 1800, minHours: 13520, maxHours: 16500, color: '#a855f7' },
+  { index: 7, code: 'DIV-07', name: 'OVERSEER', sectorName: 'High Command Sector', minLevel: 1801, maxLevel: 2100, minHours: 16520, maxHours: 19500, color: '#ec4899' },
+  { index: 8, code: 'DIV-08', name: 'SENTINEL', sectorName: 'Aegis Citadel Sector', minLevel: 2101, maxLevel: 2400, minHours: 19520, maxHours: 22500, color: '#f97316' },
+  { index: 9, code: 'DIV-09', name: 'SOVEREIGN', sectorName: 'Imperial Dominion Sector', minLevel: 2401, maxLevel: 2700, minHours: 22520, maxHours: 26250, color: '#eab308' },
+  { index: 10, code: 'DIV-10', name: 'MONOLITH', sectorName: 'Transcendent Monolith Sector', minLevel: 2701, maxLevel: 3000, minHours: 26280, maxHours: 30000, color: '#f43f5e' },
 ];
 
-// 15 Archetypes per Division × 10 Grades (I..X) = 150 Ranks per Division × 10 Divisions = 1,500 Ranks
+// 15 Archetypes per Division × 20 Grades (I..XX) = 300 Ranks per Division × 10 Divisions = 3,000 Ranks
 const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
   1: [
     ['BOOT NODE', 'Baseline telemetry uplink initialized'],
@@ -127,7 +131,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['KERNEL ANALYST', 'Dissecting core theoretical foundations'],
     ['TENSOR NAVIGATOR', 'Multi-dimensional analytical fluency'],
     ['OPTIC CALIBRATOR', 'Crystal-clear conceptual resolution'],
-    ['KILO-HOUR VANGUARD', 'Crossing the 1,000-hour threshold'],
+    ['KILO-HOUR VANGUARD', 'Crossing the 10,000-hour threshold'],
     ['SPECIALIST PRIME', 'Grand Specialist of Division 04'],
   ],
   5: [
@@ -153,7 +157,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['SCHEMA DIRECTOR', 'Governing high-level structural schemas'],
     ['NEURAL CARTOGRAPHER', 'Mapping deep cognitive architectures'],
     ['MONOLITH DRAFTER', 'Drafting monumental study frameworks'],
-    ['SESQUI-KILO ARCHITECT', 'Fifteen-hundred-hour structural veteran'],
+    ['SESQUI-KILO ARCHITECT', 'Fifteen-thousand-hour structural veteran'],
     ['CITADEL ENGINEER', 'Fortifying unshakeable domain expertise'],
     ['NEXUS STRUCTURALIST', 'Connecting core theoretical nexuses'],
     ['LATTICE MASTER', 'Crystal-lattice precision & endurance'],
@@ -161,7 +165,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['VAULT DESIGNER', 'Constructing permanent memory vaults'],
     ['GRID SOVEREIGN', 'Total command of the cadence matrix'],
     ['BLUEPRINT GRANDMASTER', 'Mastery of macro-scale study plans'],
-    ['SPIRE ARCHITECT', 'Building toward the 2,000-hour sky'],
+    ['SPIRE ARCHITECT', 'Building toward the 20,000-hour sky'],
     ['ARCHITECT PRIME', 'Chief Architect of Division 06'],
   ],
   7: [
@@ -183,7 +187,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
   ],
   8: [
     ['AEGIS SENTINEL', 'Unyielding guardian of deep focus'],
-    ['BI-MILLENNIUM BASTION', 'Two-thousand-hour fortress of habit'],
+    ['BI-MILLENNIUM BASTION', 'Twenty-thousand-hour fortress of habit'],
     ['SOLAR WARDEN', 'Relentless daily illumination & output'],
     ['VOID SENTINEL', 'Unmoved by distraction or entropy'],
     ['ASTRAL PALADIN', 'Champion of long-horizon dedication'],
@@ -204,7 +208,7 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['IMPERIAL REGENT', 'Ruling the highest altitudes of focus'],
     ['EMPYREAN ARCHON', 'Imperial-grade analytical command'],
     ['ASTRAL MONARCH', 'Monarch of the deep-archive realm'],
-    ['QUARTER-MYRIAD LORD', '2,500-hour sovereign milestone achieved'],
+    ['QUARTER-MYRIAD LORD', '25,000-hour sovereign milestone achieved'],
     ['DYNASTY FOUNDER', 'Forging an enduring intellectual legacy'],
     ['SOLAR EMPEROR', 'Commanding a vast empire of knowledge'],
     ['THRONE OF AXIOMS', 'Seated atop foundational truths'],
@@ -224,101 +228,98 @@ const DIVISION_ARCHETYPES: Record<number, Array<[string, string]>> = {
     ['DIMENSION WEAVER', 'Weaving mastery across all disciplines'],
     ['EVENT HORIZON', 'Point of no return in pursuit of mastery'],
     ['QUASAR ENGINE', 'Outshining entire galaxies of effort'],
-    ['ETERNAL OBELISK', 'Towering monument of 2,800+ hours'],
+    ['ETERNAL OBELISK', 'Towering monument of 28,000+ hours'],
     ['CHRONO DEITY', 'Master of time and cognitive flow'],
     ['ASTRAL PANTHEON', 'Dwelling among the legends of focus'],
     ['TRANSCENDENT CORE', 'Pure synthesis of habit and intellect'],
     ['INFINITY ARCHITECT', 'Boundless horizon of continuous growth'],
-    ['APEX OF ETERNITY', 'The final steps before the 3,000h summit'],
-    ['OMEGA MONOLITH', 'Ultimate 3,000-hour Monolith perfection'],
+    ['APEX OF ETERNITY', 'The final steps before the 30,000h summit'],
+    ['OMEGA MONOLITH', 'Ultimate 30,000-hour Monolith perfection'],
   ],
 };
 
-// Special exact hour milestones to highlight across 0H..3,000H
+// Special exact hour milestones to highlight across 0H..30,000H (×10 scale vs. the legacy 3,000H cap)
 const SPECIAL_HOUR_OVERRIDES: Record<number, { title: string; sub: string }> = {
   0: { title: 'ZERO-HOUR INITIALIZATION', sub: '0H MILESTONE // Telemetry archive initialized' },
-  1: { title: 'FIRST IGNITION // 1H', sub: '1H MILESTONE // First hour committed to archive' },
-  5: { title: 'PENTA-HOUR SPARK // 5H', sub: '5H MILESTONE // Early study routine ignited' },
-  10: { title: 'DECA-HOUR LOCK // 10H', sub: '10H MILESTONE // Initial orbital lock achieved' },
-  25: { title: 'QUARTER-CENTURY NODE // 25H', sub: '25H MILESTONE // Twenty-five hours recorded' },
-  50: { title: 'HALF-CENTURY CORE // 50H', sub: '50H MILESTONE // Half-century foundation complete' },
-  75: { title: 'THREE-QUARTER CENTURY // 75H', sub: '75H MILESTONE // Approaching triple-digit hours' },
-  100: { title: 'CENTURION MILESTONE // 100H', sub: '100H MILESTONE // Triple-digit telemetry unlocked' },
-  150: { title: 'INITIATE SUMMIT // 150H', sub: '150H MILESTONE // Division 01 complete' },
-  200: { title: 'BI-CENTURY OPERATOR // 200H', sub: '200H MILESTONE // Two hundred hours of verified focus' },
-  250: { title: 'QUARTER-MILLENNIUM // 250H', sub: '250H MILESTONE // One-fourth of a thousand hours' },
-  300: { title: 'TRI-CENTURY VANGUARD // 300H', sub: '300H MILESTONE // Three hundred hours archived' },
-  400: { title: 'QUAD-CENTURY ENGINE // 400H', sub: '400H MILESTONE // Four hundred hours of discipline' },
-  450: { title: 'CADET SUMMIT // 450H', sub: '450H MILESTONE // Division 02 complete' },
-  500: { title: 'HALF-MILLENNIUM TITAN // 500H', sub: '500H MILESTONE // Five hundred hours of discipline' },
-  600: { title: 'HEXA-CENTURY GUARD // 600H', sub: '600H MILESTONE // Six hundred hours committed' },
-  750: { title: 'OPERATOR SUMMIT // 750H', sub: '750H MILESTONE // Three-quarters to 1,000H' },
-  900: { title: 'NONA-CENTURY SPECIALIST // 900H', sub: '900H MILESTONE // Final 100H approach to 1,000H' },
-  1000: { title: 'MILLENNIUM ASCENSION // 1,000H', sub: '1,000H MILESTONE // Four-digit telemetry landmark' },
-  1200: { title: 'DUODECIM-CENTURY // 1,200H', sub: '1,200H MILESTONE // Twelve hundred hours of focus' },
-  1350: { title: 'VANGUARD SUMMIT // 1,350H', sub: '1,350H MILESTONE // Division 05 complete' },
-  1500: { title: 'SESQUI-MILLENNIUM // 1,500H', sub: '1,500H MILESTONE // Halfway to the 3,000H Monolith' },
-  1650: { title: 'ARCHITECT SUMMIT // 1,650H', sub: '1,650H MILESTONE // Division 06 complete' },
-  1800: { title: 'OCTODECIM-CENTURY // 1,800H', sub: '1,800H MILESTONE // Eighteen hundred hours archived' },
-  1950: { title: 'OVERSEER SUMMIT // 1,950H', sub: '1,950H MILESTONE // Approaching the 2,000H barrier' },
-  2000: { title: 'BI-MILLENNIUM ARCHITECT // 2,000H', sub: '2,000H MILESTONE // Two thousand hours of mastery' },
-  2250: { title: 'SENTINEL SUMMIT // 2,250H', sub: '2,250H MILESTONE // Division 08 complete' },
-  2500: { title: 'QUARTER-MYRIAD SOVEREIGN // 2,500H', sub: '2,500H MILESTONE // Twenty-five hundred hours committed' },
-  2625: { title: 'SOVEREIGN SUMMIT // 2,625H', sub: '2,625H MILESTONE // Entering the final Monolith Sector' },
-  2750: { title: 'ASTRAL HORIZON // 2,750H', sub: '2,750H MILESTONE // Final 250 hours to Omega Monolith' },
-  3000: { title: 'OMEGA MONOLITH // 3,000H', sub: '3,000H MILESTONE // Supreme 1,500th Clearance Pinnacle' },
+  10: { title: 'FIRST IGNITION // 10H', sub: '10H MILESTONE // First ten hours committed to archive' },
+  50: { title: 'PENTA-DECA SPARK // 50H', sub: '50H MILESTONE // Early study routine ignited' },
+  100: { title: 'DECA-HOUR LOCK // 100H', sub: '100H MILESTONE // Initial orbital lock achieved' },
+  250: { title: 'QUARTER-CENTURY NODE // 250H', sub: '250H MILESTONE // Two hundred fifty hours recorded' },
+  500: { title: 'HALF-CENTURY CORE // 500H', sub: '500H MILESTONE // Half-century foundation complete' },
+  750: { title: 'THREE-QUARTER CENTURY // 750H', sub: '750H MILESTONE // Approaching the first kilo-hour' },
+  1000: { title: 'CENTURION MILESTONE // 1,000H', sub: '1,000H MILESTONE // Four-digit telemetry unlocked' },
+  1500: { title: 'INITIATE SUMMIT // 1,500H', sub: '1,500H MILESTONE // Division 01 complete' },
+  2000: { title: 'BI-MILLENNIUM OPERATOR // 2,000H', sub: '2,000H MILESTONE // Two thousand hours of verified focus' },
+  2500: { title: 'QUARTER-MYRIAD NODE // 2,500H', sub: '2,500H MILESTONE // One-fourth of ten thousand hours' },
+  4500: { title: 'CADET SUMMIT // 4,500H', sub: '4,500H MILESTONE // Division 02 complete' },
+  5000: { title: 'HALF-MYRIAD TITAN // 5,000H', sub: '5,000H MILESTONE // Five thousand hours of discipline' },
+  7500: { title: 'OPERATOR SUMMIT // 7,500H', sub: '7,500H MILESTONE // Division 03 complete' },
+  10000: { title: 'MILLENNIUM ASCENSION // 10,000H', sub: '10,000H MILESTONE // Five-digit telemetry landmark' },
+  10500: { title: 'SPECIALIST SUMMIT // 10,500H', sub: '10,500H MILESTONE // Division 04 complete' },
+  13500: { title: 'VANGUARD SUMMIT // 13,500H', sub: '13,500H MILESTONE // Division 05 complete' },
+  15000: { title: 'SESQUI-MYRIAD CORE // 15,000H', sub: '15,000H MILESTONE // Halfway to the 30,000H Monolith' },
+  16500: { title: 'ARCHITECT SUMMIT // 16,500H', sub: '16,500H MILESTONE // Division 06 complete' },
+  19500: { title: 'OVERSEER SUMMIT // 19,500H', sub: '19,500H MILESTONE // Division 07 complete' },
+  20000: { title: 'BI-MYRIAD ARCHITECT // 20,000H', sub: '20,000H MILESTONE // Twenty thousand hours of mastery' },
+  22500: { title: 'SENTINEL SUMMIT // 22,500H', sub: '22,500H MILESTONE // Division 08 complete' },
+  25000: { title: 'QUARTER-LAKH SOVEREIGN // 25,000H', sub: '25,000H MILESTONE // Twenty-five thousand hours committed' },
+  26250: { title: 'SOVEREIGN SUMMIT // 26,250H', sub: '26,250H MILESTONE // Entering the final Monolith Sector' },
+  27500: { title: 'ASTRAL HORIZON // 27,500H', sub: '27,500H MILESTONE // Final 2,500 hours to Omega Monolith' },
+  30000: { title: 'OMEGA MONOLITH // 30,000H', sub: '30,000H MILESTONE // Supreme 3,000th Clearance Pinnacle' },
 };
 
-function build1500ClearanceLevels(): ClearanceLevel[] {
+function buildClearanceLevels(): ClearanceLevel[] {
   const divisionHourBounds: Array<[number, number]> = [
-    [0, 150],     // DIV 1: LV 1..150 (1H per rank)
-    [150, 450],   // DIV 2: LV 151..300 (2H per rank)
-    [450, 750],   // DIV 3: LV 301..450 (2H per rank)
-    [750, 1050],  // DIV 4: LV 451..600 (2H per rank)
-    [1050, 1350], // DIV 5: LV 601..750 (2H per rank)
-    [1350, 1650], // DIV 6: LV 751..900 (2H per rank)
-    [1650, 1950], // DIV 7: LV 901..1050 (2H per rank)
-    [1950, 2250], // DIV 8: LV 1051..1200 (2H per rank)
-    [2250, 2625], // DIV 9: LV 1201..1350 (2.5H per rank)
-    [2625, 3000], // DIV 10: LV 1351..1500 (2.5H per rank)
+    [0, 1500],       // DIV 1: LV 1..300 (5H per rank)
+    [1500, 4500],    // DIV 2: LV 301..600 (10H per rank)
+    [4500, 7500],    // DIV 3: LV 601..900 (10H per rank)
+    [7500, 10500],   // DIV 4: LV 901..1200 (10H per rank)
+    [10500, 13500],  // DIV 5: LV 1201..1500 (10H per rank)
+    [13500, 16500],  // DIV 6: LV 1501..1800 (10H per rank)
+    [16500, 19500],  // DIV 7: LV 1801..2100 (10H per rank)
+    [19500, 22500],  // DIV 8: LV 2101..2400 (10H per rank)
+    [22500, 26250],  // DIV 9: LV 2401..2700 (12.5H per rank)
+    [26250, 30000],  // DIV 10: LV 2701..3000 (12.5H per rank)
   ];
 
-  const romanTiers = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-  const tierLabels = [
-    'GRADE I',
-    'GRADE II',
-    'GRADE III',
-    'GRADE IV',
-    'GRADE V',
-    'GRADE VI',
-    'GRADE VII',
-    'GRADE VIII',
-    'GRADE IX',
-    'GRADE X // PRIME',
+  // 20 grades per archetype (doubled from 10) so each of the existing 15
+  // archetypes per division now spans twice as many ranks (300 total).
+  const romanTiers = [
+    'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+    'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX',
   ];
+  const tierLabels = [
+    'GRADE I', 'GRADE II', 'GRADE III', 'GRADE IV', 'GRADE V',
+    'GRADE VI', 'GRADE VII', 'GRADE VIII', 'GRADE IX', 'GRADE X',
+    'GRADE XI', 'GRADE XII', 'GRADE XIII', 'GRADE XIV', 'GRADE XV',
+    'GRADE XVI', 'GRADE XVII', 'GRADE XVIII', 'GRADE XIX', 'GRADE XX // PRIME',
+  ];
+  const gradesPerArchetype = 20;
   const result: ClearanceLevel[] = [];
 
   for (let divIdx = 1; divIdx <= 10; divIdx++) {
     const div = CLEARANCE_DIVISIONS[divIdx - 1];
     const [startH, endH] = divisionHourBounds[divIdx - 1];
     const archetypes = DIVISION_ARCHETYPES[divIdx];
+    const step = (endH - startH) / RANKS_PER_DIVISION;
 
-    for (let offset = 0; offset < 150; offset++) {
-      const level = (divIdx - 1) * 150 + offset + 1;
+    for (let offset = 0; offset < RANKS_PER_DIVISION; offset++) {
+      const level = (divIdx - 1) * RANKS_PER_DIVISION + offset + 1;
       let reqHours: number;
 
       if (level === 1) {
         reqHours = 0;
       } else if (divIdx === 1) {
-        reqHours = offset === 149 ? 150 : offset;
+        // Division 01 uses a linear 0-based ramp (no leading-step skip) so
+        // early progression starts immediately after the LV.1 override.
+        reqHours = offset === RANKS_PER_DIVISION - 1 ? endH : offset * step;
       } else {
-        const step = (endH - startH) / 150;
         reqHours = Math.round((startH + (offset + 1) * step) * 10) / 10;
         if (Number.isInteger(reqHours)) reqHours = Math.trunc(reqHours);
       }
 
-      const archIdx = Math.floor(offset / 10);
-      const gradeIdx = offset % 10;
+      const archIdx = Math.floor(offset / gradesPerArchetype);
+      const gradeIdx = offset % gradesPerArchetype;
       const [archTitle, archDesc] = archetypes[archIdx];
       const roman = romanTiers[gradeIdx];
       const tierStr = tierLabels[gradeIdx];
@@ -337,7 +338,7 @@ function build1500ClearanceLevels(): ClearanceLevel[] {
         division: div.name,
         divisionIndex: divIdx,
         color: div.color,
-        isMajorMilestone: Boolean(override) || (offset + 1) % 50 === 0,
+        isMajorMilestone: Boolean(override) || (offset + 1) % 100 === 0,
       });
     }
   }
@@ -345,7 +346,8 @@ function build1500ClearanceLevels(): ClearanceLevel[] {
   return result;
 }
 
-const CLEARANCE_LEVELS: ClearanceLevel[] = build1500ClearanceLevels();
+// eslint-disable-next-line react-refresh/only-export-components
+export const CLEARANCE_LEVELS: ClearanceLevel[] = buildClearanceLevels();
 
 export interface UserClearanceStatus {
   current: ClearanceLevel;
@@ -789,7 +791,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 };
 
 // ==========================================
-// 3. CLEARANCE BROWSER PANEL (ALL 1,500 LEVELS // PURE ENGLISH)
+// 3. CLEARANCE BROWSER PANEL (ALL 3,000 LEVELS // PURE ENGLISH)
 // ==========================================
 
 interface ClearanceBrowserProps {
@@ -905,7 +907,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                 {clearance.next.requiredHours}H) — {clearance.progressPct}%
               </span>
             ) : (
-              <span className="text-emerald-400 font-bold">MAX CLEARANCE ACHIEVED (3,000H+)</span>
+              <span className="text-emerald-400 font-bold">MAX CLEARANCE ACHIEVED (30,000H+)</span>
             )}
           </div>
           <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
@@ -927,7 +929,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
             <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
             <input
               type="text"
-              placeholder="Search 1,500 ranks or theme rewards (e.g. 1000h, SOVEREIGN, THM-24)..."
+              placeholder={`Search ${CLEARANCE_LEVELS.length.toLocaleString()} ranks or theme rewards (e.g. 10000h, SOVEREIGN, THM-24)...`}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -941,7 +943,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
             {(
               [
                 { id: 'all', label: 'ALL' },
-                { id: 'rewards', label: 'REWARDS (48)' },
+                { id: 'rewards', label: `REWARDS (${SURFACE_THEME_PAIRS.length})` },
                 { id: 'milestones', label: 'MILESTONES' },
                 { id: 'unlocked', label: 'UNLOCKED' },
                 { id: 'locked', label: 'LOCKED' },
@@ -968,18 +970,19 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
           </div>
         </div>
 
-        {/* 10 Division Tabs (150 Ranks per Division = 1,500 Total) */}
-        <div className="flex flex-wrap gap-1">
+        {/* 10 Division Tabs (300 Ranks per Division = 3,000 Total). Horizontally
+            scrollable on mobile so the row never eats multiple vertical lines. */}
+        <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
           <button
             type="button"
             onClick={() => setSelectedDiv(null)}
-            className={`px-2 py-0.5 text-[10px] border cursor-pointer ${
+            className={`shrink-0 px-2 py-0.5 text-[10px] border cursor-pointer ${
               selectedDiv === null
                 ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
                 : `${borderCol} ${textMuted}`
             }`}
           >
-            ALL (1,500)
+            ALL ({CLEARANCE_LEVELS.length.toLocaleString()})
           </button>
           {CLEARANCE_DIVISIONS.map((div) => {
             const isSelected = selectedDiv === div.index;
@@ -989,7 +992,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                 type="button"
                 onClick={() => setSelectedDiv(isSelected ? null : div.index)}
                 title={`${div.sectorName} (LV.${div.minLevel}–${div.maxLevel} // ${div.minHours}H–${div.maxHours}H)`}
-                className={`px-2 py-0.5 text-[10px] border flex items-center space-x-1 cursor-pointer ${
+                className={`shrink-0 px-2 py-0.5 text-[10px] border flex items-center space-x-1 cursor-pointer ${
                   isSelected
                     ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
                     : `${borderCol} ${textMuted} hover:opacity-100`
@@ -1003,9 +1006,10 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
         </div>
       </div>
 
-      {/* Scrollable 1,500 Ranks List */}
+      {/* Scrollable 3,000 Ranks List — generous min-height on mobile so the
+          list area doesn't collapse under the summary/filter chrome above it. */}
       <div
-        className={`flex-1 min-h-[220px] overflow-y-auto border ${borderCol} divide-y ${
+        className={`flex-1 min-h-80 sm:min-h-55 overflow-y-auto border ${borderCol} divide-y ${
           isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'
         }`}
       >
@@ -2038,10 +2042,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       {
         id: 'system-clearance',
         group: 'SYSTEM & TELEMETRY',
-        title: 'Clearance: Open 1,500 Ranks Directory (0h – 3,000h)',
-        subtitle: 'Inspect all 1,500 telemetry clearance titles, milestones, and 48 theme rewards',
-        badge: '1,500 RANKS',
-        keywords: 'clearance ranks levels titles 1500 progression badge rewards',
+        title: `Clearance: Open ${CLEARANCE_LEVELS.length.toLocaleString()} Ranks Directory (0h – 30,000h)`,
+        subtitle: `Inspect all ${CLEARANCE_LEVELS.length.toLocaleString()} telemetry clearance titles, milestones, and ${SURFACE_THEME_PAIRS.length} theme rewards`,
+        badge: `${CLEARANCE_LEVELS.length.toLocaleString()} RANKS`,
+        keywords: 'clearance ranks levels titles 3000 progression badge rewards',
         action: () => {
           onClose();
           if (isAuthenticated) {
@@ -2370,7 +2374,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 };
 
 // ==========================================
-// 6. DUAL-POLARITY SURFACE THEME PAIRS (48 PAIRS = 96 DARK/LIGHT SURFACES)
+// 6. DUAL-POLARITY SURFACE THEME PAIRS (144 PAIRS = 288 DARK/LIGHT SURFACES)
 // ==========================================
 
 export type SurfacePatternType =
@@ -2385,7 +2389,20 @@ export type SurfacePatternType =
   | 'isometric'
   | 'horizon'
   | 'circuit'
-  | 'vignette';
+  | 'vignette'
+  // Signature geometric patterns (added alongside the 30,000H expansion)
+  | 'hexgrid'
+  | 'triangulate'
+  | 'constellation'
+  | 'topographic'
+  | 'chevron'
+  | 'honeycomb'
+  | 'starburst'
+  | 'waveform'
+  | 'polygon'
+  | 'sigil'
+  | 'rings'
+  | 'weave';
 
 export interface SurfacePolarityPalette {
   label: string;
@@ -2413,9 +2430,206 @@ export interface SurfaceThemePair {
   light: SurfacePolarityPalette;
 }
 
-const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
+function hslToHex(h: number, s: number, l: number): string {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = Math.max(0, Math.min(100, s)) / 100;
+  const light = Math.max(0, Math.min(100, l)) / 100;
+  const k = (n: number) => (n + hue / 30) % 12;
+  const a = sat * Math.min(light, 1 - light);
+  const f = (n: number) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+// Deterministically derives a dark/light surface palette from a single hue so
+// the 96 expansion pairs (added for the 30,000H scale-up) keep the same
+// near-black / near-white contrast discipline as the 48 hand-authored pairs.
+function buildSignaturePalette(
+  hue: number,
+  satBoost: number
+): { dark: Omit<SurfacePolarityPalette, 'label'>; light: Omit<SurfacePolarityPalette, 'label'> } {
+  const s = Math.max(14, 38 + satBoost);
+  return {
+    dark: {
+      bgMain: hslToHex(hue, s * 0.55, 5),
+      bgCard: hslToHex(hue, s * 0.5, 8.5),
+      bgInput: hslToHex(hue, s * 0.6, 4),
+      border: hslToHex(hue, s * 0.65, 19),
+      textMain: hslToHex(hue, 16, 95),
+      textMuted: hslToHex(hue, 16, 56),
+      patternTint: `hsla(${hue}, 70%, 70%, 0.055)`,
+      glowTint: `hsla(${hue}, 80%, 55%, 0.085)`,
+    },
+    light: {
+      bgMain: hslToHex(hue, s * 0.5, 97),
+      bgCard: '#ffffff',
+      bgInput: hslToHex(hue, s * 0.45, 93),
+      border: hslToHex(hue, s * 0.5, 82),
+      textMain: hslToHex(hue, 24, 11),
+      textMuted: hslToHex(hue, 16, 46),
+      patternTint: `hsla(${hue}, 55%, 25%, 0.05)`,
+      glowTint: `hsla(${hue}, 70%, 50%, 0.06)`,
+    },
+  };
+}
+
+// Rotated across the 96 generated pairs so the 12 new signature geometric
+// patterns and the 12 original patterns are each used exactly 4 times.
+const SIGNATURE_PATTERN_CYCLE: SurfacePatternType[] = [
+  'hexgrid', 'triangulate', 'constellation', 'topographic', 'chevron', 'honeycomb',
+  'starburst', 'waveform', 'polygon', 'sigil', 'rings', 'weave',
+  'grid', 'dots', 'blueprint', 'scanline', 'radial', 'diagonal',
+  'crosshatch', 'isometric', 'horizon', 'circuit', 'vignette', 'none',
+];
+
+// [id, code, name, darkLabel, lightLabel, description, divisionCode, clearanceHintLv, hue, satBoost]
+type ExtraThemeSpec = [string, string, string, string, string, string, string, number, number, number];
+
+// 96 additional pairs (triples the original 48) distributed across all 10
+// divisions and re-leveled against the new 1..3,000 rank ladder.
+const EXTRA_THEME_SPECS: ExtraThemeSpec[] = [
+  // DIV-01 — 12 extra pairs
+  ['cement-chalk-dust', 'THM-49', 'PORTLAND CEMENT & CHALK DUST', 'WET CEMENT', 'CHALK DUST', 'Raw poured-concrete surface finish paired with fine architectural chalk powder.', 'DIV-01', 8, 200, -8],
+  ['brutalist-birch', 'THM-50', 'BRUTALIST CONCRETE & BIRCH PLY', 'BOARD-FORMED CONCRETE', 'BIRCH PLYWOOD', 'Board-formed brutalist concrete grain contrasted with pale Scandinavian birch ply.', 'DIV-01', 20, 214, -8],
+  ['newsprint-ribbon', 'THM-51', 'NEWSPRINT & TYPEWRITER RIBBON', 'INK RIBBON BLACK', 'NEWSPRINT PULP', 'Vintage typewriter ribbon ink paired with recycled newsprint pulp texture.', 'DIV-01', 44, 228, -8],
+  ['pewter-oatmeal', 'THM-52', 'PEWTER FOG & OATMEAL LINEN', 'PEWTER FOG', 'OATMEAL LINEN', 'Soft pewter fog haze balanced against warm oatmeal linen weave.', 'DIV-01', 60, 242, -8],
+  ['blackboard-chalk', 'THM-53', 'BLACKBOARD SLATE & SCHOOLHOUSE CHALK', 'BLACKBOARD SLATE', 'SCHOOLHOUSE CHALK', 'Classic schoolroom slate board paired with soft dust-dry chalk white.', 'DIV-01', 90, 256, -8],
+  ['vinyl-rice-paper', 'THM-54', 'VINYL RECORD & RICE PAPER', 'VINYL GROOVE BLACK', 'RICE PAPER', 'Deep-groove vinyl record sheen contrasted with translucent handmade rice paper.', 'DIV-01', 120, 270, -8],
+  ['anthracite-kraft', 'THM-55', 'ANTHRACITE & KRAFT PAPER', 'ANTHRACITE COAL', 'KRAFT PAPER', 'Dense anthracite coal seam paired with rugged unbleached kraft paper.', 'DIV-01', 140, 284, -8],
+  ['obsidian-milk-quartz', 'THM-56', 'OBSIDIAN GLASS & MILK QUARTZ', 'OBSIDIAN GLASS', 'MILK QUARTZ', 'Volcanic obsidian glass sheen paired with opaque milky quartz crystal.', 'DIV-01', 170, 298, -8],
+  ['olive-drab-canvas', 'THM-57', 'OLIVE DRAB & FIELD CANVAS', 'OLIVE DRAB NIGHT', 'FIELD CANVAS', 'Tactical olive-drab field gear tone paired with sun-bleached canvas tenting.', 'DIV-01', 190, 312, -8],
+  ['lunar-moonstone', 'THM-58', 'LUNAR REGOLITH & MOONSTONE', 'LUNAR REGOLITH', 'MOONSTONE', 'Fine lunar regolith dust paired with pale luminous moonstone gleam.', 'DIV-01', 215, 326, -8],
+  ['smoked-oak-veneer', 'THM-59', 'SMOKED OAK & BIRCH VENEER', 'SMOKED OAK', 'BIRCH VENEER', 'Deeply smoked oak timber grain paired with light Scandinavian birch veneer.', 'DIV-01', 240, 340, -8],
+  ['wrought-iron-porcelain', 'THM-60', 'WROUGHT IRON & PORCELAIN TILE', 'WROUGHT IRON', 'PORCELAIN TILE', 'Hand-forged wrought iron blacksmith finish paired with glazed porcelain tile.', 'DIV-01', 270, 354, -8],
+
+  // DIV-02 — 10 extra pairs
+  ['aurora-snowpack', 'THM-61', 'AURORA BOREALIS & SNOWPACK', 'AURORA NIGHT SKY', 'FRESH SNOWPACK', 'Shimmering aurora borealis night sky paired with untouched alpine snowpack.', 'DIV-02', 315, 190, 0],
+  ['deepfreeze-dryice', 'THM-62', 'DEEP FREEZE LAB & DRY ICE', 'DEEP FREEZE CHAMBER', 'DRY ICE MIST', 'Sub-zero cryogenic laboratory chamber paired with billowing dry-ice mist.', 'DIV-02', 330, 198, 0],
+  ['basalt-glacial-melt', 'THM-63', 'ICELANDIC BASALT & GLACIAL MELT', 'BASALT SEA CLIFF', 'GLACIAL MELTWATER', 'Jagged Icelandic basalt sea cliffs paired with pale glacial meltwater.', 'DIV-02', 350, 206, 0],
+  ['submarine-sonar', 'THM-64', 'ARCTIC SUBMARINE & SONAR PING', 'SUBMARINE SONAR DECK', 'ICE-FLOE DAYLIGHT', 'Arctic submarine sonar control deck paired with bright ice-floe daylight.', 'DIV-02', 390, 214, 0],
+  ['cryosleep-stasis', 'THM-65', 'CRYO-SLEEP POD & STASIS FROST', 'CRYO-SLEEP CHAMBER', 'STASIS FROST GLASS', 'Suspended cryo-sleep stasis pod paired with frosted viewport glass.', 'DIV-02', 410, 222, 0],
+  ['solstice-frostpine', 'THM-66', 'WINTER SOLSTICE & FROSTED PINE', 'SOLSTICE MIDNIGHT', 'FROSTED PINE NEEDLE', 'Longest winter solstice midnight paired with frost-tipped pine needles.', 'DIV-02', 460, 230, 0],
+  ['polarvortex-blizzard', 'THM-67', 'POLAR VORTEX & BLIZZARD WHITE', 'POLAR VORTEX NIGHT', 'BLIZZARD WHITEOUT', 'Howling polar vortex night paired with total blizzard whiteout glare.', 'DIV-02', 480, 238, 0],
+  ['antarctic-icecore', 'THM-68', 'ANTARCTIC STATION & ICE CORE', 'RESEARCH STATION NIGHT', 'ICE CORE SAMPLE', 'Antarctic research station polar night paired with ancient ice-core sample.', 'DIV-02', 500, 246, 0],
+  ['neptune-methane', 'THM-69', 'NEPTUNE METHANE & PALE CYAN', 'NEPTUNE METHANE DEPTH', 'PALE CYAN HAZE', 'Deep Neptune methane atmosphere paired with pale high-altitude cyan haze.', 'DIV-02', 540, 254, 0],
+  ['sapphire-lagoon', 'THM-70', 'SAPPHIRE ICEBERG & CRYSTAL LAGOON', 'SAPPHIRE ICEBERG CORE', 'CRYSTAL LAGOON SHALLOWS', 'Dense sapphire-blue iceberg core paired with crystal-clear lagoon shallows.', 'DIV-02', 570, 262, 0],
+
+  // DIV-03 — 10 extra pairs
+  ['rainforest-fern', 'THM-71', 'RAINFOREST CANOPY & FERN LIGHT', 'RAINFOREST CANOPY', 'DAPPLED FERN LIGHT', 'Dense rainforest canopy shadow paired with dappled understory fern light.', 'DIV-03', 610, 90, 0],
+  ['absinthe-chartreuse', 'THM-72', 'ABSINTHE LOUNGE & CHARTREUSE MIST', 'ABSINTHE LOUNGE', 'CHARTREUSE MIST', 'Belle-Époque absinthe lounge green paired with pale chartreuse morning mist.', 'DIV-03', 625, 99, 0],
+  ['terrarium-moss', 'THM-73', 'TERRARIUM GLASS & MOSS GARDEN', 'TERRARIUM GLASS NIGHT', 'MOSS GARDEN DAYLIGHT', 'Sealed terrarium glass dusk paired with sunlit moss garden daylight.', 'DIV-03', 660, 108, 0],
+  ['camo-khaki', 'THM-74', 'HUNTER CAMOUFLAGE & FIELD KHAKI', 'HUNTER CAMOUFLAGE', 'FIELD KHAKI', 'Dense hunter camouflage canopy paired with sun-faded field khaki.', 'DIV-03', 680, 117, 0],
+  ['shamrock-clover', 'THM-75', 'SHAMROCK ISLE & CLOVER FIELD', 'SHAMROCK TWILIGHT', 'CLOVER FIELD NOON', 'Emerald shamrock isle twilight paired with bright clover-field noon.', 'DIV-03', 720, 126, 0],
+  ['olivegrove-linen', 'THM-76', 'OLIVE GROVE & SUN-BLEACHED LINEN', 'OLIVE GROVE SHADE', 'SUN-BLEACHED LINEN', 'Mediterranean olive grove shade paired with sun-bleached linen cloth.', 'DIV-03', 750, 135, 0],
+  ['bamboo-tatami', 'THM-77', 'BAMBOO FOREST & TATAMI STRAW', 'BAMBOO FOREST NIGHT', 'TATAMI STRAW MAT', 'Moonlit bamboo forest grove paired with woven tatami straw matting.', 'DIV-03', 790, 144, 0],
+  ['nightvision-phosphor', 'THM-78', 'NIGHT VISION & PHOSPHOR GREEN', 'NIGHT VISION GOGGLE', 'PHOSPHOR READOUT', 'Military night-vision goggle optic paired with bright phosphor readout green.', 'DIV-03', 815, 153, 0],
+  ['pistachio-cream', 'THM-79', 'PISTACHIO GELATO & CREAM', 'PISTACHIO GELATO NIGHT', 'SWEET CREAM', 'Rich pistachio gelato tin paired with soft sweet cream daylight.', 'DIV-03', 860, 162, 0],
+  ['verdigris-patina', 'THM-80', 'VERDIGRIS COPPER & PATINA JADE', 'VERDIGRIS COPPER', 'PATINA JADE', 'Oxidized verdigris copper roofing paired with pale weathered jade patina.', 'DIV-03', 880, 171, 0],
+
+  // DIV-04 — 10 extra pairs
+  ['thermocline-glare', 'THM-81', 'DEEP THERMOCLINE & SURFACE GLARE', 'DEEP THERMOCLINE', 'SURFACE GLARE', 'Cold oceanic thermocline boundary paired with bright surface sun-glare.', 'DIV-04', 915, 185, 0],
+  ['periscope-horizon', 'THM-82', 'SUBMARINE PERISCOPE & HORIZON LINE', 'PERISCOPE VIEWFINDER', 'OPEN HORIZON LINE', 'Submarine periscope viewfinder dusk paired with the open daylight horizon.', 'DIV-04', 935, 192, 0],
+  ['coral-nightdive', 'THM-83', 'CORAL REEF NIGHT DIVE & LAGOON NOON', 'NIGHT DIVE REEF', 'LAGOON NOON', 'Torch-lit coral reef night dive paired with bright tropical lagoon noon.', 'DIV-04', 975, 199, 0],
+  ['hydrothermal-mineral', 'THM-84', 'HYDROTHERMAL VENT & MINERAL SALT', 'HYDROTHERMAL VENT', 'MINERAL SALT FLAT', 'Deep-sea hydrothermal vent plume paired with pale crystallized mineral salt.', 'DIV-04', 1000, 206, 0],
+  ['kraken-nautilus', 'THM-85', "KRAKEN'S INK & PEARL NAUTILUS", 'KRAKEN INK CLOUD', 'PEARL NAUTILUS SHELL', 'Spreading kraken ink cloud paired with iridescent pearl nautilus shell.', 'DIV-04', 1040, 213, 0],
+  ['monsoon-seafog', 'THM-86', 'MONSOON HARBOR & SEA FOG', 'MONSOON HARBOR NIGHT', 'SEA FOG MORNING', 'Rain-slick monsoon harbor night paired with soft rolling sea-fog morning.', 'DIV-04', 1065, 220, 0],
+  ['tidalpool-lowtide', 'THM-87', 'TIDAL POOL SHADOW & LOW-TIDE SAND', 'TIDAL POOL SHADOW', 'LOW-TIDE SAND', 'Shadowed tidal rock-pool paired with pale exposed low-tide sand.', 'DIV-04', 1100, 227, 0],
+  ['navalsonar-signalflag', 'THM-88', 'NAVAL SONAR ROOM & SIGNAL FLAG', 'SONAR ROOM CONSOLE', 'SIGNAL FLAG WHITE', 'Darkened naval sonar control room paired with crisp signal-flag white.', 'DIV-04', 1120, 234, 0],
+  ['fjordwater-driftwood', 'THM-89', 'GLACIAL FJORD & DRIFTWOOD', 'GLACIAL FJORD WATER', 'BLEACHED DRIFTWOOD', 'Deep glacial fjord water paired with sun-bleached driftwood timber.', 'DIV-04', 1165, 241, 0],
+  ['submersible-deck', 'THM-90', 'DEEP SEA SUBMERSIBLE & RESEARCH DECK', 'SUBMERSIBLE CABIN', 'RESEARCH VESSEL DECK', 'Cramped deep-sea submersible cabin paired with an open research-vessel deck.', 'DIV-04', 1185, 248, 0],
+
+  // DIV-05 — 10 extra pairs
+  ['wormhole-starlight', 'THM-91', 'INTERSTELLAR WORMHOLE & STARLIGHT DRIFT', 'WORMHOLE EVENT', 'STARLIGHT DRIFT', 'Collapsing interstellar wormhole throat paired with slow starlight drift.', 'DIV-05', 1210, 255, 0],
+  ['orbitaldecay-satellite', 'THM-92', 'ORBITAL DECAY & SATELLITE GLINT', 'ORBITAL DECAY NIGHT', 'SATELLITE GLINT', 'Derelict satellite orbital-decay night paired with a distant satellite glint.', 'DIV-05', 1230, 261, 0],
+  ['neutronstar-pulsar', 'THM-93', 'NEUTRON STAR & PULSAR FLASH', 'NEUTRON STAR CORE', 'PULSAR FLASH', 'Impossibly dense neutron star core paired with rhythmic pulsar flash light.', 'DIV-05', 1270, 267, 0],
+  ['probe-missionpatch', 'THM-94', 'DEEP SPACE PROBE & MISSION PATCH', 'DEEP SPACE PROBE', 'MISSION PATCH WHITE', 'Lone deep-space probe transmission paired with crisp mission-patch white.', 'DIV-05', 1300, 273, 0],
+  ['galacticcore-spiralarm', 'THM-95', 'GALACTIC CORE & SPIRAL ARM', 'GALACTIC CORE', 'OUTER SPIRAL ARM', 'Blazing galactic core density paired with the pale outer spiral arm.', 'DIV-05', 1340, 279, 0],
+  ['voidwalker-moonlitsilk', 'THM-96', "VOID WALKER'S CLOAK & MOONLIT SILK", 'VOID WALKER CLOAK', 'MOONLIT SILK', "Void walker's star-woven cloak paired with pale moonlit silk drape.", 'DIV-05', 1360, 285, 0],
+  ['zerograv-cabin', 'THM-97', 'ZERO GRAVITY CHAMBER & CABIN LIGHT', 'ZERO-G CHAMBER', 'STATION CABIN LIGHT', 'Weightless zero-gravity training chamber paired with warm station cabin light.', 'DIV-05', 1400, 291, 0],
+  ['darkmatter-particletrail', 'THM-98', 'DARK MATTER LAB & PARTICLE TRAIL', 'DARK MATTER LAB', 'PARTICLE TRAIL', 'Shielded dark-matter detection lab paired with a glowing particle trail.', 'DIV-05', 1420, 297, 0],
+  ['lunareclipse-corona', 'THM-99', 'LUNAR ECLIPSE & CORONA RING', 'LUNAR ECLIPSE', 'CORONA RING LIGHT', 'Totality of a lunar eclipse paired with the pale corona ring light.', 'DIV-05', 1460, 303, 0],
+  ['hyperspace-streak', 'THM-100', 'WORMHOLE TRANSIT & HYPERSPACE STREAK', 'WORMHOLE TRANSIT', 'HYPERSPACE STREAK', 'Mid-transit wormhole compression paired with streaking hyperspace light.', 'DIV-05', 1480, 309, 0],
+
+  // DIV-06 — 10 extra pairs
+  ['memphis-terrazzo', 'THM-101', 'MEMPHIS DESIGN & PASTEL TERRAZZO', 'MEMPHIS STUDIO NIGHT', 'PASTEL TERRAZZO', 'Postmodern Memphis design studio paired with playful pastel terrazzo flooring.', 'DIV-06', 1510, 300, 0],
+  ['artdeco-marble', 'THM-102', 'ART DECO SKYSCRAPER & MARBLE LOBBY', 'ART DECO SKYLINE', 'MARBLE LOBBY', 'Gilded Art Deco skyscraper skyline paired with a polished marble lobby.', 'DIV-06', 1535, 306, 0],
+  ['megastructure-concrete', 'THM-103', 'BRUTALIST MEGASTRUCTURE & RAW CONCRETE', 'MEGASTRUCTURE SHADOW', 'RAW POURED CONCRETE', 'Towering brutalist megastructure shadow paired with raw poured concrete.', 'DIV-06', 1580, 312, 0],
+  ['deconstructivist-gallery', 'THM-104', 'DECONSTRUCTIVIST BLUEPRINT & GALLERY WHITE', 'DECONSTRUCTIVIST DRAFT', 'GALLERY WHITE WALL', 'Deconstructivist architectural blueprint draft paired with gallery-white walls.', 'DIV-06', 1600, 318, 0],
+  ['vaporwave-arcade', 'THM-105', 'VAPORWAVE ARCADE & NEON PASTEL', 'VAPORWAVE ARCADE', 'NEON PASTEL DAY', 'Retro vaporwave arcade cabinet glow paired with soft neon-pastel daylight.', 'DIV-06', 1640, 324, 0],
+  ['gothic-stainedglass', 'THM-106', 'GOTHIC CATHEDRAL & STAINED GLASS', 'GOTHIC NAVE SHADOW', 'STAINED GLASS LIGHT', 'Shadowed Gothic cathedral nave paired with luminous stained-glass light.', 'DIV-06', 1670, 330, 0],
+  ['minimalist-gesso', 'THM-107', 'MINIMALIST ATELIER & GESSO CANVAS', 'MINIMALIST ATELIER', 'GESSO CANVAS', "Quiet minimalist painter's atelier paired with primed gesso canvas white.", 'DIV-06', 1700, 336, 0],
+  ['industrialloft-brick', 'THM-108', 'INDUSTRIAL LOFT & EXPOSED BRICK', 'INDUSTRIAL LOFT NIGHT', 'EXPOSED BRICK DAY', 'Converted industrial loft at night paired with sunlit exposed brick walls.', 'DIV-06', 1740, 342, 0],
+  ['parametric-draftingtable', 'THM-109', 'PARAMETRIC FACADE & DRAFTING TABLE', 'PARAMETRIC FACADE NIGHT', 'DRAFTING TABLE LIGHT', 'Computational parametric facade render paired with a bright drafting table.', 'DIV-06', 1765, 348, 0],
+  ['hadid-museum', 'THM-110', 'FLUID CURVE & MUSEUM WHITE', 'FLUID ARCHITECTURE NIGHT', 'MUSEUM WHITE GALLERY', 'Fluid parametric architecture at night paired with a museum-white gallery.', 'DIV-06', 1790, 354, 0],
+
+  // DIV-07 — 8 extra pairs
+  ['valentine-blush', 'THM-111', 'VALENTINE VELVET & BLUSH SATIN', 'VALENTINE VELVET', 'BLUSH SATIN', 'Deep valentine velvet drape paired with soft blush satin daylight.', 'DIV-07', 1815, 335, 0],
+  ['flamingo-coral', 'THM-112', 'FLAMINGO LAGOON & CORAL SAND', 'FLAMINGO LAGOON NIGHT', 'CORAL SAND BEACH', 'Flamingo-lagoon dusk reflection paired with warm coral-sand beach light.', 'DIV-07', 1840, 340, 0],
+  ['raspberry-creamsoda', 'THM-113', 'RASPBERRY SORBET & CREAM SODA', 'RASPBERRY SORBET', 'CREAM SODA', 'Tart raspberry sorbet tin paired with fizzy pale cream-soda light.', 'DIV-07', 1890, 345, 0],
+  ['geisha-lantern', 'THM-114', 'GEISHA SILK & PAPER LANTERN', 'GEISHA SILK NIGHT', 'PAPER LANTERN GLOW', 'Night-market geisha silk kimono paired with warm paper-lantern glow.', 'DIV-07', 1920, 350, 0],
+  ['peony-dew', 'THM-115', 'PEONY GARDEN & MORNING DEW', 'PEONY GARDEN NIGHT', 'MORNING DEW LIGHT', 'Moonlit peony garden shadow paired with fresh morning-dew light.', 'DIV-07', 1975, 355, 0],
+  ['strawberrymilk-vanilla', 'THM-116', 'STRAWBERRY MILK & VANILLA CREAM', 'STRAWBERRY MILK NIGHT', 'VANILLA CREAM', 'Chilled strawberry-milk bottle tone paired with soft vanilla-cream daylight.', 'DIV-07', 2010, 0, 0],
+  ['garnet-rosewater', 'THM-117', 'GARNET VELVET & ROSEWATER MARBLE', 'GARNET VELVET', 'ROSEWATER MARBLE', 'Rich garnet velvet upholstery paired with pale rosewater marble stone.', 'DIV-07', 2060, 5, 0],
+  ['watermelon-seafoam', 'THM-118', 'WATERMELON PUNCH & SEAFOAM RIND', 'WATERMELON PUNCH', 'SEAFOAM RIND', 'Bold watermelon-punch night tone paired with pale seafoam rind daylight.', 'DIV-07', 2090, 10, 0],
+
+  // DIV-08 — 8 extra pairs
+  ['forge-slag', 'THM-119', 'FORGE FURNACE & MOLTEN SLAG', 'FORGE FURNACE NIGHT', 'COOLED SLAG DAY', 'Roaring forge-furnace interior paired with cooled daylight molten slag.', 'DIV-08', 2110, 20, 0],
+  ['caravan-spicemarket', 'THM-120', 'DESERT CARAVAN & SPICE MARKET', 'CARAVAN NIGHT CAMP', 'SPICE MARKET DAY', 'Desert caravan night-camp fire paired with a bright spice-market stall.', 'DIV-08', 2180, 26, 0],
+  ['campfire-canvastent', 'THM-121', 'CAMPFIRE EMBER & CANVAS TENT', 'CAMPFIRE EMBER', 'CANVAS TENT DAY', 'Glowing campfire ember pit paired with sunlit canvas expedition tent.', 'DIV-08', 2210, 32, 0],
+  ['jackolantern-harvest', 'THM-122', "JACK-O'-LANTERN & AUTUMN HARVEST", 'JACK-O-LANTERN NIGHT', 'AUTUMN HARVEST DAY', 'Carved jack-o-lantern porch-light night paired with bright autumn harvest day.', 'DIV-08', 2260, 38, 0],
+  ['blacksmith-temperedsteel', 'THM-123', 'BLACKSMITH ANVIL & TEMPERED STEEL', 'BLACKSMITH FORGE', 'TEMPERED STEEL', "Blacksmith's glowing anvil forge paired with cool tempered-steel daylight.", 'DIV-08', 2290, 44, 0],
+  ['habanero-citrus', 'THM-124', 'HABANERO KITCHEN & CITRUS PEEL', 'HABANERO KITCHEN', 'CITRUS PEEL DAY', 'Spicy habanero-kitchen evening paired with bright citrus-peel daylight.', 'DIV-08', 2340, 50, 0],
+  ['sahara-duneridge', 'THM-125', 'SAHARA SUNSET & DUNE RIDGE', 'SAHARA SUNSET', 'DUNE RIDGE DAY', 'Blazing Sahara sunset horizon paired with a pale sunlit dune ridge.', 'DIV-08', 2370, 56, 0],
+  ['bonfire-marshmallow', 'THM-126', 'BONFIRE NIGHT & MARSHMALLOW CREAM', 'BONFIRE NIGHT', 'MARSHMALLOW CREAM', 'Crackling bonfire night gathering paired with toasted marshmallow cream.', 'DIV-08', 2395, 62, 0],
+
+  // DIV-09 — 8 extra pairs
+  ['pharaoh-papyrus', 'THM-127', "PHARAOH'S TOMB & PAPYRUS SCROLL", 'PHARAOH TOMB NIGHT', 'PAPYRUS SCROLL DAY', "Sealed pharaoh's tomb torchlight paired with an unrolled papyrus scroll.", 'DIV-09', 2410, 45, 0],
+  ['byzantine-ivory', 'THM-128', 'BYZANTINE MOSAIC & GILDED IVORY', 'BYZANTINE MOSAIC', 'GILDED IVORY', 'Shimmering Byzantine gold mosaic paired with carved gilded ivory.', 'DIV-09', 2440, 50, 0],
+  ['honeycomb-beeswax', 'THM-129', 'HONEYCOMB HIVE & BEESWAX CANDLE', 'HONEYCOMB HIVE NIGHT', 'BEESWAX CANDLE', 'Dense honeycomb hive interior paired with the warm glow of beeswax candles.', 'DIV-09', 2490, 55, 0],
+  ['treasury-mintedcoin', 'THM-130', 'TREASURY VAULT & MINTED COIN', 'TREASURY VAULT NIGHT', 'MINTED COIN SHINE', 'Locked treasury vault at night paired with the shine of a freshly minted coin.', 'DIV-09', 2520, 60, 0],
+  ['saffron-turmeric', 'THM-131', 'SAFFRON MARKET & TURMERIC CREAM', 'SAFFRON MARKET NIGHT', 'TURMERIC CREAM DAY', 'Fragrant saffron-market evening stall paired with bright turmeric-cream day.', 'DIV-09', 2560, 65, 0],
+  ['amber-fossilhoney', 'THM-132', 'AMBER RESIN & FOSSILIZED HONEY', 'AMBER RESIN NIGHT', 'FOSSILIZED HONEY', 'Deep amber tree-resin pool paired with ancient fossilized honey light.', 'DIV-09', 2580, 70, 0],
+  ['scepter-crownjewel', 'THM-133', 'ROYAL SCEPTER & CROWN JEWEL', 'ROYAL SCEPTER NIGHT', 'CROWN JEWEL SHINE', 'Ceremonial royal scepter vault paired with the shine of a crown jewel.', 'DIV-09', 2630, 75, 0],
+  ['harvestmoon-wheat', 'THM-134', 'HARVEST MOON & WHEAT FIELD', 'HARVEST MOON NIGHT', 'WHEAT FIELD DAY', 'Golden harvest-moon night sky paired with a sunlit ripened wheat field.', 'DIV-09', 2660, 80, 0],
+
+  // DIV-10 — 10 extra pairs
+  ['zerogsuit-regolith', 'THM-135', 'ZERO-G VOID SUIT & LUNAR REGOLITH', 'ZERO-G VOID SUIT', 'LUNAR REGOLITH DAY', 'Pressurized zero-gravity void suit visor paired with pale lunar regolith daylight.', 'DIV-10', 2705, 0, -18],
+  ['deepfield-nebulaprint', 'THM-136', 'DEEP FIELD TELESCOPE & NEBULA PRINT', 'DEEP FIELD NIGHT', 'NEBULA PRINT PAPER', 'Deep-field space-telescope exposure paired with a printed nebula photograph.', 'DIV-10', 2730, 20, -18],
+  ['quantumlab-cryostat', 'THM-137', 'QUANTUM COMPUTER LAB & CRYOSTAT WHITE', 'QUANTUM LAB NIGHT', 'CRYOSTAT WHITE', 'Shielded quantum-computing lab paired with pristine cryostat-white housing.', 'DIV-10', 2750, 40, -18],
+  ['darkenergy-dome', 'THM-138', 'DARK ENERGY ARRAY & OBSERVATORY DOME', 'DARK ENERGY NIGHT', 'OBSERVATORY DOME DAY', 'Vast dark-energy detector array night paired with a sunlit observatory dome.', 'DIV-10', 2790, 60, -18],
+  ['finalfrontier-missioncontrol', 'THM-139', 'FINAL FRONTIER HULL & MISSION CONTROL', 'FINAL FRONTIER HULL', 'MISSION CONTROL WHITE', 'Deep-space final-frontier hull plating paired with mission-control white.', 'DIV-10', 2805, 80, -18],
+  ['blackhole-hawking', 'THM-140', 'BLACK HOLE HORIZON & HAWKING RADIATION', 'EVENT HORIZON NIGHT', 'HAWKING RADIATION', 'The absolute dark of a black-hole event horizon paired with faint Hawking radiation.', 'DIV-10', 2850, 100, -18],
+  ['supercollider-cleanroom', 'THM-141', 'SUPERCOLLIDER RING & CLEAN ROOM', 'SUPERCOLLIDER NIGHT', 'CLEAN ROOM WHITE', 'Kilometers of supercollider ring tunnel paired with sterile clean-room white.', 'DIV-10', 2870, 120, -18],
+  ['antimatter-ceramic', 'THM-142', 'ANTIMATTER CONTAINMENT & LAB CERAMIC', 'ANTIMATTER CONTAINMENT', 'LAB CERAMIC WHITE', 'Magnetically sealed antimatter containment ring paired with lab-ceramic white.', 'DIV-10', 2900, 140, -18],
+  ['terminalvelocity-heatshield', 'THM-143', 'TERMINAL VELOCITY & HEAT SHIELD', 'TERMINAL VELOCITY NIGHT', 'HEAT SHIELD WHITE', 'Re-entry terminal-velocity plasma trail paired with scorched heat-shield white.', 'DIV-10', 2925, 160, -18],
+  ['lastlight-aurora', 'THM-144', 'LAST LIGHT BEACON & POLAR AURORA', 'LAST LIGHT BEACON', 'POLAR AURORA DAY', 'The final deep-space beacon signal paired with a pale polar-aurora sky.', 'DIV-10', 2985, 180, -18],
+];
+
+function buildExtraThemePairs(): SurfaceThemePair[] {
+  return EXTRA_THEME_SPECS.map((spec, i) => {
+    const [id, code, name, darkLabel, lightLabel, description, divisionCode, clearanceHintLv, hue, satBoost] = spec;
+    const pal = buildSignaturePalette(hue, satBoost);
+    const pattern = SIGNATURE_PATTERN_CYCLE[i % SIGNATURE_PATTERN_CYCLE.length];
+    return {
+      id,
+      code,
+      name,
+      pairLabel: `${darkLabel} ⇄ ${lightLabel}`,
+      description,
+      pattern,
+      accentHex: hslToHex(hue, 65, 55),
+      divisionCode,
+      clearanceHintLv,
+      dark: { label: darkLabel, ...pal.dark },
+      light: { label: lightLabel, ...pal.light },
+    };
+  });
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   // ==========================================
-  // DIV-01 // INITIATE (LV.1–150 // 0H–150H) — 6 PAIRS
+  // DIV-01 // INITIATE (LV.1–300 // 0H–1,500H) — 18 PAIRS
   // ==========================================
   {
     id: 'monolith',
@@ -2426,7 +2640,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'none',
     accentHex: '#10b981',
     divisionCode: 'DIV-01',
-    clearanceHintLv: 1,
+    clearanceHintLv: 2,
     dark: {
       label: 'CARBON BLACK',
       bgMain: '#0a0a0a',
@@ -2459,7 +2673,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'grid',
     accentHex: '#a1a1aa',
     divisionCode: 'DIV-01',
-    clearanceHintLv: 2,
+    clearanceHintLv: 4,
     dark: {
       label: 'ANODIZED SLATE',
       bgMain: '#0d0f12',
@@ -2492,7 +2706,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'horizon',
     accentHex: '#d4d4d8',
     divisionCode: 'DIV-01',
-    clearanceHintLv: 6,
+    clearanceHintLv: 12,
     dark: {
       label: 'E-READER ONYX',
       bgMain: '#121314',
@@ -2525,7 +2739,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'dots',
     accentHex: '#d97706',
     divisionCode: 'DIV-01',
-    clearanceHintLv: 16,
+    clearanceHintLv: 32,
     dark: {
       label: 'SUMI CHARCOAL',
       bgMain: '#11100e',
@@ -2558,7 +2772,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'diagonal',
     accentHex: '#b45309',
     divisionCode: 'DIV-01',
-    clearanceHintLv: 36,
+    clearanceHintLv: 72,
     dark: {
       label: 'DARK ROAST',
       bgMain: '#130d09',
@@ -2591,7 +2805,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'crosshatch',
     accentHex: '#e11d48',
     divisionCode: 'DIV-01',
-    clearanceHintLv: 76,
+    clearanceHintLv: 152,
     dark: {
       label: 'RACING ASPHALT',
       bgMain: '#111215',
@@ -2617,7 +2831,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-02 // CADET (LV.151–300 // 152H–450H) — 5 PAIRS
+  // DIV-02 // CADET (LV.301–600 // 1,520H–4,500H) — 15 PAIRS
   // ==========================================
   {
     id: 'obsidian-blueprint',
@@ -2628,7 +2842,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'blueprint',
     accentHex: '#38bdf8',
     divisionCode: 'DIV-02',
-    clearanceHintLv: 151,
+    clearanceHintLv: 302,
     dark: {
       label: 'MIDNIGHT NAVY',
       bgMain: '#060c17',
@@ -2661,7 +2875,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'radial',
     accentHex: '#7dd3fc',
     divisionCode: 'DIV-02',
-    clearanceHintLv: 185,
+    clearanceHintLv: 370,
     dark: {
       label: 'POLAR NIGHT',
       bgMain: '#151b24',
@@ -2694,7 +2908,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'grid',
     accentHex: '#06b6d4',
     divisionCode: 'DIV-02',
-    clearanceHintLv: 220,
+    clearanceHintLv: 440,
     dark: {
       label: 'CRYO CHAMBER',
       bgMain: '#041116',
@@ -2727,7 +2941,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'isometric',
     accentHex: '#0284c7',
     divisionCode: 'DIV-02',
-    clearanceHintLv: 260,
+    clearanceHintLv: 520,
     dark: {
       label: 'DEEP PERMAFROST',
       bgMain: '#050f18',
@@ -2760,7 +2974,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'vignette',
     accentHex: '#2dd4bf',
     divisionCode: 'DIV-02',
-    clearanceHintLv: 300,
+    clearanceHintLv: 600,
     dark: {
       label: 'GLACIAL CREVASSE',
       bgMain: '#041312',
@@ -2786,7 +3000,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-03 // OPERATOR (LV.301–450 // 452H–750H) — 5 PAIRS
+  // DIV-03 // OPERATOR (LV.601–900 // 4,520H–7,500H) — 15 PAIRS
   // ==========================================
   {
     id: 'phosphor-terminal',
@@ -2797,7 +3011,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'scanline',
     accentHex: '#22c55e',
     divisionCode: 'DIV-03',
-    clearanceHintLv: 320,
+    clearanceHintLv: 640,
     dark: {
       label: 'P31 PHOSPHOR',
       bgMain: '#040d07',
@@ -2830,7 +3044,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'dots',
     accentHex: '#84cc16',
     divisionCode: 'DIV-03',
-    clearanceHintLv: 350,
+    clearanceHintLv: 700,
     dark: {
       label: 'DEEP MOSS',
       bgMain: '#09120b',
@@ -2863,7 +3077,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'horizon',
     accentHex: '#16a34a',
     divisionCode: 'DIV-03',
-    clearanceHintLv: 385,
+    clearanceHintLv: 770,
     dark: {
       label: 'CONIFER CANOPY',
       bgMain: '#06110b',
@@ -2896,7 +3110,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'circuit',
     accentHex: '#a3e635',
     divisionCode: 'DIV-03',
-    clearanceHintLv: 420,
+    clearanceHintLv: 840,
     dark: {
       label: 'ACID LOGIC BOARD',
       bgMain: '#0a1104',
@@ -2929,7 +3143,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'blueprint',
     accentHex: '#10b981',
     divisionCode: 'DIV-03',
-    clearanceHintLv: 450,
+    clearanceHintLv: 900,
     dark: {
       label: 'OBSIDIAN JADE',
       bgMain: '#03120e',
@@ -2955,7 +3169,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-04 // SPECIALIST (LV.451–600 // 752H–1,050H) — 5 PAIRS
+  // DIV-04 // SPECIALIST (LV.901–1,200 // 7,520H–10,500H) — 15 PAIRS
   // ==========================================
   {
     id: 'abyssal-trench',
@@ -2966,7 +3180,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'radial',
     accentHex: '#0ea5e9',
     divisionCode: 'DIV-04',
-    clearanceHintLv: 480,
+    clearanceHintLv: 960,
     dark: {
       label: 'MARIANA ABYSS',
       bgMain: '#030a14',
@@ -2999,7 +3213,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'dots',
     accentHex: '#00d2d3',
     divisionCode: 'DIV-04',
-    clearanceHintLv: 510,
+    clearanceHintLv: 1020,
     dark: {
       label: 'PELAGIC BIOLUME',
       bgMain: '#021216',
@@ -3032,7 +3246,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'grid',
     accentHex: '#2aa198',
     divisionCode: 'DIV-04',
-    clearanceHintLv: 540,
+    clearanceHintLv: 1080,
     dark: {
       label: 'SOLARIZED TEAL',
       bgMain: '#001b22',
@@ -3061,11 +3275,11 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     code: 'THM-20',
     name: 'CHERENKOV REACTOR CORE',
     pairLabel: 'CHERENKOV RADIATION ⇄ HEAVY WATER',
-    description: '1,000-hour milestone core glowing with ionized Cherenkov blue lattice.',
+    description: '10,000-hour milestone core glowing with ionized Cherenkov blue lattice.',
     pattern: 'isometric',
     accentHex: '#3b82f6',
     divisionCode: 'DIV-04',
-    clearanceHintLv: 575,
+    clearanceHintLv: 1150,
     dark: {
       label: 'CHERENKOV CORE',
       bgMain: '#030d21',
@@ -3098,7 +3312,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'crosshatch',
     accentHex: '#059669',
     divisionCode: 'DIV-04',
-    clearanceHintLv: 600,
+    clearanceHintLv: 1200,
     dark: {
       label: 'BANKER LAMP GREEN',
       bgMain: '#05130d',
@@ -3124,7 +3338,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-05 // VANGUARD (LV.601–750 // 1,052H–1,350H) — 5 PAIRS
+  // DIV-05 // VANGUARD (LV.1,201–1,500 // 10,520H–13,500H) — 15 PAIRS
   // ==========================================
   {
     id: 'cobalt-observatory',
@@ -3135,7 +3349,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'blueprint',
     accentHex: '#6366f1',
     divisionCode: 'DIV-05',
-    clearanceHintLv: 630,
+    clearanceHintLv: 1260,
     dark: {
       label: 'ASTROMETRY BLUE',
       bgMain: '#060b1e',
@@ -3168,7 +3382,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'circuit',
     accentHex: '#818cf8',
     divisionCode: 'DIV-05',
-    clearanceHintLv: 660,
+    clearanceHintLv: 1320,
     dark: {
       label: 'SHIBUYA RAIN',
       bgMain: '#090b16',
@@ -3201,7 +3415,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'scanline',
     accentHex: '#bd93f9',
     divisionCode: 'DIV-05',
-    clearanceHintLv: 690,
+    clearanceHintLv: 1380,
     dark: {
       label: 'NOCTURNE SLATE',
       bgMain: '#14151f',
@@ -3234,7 +3448,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'radial',
     accentHex: '#8b5cf6',
     divisionCode: 'DIV-05',
-    clearanceHintLv: 720,
+    clearanceHintLv: 1440,
     dark: {
       label: 'COSMIC INDIGO',
       bgMain: '#0a0617',
@@ -3267,7 +3481,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'isometric',
     accentHex: '#7c3aed',
     divisionCode: 'DIV-05',
-    clearanceHintLv: 750,
+    clearanceHintLv: 1500,
     dark: {
       label: 'PLANCK HORIZON',
       bgMain: '#0c051c',
@@ -3293,7 +3507,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-06 // ARCHITECT (LV.751–900 // 1,352H–1,650H) — 5 PAIRS
+  // DIV-06 // ARCHITECT (LV.1,501–1,800 // 13,520H–16,500H) — 15 PAIRS
   // ==========================================
   {
     id: 'cyberpunk-neon',
@@ -3304,7 +3518,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'scanline',
     accentHex: '#d946ef',
     divisionCode: 'DIV-06',
-    clearanceHintLv: 780,
+    clearanceHintLv: 1560,
     dark: {
       label: 'NEON VOID',
       bgMain: '#10051a',
@@ -3337,7 +3551,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'grid',
     accentHex: '#e11d48',
     divisionCode: 'DIV-06',
-    clearanceHintLv: 810,
+    clearanceHintLv: 1620,
     dark: {
       label: 'WEIMAR IRONWORK',
       bgMain: '#121215',
@@ -3366,11 +3580,11 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     code: 'THM-29',
     name: 'AMETHYST CITADEL',
     pairLabel: 'ROYAL PLUM DARK ⇄ ORCHID SILK',
-    description: '1,500-hour milestone crystalline amethyst fortress with crosshatch geometry.',
+    description: '15,000-hour milestone crystalline amethyst fortress with crosshatch geometry.',
     pattern: 'crosshatch',
     accentHex: '#a855f7',
     divisionCode: 'DIV-06',
-    clearanceHintLv: 825,
+    clearanceHintLv: 1650,
     dark: {
       label: 'ROYAL PLUM',
       bgMain: '#110818',
@@ -3403,7 +3617,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'vignette',
     accentHex: '#c026d3',
     divisionCode: 'DIV-06',
-    clearanceHintLv: 860,
+    clearanceHintLv: 1720,
     dark: {
       label: 'DEEP PULSAR',
       bgMain: '#160516',
@@ -3436,7 +3650,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'horizon',
     accentHex: '#78716c',
     divisionCode: 'DIV-06',
-    clearanceHintLv: 900,
+    clearanceHintLv: 1800,
     dark: {
       label: 'MONASTIC SLATE',
       bgMain: '#121311',
@@ -3462,7 +3676,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-07 // OVERSEER (LV.901–1,050 // 1,652H–1,950H) — 4 PAIRS
+  // DIV-07 // OVERSEER (LV.1,801–2,100 // 16,520H–19,500H) — 12 PAIRS
   // ==========================================
   {
     id: 'sakura-quartz',
@@ -3473,7 +3687,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'dots',
     accentHex: '#ec4899',
     divisionCode: 'DIV-07',
-    clearanceHintLv: 935,
+    clearanceHintLv: 1870,
     dark: {
       label: 'NIGHT BLOSSOM',
       bgMain: '#15080f',
@@ -3506,7 +3720,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'diagonal',
     accentHex: '#fb7185',
     divisionCode: 'DIV-07',
-    clearanceHintLv: 975,
+    clearanceHintLv: 1950,
     dark: {
       label: 'OBSIDIAN BLUSH',
       bgMain: '#160b0f',
@@ -3539,7 +3753,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'vignette',
     accentHex: '#e11d48',
     divisionCode: 'DIV-07',
-    clearanceHintLv: 1015,
+    clearanceHintLv: 2030,
     dark: {
       label: 'VINTAGE CELLAR',
       bgMain: '#17050a',
@@ -3572,7 +3786,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'scanline',
     accentHex: '#f43f5e',
     divisionCode: 'DIV-07',
-    clearanceHintLv: 1050,
+    clearanceHintLv: 2100,
     dark: {
       label: 'BORDEAUX STEALTH',
       bgMain: '#160609',
@@ -3598,18 +3812,18 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-08 // SENTINEL (LV.1,051–1,200 // 1,952H–2,250H) — 4 PAIRS
+  // DIV-08 // SENTINEL (LV.2,101–2,400 // 19,520H–22,500H) — 12 PAIRS
   // ==========================================
   {
     id: 'volcanic-basalt',
     code: 'THM-36',
     name: 'VOLCANIC MAGMA BASALT',
     pairLabel: 'MAGMA BASALT ⇄ PUMICE TRAVERTINE',
-    description: '2,000-hour milestone tectonic basalt infused with ember warmth and travertine.',
+    description: '20,000-hour milestone tectonic basalt infused with ember warmth and travertine.',
     pattern: 'grid',
     accentHex: '#f97316',
     divisionCode: 'DIV-08',
-    clearanceHintLv: 1075,
+    clearanceHintLv: 2150,
     dark: {
       label: 'MAGMA BASALT',
       bgMain: '#140906',
@@ -3642,7 +3856,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'diagonal',
     accentHex: '#ea580c',
     divisionCode: 'DIV-08',
-    clearanceHintLv: 1115,
+    clearanceHintLv: 2230,
     dark: {
       label: 'KILN EARTHENWARE',
       bgMain: '#160b07',
@@ -3675,7 +3889,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'scanline',
     accentHex: '#f59e0b',
     divisionCode: 'DIV-08',
-    clearanceHintLv: 1160,
+    clearanceHintLv: 2320,
     dark: {
       label: 'CATHODE UMBER',
       bgMain: '#130c04',
@@ -3708,7 +3922,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'blueprint',
     accentHex: '#ea580c',
     divisionCode: 'DIV-08',
-    clearanceHintLv: 1200,
+    clearanceHintLv: 2400,
     dark: {
       label: 'SMELTED BRONZE',
       bgMain: '#130b07',
@@ -3734,7 +3948,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-09 // SOVEREIGN (LV.1,201–1,350 // 2,252H–2,625H) — 4 PAIRS
+  // DIV-09 // SOVEREIGN (LV.2,401–2,700 // 22,520H–26,250H) — 12 PAIRS
   // ==========================================
   {
     id: 'tungsten-filament',
@@ -3745,7 +3959,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'radial',
     accentHex: '#fbbf24',
     divisionCode: 'DIV-09',
-    clearanceHintLv: 1235,
+    clearanceHintLv: 2470,
     dark: {
       label: 'EDISON FILAMENT',
       bgMain: '#141007',
@@ -3778,7 +3992,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'horizon',
     accentHex: '#ca8a04',
     divisionCode: 'DIV-09',
-    clearanceHintLv: 1270,
+    clearanceHintLv: 2540,
     dark: {
       label: 'DARKROOM BROMIDE',
       bgMain: '#14110d',
@@ -3807,11 +4021,11 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     code: 'THM-42',
     name: 'SAHARA DUNE LIMESTONE',
     pairLabel: 'DESERT NIGHT ⇄ SAHARA LIMESTONE',
-    description: '2,500-hour Quarter-Myriad desert twilight paired with sun-baked limestone.',
+    description: '25,000-hour Quarter-Lakh desert twilight paired with sun-baked limestone.',
     pattern: 'dots',
     accentHex: '#eab308',
     divisionCode: 'DIV-09',
-    clearanceHintLv: 1300,
+    clearanceHintLv: 2600,
     dark: {
       label: 'DESERT NIGHT',
       bgMain: '#13100a',
@@ -3844,7 +4058,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'isometric',
     accentHex: '#facc15',
     divisionCode: 'DIV-09',
-    clearanceHintLv: 1350,
+    clearanceHintLv: 2700,
     dark: {
       label: 'ONYX BULLION',
       bgMain: '#110e05',
@@ -3870,7 +4084,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   },
 
   // ==========================================
-  // DIV-10 // MONOLITH (LV.1,351–1,500 // 2,628H–3,000H) — 5 PAIRS
+  // DIV-10 // MONOLITH (LV.2,701–3,000 // 26,280H–30,000H) — 15 PAIRS
   // ==========================================
   {
     id: 'stealth-kevlar',
@@ -3881,7 +4095,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'crosshatch',
     accentHex: '#cbd5e1',
     divisionCode: 'DIV-10',
-    clearanceHintLv: 1380,
+    clearanceHintLv: 2760,
     dark: {
       label: 'BALLISTIC WEAVE',
       bgMain: '#0c0d0f',
@@ -3914,7 +4128,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'circuit',
     accentHex: '#38bdf8',
     divisionCode: 'DIV-10',
-    clearanceHintLv: 1410,
+    clearanceHintLv: 2820,
     dark: {
       label: 'HOUSTON CONSOLE',
       bgMain: '#080e16',
@@ -3947,7 +4161,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'blueprint',
     accentHex: '#94a3b8',
     divisionCode: 'DIV-10',
-    clearanceHintLv: 1440,
+    clearanceHintLv: 2880,
     dark: {
       label: 'GUNMETAL ALLOY',
       bgMain: '#0e1116',
@@ -3980,7 +4194,7 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     pattern: 'isometric',
     accentHex: '#e2e8f0',
     divisionCode: 'DIV-10',
-    clearanceHintLv: 1470,
+    clearanceHintLv: 2940,
     dark: {
       label: 'IRIDIUM VOID',
       bgMain: '#07090e',
@@ -4007,13 +4221,13 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   {
     id: 'omega-monolith',
     code: 'THM-48',
-    name: 'OMEGA SINGULARITY // 3,000H',
+    name: 'OMEGA SINGULARITY // 30,000H',
     pairLabel: 'EVENT HORIZON ⇄ ASTRAL DIAMOND',
-    description: 'Apex 3,000-hour (LV.1500) singularity surface combining cosmic void and diamond daylight.',
+    description: 'Apex 30,000-hour (LV.3000) singularity surface combining cosmic void and diamond daylight.',
     pattern: 'blueprint',
     accentHex: '#f43f5e',
     divisionCode: 'DIV-10',
-    clearanceHintLv: 1500,
+    clearanceHintLv: 3000,
     dark: {
       label: 'EVENT HORIZON',
       bgMain: '#06040b',
@@ -4037,6 +4251,11 @@ const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
       glowTint: 'rgba(244,63,94,0.06)',
     },
   },
+
+  // ==========================================
+  // 96 GENERATED EXPANSION PAIRS (see EXTRA_THEME_SPECS above)
+  // ==========================================
+  ...buildExtraThemePairs(),
 ];
 
 // Fast lookup of theme reward by Clearance Level
@@ -4089,6 +4308,43 @@ export function getSurfaceBackgroundStyle(
   } else if (pair.pattern === 'vignette') {
     base.backgroundImage = `radial-gradient(circle at 50% 15%, ${pal.glowTint}, transparent 65%), radial-gradient(${pal.patternTint} 1px, transparent 1px)`;
     base.backgroundSize = '100% 100%, 30px 30px';
+  } else if (pair.pattern === 'hexgrid') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px), repeating-linear-gradient(60deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px), repeating-linear-gradient(120deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 32px)`;
+  } else if (pair.pattern === 'triangulate') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), repeating-linear-gradient(30deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px), repeating-linear-gradient(150deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px), repeating-linear-gradient(90deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 40px)`;
+  } else if (pair.pattern === 'polygon') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px), repeating-linear-gradient(72deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px), repeating-linear-gradient(144deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 46px)`;
+  } else if (pair.pattern === 'chevron') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 13px), repeating-linear-gradient(-45deg, ${pal.patternTint} 0px, ${pal.patternTint} 1px, transparent 1px, transparent 13px)`;
+  } else if (pair.pattern === 'weave') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%), repeating-linear-gradient(0deg, ${pal.patternTint} 0px, ${pal.patternTint} 5px, transparent 5px, transparent 13px), repeating-linear-gradient(90deg, ${pal.patternTint} 0px, ${pal.patternTint} 5px, transparent 5px, transparent 13px)`;
+  } else if (pair.pattern === 'rings') {
+    base.backgroundImage = `repeating-radial-gradient(circle at 50% 35%, transparent 0px, transparent 17px, ${pal.patternTint} 17px, ${pal.patternTint} 18px), radial-gradient(circle at 50% 35%, ${pal.glowTint}, transparent 60%)`;
+  } else if (pair.pattern === 'topographic') {
+    base.backgroundImage = `repeating-radial-gradient(circle at 28% 22%, transparent 0px, transparent 20px, ${pal.patternTint} 20px, ${pal.patternTint} 21px), repeating-radial-gradient(circle at 76% 82%, transparent 0px, transparent 26px, ${pal.patternTint} 26px, ${pal.patternTint} 27px), radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%)`;
+  } else if (pair.pattern === 'starburst') {
+    base.backgroundImage = `repeating-conic-gradient(from 0deg at 50% 0%, ${pal.patternTint} 0deg 1deg, transparent 1deg 15deg), radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%)`;
+  } else if (pair.pattern === 'constellation') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), radial-gradient(circle at 15% 20%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 68% 14%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 38% 52%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 84% 68%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 24% 86%, ${pal.patternTint} 1.4px, transparent 2px), radial-gradient(circle at 58% 92%, ${pal.patternTint} 1.4px, transparent 2px)`;
+    base.backgroundSize = '100% 100%, 150px 150px, 150px 150px, 150px 150px, 150px 150px, 150px 150px, 150px 150px';
+  } else if (pair.pattern === 'waveform') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), radial-gradient(circle at 8% 50%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 28% 15%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 50% 85%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 72% 15%, ${pal.patternTint} 2px, transparent 3px), radial-gradient(circle at 92% 85%, ${pal.patternTint} 2px, transparent 3px)`;
+    base.backgroundSize = '100% 100%, 110px 54px, 110px 54px, 110px 54px, 110px 54px, 110px 54px';
+  } else if (pair.pattern === 'sigil') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 75%), radial-gradient(circle at 50% 50%, transparent 0px, transparent 21px, ${pal.patternTint} 21px, ${pal.patternTint} 22px, transparent 22px), linear-gradient(0deg, transparent 48%, ${pal.patternTint} 48%, ${pal.patternTint} 52%, transparent 52%), linear-gradient(90deg, transparent 48%, ${pal.patternTint} 48%, ${pal.patternTint} 52%, transparent 52%)`;
+    base.backgroundSize = '100% 100%, 96px 96px, 96px 96px, 96px 96px';
+  } else if (pair.pattern === 'honeycomb') {
+    base.backgroundImage = `radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 72%), radial-gradient(${pal.patternTint} 1.6px, transparent 1.6px), radial-gradient(${pal.patternTint} 1.1px, transparent 1.1px)`;
+    base.backgroundSize = '100% 100%, 26px 26px, 38px 38px';
+  }
+
+  // Signature dark-mode geometric watermark: a faint white isometric mesh
+  // layered on top of every dark surface, so black mode always has its own
+  // identity regardless of which per-theme `pattern` is assigned above.
+  if (isDark) {
+    const watermark = `repeating-linear-gradient(55deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 64px), repeating-linear-gradient(-55deg, rgba(255,255,255,0.022) 0px, rgba(255,255,255,0.022) 1px, transparent 1px, transparent 64px)`;
+    base.backgroundImage = base.backgroundImage ? `${base.backgroundImage}, ${watermark}` : watermark;
+    base.backgroundSize = base.backgroundSize ? `${base.backgroundSize}, auto, auto` : 'auto, auto';
   }
 
   return base;
@@ -4290,16 +4546,16 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search 48 theme pairs (e.g., Blueprint, Matcha, Apollo, THM-24)..."
+              placeholder={`Search ${SURFACE_THEME_PAIRS.length} theme pairs (e.g., Blueprint, Matcha, Apollo, THM-24)...`}
               className="w-full bg-transparent text-xs outline-none"
             />
           </div>
           <div className={`flex border ${borderCol} text-[10px]`}>
             {(
               [
-                ['all', `ALL (48)`],
+                ['all', `ALL (${SURFACE_THEME_PAIRS.length})`],
                 ['unlocked', `UNLOCKED (${unlockedCount})`],
-                ['locked', `LOCKED (${48 - unlockedCount})`],
+                ['locked', `LOCKED (${SURFACE_THEME_PAIRS.length - unlockedCount})`],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -4318,15 +4574,16 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           </div>
         </div>
 
-        {/* Division Filter Strip */}
-        <div className="flex flex-wrap gap-1">
+        {/* Division Filter Strip — horizontally scrollable on mobile so 11
+            buttons never spend multiple lines of the limited viewport height. */}
+        <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
           {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10'].map(
             (divCode) => (
               <button
                 key={divCode}
                 type="button"
                 onClick={() => setSelectedDiv(divCode)}
-                className={`px-2 py-0.5 text-[9px] border cursor-pointer ${
+                className={`shrink-0 px-2 py-0.5 text-[9px] border cursor-pointer ${
                   selectedDiv === divCode
                     ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
                     : `${borderCol} ${textMuted}`
@@ -4339,8 +4596,8 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         </div>
       </div>
 
-      {/* Scrollable 48 Theme Pairs Grid */}
-      <div className="flex-1 min-h-[220px] overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
+      {/* Scrollable Theme Pairs Grid — generous min-height on mobile */}
+      <div className="flex-1 min-h-80 sm:min-h-55 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
         {filteredThemes.map((item) => {
           const isSelected = item.id === activeThemeId;
           const isUnlocked = userClearanceLevel >= item.clearanceHintLv;

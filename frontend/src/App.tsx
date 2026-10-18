@@ -55,6 +55,7 @@ import {
   SurfaceThemeSelectorPanel,
   getSurfaceThemeById,
   getSurfaceBackgroundStyle,
+  SURFACE_THEME_PAIRS,
   Award,
   type AnalyticsHorizonMode,
 } from './telemetryFeatures';
@@ -2136,7 +2137,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>SURFACE THEMES (48 PAIRS)</span>
+                          <span>SURFACE THEMES ({SURFACE_THEME_PAIRS.length} PAIRS)</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>{activeSurfacePair.code}</span>
                       </button>
@@ -2148,7 +2149,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Award className="w-3.5 h-3.5 text-amber-400" />
-                          <span>CLEARANCE RANKS (1,500)</span>
+                          <span>CLEARANCE RANKS ({clearanceStatus.totalRanks.toLocaleString()})</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>
                           LV.{String(clearanceStatus.current.level).padStart(4, '0')}
@@ -2365,7 +2366,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* TELEMETRY CLEARANCE LEVEL BAR (1,500 RANKS // 0H TO 3,000H) */}
+          {/* TELEMETRY CLEARANCE LEVEL BAR (3,000 RANKS // 0H TO 30,000H) */}
           <div className={`border-x border-b ${borderCol} ${bgCard} px-3.5 sm:px-5 py-2.5 sm:py-3.5 font-mono text-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-3`}>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
               <div className="flex items-center space-x-2 shrink-0">
@@ -2416,7 +2417,7 @@ export default function App() {
                   <span className={textMuted}>
                     {clearanceStatus.next
                       ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(4, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
-                      : 'OMEGA MONOLITH (3,000H+)'}
+                      : 'OMEGA MONOLITH (30,000H+)'}
                   </span>
                 </div>
                 <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
@@ -2443,7 +2444,7 @@ export default function App() {
                   className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors`}
                 >
                   <Award className="w-3.5 h-3.5 text-amber-400" />
-                  <span>1,500 RANKS</span>
+                  <span>{clearanceStatus.totalRanks.toLocaleString()} RANKS</span>
                 </button>
                 <button
                   type="button"
@@ -4577,15 +4578,11 @@ export default function App() {
       ========================================== */}
       {showSettingsModal && user && (
         <div
-          className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 transition-colors ${
-            settingsTab === 'themes'
-              ? 'bg-black/45 backdrop-blur-[2px]'
-              : 'bg-black/80 backdrop-blur-sm'
-          }`}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 transition-colors bg-black/80 backdrop-blur-sm"
           onClick={() => setShowSettingsModal(false)}
         >
           <div
-            className={`w-full max-w-2xl border ${borderCol} ${bgCard} p-4 sm:p-6 shadow-2xl h-[670px] max-h-[90vh] flex flex-col overflow-hidden`}
+            className={`w-full max-w-2xl border ${borderCol} ${bgCard} p-3.5 sm:p-6 shadow-2xl h-[88vh] sm:h-[670px] max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -4606,7 +4603,7 @@ export default function App() {
             </div>
 
             {/* Settings Navigation Tabs (5 Tabs: Profile, Themes, Clearance, Password, Data) */}
-            <div className={`grid grid-cols-2 sm:grid-cols-5 border ${borderCol} text-[10px] sm:text-[11px] font-mono mt-3.5 shrink-0`}>
+            <div className={`grid grid-cols-2 sm:grid-cols-5 border ${borderCol} text-[10px] sm:text-[11px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
               <button
                 type="button"
                 onClick={() => setSettingsTab('profile')}
@@ -4631,7 +4628,7 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                02 / THEMES (48)
+                02 / THEMES ({SURFACE_THEME_PAIRS.length})
               </button>
               <button
                 type="button"
@@ -4675,8 +4672,8 @@ export default function App() {
             </div>
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
-            <div className="flex-1 min-h-0 overflow-y-auto mt-4 sm:mt-5 pr-1">
-              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (48 PAIRS = 96 SURFACES) */}
+            <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1">
+              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (144 PAIRS = 288 SURFACES) */}
               {settingsTab === 'themes' && (
                 <SurfaceThemeSelectorPanel
                   activeThemeId={surfaceThemeId}
@@ -4690,7 +4687,7 @@ export default function App() {
                 />
               )}
 
-              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (1,500 RANKS // 0H-3,000H) */}
+              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-30,000H) */}
               {settingsTab === 'clearance' && (
                 <ClearanceBrowserPanel
                   clearance={clearanceStatus}
