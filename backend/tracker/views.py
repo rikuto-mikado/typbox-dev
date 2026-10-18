@@ -306,7 +306,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 except (ValueError, TypeError):
                     dur_int = 60
 
-                topic_str = str(entry.get('topic', '')).strip()[:255] or 'Restored study session'
+                topic_str = ''
 
                 logs_to_create.append(
                     StudyLog(

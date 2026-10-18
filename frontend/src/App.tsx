@@ -51,7 +51,12 @@ import {
   AmbientSoundControl,
   ClearanceBrowserPanel,
   StatusCardModal,
+  CommandPaletteModal,
+  SurfaceThemeSelectorPanel,
+  getSurfaceThemeById,
+  getSurfaceBackgroundStyle,
   Award,
+  type AnalyticsHorizonMode,
 } from './telemetryFeatures';
 
 // ==========================================
@@ -90,9 +95,9 @@ export interface AuthUser {
 }
 
 type Theme = 'dark' | 'light';
-type PeriodView = 'weekly' | 'monthly';
+type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
-type SettingsTab = 'profile' | 'clearance' | 'security' | 'data';
+type SettingsTab = 'profile' | 'themes' | 'clearance' | 'security' | 'data';
 
 const AVATAR_PRESET_OPTIONS = [
   { id: 'initial', label: 'Initial' },
@@ -256,6 +261,7 @@ const getRecentDateString = (daysAgo: number): string => {
 };
 
 const THEME_STORAGE_KEY = 'typbox_theme';
+const SURFACE_THEME_STORAGE_KEY = 'typbox_surface_theme';
 
 const getInitialTheme = (): Theme => {
   if (typeof window !== 'undefined') {
@@ -268,6 +274,14 @@ const getInitialTheme = (): Theme => {
     }
   }
   return 'dark';
+};
+
+const getInitialSurfaceTheme = (): string => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(SURFACE_THEME_STORAGE_KEY);
+    if (saved) return saved;
+  }
+  return 'monolith';
 };
 
 const compressAvatarFile = (file: File): Promise<string> => {
@@ -393,20 +407,9 @@ const AvatarBadge = ({
 export default function App() {
   // UI Preferences (Persisted across reloads and responsive to OS preferences)
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [surfaceThemeId, setSurfaceThemeId] = useState<string>(getInitialSurfaceTheme);
   const [periodView, setPeriodView] = useState<PeriodView>('weekly');
   const t = DICT;
-
-  // Sync theme with DOM and localStorage
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.style.colorScheme = 'dark';
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.documentElement.style.colorScheme = 'light';
-    }
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
 
   // Synchronize with OS system preferences when not explicitly pinned
   useEffect(() => {
@@ -588,11 +591,24 @@ export default function App() {
 
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [showStatusCardModal, setShowStatusCardModal] = useState<boolean>(false);
+  const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState<string>('');
   const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
   const userMenuRef = React.useRef<HTMLDivElement>(null);
   const avatarFileInputRef = React.useRef<HTMLInputElement>(null);
   const backupFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Global Command Palette Hotkey (Cmd + K on macOS / Ctrl + K on Windows & Linux)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   const openSettingsModal = useCallback(
     (tab: SettingsTab = 'profile') => {
@@ -1063,6 +1079,42 @@ export default function App() {
     }
   };
 
+  const handleQuickLogFromPalette = useCallback(
+    async (categoryId: string | number, minutes: number) => {
+      if (!user || minutes <= 0) return;
+      const todayDate = getRecentDateString(0);
+      try {
+        const created = await api.logs.create({
+          category: categoryId,
+          date: todayDate,
+          duration_minutes: Number(minutes),
+          topic: '',
+          is_public_to_hub: true,
+        });
+
+        const cat = categories.find((c) => String(c.id) === String(categoryId));
+        const newLogItem: StudyLog = {
+          id: (created as { id: number | string }).id,
+          categoryId,
+          categoryCode: cat?.code,
+          categoryName: cat?.name,
+          categoryColor: cat?.color,
+          date: todayDate,
+          durationMinutes: Number(minutes),
+          topic: '',
+          isPublicToHub: true,
+          createdAt: new Date().toISOString(),
+        };
+
+        setLogs((prev) => [newLogItem, ...prev]);
+      } catch (err: unknown) {
+        const error = err as Error;
+        alert(`Error saving quick log: ${error.message}`);
+      }
+    },
+    [user, categories]
+  );
+
   const handleStartEditLog = (log: StudyLog) => {
     setEditingLogId(log.id);
     setEditLogCatId(log.categoryId ?? (categories[0]?.id ?? ''));
@@ -1303,6 +1355,40 @@ export default function App() {
     return getClearanceStatus(user ? stats.totalMin : 0);
   }, [user, stats.totalMin]);
 
+  // Enforce Clearance Rank Unlock restriction on active Dual-Polarity Surface Theme Pair
+  const activeSurfacePair = useMemo(() => {
+    const candidate = getSurfaceThemeById(surfaceThemeId);
+    if (!authLoading && !dataLoading && candidate.clearanceHintLv > clearanceStatus.current.level) {
+      return getSurfaceThemeById('monolith');
+    }
+    return candidate;
+  }, [surfaceThemeId, authLoading, dataLoading, clearanceStatus]);
+
+  // Sync theme polarity & Dual-Polarity Surface Theme CSS variables with DOM and localStorage
+  useEffect(() => {
+    const isDarkMode = theme === 'dark';
+    const pal = isDarkMode ? activeSurfacePair.dark : activeSurfacePair.light;
+    const root = document.documentElement;
+
+    if (isDarkMode) {
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
+    }
+
+    root.style.setProperty('--tb-bg-main', pal.bgMain);
+    root.style.setProperty('--tb-bg-card', pal.bgCard);
+    root.style.setProperty('--tb-bg-input', pal.bgInput);
+    root.style.setProperty('--tb-border', pal.border);
+    root.style.setProperty('--tb-text-main', pal.textMain);
+    root.style.setProperty('--tb-text-muted', pal.textMuted);
+
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    localStorage.setItem(SURFACE_THEME_STORAGE_KEY, surfaceThemeId);
+  }, [theme, surfaceThemeId, activeSurfacePair]);
+
   // Weekly Navigation Data
   const selectedWeeklyDays = useMemo(() => {
     const baseDaysAgo = weeklyOffset * 7;
@@ -1394,6 +1480,96 @@ export default function App() {
       return { ...cat, hours, minutes, progress };
     });
   }, [logs, categories, currentMonthPrefix]);
+
+  // 12-Week Aggregation Data (1 Bar = 1 Full 7-Day Week Bucket, ending at weeklyOffset)
+  const weeklyAggBuckets = useMemo(() => {
+    const buckets = Array.from({ length: 12 }, (_, idx) => {
+      const weeksBackFromSelected = 11 - idx;
+      const totalWeeksAgo = weeklyOffset + weeksBackFromSelected;
+      const baseDaysAgo = totalWeeksAgo * 7;
+      const weekDates = Array.from({ length: 7 }, (__, d) => getRecentDateString(baseDaysAgo + 6 - d));
+      const startStr = weekDates[0];
+      const endStr = weekDates[6];
+      const dateSet = new Set(weekDates);
+      const weekLogs = logs.filter((l) => dateSet.has(l.date));
+      const totalMinutes = weekLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
+      const byCategory = categories.map((cat) => {
+        const catMin = weekLogs
+          .filter((l) => String(l.categoryId) === String(cat.id))
+          .reduce((acc, l) => acc + l.durationMinutes, 0);
+        return { category: cat, minutes: catMin };
+      });
+      return {
+        id: `${startStr}_${endStr}`,
+        startStr,
+        endStr,
+        shortLabel: startStr.slice(5).replace('-', '/'),
+        totalMinutes,
+        byCategory,
+      };
+    });
+
+    const total12WMinutes = buckets.reduce((acc, b) => acc + b.totalMinutes, 0);
+    const maxWeekMinutes = Math.max(600, ...buckets.map((b) => b.totalMinutes));
+    const windowLabel =
+      buckets.length > 0 ? `${buckets[0].startStr} — ${buckets[buckets.length - 1].endStr}` : '';
+
+    return {
+      buckets,
+      total12WMinutes,
+      maxWeekMinutes,
+      windowLabel,
+    };
+  }, [weeklyOffset, logs, categories]);
+
+  // 12-Month Aggregation Data (1 Bar = 1 Full Calendar Month Bucket, ending at monthlyOffset)
+  const monthlyAggBuckets = useMemo(() => {
+    const buckets = Array.from({ length: 12 }, (_, idx) => {
+      const monthsBackFromSelected = 11 - idx;
+      const totalMonthsAgo = monthlyOffset + monthsBackFromSelected;
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - totalMonthsAgo);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const monthPrefix = `${y}-${m}`;
+      const shortMonth = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+      const fullLabel = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase();
+
+      const monthLogs = logs.filter((l) => l.date.startsWith(monthPrefix));
+      const totalMinutes = monthLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
+      const byCategory = categories.map((cat) => {
+        const catMin = monthLogs
+          .filter((l) => String(l.categoryId) === String(cat.id))
+          .reduce((acc, l) => acc + l.durationMinutes, 0);
+        return { category: cat, minutes: catMin };
+      });
+
+      return {
+        id: monthPrefix,
+        monthPrefix,
+        shortLabel: shortMonth,
+        fullLabel,
+        yearSuffix: String(y).slice(2),
+        totalMinutes,
+        byCategory,
+      };
+    });
+
+    const total12MMinutes = buckets.reduce((acc, b) => acc + b.totalMinutes, 0);
+    const maxMonthMinutes = Math.max(1800, ...buckets.map((b) => b.totalMinutes));
+    const windowLabel =
+      buckets.length > 0
+        ? `${buckets[0].monthPrefix} — ${buckets[buckets.length - 1].monthPrefix}`
+        : '';
+
+    return {
+      buckets,
+      total12MMinutes,
+      maxMonthMinutes,
+      windowLabel,
+    };
+  }, [monthlyOffset, logs, categories]);
 
   // ==========================================
   // Telemetry Cadence Matrix (7 Days x Dynamic W Weeks, Epoch Expansion)
@@ -1707,7 +1883,7 @@ export default function App() {
   };
 
   // Timeline Navigation Derived State & Handlers
-  const isWeekly = periodView === 'weekly';
+  const isWeekly = periodView === 'weekly' || periodView === 'weekly_agg';
   const currentOffset = isWeekly ? weeklyOffset : monthlyOffset;
   const maxRange = isWeekly ? maxWeeksAgo : maxMonthsAgo;
   const currentSliderVal = maxRange - currentOffset;
@@ -1748,18 +1924,31 @@ export default function App() {
     }
   };
 
-  // Theme Classes
+  const handleSetAnalyticsModeFromPalette = useCallback((mode: AnalyticsHorizonMode) => {
+    if (mode === 'daily7d') setPeriodView('weekly');
+    else if (mode === 'weekly12w') setPeriodView('weekly_agg');
+    else if (mode === 'monthly12m') setPeriodView('monthly_agg');
+    else if (mode === 'monthlyCal') setPeriodView('monthly');
+  }, []);
+
+  // Theme Classes (Driven by Dual-Polarity Surface Theme Pairs via CSS variables)
   const isDark = theme === 'dark';
-  const bgMain = isDark ? 'bg-[#0a0a0a] text-zinc-100' : 'bg-[#fafafa] text-zinc-900';
-  const bgCard = isDark ? 'bg-[#111111]' : 'bg-white';
-  const borderCol = isDark ? 'border-zinc-800' : 'border-zinc-200';
-  const textMuted = isDark ? 'text-zinc-500' : 'text-zinc-500';
-  const inputBg = isDark
-    ? 'bg-[#0a0a0a] border-zinc-800 text-zinc-100 focus:border-zinc-400'
-    : 'bg-zinc-50 border-zinc-300 text-zinc-900 focus:border-zinc-800';
+  const bgMain = 'bg-[var(--tb-bg-main)] text-[var(--tb-text-main)]';
+  const bgCard = 'bg-[var(--tb-bg-card)] text-[var(--tb-text-main)]';
+  const borderCol = 'border-[var(--tb-border)]';
+  const textMuted = 'text-[var(--tb-text-muted)]';
+  const inputBg =
+    'bg-[var(--tb-bg-input)] border-[var(--tb-border)] text-[var(--tb-text-main)] focus:border-emerald-500';
+  const surfaceBgStyle = useMemo(
+    () => getSurfaceBackgroundStyle(activeSurfacePair, isDark),
+    [activeSurfacePair, isDark]
+  );
 
   return (
-    <div className={`min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}>
+    <div
+      className={`min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
+      style={surfaceBgStyle}
+    >
       {/* ==========================================
           FULL-SCREEN SITE ACCESS SPLASH LOADER
       ========================================== */}
@@ -1782,31 +1971,53 @@ export default function App() {
       )}
 
       {/* ==========================================
-          TOP NAVIGATION BAR
+          TOP NAVIGATION BAR (Compact on Mobile/iPad)
       ========================================== */}
-      <header className={`sticky top-0 z-30 border-b ${borderCol} ${bgMain}/90 backdrop-blur-md`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <header
+        className={`sticky top-0 z-30 border-b ${borderCol} backdrop-blur-md`}
+        style={{
+          backgroundColor: isDark
+            ? `${activeSurfacePair.dark.bgMain}e6`
+            : `${activeSurfacePair.light.bgMain}e6`,
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-13 sm:h-16 flex items-center justify-between gap-2">
           {/* Brand Logo */}
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2.5">
-              <TypboxLogo className="w-5 h-5" isDark={isDark} isRunning={isRunning} />
-              <span className="font-mono text-lg font-bold tracking-tighter">TYPBOX</span>
-              <span className={`font-mono text-xs px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
+          <div className="flex items-center space-x-2.5 sm:space-x-4 min-w-0">
+            <div className="flex items-center space-x-2">
+              <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
+              <span className="font-mono text-base sm:text-lg font-bold tracking-tighter">TYPBOX</span>
+              <span className={`font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.2 sm:py-0.5 border ${borderCol} ${textMuted}`}>
                 .me
               </span>
             </div>
-            <span className={`hidden md:inline-block font-mono text-[11px] tracking-widest ${textMuted}`}>
+            <span className={`hidden lg:inline-block font-mono text-[11px] tracking-widest truncate ${textMuted}`}>
               // {t.subtitle}
             </span>
           </div>
 
-          {/* Right Controls */}
-          <div className="flex items-center space-x-2 sm:space-x-2.5">
-            {/* Status Card Snapshot / Share Button */}
+          {/* Right Controls (Streamlined on Mobile/iPad to prevent top bar crowding) */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+            {/* Command Palette Button (Shown from md+ in header; always in User Menu on mobile) */}
+            <button
+              type="button"
+              onClick={() => setShowCommandPalette(true)}
+              className={`hidden md:flex h-9 lg:h-auto px-2.5 py-1.5 lg:py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
+              aria-label="Open Command Palette (Cmd+K)"
+              title="Open Command Palette (Cmd+K / Ctrl+K)"
+            >
+              <Terminal className="w-4 h-4 text-emerald-400" />
+              <span className="hidden lg:inline font-semibold">CMD</span>
+              <span className={`text-[10px] px-1 py-0.2 border ${borderCol} ${textMuted}`}>
+                ⌘K
+              </span>
+            </button>
+
+            {/* Status Card Snapshot / Share Button (Shown from sm+ in header; also in Clearance bar & User Menu) */}
             <button
               type="button"
               onClick={() => setShowStatusCardModal(true)}
-              className={`px-2.5 py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors flex items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
+              className={`hidden sm:flex h-9 lg:h-auto px-2.5 py-1.5 lg:py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
               aria-label="Generate Telemetry Status Card"
               title="Generate & Share Status Card Image"
             >
@@ -1814,7 +2025,7 @@ export default function App() {
               <span className="hidden md:inline font-semibold">CARD</span>
             </button>
 
-            {/* Ambient Focus Sound / White Noise Generator (Left of Theme Toggle) */}
+            {/* Ambient Focus Sound / White Noise Generator */}
             <AmbientSoundControl
               isDark={isDark}
               borderCol={borderCol}
@@ -1822,19 +2033,23 @@ export default function App() {
               textMuted={textMuted}
             />
 
-            {/* Theme Toggle */}
+            {/* Theme Polarity Toggle (Dark ⇄ Light of active Surface Theme Pair) */}
             <button
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-              className={`p-2 border ${borderCol} hover:opacity-80 cursor-pointer`}
-              aria-label="Toggle Theme"
-              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              className={`h-9 w-9 lg:h-auto lg:w-auto lg:p-2 border ${borderCol} hover:opacity-80 flex items-center justify-center cursor-pointer`}
+              aria-label="Toggle Theme Polarity"
+              title={
+                isDark
+                  ? `Switch to Light Mode (${activeSurfacePair.light.label})`
+                  : `Switch to Dark Mode (${activeSurfacePair.dark.label})`
+              }
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
             {/* Auth Action Button */}
             {authLoading ? (
-              <div className={`p-2 border ${borderCol}`}>
+              <div className={`h-9 w-9 flex items-center justify-center border ${borderCol}`}>
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
               </div>
             ) : user ? (
@@ -1843,7 +2058,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className={`flex items-center space-x-2 px-2 py-1.5 sm:px-3 border ${borderCol} ${bgCard} hover:border-zinc-400 transition-colors cursor-pointer select-none`}
+                  className={`h-9 lg:h-auto flex items-center space-x-1.5 sm:space-x-2 px-2 sm:px-3 py-1 sm:py-1.5 border ${borderCol} ${bgCard} hover:border-zinc-400 transition-colors cursor-pointer select-none`}
                   aria-label="User Account Menu"
                 >
                   <AvatarBadge
@@ -1853,12 +2068,14 @@ export default function App() {
                     image={user.avatar_image}
                     size="sm"
                   />
-                  <span className="hidden sm:inline font-mono text-xs font-semibold">{user.username}</span>
+                  <span className="hidden sm:inline font-mono text-xs font-semibold max-w-[110px] truncate">
+                    {user.username}
+                  </span>
                   <span
                     className="hidden lg:inline-block px-1.5 py-0.2 font-mono text-[10px] font-bold text-zinc-950"
                     style={{ backgroundColor: clearanceStatus.current.color }}
                   >
-                    LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                    LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                   </span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 opacity-60 transition-transform duration-200 ${
@@ -1867,11 +2084,11 @@ export default function App() {
                   />
                 </button>
 
-                {/* Dropdown Menu */}
+                {/* Dropdown Menu (Centered cleanly on mobile, right-aligned on sm+) */}
                 {showUserMenu && (
                   <div
-                    className={`absolute right-0 top-full mt-2 w-68 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
-                      isDark ? 'divide-zinc-800' : 'divide-zinc-200'
+                    className={`fixed left-3 right-3 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
+                      isDark ? 'divide-zinc-800/80' : 'divide-zinc-200'
                     }`}
                   >
                     {/* User Info Header */}
@@ -1901,7 +2118,7 @@ export default function App() {
                           className="px-1.5 py-0.5 font-bold text-zinc-950"
                           style={{ backgroundColor: clearanceStatus.current.color }}
                         >
-                          LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                          LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                         </span>
                         <span className="font-bold truncate ml-2 flex-1">
                           {clearanceStatus.current.title}
@@ -1910,19 +2127,31 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Clearance & Share Actions */}
+                    {/* Quick Actions */}
                     <div className="py-1">
                       <button
                         type="button"
+                        onClick={() => openSettingsModal('themes')}
+                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>SURFACE THEMES (48 PAIRS)</span>
+                        </span>
+                        <span className={`text-[10px] ${textMuted}`}>{activeSurfacePair.code}</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => openSettingsModal('clearance')}
-                        className="w-full px-4 py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
                       >
                         <span className="flex items-center space-x-2.5">
                           <Award className="w-3.5 h-3.5 text-amber-400" />
-                          <span>CLEARANCE RANKS (500)</span>
+                          <span>CLEARANCE RANKS (1,500)</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>
-                          LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                          LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                         </span>
                       </button>
 
@@ -1932,7 +2161,7 @@ export default function App() {
                           setShowUserMenu(false);
                           setShowStatusCardModal(true);
                         }}
-                        className="w-full px-4 py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
                       >
                         <span className="flex items-center space-x-2.5">
                           <Share2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -1943,8 +2172,23 @@ export default function App() {
 
                       <button
                         type="button"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setShowCommandPalette(true);
+                        }}
+                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>COMMAND PALETTE</span>
+                        </span>
+                        <span className={`text-[10px] ${textMuted}`}>⌘K</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => openSettingsModal('profile')}
-                        className="w-full px-4 py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
+                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
                       >
                         <span className="flex items-center space-x-2.5">
                           <Settings className="w-3.5 h-3.5 text-emerald-400" />
@@ -1974,7 +2218,7 @@ export default function App() {
             ) : (
               <button
                 onClick={() => openAuthModal('login')}
-                className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+                className={`h-9 lg:h-auto flex items-center space-x-1.5 sm:space-x-2 px-3 py-1.5 text-xs font-mono font-semibold border transition-colors cursor-pointer ${
                   isDark
                     ? 'bg-zinc-100 text-zinc-950 border-zinc-100 hover:bg-zinc-300'
                     : 'bg-zinc-900 text-white border-zinc-900 hover:bg-zinc-800'
@@ -1991,26 +2235,26 @@ export default function App() {
       {/* ==========================================
           MAIN CONTENT CONTAINER
       ========================================== */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8">
         {/* GUEST BANNER (Rendered only when not authenticated) */}
         {!user && !authLoading && (
-          <section className={`border ${borderCol} ${bgCard} p-6 sm:p-8 relative overflow-hidden`}>
+          <section className={`border ${borderCol} ${bgCard} p-5 sm:p-8 relative overflow-hidden`}>
             <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-            <div className="max-w-3xl space-y-4">
+            <div className="max-w-3xl space-y-3.5 sm:space-y-4">
               <div className="inline-flex items-center space-x-2 px-2.5 py-1 text-[11px] font-mono border border-emerald-500/40 text-emerald-400 bg-emerald-500/10">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>PUBLIC GUEST MODE // STANDBY</span>
               </div>
-              <h1 className="font-mono text-2xl sm:text-3xl font-bold tracking-tight">
+              <h1 className="font-mono text-xl sm:text-3xl font-bold tracking-tight">
                 Quantified Study &amp; Archive
               </h1>
-              <p className={`text-sm leading-relaxed ${textMuted}`}>
+              <p className={`text-xs sm:text-sm leading-relaxed ${textMuted}`}>
                 TYPBOX is a minimal workspace to log study sessions, track time across categories, and archive your daily learning progress.
               </p>
-              <div className="pt-2 flex flex-wrap gap-3">
+              <div className="pt-1 sm:pt-2 flex flex-wrap gap-2.5 sm:gap-3">
                 <button
                   onClick={() => openAuthModal('login')}
-                  className={`px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider flex items-center space-x-2 cursor-pointer ${
+                  className={`px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider flex items-center space-x-2 cursor-pointer ${
                     isDark ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'
                   }`}
                 >
@@ -2019,7 +2263,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => openAuthModal('register')}
-                  className={`px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider border ${borderCol} hover:border-emerald-500/60 transition-colors cursor-pointer`}
+                  className={`px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider border ${borderCol} hover:border-emerald-500/60 transition-colors cursor-pointer`}
                 >
                   <span>CREATE ACCOUNT</span>
                 </button>
@@ -2037,7 +2281,7 @@ export default function App() {
             </div>
             <button
               onClick={loadUserData}
-              className="px-2.5 py-1 border border-rose-500/40 hover:bg-rose-500/20 text-xs"
+              className="px-3 py-1.5 border border-rose-500/40 hover:bg-rose-500/20 text-xs"
             >
               RETRY
             </button>
@@ -2047,55 +2291,55 @@ export default function App() {
         {/* 1. TOP METRICS STRIP + TELEMETRY CLEARANCE BAR */}
         <section className="space-y-0">
           <div className={`grid grid-cols-2 lg:grid-cols-4 border-t border-l ${borderCol}`}>
-            <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
-              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard}`}>
+              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
                 01 / {t.totalHours}
               </div>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+              <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
+                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                   {user ? stats.totalHours : '0.0'}
                 </span>
-                <span className={`font-mono text-xs ${textMuted}`}>HRS</span>
+                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>HRS</span>
               </div>
             </div>
 
-            <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
-              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard}`}>
+              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
                 02 / {t.weeklyHours}
               </div>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+              <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
+                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                   {user ? stats.weeklyHours : '0.0'}
                 </span>
-                <span className={`font-mono text-xs ${textMuted}`}>HRS / 7D</span>
+                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>HRS / 7D</span>
               </div>
             </div>
 
-            <div className={`p-5 border-r border-b ${borderCol} ${bgCard}`}>
-              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard}`}>
+              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
                 03 / {t.monthlyHours}
               </div>
-              <div className="mt-2 flex items-baseline space-x-2">
-                <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+              <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
+                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                   {user ? stats.monthlyHours : '0.0'}
                 </span>
-                <span className={`font-mono text-xs ${textMuted}`}>HRS ({currentMonthPrefix})</span>
+                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>HRS ({currentMonthPrefix})</span>
               </div>
             </div>
 
-            <div className={`p-5 border-r border-b ${borderCol} ${bgCard} flex flex-col justify-between`}>
-              <div className={`font-mono text-[11px] uppercase tracking-wider ${textMuted}`}>
+            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard} flex flex-col justify-between`}>
+              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
                 04 / {t.activeCategories}
               </div>
-              <div className="mt-2 flex items-baseline justify-between gap-2 min-w-0">
-                <div className="flex items-baseline space-x-2 shrink-0">
-                  <span className="font-mono text-3xl sm:text-4xl font-light tracking-tight">
+              <div className="mt-1 sm:mt-2 flex items-baseline justify-between gap-2 min-w-0">
+                <div className="flex items-baseline space-x-1.5 sm:space-x-2 shrink-0">
+                  <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                     {user ? categories.length : '0'}
                   </span>
-                  <span className={`font-mono text-xs ${textMuted}`}>UNITS</span>
+                  <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>UNITS</span>
                 </div>
                 {user && categories.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-end gap-1 max-w-[96px] sm:max-w-[148px]">
+                  <div className="flex flex-wrap items-center justify-end gap-1 max-w-[84px] sm:max-w-[148px]">
                     {categories.slice(0, 12).map((c) => (
                       <span
                         key={c.id}
@@ -2121,9 +2365,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* TELEMETRY CLEARANCE LEVEL BAR (500 RANKS // 0H TO 10,000H) */}
-          <div className={`border-x border-b ${borderCol} ${bgCard} px-5 py-3.5 font-mono text-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3`}>
-            <div className="flex flex-wrap items-center gap-3 min-w-0">
+          {/* TELEMETRY CLEARANCE LEVEL BAR (1,500 RANKS // 0H TO 3,000H) */}
+          <div className={`border-x border-b ${borderCol} ${bgCard} px-3.5 sm:px-5 py-2.5 sm:py-3.5 font-mono text-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-3`}>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
               <div className="flex items-center space-x-2 shrink-0">
                 <span className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
                   CLEARANCE
@@ -2132,7 +2376,7 @@ export default function App() {
                   className="px-2 py-0.5 text-xs font-bold text-zinc-950"
                   style={{ backgroundColor: clearanceStatus.current.color }}
                 >
-                  LV.{String(clearanceStatus.current.level).padStart(3, '0')}
+                  LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                 </span>
               </div>
 
@@ -2150,7 +2394,7 @@ export default function App() {
             </div>
 
             {/* Progress Bar & Sub-Phases */}
-            <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 flex-1 max-w-2xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between lg:justify-end gap-2.5 sm:gap-4 flex-1 max-w-2xl">
               <div className="flex-1 min-w-[180px] space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
                   <div className="flex items-center space-x-1">
@@ -2171,8 +2415,8 @@ export default function App() {
                   </div>
                   <span className={textMuted}>
                     {clearanceStatus.next
-                      ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(3, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
-                      : 'OMEGA MONOLITH (10,000H+)'}
+                      ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(4, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
+                      : 'OMEGA MONOLITH (3,000H+)'}
                   </span>
                 </div>
                 <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
@@ -2186,7 +2430,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2 shrink-0">
+              <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -2196,15 +2440,15 @@ export default function App() {
                       openAuthModal('login');
                     }
                   }}
-                  className={`px-2.5 py-1.5 border ${borderCol} hover:border-emerald-500/60 text-[10px] font-semibold flex items-center space-x-1.5 cursor-pointer transition-colors`}
+                  className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors`}
                 >
                   <Award className="w-3.5 h-3.5 text-amber-400" />
-                  <span>500 RANKS</span>
+                  <span>1,500 RANKS</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowStatusCardModal(true)}
-                  className={`px-2.5 py-1.5 border ${borderCol} hover:border-emerald-500/60 text-[10px] font-semibold flex items-center space-x-1.5 cursor-pointer transition-colors`}
+                  className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors`}
                 >
                   <Share2 className="w-3.5 h-3.5 text-emerald-400" />
                   <span>SHARE CARD</span>
@@ -2291,7 +2535,7 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => openAuthModal('login')}
-                    className="px-4 py-2 font-mono text-xs font-semibold bg-emerald-500 text-zinc-950 uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer"
+                    className="px-4 py-2.5 font-mono text-xs font-semibold bg-emerald-500 text-zinc-950 uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer"
                   >
                     SIGN IN NOW
                   </button>
@@ -2305,11 +2549,11 @@ export default function App() {
                     {t.recordSession}
                   </h2>
                 </div>
-                <div className={`flex border ${borderCol} text-[11px] font-mono`}>
+                <div className={`flex border ${borderCol} text-xs lg:text-[11px] font-mono`}>
                   <button
                     type="button"
                     onClick={() => setInputMode('manual')}
-                    className={`px-2.5 py-1 ${
+                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
                       inputMode === 'manual'
                         ? isDark
                           ? 'bg-zinc-100 text-zinc-900 font-semibold'
@@ -2322,7 +2566,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setInputMode('timer')}
-                    className={`px-2.5 py-1 ${
+                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
                       inputMode === 'timer'
                         ? isDark
                           ? 'bg-zinc-100 text-zinc-900 font-semibold'
@@ -2346,7 +2590,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setIsRunning(true)}
-                          className="flex items-center space-x-1.5 px-4 py-1.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
+                          className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>START</span>
@@ -2355,7 +2599,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setIsRunning(false)}
-                          className="flex items-center space-x-1.5 px-4 py-1.5 bg-amber-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
+                          className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-amber-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
                         >
                           <Square className="w-3.5 h-3.5 fill-current" />
                           <span>PAUSE</span>
@@ -2369,7 +2613,7 @@ export default function App() {
                           accumulatedSecondsRef.current = 0;
                           timerStartTimestampRef.current = null;
                         }}
-                        className={`px-3 py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer`}
+                        className={`min-h-[42px] lg:min-h-0 px-4 py-2.5 lg:px-3 lg:py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer`}
                       >
                         RESET
                       </button>
@@ -2390,7 +2634,7 @@ export default function App() {
                     <select
                       value={selectedCatId}
                       onChange={(e) => setSelectedCatId(e.target.value)}
-                      className={`w-full px-3 py-2 text-sm font-mono border outline-none ${inputBg}`}
+                      className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
                     >
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -2402,7 +2646,7 @@ export default function App() {
                 </div>
 
                 {/* Duration & Date */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {inputMode === 'manual' && (
                     <div>
                       <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
@@ -2414,11 +2658,11 @@ export default function App() {
                         max={1440}
                         value={durationMinutes}
                         onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                        className={`w-full px-3 py-2 text-sm font-mono border outline-none ${inputBg}`}
+                        className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
                       />
                     </div>
                   )}
-                  <div className={inputMode === 'timer' ? 'col-span-2' : ''}>
+                  <div className={inputMode === 'timer' ? 'sm:col-span-2' : ''}>
                     <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
                       {t.date}
                     </label>
@@ -2426,15 +2670,43 @@ export default function App() {
                       type="date"
                       value={logDate}
                       onChange={(e) => setLogDate(e.target.value)}
-                      className={`w-full px-3 py-2 text-sm font-mono border outline-none ${inputBg}`}
+                      className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
                     />
                   </div>
                 </div>
 
+                {/* Touch-Friendly Quick Duration Preset Chips (Manual Mode) */}
+                {inputMode === 'manual' && (
+                  <div className="grid grid-cols-6 gap-1.5 font-mono text-[11px]">
+                    {[15, 30, 60, 90, 120].map((presetMin) => (
+                      <button
+                        key={presetMin}
+                        type="button"
+                        onClick={() => setDurationMinutes(presetMin)}
+                        className={`min-h-[36px] lg:min-h-0 py-1.5 border transition-colors cursor-pointer ${
+                          durationMinutes === presetMin
+                            ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                            : `${borderCol} ${textMuted} hover:border-zinc-500`
+                        }`}
+                      >
+                        {presetMin}m
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setDurationMinutes((prev) => Math.min(1440, (Number(prev) || 0) + 15))}
+                      className={`min-h-[36px] lg:min-h-0 py-1.5 border ${borderCol} text-emerald-400 hover:bg-emerald-500/10 font-bold transition-colors cursor-pointer`}
+                      title="Add +15 minutes"
+                    >
+                      +15m
+                    </button>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={categories.length === 0}
-                  className={`w-full py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors flex items-center justify-center space-x-2 cursor-pointer ${
+                  className={`w-full min-h-[46px] lg:min-h-0 py-3.5 lg:py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors flex items-center justify-center space-x-2 cursor-pointer ${
                     isDark
                       ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300'
                       : 'bg-zinc-900 text-white hover:bg-zinc-800'
@@ -2474,7 +2746,7 @@ export default function App() {
                     setShowCatForm(!showCatForm);
                     setEditingCatId(null);
                   }}
-                  className={`px-2.5 py-1 text-[11px] font-mono border ${borderCol} hover:opacity-80 cursor-pointer`}
+                  className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 text-xs lg:text-[11px] font-mono border ${borderCol} hover:opacity-80 cursor-pointer`}
                 >
                   {showCatForm ? 'CLOSE' : `+ ${t.addCategory}`}
                 </button>
@@ -2493,7 +2765,7 @@ export default function App() {
                       placeholder="e.g., Mathematics & Physics"
                       value={newCatName}
                       onChange={(e) => setNewCatName(e.target.value)}
-                      className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                      className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -2508,7 +2780,7 @@ export default function App() {
                         placeholder="MATH"
                         value={newCatCode}
                         onChange={(e) => setNewCatCode(e.target.value)}
-                        className={`w-full px-2.5 py-1.5 text-xs font-mono uppercase border outline-none ${inputBg}`}
+                        className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono uppercase border outline-none ${inputBg}`}
                       />
                     </div>
                     <div>
@@ -2520,7 +2792,7 @@ export default function App() {
                         min={1}
                         value={newCatTarget}
                         onChange={(e) => setNewCatTarget(Number(e.target.value))}
-                        className={`w-full px-2.5 py-1.5 text-xs font-mono border outline-none ${inputBg}`}
+                        className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg}`}
                       />
                     </div>
                   </div>
@@ -2541,7 +2813,7 @@ export default function App() {
                           onClick={() => setNewCatColor(col.hex)}
                           title={`${col.name} (${col.hex})`}
                           aria-label={`Select ${col.name} color`}
-                          className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${
+                          className={`w-7 h-7 lg:w-6 lg:h-6 rounded-full border transition-all cursor-pointer ${
                             newCatColor === col.hex
                               ? isDark
                                 ? 'ring-2 ring-offset-2 ring-offset-[#111111] ring-zinc-200 scale-110 border-white/40'
@@ -2555,7 +2827,7 @@ export default function App() {
                   </div>
                   <button
                     type="submit"
-                    className={`w-full py-2 font-mono text-xs uppercase font-semibold cursor-pointer ${
+                    className={`w-full min-h-[42px] lg:min-h-0 py-2.5 lg:py-2 font-mono text-xs uppercase font-semibold cursor-pointer ${
                       isDark ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-900 text-white'
                     }`}
                   >
@@ -2581,7 +2853,7 @@ export default function App() {
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center space-x-2 min-w-0">
                             <span
-                              className="w-2 h-2 rounded-full shrink-0"
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
                               style={{ backgroundColor: cat.color }}
                             />
                             <span className="font-mono font-semibold text-[11px] shrink-0">
@@ -2592,7 +2864,7 @@ export default function App() {
                             </span>
                           </div>
 
-                          <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                          <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0 ml-2">
                             <span className="font-mono text-[11px] mr-0.5">
                               {cat.hours}h <span className={textMuted}>/ {cat.monthlyTargetHours}h</span>
                             </span>
@@ -2602,25 +2874,25 @@ export default function App() {
                               onClick={() =>
                                 isEditing ? handleCancelEditCategory() : handleStartEditCategory(cat)
                               }
-                              className={`p-1 border transition-all cursor-pointer ${
+                              className={`p-2 lg:p-1.5 border transition-all cursor-pointer ${
                                 isEditing
                                   ? 'border-emerald-500/60 text-emerald-400 opacity-100'
-                                  : `${borderCol} ${textMuted} opacity-40 group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50`
+                                  : `${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50`
                               }`}
                               title={isEditing ? 'Close editor' : `Edit category [${cat.code}]`}
                               aria-label={`Edit category ${cat.name}`}
                             >
-                              <Pencil className="w-3 h-3" />
+                              <Pencil className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                             </button>
 
                             <button
                               type="button"
                               onClick={() => handleDeleteCategory(cat.id, cat.name)}
                               disabled={categories.length <= 1}
-                              className={`p-1 border ${borderCol} ${textMuted} transition-all ${
+                              className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} transition-all ${
                                 categories.length <= 1
                                   ? 'opacity-20 cursor-not-allowed'
-                                  : 'opacity-40 group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 cursor-pointer'
+                                  : 'opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 cursor-pointer'
                               }`}
                               title={
                                 categories.length <= 1
@@ -2629,7 +2901,7 @@ export default function App() {
                               }
                               aria-label={`Delete category ${cat.name}`}
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                             </button>
                           </div>
                         </div>
@@ -2659,7 +2931,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={handleCancelEditCategory}
-                                className={`font-mono text-[10px] uppercase ${textMuted} hover:underline cursor-pointer`}
+                                className={`font-mono text-xs lg:text-[10px] py-1 px-2 uppercase ${textMuted} hover:underline cursor-pointer`}
                               >
                                 [CANCEL]
                               </button>
@@ -2674,7 +2946,7 @@ export default function App() {
                                 required
                                 value={editCatName}
                                 onChange={(e) => setEditCatName(e.target.value)}
-                                className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
                               />
                             </div>
 
@@ -2689,7 +2961,7 @@ export default function App() {
                                   maxLength={4}
                                   value={editCatCode}
                                   onChange={(e) => setEditCatCode(e.target.value)}
-                                  className={`w-full px-2.5 py-1.5 text-xs font-mono uppercase border outline-none ${inputBg}`}
+                                  className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono uppercase border outline-none ${inputBg}`}
                                 />
                               </div>
                               <div>
@@ -2701,7 +2973,7 @@ export default function App() {
                                   min={1}
                                   value={editCatTarget}
                                   onChange={(e) => setEditCatTarget(Number(e.target.value))}
-                                  className={`w-full px-2.5 py-1.5 text-xs font-mono border outline-none ${inputBg}`}
+                                  className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg}`}
                                 />
                               </div>
                             </div>
@@ -2723,7 +2995,7 @@ export default function App() {
                                     onClick={() => setEditCatColor(col.hex)}
                                     title={`${col.name} (${col.hex})`}
                                     aria-label={`Select ${col.name} color`}
-                                    className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${
+                                    className={`w-7 h-7 lg:w-6 lg:h-6 rounded-full border transition-all cursor-pointer ${
                                       editCatColor === col.hex
                                         ? isDark
                                           ? 'ring-2 ring-offset-2 ring-offset-[#0a0a0a] ring-zinc-200 scale-110 border-white/40'
@@ -2740,13 +3012,13 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={handleCancelEditCategory}
-                                className={`flex-1 py-1.5 font-mono text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
+                                className={`flex-1 min-h-[40px] lg:min-h-0 py-2 lg:py-1.5 font-mono text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
                               >
                                 CANCEL
                               </button>
                               <button
                                 type="submit"
-                                className={`flex-1 py-1.5 font-mono text-xs uppercase font-semibold cursor-pointer ${
+                                className={`flex-1 min-h-[40px] lg:min-h-0 py-2 lg:py-1.5 font-mono text-xs uppercase font-semibold cursor-pointer ${
                                   isDark ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'
                                 }`}
                               >
@@ -2883,7 +3155,7 @@ export default function App() {
                     type="button"
                     onClick={handleExportCSV}
                     disabled={logs.length === 0}
-                    className={`p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                    className={`min-h-[42px] lg:min-h-0 p-3 lg:p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
                     title="Export study telemetry logs to CSV"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -2893,7 +3165,7 @@ export default function App() {
                     type="button"
                     onClick={handleExportJSON}
                     disabled={logs.length === 0}
-                    className={`p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                    className={`min-h-[42px] lg:min-h-0 p-3 lg:p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
                     title="Export full telemetry archive as JSON"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -2908,19 +3180,21 @@ export default function App() {
           <div className="contents lg:block lg:col-span-7 lg:space-y-8">
             {/* ANALYTICS MODULE */}
             <div className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
-              <div className={`flex flex-wrap items-center justify-between gap-2 pb-4 mb-6 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
+              <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-6 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
-                  <BarChart3 className="w-4 h-4" />
+                  <BarChart3 className="w-4 h-4 text-emerald-500" />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
                     {t.analyticsTitle}
                   </h2>
                 </div>
 
-                <div className={`flex border ${borderCol} text-[11px] font-mono`}>
+                {/* 4-Mode Analytics Horizon Selector (Day Breakdown vs Week/Month Bucket Aggregation) */}
+                <div className={`grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-xs lg:text-[11px] font-mono w-full sm:w-auto`}>
                   <button
                     type="button"
                     onClick={() => setPeriodView('weekly')}
-                    className={`px-3 py-1 flex items-center space-x-1.5 cursor-pointer ${
+                    title="7-Day Daily Breakdown (1 Bar = 1 Day)"
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
                       periodView === 'weekly'
                         ? isDark
                           ? 'bg-zinc-100 text-zinc-900 font-semibold'
@@ -2928,13 +3202,44 @@ export default function App() {
                         : textMuted
                     }`}
                   >
-                    <BarChart3 className="w-3 h-3" />
-                    <span>{t.weeklyView}</span>
+                    <BarChart3 className="w-3 h-3 shrink-0" />
+                    <span>7D DAYS</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPeriodView('weekly_agg')}
+                    title="12-Week Bucket Aggregation (1 Bar = 1 Full Week)"
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
+                      periodView === 'weekly_agg'
+                        ? isDark
+                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
+                          : 'bg-zinc-900 text-white font-semibold'
+                        : textMuted
+                    }`}
+                  >
+                    <BarChart3 className="w-3 h-3 shrink-0" />
+                    <span>12W WEEKS</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPeriodView('monthly_agg')}
+                    title="12-Month Bucket Aggregation (1 Bar = 1 Full Month)"
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 sm:border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
+                      periodView === 'monthly_agg'
+                        ? isDark
+                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
+                          : 'bg-zinc-900 text-white font-semibold'
+                        : textMuted
+                    }`}
+                  >
+                    <BarChart3 className="w-3 h-3 shrink-0" />
+                    <span>12M MONTHS</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPeriodView('monthly')}
-                    className={`px-3 py-1 flex items-center space-x-1.5 cursor-pointer ${
+                    title="Monthly Calendar Matrix (1 Cell = 1 Day)"
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
                       periodView === 'monthly'
                         ? isDark
                           ? 'bg-zinc-100 text-zinc-900 font-semibold'
@@ -2942,19 +3247,19 @@ export default function App() {
                         : textMuted
                     }`}
                   >
-                    <Calendar className="w-3 h-3" />
-                    <span>{t.monthlyView}</span>
+                    <Calendar className="w-3 h-3 shrink-0" />
+                    <span>1M CAL</span>
                   </button>
                 </div>
               </div>
 
-              {/* View A: Weekly Chart */}
-              {periodView === 'weekly' ? (
+              {/* View A: 7D Daily Chart (1 Bar = 1 Day) */}
+              {periodView === 'weekly' && (
                 <div className="space-y-4">
                   {/* Active Window Info Banner */}
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
-                    <div className="flex items-center space-x-2">
-                      <span className={textMuted}>WINDOW:</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={textMuted}>WINDOW (1 BAR = 1 DAY):</span>
                       <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>{weeklyWindowLabel}</span>
                       {weeklyOffset === 0 ? (
                         <span className="px-1.5 py-0.5 text-[10px] border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 font-semibold">
@@ -3031,14 +3336,188 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                /* View B: Monthly Activity Matrix */
+              )}
+
+              {/* View B: 12-Week Bucket Aggregation (1 Bar = 1 Full Week) */}
+              {periodView === 'weekly_agg' && (
+                <div className="space-y-4">
+                  <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={textMuted}>12W HORIZON (1 BAR = 1 WEEK):</span>
+                      <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>
+                        {weeklyAggBuckets.windowLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <div>
+                        <span className={textMuted}>12W TOTAL: </span>
+                        <span className="font-semibold text-emerald-400">
+                          {(weeklyAggBuckets.total12WMinutes / 60).toFixed(1)}h
+                        </span>
+                      </div>
+                      <div>
+                        <span className={textMuted}>AVG/WK: </span>
+                        <span className="font-semibold">
+                          {(weeklyAggBuckets.total12WMinutes / 60 / 12).toFixed(1)}h
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 12-Week Stacked Bar Chart */}
+                  <div className={`h-52 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                    {weeklyAggBuckets.buckets.map((wk) => (
+                      <div
+                        key={wk.id}
+                        className="flex-1 flex flex-col items-center h-full justify-end group min-w-0"
+                        title={`Week ${wk.startStr} — ${wk.endStr}: ${(wk.totalMinutes / 60).toFixed(1)}h (${wk.totalMinutes} min)`}
+                      >
+                        <span className={`font-mono text-[9px] sm:text-[10px] mb-1.5 truncate ${textMuted}`}>
+                          {wk.totalMinutes > 0 ? `${(wk.totalMinutes / 60).toFixed(1)}h` : '-'}
+                        </span>
+
+                        <div
+                          className={`w-full max-w-[30px] h-36 flex flex-col-reverse justify-start overflow-hidden ${
+                            isDark ? 'bg-zinc-900/60' : 'bg-zinc-100'
+                          }`}
+                        >
+                          {wk.byCategory.map((seg) => {
+                            if (seg.minutes === 0) return null;
+                            const heightPct = Math.min(
+                              100,
+                              Math.round((seg.minutes / weeklyAggBuckets.maxWeekMinutes) * 100)
+                            );
+                            return (
+                              <div
+                                key={seg.category.id}
+                                style={{
+                                  height: `${heightPct}%`,
+                                  backgroundColor: seg.category.color,
+                                }}
+                                className="w-full transition-all duration-300 opacity-90 group-hover:opacity-100"
+                                title={`[${seg.category.code}] ${seg.category.name}: ${(seg.minutes / 60).toFixed(1)}h`}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        <span className="font-mono text-[9px] sm:text-[10px] mt-2.5 truncate">
+                          {wk.shortLabel}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Category Legend */}
+                  <div className="flex flex-wrap gap-4 pt-2">
+                    {categories.map((cat) => (
+                      <div key={cat.id} className="flex items-center space-x-1.5 text-xs font-mono">
+                        <span
+                          className="w-2.5 h-2.5 inline-block"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span className={textMuted}>{cat.code}:</span>
+                        <span>{cat.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* View C: 12-Month Bucket Aggregation (1 Bar = 1 Full Month) */}
+              {periodView === 'monthly_agg' && (
+                <div className="space-y-4">
+                  <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={textMuted}>12M HORIZON (1 BAR = 1 MONTH):</span>
+                      <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>
+                        {monthlyAggBuckets.windowLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <div>
+                        <span className={textMuted}>12M TOTAL: </span>
+                        <span className="font-semibold text-emerald-400">
+                          {(monthlyAggBuckets.total12MMinutes / 60).toFixed(1)}h
+                        </span>
+                      </div>
+                      <div>
+                        <span className={textMuted}>AVG/MO: </span>
+                        <span className="font-semibold">
+                          {(monthlyAggBuckets.total12MMinutes / 60 / 12).toFixed(1)}h
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 12-Month Stacked Bar Chart */}
+                  <div className={`h-52 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                    {monthlyAggBuckets.buckets.map((mo) => (
+                      <div
+                        key={mo.id}
+                        className="flex-1 flex flex-col items-center h-full justify-end group min-w-0"
+                        title={`${mo.fullLabel}: ${(mo.totalMinutes / 60).toFixed(1)}h (${mo.totalMinutes} min)`}
+                      >
+                        <span className={`font-mono text-[9px] sm:text-[10px] mb-1.5 truncate ${textMuted}`}>
+                          {mo.totalMinutes > 0 ? `${(mo.totalMinutes / 60).toFixed(1)}h` : '-'}
+                        </span>
+
+                        <div
+                          className={`w-full max-w-[30px] h-36 flex flex-col-reverse justify-start overflow-hidden ${
+                            isDark ? 'bg-zinc-900/60' : 'bg-zinc-100'
+                          }`}
+                        >
+                          {mo.byCategory.map((seg) => {
+                            if (seg.minutes === 0) return null;
+                            const heightPct = Math.min(
+                              100,
+                              Math.round((seg.minutes / monthlyAggBuckets.maxMonthMinutes) * 100)
+                            );
+                            return (
+                              <div
+                                key={seg.category.id}
+                                style={{
+                                  height: `${heightPct}%`,
+                                  backgroundColor: seg.category.color,
+                                }}
+                                className="w-full transition-all duration-300 opacity-90 group-hover:opacity-100"
+                                title={`[${seg.category.code}] ${seg.category.name}: ${(seg.minutes / 60).toFixed(1)}h`}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        <span className="font-mono text-[9px] sm:text-[10px] mt-2.5 truncate">
+                          {mo.shortLabel}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Category Legend */}
+                  <div className="flex flex-wrap gap-4 pt-2">
+                    {categories.map((cat) => (
+                      <div key={cat.id} className="flex items-center space-x-1.5 text-xs font-mono">
+                        <span
+                          className="w-2.5 h-2.5 inline-block"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span className={textMuted}>{cat.code}:</span>
+                        <span>{cat.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* View D: Monthly Activity Calendar Matrix (1 Cell = 1 Day) */}
+              {periodView === 'monthly' && (
                 <div className="space-y-6">
                   <div>
                     {/* Active Month Info Banner */}
                     <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 mb-3 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
-                      <div className="flex items-center space-x-2">
-                        <span className={textMuted}>MONTH:</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={textMuted}>MONTH (CALENDAR):</span>
                         <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>{targetMonthName}</span>
                         {monthlyOffset === 0 ? (
                           <span className="px-1.5 py-0.5 text-[10px] border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 font-semibold">
@@ -3095,8 +3574,9 @@ export default function App() {
                         return (
                           <div
                             key={cell.date}
-                            className={`p-2 border font-mono text-[10px] flex flex-col justify-between h-12 transition-colors ${intensity}`}
-                            title={`${cell.date}: ${cell.minutes} min (${(cell.minutes / 60).toFixed(1)}h)`}
+                            onClick={() => setLogDate(cell.date)}
+                            className={`p-2 border font-mono text-[10px] flex flex-col justify-between h-12 transition-colors cursor-pointer ${intensity}`}
+                            title={`${cell.date}: ${cell.minutes} min (${(cell.minutes / 60).toFixed(1)}h) — Click to select date`}
                           >
                             <span className="opacity-70 text-[9px]">{cell.date.slice(8)}</span>
                             <span className="text-right font-medium">
@@ -3125,7 +3605,7 @@ export default function App() {
 
               {/* TIMELINE SCRUBBER & SLIDER (BOTTOM NAVIGATION) */}
               <div className={`mt-6 pt-5 border-t ${borderCol} space-y-3`}>
-                <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-xs font-mono">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
                   <div className="flex items-center space-x-2 min-w-0">
                     <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="font-semibold tracking-wider uppercase text-[11px] shrink-0">
@@ -3140,7 +3620,7 @@ export default function App() {
                     >
                       {isWeekly
                         ? weeklyOffset === 0
-                          ? 'CURRENT 7D'
+                          ? 'CURRENT WEEK'
                           : `-${weeklyOffset} WEEKS`
                         : monthlyOffset === 0
                         ? 'CURRENT MONTH'
@@ -3148,49 +3628,49 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div className="flex items-center space-x-1.5 shrink-0">
+                  <div className="grid grid-cols-3 sm:flex items-center gap-2 sm:gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={handlePrevStep}
                       disabled={isAtOldest}
-                      className={`px-2.5 py-1 border text-[11px] flex items-center space-x-1 transition-colors ${
+                      className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border text-xs lg:text-[11px] flex items-center justify-center space-x-1 transition-colors ${
                         isAtOldest
                           ? 'opacity-30 cursor-not-allowed border-zinc-800/40'
                           : `${borderCol} hover:border-zinc-400 ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-black'} cursor-pointer`
                       }`}
                       title={isWeekly ? 'Rewind 1 week into past' : 'Rewind 1 month into past'}
                     >
-                      <ChevronLeft className="w-3 h-3" />
-                      <span>{isWeekly ? '-1 WEEK' : '-1 MONTH'}</span>
+                      <ChevronLeft className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                      <span>{isWeekly ? '-1 WK' : '-1 MO'}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handleNextStep}
                       disabled={isAtPresent}
-                      className={`px-2.5 py-1 border text-[11px] flex items-center space-x-1 transition-colors ${
+                      className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border text-xs lg:text-[11px] flex items-center justify-center space-x-1 transition-colors ${
                         isAtPresent
                           ? 'opacity-30 cursor-not-allowed border-zinc-800/40'
                           : `${borderCol} hover:border-zinc-400 ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-black'} cursor-pointer`
                       }`}
                       title={isWeekly ? 'Advance 1 week forward' : 'Advance 1 month forward'}
                     >
-                      <span>{isWeekly ? '+1 WEEK' : '+1 MONTH'}</span>
-                      <ChevronRight className="w-3 h-3" />
+                      <span>{isWeekly ? '+1 WK' : '+1 MO'}</span>
+                      <ChevronRight className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                     </button>
 
                     <button
                       type="button"
                       onClick={handleResetToPresent}
                       disabled={isAtPresent}
-                      className={`px-2.5 py-1 border text-[11px] font-semibold flex items-center space-x-1 transition-colors ${
+                      className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border text-xs lg:text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors ${
                         isAtPresent
                           ? 'opacity-30 cursor-not-allowed border-zinc-800/40'
                           : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-zinc-950 cursor-pointer'
                       }`}
                       title="Reset to Present / Today"
                     >
-                      <RotateCcw className="w-3 h-3" />
+                      <RotateCcw className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                       <span>PRESENT</span>
                     </button>
                   </div>
@@ -3198,7 +3678,7 @@ export default function App() {
 
                 {/* Range Slider Track */}
                 <div className="space-y-1.5 pt-1">
-                  <div className="relative flex items-center">
+                  <div className="relative flex items-center py-1">
                     <input
                       type="range"
                       min={0}
@@ -3206,7 +3686,7 @@ export default function App() {
                       step={1}
                       value={currentSliderVal}
                       onChange={handleSliderChange}
-                      className="w-full h-2 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 focus:outline-none"
+                      className="w-full h-3 lg:h-2 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 focus:outline-none"
                       aria-label="Timeline navigation slider"
                     />
                   </div>
@@ -3250,13 +3730,13 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                <div className="flex flex-wrap items-center gap-2 font-mono text-xs lg:text-[11px]">
                   {/* Color Mode Toggle: INTENSITY (Shaded) vs BINARY (Single Signal) */}
                   <div className={`flex border ${borderCol}`}>
                     <button
                       type="button"
                       onClick={() => setMatrixColorMode('intensity')}
-                      className={`px-2.5 py-1 cursor-pointer transition-colors ${
+                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
                         matrixColorMode === 'intensity'
                           ? isDark
                             ? 'bg-zinc-100 text-zinc-950 font-semibold'
@@ -3270,7 +3750,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setMatrixColorMode('binary')}
-                      className={`px-2.5 py-1 cursor-pointer transition-colors ${
+                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
                         matrixColorMode === 'binary'
                           ? isDark
                             ? 'bg-zinc-100 text-zinc-950 font-semibold'
@@ -3288,7 +3768,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setMatrixSpanMultiplier(1)}
-                      className={`px-2 py-1 cursor-pointer transition-colors ${
+                      className={`min-h-[36px] lg:min-h-0 px-2.5 py-1.5 lg:px-2 lg:py-1 cursor-pointer transition-colors ${
                         matrixSpanMultiplier === 1
                           ? isDark
                             ? 'bg-emerald-500 text-zinc-950 font-semibold'
@@ -3302,7 +3782,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setMatrixSpanMultiplier(2)}
-                      className={`px-2 py-1 cursor-pointer transition-colors ${
+                      className={`min-h-[36px] lg:min-h-0 px-2.5 py-1.5 lg:px-2 lg:py-1 cursor-pointer transition-colors ${
                         matrixSpanMultiplier === 2
                           ? isDark
                             ? 'bg-emerald-500 text-zinc-950 font-semibold'
@@ -3324,19 +3804,19 @@ export default function App() {
                         onClick={() =>
                           setMatrixPageOffset((p) => Math.min(p + 1, cadenceMatrixData.totalEpochs - 1))
                         }
-                        className={`p-1 border ${borderCol} disabled:opacity-30 cursor-pointer`}
+                        className={`min-h-[36px] min-w-[36px] lg:min-h-0 lg:min-w-0 p-1.5 lg:p-1 border ${borderCol} flex items-center justify-center disabled:opacity-30 cursor-pointer`}
                         title="Previous Epoch Block"
                       >
-                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <ChevronLeft className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                       </button>
                       <button
                         type="button"
                         disabled={cadenceMatrixData.clampedOffset === 0}
                         onClick={() => setMatrixPageOffset((p) => Math.max(0, p - 1))}
-                        className={`p-1 border ${borderCol} disabled:opacity-30 cursor-pointer`}
+                        className={`min-h-[36px] min-w-[36px] lg:min-h-0 lg:min-w-0 p-1.5 lg:p-1 border ${borderCol} flex items-center justify-center disabled:opacity-30 cursor-pointer`}
                         title="Next Epoch Block"
                       >
-                        <ChevronRight className="w-3.5 h-3.5" />
+                        <ChevronRight className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                       </button>
                     </div>
                   )}
@@ -3603,13 +4083,13 @@ export default function App() {
                               </span>
                             </div>
 
-                            <div className="flex items-center space-x-1.5 shrink-0">
+                            <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0">
                               <button
                                 type="button"
                                 onClick={() =>
                                   isEditingLog ? handleCancelEditLog() : handleStartEditLog(log)
                                 }
-                                className={`p-1.5 border transition-colors cursor-pointer ${
+                                className={`p-2.5 lg:p-1.5 border transition-colors cursor-pointer ${
                                   isEditingLog
                                     ? 'border-emerald-500/60 text-emerald-400'
                                     : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
@@ -3617,16 +4097,16 @@ export default function App() {
                                 title={isEditingLog ? 'Close Editor' : 'Edit Log'}
                                 aria-label="Edit Log"
                               >
-                                <Pencil className="w-3.5 h-3.5" />
+                                <Pencil className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteLog(log.id)}
-                                className={`p-1.5 border ${borderCol} ${textMuted} hover:text-rose-500 hover:border-rose-500/50 transition-colors cursor-pointer`}
+                                className={`p-2.5 lg:p-1.5 border ${borderCol} ${textMuted} hover:text-rose-500 hover:border-rose-500/50 transition-colors cursor-pointer`}
                                 title="Delete Log"
                                 aria-label="Delete Log"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                               </button>
                             </div>
                           </div>
@@ -3646,7 +4126,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={handleCancelEditLog}
-                                  className={`text-[10px] uppercase ${textMuted} hover:underline cursor-pointer`}
+                                  className={`text-xs lg:text-[10px] py-1 px-2 uppercase ${textMuted} hover:underline cursor-pointer`}
                                 >
                                   [CANCEL]
                                 </button>
@@ -3660,7 +4140,7 @@ export default function App() {
                                   <select
                                     value={editLogCatId}
                                     onChange={(e) => setEditLogCatId(e.target.value)}
-                                    className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                    className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
                                   >
                                     {categories.map((c) => (
                                       <option key={c.id} value={c.id}>
@@ -3681,7 +4161,7 @@ export default function App() {
                                     required
                                     value={editLogDuration}
                                     onChange={(e) => setEditLogDuration(Number(e.target.value))}
-                                    className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                    className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
                                   />
                                 </div>
 
@@ -3694,7 +4174,7 @@ export default function App() {
                                     required
                                     value={editLogDate}
                                     onChange={(e) => setEditLogDate(e.target.value)}
-                                    className={`w-full px-2.5 py-1.5 text-xs border outline-none ${inputBg}`}
+                                    className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
                                   />
                                 </div>
                               </div>
@@ -3703,13 +4183,13 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={handleCancelEditLog}
-                                  className={`px-3 py-1.5 text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
+                                  className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
                                 >
                                   CANCEL
                                 </button>
                                 <button
                                   type="submit"
-                                  className={`px-3.5 py-1.5 text-xs uppercase font-semibold cursor-pointer ${
+                                  className={`min-h-[38px] lg:min-h-0 px-4 py-2 lg:px-3.5 lg:py-1.5 text-xs uppercase font-semibold cursor-pointer ${
                                     isDark
                                       ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300'
                                       : 'bg-zinc-900 text-white hover:bg-zinc-800'
@@ -3730,13 +4210,13 @@ export default function App() {
                       <span className={`text-[11px] ${textMuted}`}>
                         DISPLAYING {Math.min(visibleLogCount, logs.length)} OF {logs.length} RECORDS
                       </span>
-                      <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
                         {visibleLogCount < logs.length && (
                           <>
                             <button
                               type="button"
                               onClick={() => setVisibleLogCount((prev) => Math.min(prev + 10, logs.length))}
-                              className={`px-3.5 py-1.5 border ${borderCol} ${
+                              className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-4 py-2 lg:px-3.5 lg:py-1.5 border ${borderCol} ${
                                 isDark
                                   ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
                                   : 'text-emerald-700 border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100'
@@ -3748,7 +4228,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => setVisibleLogCount(logs.length)}
-                                className={`px-3 py-1.5 border ${borderCol} ${
+                                className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 border ${borderCol} ${
                                   isDark
                                     ? 'text-zinc-300 hover:text-white hover:bg-zinc-800/40'
                                     : 'text-black hover:bg-zinc-100 hover:border-zinc-800'
@@ -3763,7 +4243,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setVisibleLogCount(INITIAL_VISIBLE_LOGS)}
-                            className={`px-3 py-1.5 border ${borderCol} ${
+                            className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 border ${borderCol} ${
                               isDark
                                 ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
                                 : 'text-zinc-700 hover:text-black hover:bg-zinc-100'
@@ -3783,35 +4263,25 @@ export default function App() {
       </main>
 
       {/* ==========================================
-          7. FOOTER SECTION (Inverted Monochrome)
+          7. FOOTER SECTION (Standard Theme Polarity)
       ========================================== */}
       <footer
         id="contact"
-        className={`relative w-full py-20 px-6 scroll-mt-6 border-t transition-colors duration-300 ${
-          isDark
-            ? 'bg-white text-zinc-950 border-zinc-200'
-            : 'bg-[#0a0a0a] text-white border-zinc-800'
-        }`}
+        className={`relative w-full py-16 sm:py-20 px-6 scroll-mt-6 border-t transition-colors duration-300 ${bgMain} ${borderCol}`}
       >
         <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center space-y-10">
           <div
-            className={`flex flex-col md:flex-row items-center justify-between w-full border-b pb-10 gap-6 ${
-              isDark ? 'border-zinc-200' : 'border-zinc-800'
-            }`}
+            className={`flex flex-col md:flex-row items-center justify-between w-full border-b pb-10 gap-6 ${borderCol}`}
           >
             <div>
               <span
-                className={`text-xs uppercase tracking-widest font-sans block mb-1 font-medium ${
-                  isDark ? 'text-zinc-500' : 'text-zinc-400'
-                }`}
+                className={`text-xs uppercase tracking-widest font-sans block mb-1 font-medium ${textMuted}`}
               >
                 {ui.footerContact}
               </span>
               <a
                 href="mailto:mikadorikuto@gmail.com"
-                className={`font-serif text-2xl sm:text-3xl hover:underline underline-offset-4 transition-colors ${
-                  isDark ? 'text-zinc-950 hover:text-zinc-700' : 'text-white hover:text-zinc-300'
-                }`}
+                className="font-serif text-2xl sm:text-3xl hover:underline underline-offset-4 transition-opacity hover:opacity-80"
               >
                 mikadorikuto@gmail.com
               </a>
@@ -3828,11 +4298,7 @@ export default function App() {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={link.name}
-                    className={`p-3 rounded-full transition-all transform hover:scale-110 border ${
-                      isDark
-                        ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-950 border-zinc-200'
-                        : 'bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-800'
-                    }`}
+                    className={`p-3 rounded-full transition-all transform hover:scale-110 border ${borderCol} ${bgCard} hover:border-emerald-500/60`}
                   >
                     <Icon className="w-5 h-5" />
                   </a>
@@ -3841,11 +4307,7 @@ export default function App() {
             </div>
           </div>
 
-          <div
-            className={`text-center font-sans text-xs tracking-wide ${
-              isDark ? 'text-zinc-500' : 'text-zinc-400'
-            }`}
-          >
+          <div className={`text-center font-sans text-xs tracking-wide ${textMuted}`}>
             {ui.copyright}
           </div>
         </div>
@@ -4115,11 +4577,15 @@ export default function App() {
       ========================================== */}
       {showSettingsModal && user && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 transition-colors ${
+            settingsTab === 'themes'
+              ? 'bg-black/45 backdrop-blur-[2px]'
+              : 'bg-black/80 backdrop-blur-sm'
+          }`}
           onClick={() => setShowSettingsModal(false)}
         >
           <div
-            className={`w-full max-w-xl border ${borderCol} ${bgCard} p-6 shadow-2xl h-[650px] max-h-[88vh] flex flex-col overflow-hidden`}
+            className={`w-full max-w-2xl border ${borderCol} ${bgCard} p-4 sm:p-6 shadow-2xl h-[670px] max-h-[90vh] flex flex-col overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -4127,7 +4593,7 @@ export default function App() {
               <div className="flex items-center space-x-2.5">
                 <Settings className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                  ACCOUNT &amp; SECURITY SETTINGS
+                  ACCOUNT &amp; ENVIRONMENT SETTINGS
                 </h3>
               </div>
               <button
@@ -4139,8 +4605,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Settings Navigation Tabs */}
-            <div className={`grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-[10px] sm:text-[11px] font-mono mt-4 shrink-0`}>
+            {/* Settings Navigation Tabs (5 Tabs: Profile, Themes, Clearance, Password, Data) */}
+            <div className={`grid grid-cols-2 sm:grid-cols-5 border ${borderCol} text-[10px] sm:text-[11px] font-mono mt-3.5 shrink-0`}>
               <button
                 type="button"
                 onClick={() => setSettingsTab('profile')}
@@ -4156,8 +4622,21 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setSettingsTab('clearance')}
+                onClick={() => setSettingsTab('themes')}
                 className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
+                  settingsTab === 'themes'
+                    ? isDark
+                      ? 'bg-zinc-100 text-zinc-950 font-bold'
+                      : 'bg-zinc-900 text-white font-bold'
+                    : textMuted
+                }`}
+              >
+                02 / THEMES (48)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('clearance')}
+                className={`py-2 text-center border-t sm:border-t-0 sm:border-l ${borderCol} transition-colors cursor-pointer ${
                   settingsTab === 'clearance'
                     ? isDark
                       ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -4165,12 +4644,12 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                02 / CLEARANCE (500)
+                03 / CLEARANCE
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsTab('security')}
-                className={`py-2 text-center border-t sm:border-t-0 sm:border-l ${borderCol} transition-colors cursor-pointer ${
+                className={`py-2 text-center border-t sm:border-t-0 border-l ${borderCol} transition-colors cursor-pointer ${
                   settingsTab === 'security'
                     ? isDark
                       ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -4178,12 +4657,12 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                03 / PASSWORD
+                04 / PASSWORD
               </button>
               <button
                 type="button"
                 onClick={() => setSettingsTab('data')}
-                className={`py-2 text-center border-t sm:border-t-0 border-l ${borderCol} transition-colors cursor-pointer ${
+                className={`col-span-2 sm:col-span-1 py-2 text-center border-t sm:border-t-0 sm:border-l ${borderCol} transition-colors cursor-pointer ${
                   settingsTab === 'data'
                     ? isDark
                       ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -4191,13 +4670,27 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                04 / DATA &amp; DANGER
+                05 / DATA
               </button>
             </div>
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
-            <div className="flex-1 min-h-0 overflow-y-auto mt-5 pr-1">
-              {/* TAB 2: TELEMETRY CLEARANCE LEVEL (500 RANKS) */}
+            <div className="flex-1 min-h-0 overflow-y-auto mt-4 sm:mt-5 pr-1">
+              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (48 PAIRS = 96 SURFACES) */}
+              {settingsTab === 'themes' && (
+                <SurfaceThemeSelectorPanel
+                  activeThemeId={surfaceThemeId}
+                  onSelectThemeId={(id) => setSurfaceThemeId(id)}
+                  isDark={isDark}
+                  onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+                  userClearanceLevel={clearanceStatus.current.level}
+                  userTotalHours={clearanceStatus.totalHours}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                />
+              )}
+
+              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (1,500 RANKS // 0H-3,000H) */}
               {settingsTab === 'clearance' && (
                 <ClearanceBrowserPanel
                   clearance={clearanceStatus}
@@ -4688,6 +5181,56 @@ export default function App() {
         borderCol={borderCol}
         bgCard={bgCard}
         textMuted={textMuted}
+      />
+
+      {/* ==========================================
+          MODAL 5: COMMAND PALETTE (Cmd + K / Ctrl + K)
+      ========================================== */}
+      <CommandPaletteModal
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        isDark={isDark}
+        borderCol={borderCol}
+        bgCard={bgCard}
+        textMuted={textMuted}
+        isAuthenticated={!!user}
+        categories={categories}
+        selectedCatId={selectedCatId}
+        isRunning={isRunning}
+        onQuickLog={handleQuickLogFromPalette}
+        onToggleTimer={() => setIsRunning((prev) => !prev)}
+        onResetTimer={() => {
+          setIsRunning(false);
+          accumulatedSecondsRef.current = 0;
+          setElapsedSeconds(0);
+        }}
+        onSetInputMode={(mode) => setInputMode(mode)}
+        onSetAnalyticsMode={handleSetAnalyticsModeFromPalette}
+        onToggleMatrixColorMode={() =>
+          setMatrixColorMode((prev) => (prev === 'intensity' ? 'binary' : 'intensity'))
+        }
+        onToggleMatrixSpan={() =>
+          setMatrixSpanMultiplier((prev) => (prev === 1 ? 2 : 1))
+        }
+        onOpenStatusCard={() => setShowStatusCardModal(true)}
+        onOpenClearance={() => {
+          if (user) {
+            openSettingsModal('clearance');
+          } else {
+            openAuthModal('login');
+          }
+        }}
+        onOpenSettings={() => {
+          if (user) {
+            openSettingsModal('profile');
+          } else {
+            openAuthModal('login');
+          }
+        }}
+        onOpenAuth={() => openAuthModal('login')}
+        onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+        onExportJSON={handleExportJSON}
+        onExportCSV={handleExportCSV}
       />
     </div>
   );
