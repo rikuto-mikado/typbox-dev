@@ -93,8 +93,18 @@ class UserSerializer(serializers.ModelSerializer):
         if not value:
             return ''
         cleaned = value.strip()
-        if not cleaned.startswith('data:image/'):
-            raise serializers.ValidationError('Avatar image must be a valid image Data URL.')
+        # Restrict to raster subtypes only (the frontend always re-encodes
+        # uploads to webp/jpeg via <canvas> before sending). Explicitly
+        # reject svg+xml and any other subtype: an SVG data URL can embed
+        # <script>/event-handler payloads, and while <img> does not execute
+        # them today, allowing only known-safe raster types removes that
+        # class of risk entirely rather than relying on the current render
+        # path never changing.
+        allowed_subtypes = ('png', 'jpeg', 'jpg', 'webp', 'gif')
+        if not any(cleaned.startswith(f'data:image/{t};base64,') for t in allowed_subtypes):
+            raise serializers.ValidationError(
+                'Avatar image must be a base64 PNG, JPEG, WEBP, or GIF Data URL.'
+            )
         if len(cleaned) > 180_000:
             raise serializers.ValidationError('Avatar image data exceeds maximum size limit (~130KB).')
         return cleaned

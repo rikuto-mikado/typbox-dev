@@ -179,6 +179,12 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '120/minute',
         'user': '600/minute',
+        # Dedicated, tighter scopes for the credential-stuffing / brute-force
+        # / spam-prone auth endpoints — the generic 120/min anon rate above
+        # is far too loose for login or password-reset specifically.
+        'login': '10/minute',
+        'register': '10/minute',
+        'password_reset': '5/minute',
     },
 }
 

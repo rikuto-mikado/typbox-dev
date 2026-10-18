@@ -1,6 +1,25 @@
 @import "tailwindcss";
 
 /* ==========================================
+   Text overflow hardening
+   Safety net against long dynamic strings (theme/noise names, usernames,
+   category names, long rank titles) breaking out of their containers.
+   This never changes how normal-length text wraps — it only engages when a
+   single run of text is too long to fit, which Tailwind's `truncate` /
+   `break-words` utilities don't catch everywhere by default.
+========================================== */
+body {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+img,
+svg,
+canvas {
+  max-width: 100%;
+}
+
+/* ==========================================
    Custom Geometric Origami Loader
 ========================================== */
 .loader {

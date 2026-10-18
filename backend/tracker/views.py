@@ -1,3 +1,4 @@
+import re
 from datetime import date as date_cls, timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -12,7 +13,9 @@ from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import Category, StudyLog
 from .serializers import (
@@ -28,9 +31,43 @@ from .serializers import (
 User = get_user_model()
 
 
+def _is_trusted_frontend_origin(origin: str) -> bool:
+    """
+    True only if `origin` matches the same allowlist CORS already trusts
+    (settings.CORS_ALLOWED_ORIGINS / CORS_ALLOWED_ORIGIN_REGEXES).
+
+    The `Origin` request header is attacker-controlled on any direct HTTP
+    call (CORS is a browser-side policy, not a server-side access check), so
+    it must never be trusted blindly for security-sensitive output such as
+    the link embedded in a password-reset email — otherwise a caller could
+    set `Origin: https://evil.example` and have TYPBOX's own mailer send the
+    victim a legitimate-looking reset email pointing at a phishing site.
+    """
+    if not origin:
+        return False
+    if origin in getattr(settings, 'CORS_ALLOWED_ORIGINS', []):
+        return True
+    for pattern in getattr(settings, 'CORS_ALLOWED_ORIGIN_REGEXES', []):
+        if re.match(pattern, origin):
+            return True
+    return False
+
+
 # ==========================================
 # Authentication & Account Management Views
 # ==========================================
+
+class RegisterThrottle(ScopedRateThrottle):
+    scope = 'register'
+
+
+class LoginThrottle(ScopedRateThrottle):
+    scope = 'login'
+
+
+class PasswordResetThrottle(ScopedRateThrottle):
+    scope = 'password_reset'
+
 
 class RegisterView(generics.CreateAPIView):
     """
@@ -40,6 +77,19 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = (permissions.AllowAny,)
+    throttle_classes = (RegisterThrottle,)
+    throttle_scope = 'register'
+
+
+class ThrottledTokenObtainPairView(TokenObtainPairView):
+    """
+    POST /api/auth/login/
+    Same as SimpleJWT's TokenObtainPairView, with a dedicated per-IP rate
+    limit — the default anon throttle (120/min) is far too loose for a
+    credential-stuffing / brute-force surface.
+    """
+    throttle_classes = (LoginThrottle,)
+    throttle_scope = 'login'
 
 
 class CurrentUserView(APIView):
@@ -103,6 +153,8 @@ class PasswordResetRequestView(APIView):
     Generate a one-time password reset token and send a reset link to the user's email.
     """
     permission_classes = (permissions.AllowAny,)
+    throttle_classes = (PasswordResetThrottle,)
+    throttle_scope = 'password_reset'
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
@@ -117,7 +169,7 @@ class PasswordResetRequestView(APIView):
             token = default_token_generator.make_token(user)
 
             origin = request.headers.get('Origin', '').rstrip('/')
-            frontend_base = origin if origin.startswith(('http://', 'https://')) else settings.FRONTEND_URL
+            frontend_base = origin if _is_trusted_frontend_origin(origin) else settings.FRONTEND_URL
             reset_url = f"{frontend_base}/?reset_uid={uid}&reset_token={token}"
 
             subject = '[TYPBOX] Password Reset Request / パスワード再設定のご案内'

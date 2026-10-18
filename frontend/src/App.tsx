@@ -2586,12 +2586,6 @@ export default function App() {
                 <span className="font-bold tracking-wider truncate">
                   {clearanceStatus.current.title}
                 </span>
-                <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} ${textMuted} shrink-0`}>
-                  {clearanceStatus.current.division}
-                </span>
-                <span className={`hidden sm:inline text-[11px] font-mono ${textMuted} truncate`}>
-                  // {clearanceStatus.current.subtitle}
-                </span>
               </div>
             </div>
 

@@ -341,6 +341,8 @@ function buildClearanceLevels(): ClearanceLevel[] {
         // Division 01 uses a linear 0-based ramp (no leading-step skip) so
         // early progression starts immediately after the LV.1 override.
         reqHours = offset === RANKS_PER_DIVISION - 1 ? endH : offset * step;
+        reqHours = Math.round(reqHours * 10) / 10;
+        if (Number.isInteger(reqHours)) reqHours = Math.trunc(reqHours);
       } else {
         reqHours = Math.round((startH + (offset + 1) * step) * 10) / 10;
         if (Number.isInteger(reqHours)) reqHours = Math.trunc(reqHours);
@@ -405,7 +407,22 @@ export function getClearanceStatus(
   claimedCycles: number = 0
 ): UserClearanceStatus {
   const totalHoursLifetime = Math.max(0, totalMinutes / 60);
-  const safeClaimedCycles = Math.max(0, Math.floor(claimedCycles));
+  // `claimedCycles` is a permanent achievement counter (how many times the
+  // user has ever Ascended) — it must never regress, so Surface
+  // Themes/Noise profiles stay unlocked forever as documented, even if
+  // lifetime hours later drop (e.g. "RESET STUDY LOGS" wipes totalMinutes,
+  // or an old entry gets deleted/shortened).
+  const rawClaimedCycles = Math.max(0, Math.floor(claimedCycles));
+  // For CURRENT CYCLE PROGRESS specifically (level/hours/%), clamp to what's
+  // actually achievable from current lifetime hours instead. Without this,
+  // a reset-to-near-zero totalHours while rawClaimedCycles stays high would
+  // leave cycleHours permanently clamped at 0 (stuck showing LV.0001 /
+  // ZERO-HOUR INITIALIZATION) no matter how many new hours get logged,
+  // since totalHours would need to climb back past rawClaimedCycles *
+  // CYCLE_HOURS before the subtraction below turns positive again. This
+  // self-heals immediately and re-syncs upward again once hours catch up.
+  const maxAchievableCycles = Math.floor(totalHoursLifetime / CYCLE_HOURS);
+  const safeClaimedCycles = Math.min(rawClaimedCycles, maxAchievableCycles);
   const cycleNumber = safeClaimedCycles + 1;
   const rawCycleNumber = Math.floor(totalHoursLifetime / CYCLE_HOURS) + 1;
   const cycleStartHours = safeClaimedCycles * CYCLE_HOURS;
@@ -422,7 +439,7 @@ export function getClearanceStatus(
 
   const current = CLEARANCE_LEVELS[currentIdx];
   const next = currentIdx + 1 < CLEARANCE_LEVELS.length ? CLEARANCE_LEVELS[currentIdx + 1] : null;
-  const rewardUnlockLevel = safeClaimedCycles >= 1 ? CLEARANCE_LEVELS.length : current.level;
+  const rewardUnlockLevel = rawClaimedCycles >= 1 ? CLEARANCE_LEVELS.length : current.level;
 
   if (!next) {
     return {
@@ -441,7 +458,7 @@ export function getClearanceStatus(
       cycleHours: +cycleHours.toFixed(1),
       rawCycleNumber,
       ascensionAvailable,
-      totalAscensions: safeClaimedCycles,
+      totalAscensions: rawClaimedCycles,
       rewardUnlockLevel,
     };
   }
@@ -472,7 +489,7 @@ export function getClearanceStatus(
     cycleHours: +cycleHours.toFixed(1),
     rawCycleNumber,
     ascensionAvailable,
-    totalAscensions: safeClaimedCycles,
+    totalAscensions: rawClaimedCycles,
     rewardUnlockLevel,
   };
 }
@@ -489,7 +506,10 @@ export interface PrestigeBadge {
 // eslint-disable-next-line react-refresh/only-export-components
 export function getPrestigeBadge(totalAscensions: number): PrestigeBadge | null {
   if (totalAscensions <= 0) return null;
-  const label = `✦ CYCLE ${String(totalAscensions + 1).padStart(2, '0')}`;
+  // Deliberately does NOT repeat "CYCLE XX" (that's already shown by its own
+  // badge wherever this chip appears) — this shows the Ascension *tier*
+  // instead, so the two badges carry distinct information side by side.
+  const label = `✦×${totalAscensions}`;
   if (totalAscensions === 1) return { label, colorHex: '#eab308', isPrism: false };
   if (totalAscensions === 2) return { label, colorHex: '#e5e7eb', isPrism: false };
   return { label, colorHex: '#ffffff', isPrism: true };
@@ -3008,21 +3028,27 @@ function mixHex(hexA: string, hexB: string, t: number): string {
 // Deterministically derives a dark/light surface palette from a single hue so
 // the 96 expansion pairs (added for the 30,000H scale-up) keep the same
 // near-black / near-white contrast discipline as the 48 hand-authored pairs.
+// Design philosophy: "dark mode" means a DARK-BASED palette, not literal
+// near-black. Every surface here reads as a genuine deep color — navy,
+// forest, plum, wine — at meaningful lightness/saturation, not a tinted
+// shade of charcoal. "Light mode" is the bright-based counterpart, not
+// necessarily pure white. (See getSurfaceBackgroundStyle's corner-blend
+// layer for the accent-driven gradient wash applied on top of this base.)
 function buildSignaturePalette(
   hue: number,
   satBoost: number
 ): { dark: Omit<SurfacePolarityPalette, 'label'>; light: Omit<SurfacePolarityPalette, 'label'> } {
-  const s = Math.max(14, 38 + satBoost);
+  const s = Math.max(20, 46 + satBoost);
   return {
     dark: {
-      bgMain: hslToHex(hue, s * 0.55, 5),
-      bgCard: hslToHex(hue, s * 0.5, 8.5),
-      bgInput: hslToHex(hue, s * 0.6, 4),
-      border: hslToHex(hue, s * 0.65, 19),
+      bgMain: hslToHex(hue, Math.min(85, s * 0.62 + 7), 13),
+      bgCard: hslToHex(hue, Math.min(85, s * 0.58 + 7), 18),
+      bgInput: hslToHex(hue, Math.min(85, s * 0.68 + 6), 10),
+      border: hslToHex(hue, Math.min(90, s * 0.7 + 5), 29),
       textMain: hslToHex(hue, 16, 95),
-      textMuted: hslToHex(hue, 16, 56),
-      patternTint: `hsla(${hue}, 70%, 70%, 0.055)`,
-      glowTint: `hsla(${hue}, 80%, 55%, 0.085)`,
+      textMuted: hslToHex(hue, 18, 60),
+      patternTint: `hsla(${hue}, 75%, 72%, 0.06)`,
+      glowTint: `hsla(${hue}, 85%, 58%, 0.11)`,
     },
     light: {
       bgMain: hslToHex(hue, s * 0.5, 97),
@@ -3409,10 +3435,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 4,
     dark: {
       label: 'ANODIZED SLATE',
-      bgMain: '#0d0f12',
-      bgCard: '#14171c',
-      bgInput: '#0b0d10',
-      border: '#262b33',
+      bgMain: '#1d232e',
+      bgCard: '#252d3c',
+      bgInput: '#191f29',
+      border: '#364051',
       textMain: '#f1f5f9',
       textMuted: '#7e8896',
       patternTint: 'rgba(148,163,184,0.055)',
@@ -3442,10 +3468,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 12,
     dark: {
       label: 'E-READER ONYX',
-      bgMain: '#121314',
-      bgCard: '#1a1b1d',
-      bgInput: '#0e0f10',
-      border: '#2d2f33',
+      bgMain: '#24292e',
+      bgCard: '#2d323a',
+      bgInput: '#1e2226',
+      border: '#3f444f',
       textMain: '#e4e4e7',
       textMuted: '#82868f',
       patternTint: 'rgba(228,228,231,0.045)',
@@ -3475,10 +3501,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 32,
     dark: {
       label: 'SUMI CHARCOAL',
-      bgMain: '#11100e',
-      bgCard: '#181613',
-      bgInput: '#0d0c0a',
-      border: '#2e2a24',
+      bgMain: '#2b271f',
+      bgCard: '#362f25',
+      bgInput: '#242119',
+      border: '#4b4235',
       textMain: '#f5f2eb',
       textMuted: '#8c8478',
       patternTint: 'rgba(245,242,235,0.06)',
@@ -3508,10 +3534,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 72,
     dark: {
       label: 'DARK ROAST',
-      bgMain: '#130d09',
-      bgCard: '#1c140e',
-      bgInput: '#0e0906',
-      border: '#36261b',
+      bgMain: '#332114',
+      bgCard: '#3f2b1b',
+      bgInput: '#2b1a10',
+      border: '#583b27',
       textMain: '#f7ede2',
       textMuted: '#947e6b',
       patternTint: 'rgba(217,119,6,0.055)',
@@ -3541,10 +3567,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 152,
     dark: {
       label: 'RACING ASPHALT',
-      bgMain: '#111215',
-      bgCard: '#181a1f',
-      bgInput: '#0c0d0f',
-      border: '#2c3038',
+      bgMain: '#222530',
+      bgCard: '#2a2f3e',
+      bgInput: '#1b1f26',
+      border: '#3d4555',
       textMain: '#f4f4f6',
       textMuted: '#858a96',
       patternTint: 'rgba(255,255,255,0.045)',
@@ -3578,10 +3604,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 302,
     dark: {
       label: 'MIDNIGHT NAVY',
-      bgMain: '#060c17',
-      bgCard: '#0c1526',
-      bgInput: '#050912',
-      border: '#1b2c4a',
+      bgMain: '#0c1d3c',
+      bgCard: '#14284e',
+      bgInput: '#0b1732',
+      border: '#243f6f',
       textMain: '#e8f1ff',
       textMuted: '#6883ab',
       patternTint: 'rgba(56,189,248,0.065)',
@@ -3611,10 +3637,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 370,
     dark: {
       label: 'POLAR NIGHT',
-      bgMain: '#151b24',
-      bgCard: '#1d2531',
-      bgInput: '#11161e',
-      border: '#2e394a',
+      bgMain: '#212f43',
+      bgCard: '#2b3b54',
+      bgInput: '#1c2739',
+      border: '#3b4e6a',
       textMain: '#eceff4',
       textMuted: '#7b88a1',
       patternTint: 'rgba(136,192,208,0.05)',
@@ -3644,10 +3670,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 440,
     dark: {
       label: 'CRYO CHAMBER',
-      bgMain: '#041116',
-      bgCard: '#081b22',
-      bgInput: '#030d11',
-      border: '#133542',
+      bgMain: '#082e3d',
+      bgCard: '#0e3c4c',
+      bgInput: '#072733',
+      border: '#1a5369',
       textMain: '#ecfeff',
       textMuted: '#5b8c9c',
       patternTint: 'rgba(6,182,212,0.06)',
@@ -3677,10 +3703,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 520,
     dark: {
       label: 'DEEP PERMAFROST',
-      bgMain: '#050f18',
-      bgCard: '#0b1926',
-      bgInput: '#030b12',
-      border: '#17324a',
+      bgMain: '#0a263e',
+      bgCard: '#12324f',
+      bgInput: '#071f35',
+      border: '#1e4a71',
       textMain: '#e0f2fe',
       textMuted: '#6084a3',
       patternTint: 'rgba(2,132,199,0.065)',
@@ -3710,10 +3736,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 600,
     dark: {
       label: 'GLACIAL CREVASSE',
-      bgMain: '#041312',
-      bgCard: '#09211f',
-      bgInput: '#030e0d',
-      border: '#143d39',
+      bgMain: '#093936',
+      bgCard: '#104a45',
+      bgInput: '#082f2c',
+      border: '#1c635c',
       textMain: '#ccfbf1',
       textMuted: '#5c948e',
       patternTint: 'rgba(45,212,191,0.06)',
@@ -3747,10 +3773,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 640,
     dark: {
       label: 'P31 PHOSPHOR',
-      bgMain: '#040d07',
-      bgCard: '#09170e',
-      bgInput: '#030a05',
-      border: '#143620',
+      bgMain: '#0c3018',
+      bgCard: '#143d22',
+      bgInput: '#0a2913',
+      border: '#1d5a33',
       textMain: '#dcfce7',
       textMuted: '#568f6a',
       patternTint: 'rgba(34,197,94,0.055)',
@@ -3780,10 +3806,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 700,
     dark: {
       label: 'DEEP MOSS',
-      bgMain: '#09120b',
-      bgCard: '#101d13',
-      bgInput: '#070e08',
-      border: '#203825',
+      bgMain: '#15311b',
+      bgCard: '#1e3f26',
+      bgInput: '#122915',
+      border: '#2d5936',
       textMain: '#ecfccb',
       textMuted: '#6d8c73',
       patternTint: 'rgba(132,204,22,0.065)',
@@ -3813,10 +3839,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 770,
     dark: {
       label: 'CONIFER CANOPY',
-      bgMain: '#06110b',
-      bgCard: '#0c1c14',
-      bgInput: '#040c08',
-      border: '#193626',
+      bgMain: '#0f3320',
+      bgCard: '#17412c',
+      bgInput: '#0c2a1b',
+      border: '#24583c',
       textMain: '#e6f7ed',
       textMuted: '#5e8770',
       patternTint: 'rgba(22,163,74,0.055)',
@@ -3846,10 +3872,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 840,
     dark: {
       label: 'ACID LOGIC BOARD',
-      bgMain: '#0a1104',
-      bgCard: '#121d08',
-      bgInput: '#070c02',
-      border: '#263b12',
+      bgMain: '#1e360a',
+      bgCard: '#29460f',
+      bgInput: '#1a2e06',
+      border: '#3d611a',
       textMain: '#f7fee7',
       textMuted: '#78915c',
       patternTint: 'rgba(163,230,53,0.06)',
@@ -3879,10 +3905,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 900,
     dark: {
       label: 'OBSIDIAN JADE',
-      bgMain: '#03120e',
-      bgCard: '#071f19',
-      bgInput: '#020d0a',
-      border: '#113b30',
+      bgMain: '#07392c',
+      bgCard: '#0d4a3a',
+      bgInput: '#063024',
+      border: '#18624e',
       textMain: '#e6fffa',
       textMuted: '#568f80',
       patternTint: 'rgba(16,185,129,0.06)',
@@ -3916,10 +3942,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 960,
     dark: {
       label: 'MARIANA ABYSS',
-      bgMain: '#030a14',
-      bgCard: '#071324',
-      bgInput: '#02070f',
-      border: '#132847',
+      bgMain: '#061c3c',
+      bgCard: '#0c2850',
+      bgInput: '#051632',
+      border: '#193c6f',
       textMain: '#e0f2fe',
       textMuted: '#5c7ba6',
       patternTint: 'rgba(14,165,233,0.05)',
@@ -3949,10 +3975,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1020,
     dark: {
       label: 'PELAGIC BIOLUME',
-      bgMain: '#021216',
-      bgCard: '#061e24',
-      bgInput: '#010d10',
-      border: '#0f3942',
+      bgMain: '#033440',
+      bgCard: '#0a4351',
+      bgInput: '#022b35',
+      border: '#145b6b',
       textMain: '#e0fafe',
       textMuted: '#568d99',
       patternTint: 'rgba(0,210,211,0.065)',
@@ -3982,10 +4008,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1080,
     dark: {
       label: 'SOLARIZED TEAL',
-      bgMain: '#001b22',
-      bgCard: '#05262f',
-      bgInput: '#00141a',
-      border: '#0f3d4a',
+      bgMain: '#033c4a',
+      bgCard: '#064b5e',
+      bgInput: '#03303e',
+      border: '#135e74',
       textMain: '#e2f1f0',
       textMuted: '#658b8e',
       patternTint: 'rgba(42,161,152,0.065)',
@@ -4015,10 +4041,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1150,
     dark: {
       label: 'CHERENKOV CORE',
-      bgMain: '#030d21',
-      bgCard: '#081736',
-      bgInput: '#020917',
-      border: '#162f63',
+      bgMain: '#041c4c',
+      bgCard: '#0a2864',
+      bgInput: '#03163c',
+      border: '#1a3f8d',
       textMain: '#dbeafe',
       textMuted: '#6082bf',
       patternTint: 'rgba(59,130,246,0.07)',
@@ -4048,10 +4074,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1200,
     dark: {
       label: 'BANKER LAMP GREEN',
-      bgMain: '#05130d',
-      bgCard: '#0b1f17',
-      bgInput: '#030d09',
-      border: '#173b2c',
+      bgMain: '#0c3825',
+      bgCard: '#154632',
+      bgInput: '#092e1f',
+      border: '#215f45',
       textMain: '#ecfdf5',
       textMuted: '#638f7c',
       patternTint: 'rgba(5,150,105,0.06)',
@@ -4085,10 +4111,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1260,
     dark: {
       label: 'ASTROMETRY BLUE',
-      bgMain: '#060b1e',
-      bgCard: '#0d1430',
-      bgInput: '#040817',
-      border: '#1e2b5c',
+      bgMain: '#0a1745',
+      bgCard: '#13225a',
+      bgInput: '#08123a',
+      border: '#253983',
       textMain: '#e0e7ff',
       textMuted: '#6c7cb8',
       patternTint: 'rgba(99,102,241,0.065)',
@@ -4118,10 +4144,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1320,
     dark: {
       label: 'SHIBUYA RAIN',
-      bgMain: '#090b16',
-      bgCard: '#111526',
-      bgInput: '#060810',
-      border: '#232a4a',
+      bgMain: '#131937',
+      bgCard: '#1c254b',
+      bgInput: '#0f152e',
+      border: '#2e396d',
       textMain: '#e8edff',
       textMuted: '#737da8',
       patternTint: 'rgba(129,140,248,0.06)',
@@ -4151,10 +4177,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1380,
     dark: {
       label: 'NOCTURNE SLATE',
-      bgMain: '#14151f',
-      bgCard: '#1e202e',
-      bgInput: '#0f1018',
-      border: '#34374d',
+      bgMain: '#22243d',
+      bgCard: '#2d3150',
+      bgInput: '#1b1e32',
+      border: '#42476d',
       textMain: '#f8f8f2',
       textMuted: '#7e84a3',
       patternTint: 'rgba(189,147,249,0.055)',
@@ -4184,10 +4210,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1440,
     dark: {
       label: 'COSMIC INDIGO',
-      bgMain: '#0a0617',
-      bgCard: '#120d26',
-      bgInput: '#070411',
-      border: '#281e4d',
+      bgMain: '#180c3c',
+      bgCard: '#21164e',
+      bgInput: '#130a32',
+      border: '#372772',
       textMain: '#f3e8ff',
       textMuted: '#7e6fa6',
       patternTint: 'rgba(139,92,246,0.06)',
@@ -4217,10 +4243,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1500,
     dark: {
       label: 'PLANCK HORIZON',
-      bgMain: '#0c051c',
-      bgCard: '#150b2e',
-      bgInput: '#080313',
-      border: '#2e1a59',
+      bgMain: '#1b0943',
+      bgCard: '#251159',
+      bgInput: '#150636',
+      border: '#3f2081',
       textMain: '#f5f0ff',
       textMuted: '#8571b5',
       patternTint: 'rgba(124,58,237,0.065)',
@@ -4254,10 +4280,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1560,
     dark: {
       label: 'NEON VOID',
-      bgMain: '#10051a',
-      bgCard: '#1a0a29',
-      bgInput: '#0b0312',
-      border: '#381754',
+      bgMain: '#260941',
+      bgCard: '#331053',
+      bgInput: '#1f0735',
+      border: '#501d7c',
       textMain: '#fae8ff',
       textMuted: '#966eb3',
       patternTint: 'rgba(217,70,239,0.06)',
@@ -4287,10 +4313,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1620,
     dark: {
       label: 'WEIMAR IRONWORK',
-      bgMain: '#121215',
-      bgCard: '#1a1a1f',
-      bgInput: '#0d0d10',
-      border: '#30303a',
+      bgMain: '#23232f',
+      bgCard: '#2c2c3d',
+      bgInput: '#1c1c27',
+      border: '#414157',
       textMain: '#f5f3ef',
       textMuted: '#8a8884',
       patternTint: 'rgba(245,243,239,0.055)',
@@ -4320,10 +4346,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1650,
     dark: {
       label: 'ROYAL PLUM',
-      bgMain: '#110818',
-      bgCard: '#1b0f26',
-      bgInput: '#0c0512',
-      border: '#331d47',
+      bgMain: '#28103b',
+      bgCard: '#34194c',
+      bgInput: '#200b32',
+      border: '#4b276b',
       textMain: '#f5ecff',
       textMuted: '#8a70a1',
       patternTint: 'rgba(168,85,247,0.06)',
@@ -4353,10 +4379,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1720,
     dark: {
       label: 'DEEP PULSAR',
-      bgMain: '#160516',
-      bgCard: '#240a24',
-      bgInput: '#100310',
-      border: '#421542',
+      bgMain: '#3c0b3c',
+      bgCard: '#4d114d',
+      bgInput: '#320732',
+      border: '#681d68',
       textMain: '#fdf4ff',
       textMuted: '#9e6d9e',
       patternTint: 'rgba(192,38,211,0.06)',
@@ -4386,10 +4412,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1800,
     dark: {
       label: 'MONASTIC SLATE',
-      bgMain: '#121311',
-      bgCard: '#191b18',
-      bgInput: '#0d0e0c',
-      border: '#2c2f2a',
+      bgMain: '#282d23',
+      bgCard: '#30382b',
+      bgInput: '#20251c',
+      border: '#424b3c',
       textMain: '#f2f2ee',
       textMuted: '#848780',
       patternTint: 'rgba(242,242,238,0.05)',
@@ -4423,10 +4449,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1870,
     dark: {
       label: 'NIGHT BLOSSOM',
-      bgMain: '#15080f',
-      bgCard: '#210d18',
-      bgInput: '#0f050a',
-      border: '#3d192c',
+      bgMain: '#371126',
+      bgCard: '#471732',
+      bgInput: '#2d0d1d',
+      border: '#612344',
       textMain: '#fce7f3',
       textMuted: '#9c6b84',
       patternTint: 'rgba(236,72,153,0.065)',
@@ -4456,10 +4482,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 1950,
     dark: {
       label: 'OBSIDIAN BLUSH',
-      bgMain: '#160b0f',
-      bgCard: '#221218',
-      bgInput: '#10070a',
-      border: '#3d222b',
+      bgMain: '#361722',
+      bgCard: '#451f2d',
+      bgInput: '#2c111a',
+      border: '#5e2f3f',
       textMain: '#ffe4e6',
       textMuted: '#9e717f',
       patternTint: 'rgba(251,113,133,0.06)',
@@ -4489,10 +4515,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2030,
     dark: {
       label: 'VINTAGE CELLAR',
-      bgMain: '#17050a',
-      bgCard: '#240911',
-      bgInput: '#110307',
-      border: '#421422',
+      bgMain: '#3d0a18',
+      bgCard: '#4e0f22',
+      bgInput: '#330714',
+      border: '#691b33',
       textMain: '#ffe4e8',
       textMuted: '#9e6776',
       patternTint: 'rgba(225,29,72,0.06)',
@@ -4522,10 +4548,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2100,
     dark: {
       label: 'BORDEAUX STEALTH',
-      bgMain: '#160609',
-      bgCard: '#220a10',
-      bgInput: '#100406',
-      border: '#421620',
+      bgMain: '#3b0d15',
+      bgCard: '#4b1220',
+      bgInput: '#300a10',
+      border: '#681e2f',
       textMain: '#ffe4e6',
       textMuted: '#a16873',
       patternTint: 'rgba(244,63,94,0.055)',
@@ -4559,10 +4585,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2150,
     dark: {
       label: 'MAGMA BASALT',
-      bgMain: '#140906',
-      bgCard: '#200f0b',
-      bgInput: '#0e0604',
-      border: '#3d1f17',
+      bgMain: '#38170e',
+      bgCard: '#471e14',
+      bgInput: '#2d120b',
+      border: '#622e20',
       textMain: '#ffedd5',
       textMuted: '#9c7365',
       patternTint: 'rgba(249,115,22,0.06)',
@@ -4592,10 +4618,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2230,
     dark: {
       label: 'KILN EARTHENWARE',
-      bgMain: '#160b07',
-      bgCard: '#22120c',
-      bgInput: '#100704',
-      border: '#402218',
+      bgMain: '#391a0f',
+      bgCard: '#492315',
+      bgInput: '#30140a',
+      border: '#653221',
       textMain: '#ffedd5',
       textMuted: '#9e7668',
       patternTint: 'rgba(234,88,12,0.06)',
@@ -4625,10 +4651,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2320,
     dark: {
       label: 'CATHODE UMBER',
-      bgMain: '#130c04',
-      bgCard: '#1e1408',
-      bgInput: '#0d0802',
-      border: '#3b2810',
+      bgMain: '#392309',
+      bgCard: '#472e0f',
+      bgInput: '#301d06',
+      border: '#624117',
       textMain: '#fef3c7',
       textMuted: '#9c8159',
       patternTint: 'rgba(245,158,11,0.055)',
@@ -4658,10 +4684,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2400,
     dark: {
       label: 'SMELTED BRONZE',
-      bgMain: '#130b07',
-      bgCard: '#1c110b',
-      bgInput: '#0d0704',
-      border: '#382217',
+      bgMain: '#351d10',
+      bgCard: '#422516',
+      bgInput: '#2c160b',
+      border: '#5c3521',
       textMain: '#fae8dc',
       textMuted: '#947463',
       patternTint: 'rgba(234,88,12,0.06)',
@@ -4695,10 +4721,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2470,
     dark: {
       label: 'EDISON FILAMENT',
-      bgMain: '#141007',
-      bgCard: '#1e180b',
-      bgInput: '#0e0b04',
-      border: '#3b3016',
+      bgMain: '#372b10',
+      bgCard: '#453615',
+      bgInput: '#2d230b',
+      border: '#604c1f',
       textMain: '#fef9c3',
       textMuted: '#998a63',
       patternTint: 'rgba(251,191,36,0.06)',
@@ -4728,10 +4754,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2540,
     dark: {
       label: 'DARKROOM BROMIDE',
-      bgMain: '#14110d',
-      bgCard: '#1d1913',
-      bgInput: '#0e0c09',
-      border: '#362e24',
+      bgMain: '#31281b',
+      bgCard: '#3e3323',
+      bgInput: '#272016',
+      border: '#554633',
       textMain: '#f5efe6',
       textMuted: '#8f8474',
       patternTint: 'rgba(202,138,4,0.055)',
@@ -4761,10 +4787,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2600,
     dark: {
       label: 'DESERT NIGHT',
-      bgMain: '#13100a',
-      bgCard: '#1c170f',
-      bgInput: '#0d0b07',
-      border: '#362d1f',
+      bgMain: '#322916',
+      bgCard: '#3f321d',
+      bgInput: '#282113',
+      border: '#56462c',
       textMain: '#fef9eb',
       textMuted: '#91846c',
       patternTint: 'rgba(234,179,8,0.065)',
@@ -4794,10 +4820,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2700,
     dark: {
       label: 'ONYX BULLION',
-      bgMain: '#110e05',
-      bgCard: '#1a1509',
-      bgInput: '#0b0903',
-      border: '#382f14',
+      bgMain: '#352b0d',
+      bgCard: '#413313',
+      bgInput: '#2b220a',
+      border: '#5d4d1d',
       textMain: '#fefce8',
       textMuted: '#998b60',
       patternTint: 'rgba(250,204,21,0.06)',
@@ -4831,10 +4857,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2760,
     dark: {
       label: 'BALLISTIC WEAVE',
-      bgMain: '#0c0d0f',
-      bgCard: '#14161a',
-      bgInput: '#08090b',
-      border: '#272b33',
+      bgMain: '#1d212a',
+      bgCard: '#262c39',
+      bgInput: '#161b23',
+      border: '#374050',
       textMain: '#f8fafc',
       textMuted: '#7e8694',
       patternTint: 'rgba(203,213,225,0.055)',
@@ -4864,10 +4890,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2820,
     dark: {
       label: 'HOUSTON CONSOLE',
-      bgMain: '#080e16',
-      bgCard: '#101926',
-      bgInput: '#05090f',
-      border: '#1f314a',
+      bgMain: '#112238',
+      bgCard: '#1b2f4c',
+      bgInput: '#0d1a2d',
+      border: '#29466e',
       textMain: '#f0f7ff',
       textMuted: '#6f87a6',
       patternTint: 'rgba(56,189,248,0.06)',
@@ -4897,10 +4923,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2880,
     dark: {
       label: 'GUNMETAL ALLOY',
-      bgMain: '#0e1116',
-      bgCard: '#161b22',
-      bgInput: '#090b0f',
-      border: '#293240',
+      bgMain: '#1c2533',
+      bgCard: '#253243',
+      bgInput: '#151c29',
+      border: '#374760',
       textMain: '#f1f5f9',
       textMuted: '#7c8aa1',
       patternTint: 'rgba(148,163,184,0.06)',
@@ -4930,10 +4956,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 2940,
     dark: {
       label: 'IRIDIUM VOID',
-      bgMain: '#07090e',
-      bgCard: '#10141f',
-      bgInput: '#05060a',
-      border: '#242c42',
+      bgMain: '#131b2d',
+      bgCard: '#1d2742',
+      bgInput: '#101425',
+      border: '#313e63',
       textMain: '#f8fafc',
       textMuted: '#7c89a6',
       patternTint: 'rgba(226,232,240,0.06)',
@@ -4963,10 +4989,10 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
     clearanceHintLv: 3000,
     dark: {
       label: 'EVENT HORIZON',
-      bgMain: '#06040b',
-      bgCard: '#0e0a17',
-      bgInput: '#040208',
-      border: '#291d42',
+      bgMain: '#160e2d',
+      bgCard: '#21163c',
+      bgInput: '#130828',
+      border: '#3c2765',
       textMain: '#faf5ff',
       textMuted: '#8776a8',
       patternTint: 'rgba(244,63,94,0.065)',
@@ -5163,15 +5189,17 @@ export function getSurfaceBackgroundStyle(
   };
 
   if (isDark) {
-    // Rich dark-mode identity layer: every dark surface gets a soft
-    // accent-tinted corner gradient (not a flat near-black fill) so the
-    // catalog reads as deliberately styled rather than a basic near-black
-    // placeholder — distinct at a glance from the plain factory default.
-    const richCorner = mixHex(pal.bgMain, pair.accentHex, 0.15);
-    // Anchored at the TOP (not bottom) of the box: this style is applied to
-    // the page's root wrapper, whose box height grows with scrollable
-    // content, so a bottom-anchored gradient would sit far off-screen.
-    push(`radial-gradient(circle at 100% 0%, ${richCorner}, ${pal.bgMain} 55%)`);
+    // Rich dark-mode identity layer: a genuine dual-tone accent gradient
+    // wash, not a flat near-black fill — "dark mode" means a deep-colored
+    // base (navy/plum/forest/etc.), not literal black, so every surface
+    // should visibly read as a gradient rather than a tinted charcoal flat.
+    // Both anchors stay at the TOP of the box: this style is applied to the
+    // page's root wrapper, whose box height grows with scrollable content,
+    // so a bottom-anchored gradient would sit far off-screen.
+    const richCornerStrong = mixHex(pal.bgMain, pair.accentHex, 0.34);
+    const richCornerSoft = mixHex(pal.bgMain, pair.accentHex, 0.14);
+    push(`radial-gradient(circle at 100% 0%, ${richCornerStrong}, transparent 68%)`);
+    push(`radial-gradient(circle at 0% 0%, ${richCornerSoft}, transparent 72%)`);
   }
 
   switch (pair.pattern) {
