@@ -7,7 +7,6 @@ import {
   Copy,
   Check,
   Award,
-  Sparkles,
   Lock,
   CheckCircle2,
   Radio,
@@ -17,8 +16,12 @@ import {
   CornerDownLeft,
   Sun,
   Moon,
+  Timer,
+  Pause,
+  Play,
 } from 'lucide-react';
 import type { Category, StudyLog } from './App';
+import { drawStatusCard, STATUS_CARD_LAYOUTS, type StatusCardLayout } from './statusCard';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -775,6 +778,33 @@ interface MixLayer {
   volume: number; // 0..1, this layer's own fader
 }
 
+// Sleep Timer: auto-stops the whole mix after the chosen duration. The last
+// SLEEP_FADE_SECONDS are a gentle fade-out scheduled on the AudioContext's
+// own clock, so it still lands on time even while the tab is backgrounded
+// and JS timers are throttled.
+const SLEEP_TIMER_PRESETS_MIN = [15, 30, 45, 60, 90, 120, 180];
+const SLEEP_FADE_SECONDS = 20;
+const MAX_SLEEP_TIMER_MIN = 12 * 60;
+
+function formatSleepRemaining(ms: number): string {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  const mm = String(m).padStart(h > 0 ? 2 : 1, '0');
+  const ss = String(sec).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function formatPresetLabel(min: number): string {
+  if (min < 60) return `${min}M`;
+  return min % 60 === 0 ? `${min / 60}H` : `${(min / 60).toFixed(1)}H`;
+}
+
+// Safari 16.4+ exposes navigator.audioSession; 'playback' tells iOS this is
+// media (keeps playing with the silent switch on / screen locked).
+type NavigatorWithAudioSession = Navigator & { audioSession?: { type: string } };
+
 export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   isDark,
   borderCol,
@@ -789,10 +819,24 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [familyFilter, setFamilyFilter] = useState<string>('ALL');
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [sleepEndsAt, setSleepEndsAt] = useState<number | null>(null);
+  const [sleepNow, setSleepNow] = useState<number>(() => Date.now());
+  const [customSleepValue, setCustomSleepValue] = useState<string>('');
+  const [customSleepUnit, setCustomSleepUnit] = useState<'min' | 'hr'>('min');
+  const [sleepNotice, setSleepNotice] = useState<string | null>(null);
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const masterVolumeRef = useRef<number>(masterVolume);
+  const sleepEndsAtRef = useRef<number | null>(null);
+  // Background playback bridge: the mix is routed into a MediaStream played
+  // by a hidden <audio> element. Mobile browsers suspend a bare
+  // AudioContext when the screen locks or the tab is backgrounded, but keep
+  // a playing media element alive (and expose it to lock-screen controls).
+  const mediaStreamDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const bgAudioElRef = useRef<HTMLAudioElement | null>(null);
   // Node-based audio graph, keyed per layer so one layer can be added/removed
   // or have its fader adjusted without touching any other active layer.
   const layerNodesRef = useRef<Map<string, AudioNode[]>>(new Map());
@@ -810,12 +854,96 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       ctx.resume();
     }
     if (!masterGainRef.current) {
-      masterGainRef.current = ctx.createGain();
-      masterGainRef.current.gain.value = masterVolume;
-      masterGainRef.current.connect(ctx.destination);
+      const nav = navigator as NavigatorWithAudioSession;
+      if (nav.audioSession) {
+        try {
+          nav.audioSession.type = 'playback';
+        } catch {
+          // unsupported value on this engine — keep the default session
+        }
+      }
+
+      const master = ctx.createGain();
+      master.gain.value = masterVolume;
+      masterGainRef.current = master;
+
+      if (typeof ctx.createMediaStreamDestination === 'function') {
+        const dest = ctx.createMediaStreamDestination();
+        const el = new Audio();
+        el.srcObject = dest.stream;
+        el.setAttribute('playsinline', '');
+        master.connect(dest);
+        mediaStreamDestRef.current = dest;
+        bgAudioElRef.current = el;
+      } else {
+        master.connect(ctx.destination);
+      }
     }
     return ctx;
   }, [masterVolume]);
+
+  // Starts (or resumes) the hidden <audio> bridge. Must run inside a user
+  // gesture the first time. If the browser refuses media playback, fall
+  // back to direct AudioContext output so NOISE still plays in the
+  // foreground.
+  const startOutput = useCallback(() => {
+    const el = bgAudioElRef.current;
+    const ctx = audioCtxRef.current;
+    if (ctx && ctx.state !== 'running') {
+      ctx.resume().catch(() => {});
+    }
+    if (!el || !el.paused) return;
+    el.play().catch(() => {
+      const master = masterGainRef.current;
+      const dest = mediaStreamDestRef.current;
+      if (!ctx || !master || !dest) return;
+      try {
+        master.disconnect(dest);
+      } catch {
+        // already disconnected
+      }
+      master.connect(ctx.destination);
+      mediaStreamDestRef.current = null;
+      bgAudioElRef.current = null;
+    });
+  }, []);
+
+  // Re-applies the master fader, and — while a Sleep Timer is armed —
+  // schedules its fade-out ramp on the audio clock.
+  const applyMasterGain = useCallback((vol: number, endsAt: number | null) => {
+    const ctx = audioCtxRef.current;
+    const master = masterGainRef.current;
+    if (!ctx || !master) return;
+    const g = master.gain;
+    const t = ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setTargetAtTime(vol, t, 0.03);
+    if (endsAt !== null) {
+      const remaining = Math.max(0, (endsAt - Date.now()) / 1000);
+      const fadeStart = Math.max(t + 0.1, t + remaining - SLEEP_FADE_SECONDS);
+      const fadeEnd = Math.max(fadeStart + 0.05, t + remaining);
+      g.setValueAtTime(vol, fadeStart);
+      g.linearRampToValueAtTime(0, fadeEnd);
+    }
+  }, []);
+
+  const clearSleepTimer = useCallback(() => {
+    if (sleepEndsAtRef.current === null) return;
+    sleepEndsAtRef.current = null;
+    setSleepEndsAt(null);
+    applyMasterGain(masterVolumeRef.current, null);
+  }, [applyMasterGain]);
+
+  // Called whenever the mix becomes empty: release the media session and
+  // the audio bridge (saves battery) and disarm any Sleep Timer.
+  const handleMixEmptied = useCallback(() => {
+    clearSleepTimer();
+    setIsPaused(false);
+    bgAudioElRef.current?.pause();
+    if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+      audioCtxRef.current.suspend().catch(() => {});
+    }
+  }, [clearSleepTimer]);
 
   const stopLayerNodes = useCallback((id: string) => {
     const nodes = layerNodesRef.current.get(id);
@@ -918,13 +1046,52 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   const stopAllLayers = useCallback(() => {
     layerNodesRef.current.forEach((_nodes, id) => stopLayerNodes(id));
     setLayers([]);
-  }, [stopLayerNodes]);
+    handleMixEmptied();
+  }, [stopLayerNodes, handleMixEmptied]);
+
+  const pausePlayback = useCallback(() => {
+    if (layerNodesRef.current.size === 0) return;
+    setIsPaused(true);
+    bgAudioElRef.current?.pause();
+    audioCtxRef.current?.suspend().catch(() => {});
+  }, []);
+
+  const resumePlayback = useCallback(() => {
+    if (layerNodesRef.current.size === 0) return;
+    setIsPaused(false);
+    startOutput();
+    // The audio clock stood still while suspended — re-anchor the fade.
+    applyMasterGain(masterVolumeRef.current, sleepEndsAtRef.current);
+  }, [startOutput, applyMasterGain]);
+
+  const startSleepTimer = useCallback(
+    (minutes: number) => {
+      const clamped = Math.max(1, Math.min(MAX_SLEEP_TIMER_MIN, Math.round(minutes)));
+      const now = Date.now();
+      const endsAt = now + clamped * 60_000;
+      sleepEndsAtRef.current = endsAt;
+      setSleepEndsAt(endsAt);
+      setSleepNow(now);
+      setSleepNotice(null);
+      applyMasterGain(masterVolumeRef.current, endsAt);
+    },
+    [applyMasterGain]
+  );
+
+  const handleCustomSleepSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = Number(customSleepValue);
+    if (!Number.isFinite(value) || value <= 0) return;
+    startSleepTimer(customSleepUnit === 'hr' ? value * 60 : value);
+    setCustomSleepValue('');
+  };
 
   const toggleLayer = (profile: NoiseProfile) => {
     const alreadyActive = layers.some((l) => l.id === profile.id);
     if (alreadyActive) {
       stopLayerNodes(profile.id);
       setLayers((prev) => prev.filter((l) => l.id !== profile.id));
+      if (layers.length === 1) handleMixEmptied();
       return;
     }
 
@@ -947,9 +1114,12 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
     }
 
     setLockedNotice(null);
+    setSleepNotice(null);
     const defaultVolume = 0.5;
     buildLayerGraph(profile, defaultVolume);
     setLayers((prev) => [...prev, { id: profile.id, volume: defaultVolume }]);
+    setIsPaused(false);
+    startOutput();
   };
 
   const setLayerVolume = (id: string, vol: number) => {
@@ -964,10 +1134,101 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 
   const handleMasterVolumeChange = (newVol: number) => {
     setMasterVolume(newVol);
-    if (masterGainRef.current && audioCtxRef.current) {
-      masterGainRef.current.gain.setTargetAtTime(newVol, audioCtxRef.current.currentTime, 0.03);
-    }
+    masterVolumeRef.current = newVol;
+    applyMasterGain(newVol, sleepEndsAtRef.current);
   };
+
+  // Sleep Timer countdown + expiry. The interval may be throttled to ~1/min
+  // in a background tab; the audio-clock fade already silences the mix on
+  // time, and this just tears it down shortly after.
+  useEffect(() => {
+    if (sleepEndsAt === null) return;
+    const tick = () => {
+      const now = Date.now();
+      setSleepNow(now);
+      if (now >= sleepEndsAt) {
+        layerNodesRef.current.forEach((_nodes, id) => stopLayerNodes(id));
+        setLayers([]);
+        handleMixEmptied();
+        const at = new Date(sleepEndsAt);
+        setSleepNotice(
+          `SLEEP TIMER ELAPSED — NOISE stopped at ${String(at.getHours()).padStart(2, '0')}:${String(
+            at.getMinutes()
+          ).padStart(2, '0')}.`
+        );
+      }
+    };
+    const intervalId = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [sleepEndsAt, stopLayerNodes, handleMixEmptied]);
+
+  // Coming back to the tab (or unlocking the phone): if the OS interrupted
+  // the AudioContext (iOS does this for calls/Siri), pick playback back up.
+  useEffect(() => {
+    if (layers.length === 0 || isPaused) return;
+    const handleVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const ctx = audioCtxRef.current;
+      if (ctx && ctx.state !== 'running') {
+        startOutput();
+        applyMasterGain(masterVolumeRef.current, sleepEndsAtRef.current);
+      } else if (bgAudioElRef.current?.paused) {
+        bgAudioElRef.current.play().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+    window.addEventListener('focus', handleVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisible);
+      window.removeEventListener('focus', handleVisible);
+    };
+  }, [layers.length, isPaused, startOutput, applyMasterGain]);
+
+  // MediaSession: lock-screen / notification / hardware-key controls.
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    if (layers.length === 0) {
+      ms.metadata = null;
+      ms.playbackState = 'none';
+      return;
+    }
+    const names = layers
+      .map((l) => NOISE_PROFILES.find((p) => p.id === l.id))
+      .filter((p): p is NoiseProfile => Boolean(p));
+    ms.metadata = new MediaMetadata({
+      title: names.length === 1 ? names[0].name : `SOUNDSCAPE MIX ×${names.length}`,
+      artist: 'TYPBOX // NOISE',
+      album: names.map((p) => p.code).join(' + '),
+      artwork: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+    });
+    ms.playbackState = isPaused ? 'paused' : 'playing';
+    const handlers: Array<[MediaSessionAction, MediaSessionActionHandler]> = [
+      ['play', () => resumePlayback()],
+      ['pause', () => pausePlayback()],
+      ['stop', () => stopAllLayers()],
+    ];
+    handlers.forEach(([action, handler]) => {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        // action not supported by this browser
+      }
+    });
+    return () => {
+      handlers.forEach(([action]) => {
+        try {
+          ms.setActionHandler(action, null);
+        } catch {
+          // action not supported by this browser
+        }
+      });
+    };
+  }, [layers, isPaused, resumePlayback, pausePlayback, stopAllLayers]);
 
   useEffect(() => {
     if (!showPopover) return;
@@ -997,6 +1258,8 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
           if (isRewardUnlocked(userClearanceLevel, profile.clearanceHintLv)) {
             buildLayerGraph(profile, 0.5);
             setLayers([{ id: profile.id, volume: 0.5 }]);
+            setIsPaused(false);
+            startOutput();
           }
         }
       } else if (custom.detail.action === 'play') {
@@ -1006,16 +1269,22 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
         layerNodesRef.current.forEach((_nodes, id) => stopLayerNodes(id));
         buildLayerGraph(profile, 0.5);
         setLayers([{ id: profile.id, volume: 0.5 }]);
+        setIsPaused(false);
+        startOutput();
       }
     };
     window.addEventListener('typbox:ambient-sound', handleExternalSoundCmd);
     return () => window.removeEventListener('typbox:ambient-sound', handleExternalSoundCmd);
-  }, [buildLayerGraph, layers.length, stopAllLayers, stopLayerNodes, userClearanceLevel]);
+  }, [buildLayerGraph, layers.length, startOutput, stopAllLayers, stopLayerNodes, userClearanceLevel]);
 
   useEffect(() => {
     const nodesMap = layerNodesRef.current;
     return () => {
       nodesMap.forEach((_nodes, id) => stopLayerNodes(id));
+      if (bgAudioElRef.current) {
+        bgAudioElRef.current.pause();
+        bgAudioElRef.current.srcObject = null;
+      }
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {});
       }
@@ -1045,6 +1314,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   }, [familyFilter, searchQuery]);
 
   const isPlaying = layers.length > 0;
+  const sleepRemainingMs = sleepEndsAt !== null ? Math.max(0, sleepEndsAt - sleepNow) : 0;
 
   return (
     <div className="relative" ref={popoverRef}>
@@ -1061,17 +1331,34 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       >
         {isPlaying ? (
           <>
-            <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+            {isPaused ? (
+              <Pause className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+            )}
             <span className="hidden md:inline font-semibold tracking-wider">
-              {layers.length === 1
+              {isPaused
+                ? 'PAUSED'
+                : layers.length === 1
                 ? NOISE_PROFILES.find((p) => p.id === layers[0].id)?.code
                 : `MIX ×${layers.length}`}
             </span>
-            <span className="flex items-end space-x-0.5 h-3 ml-0.5">
-              <span className="w-0.5 h-2 bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-0.5 h-3 bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-0.5 h-1.5 bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-            </span>
+            {!isPaused && (
+              <span className="flex items-end space-x-0.5 h-3 ml-0.5">
+                <span className="w-0.5 h-2 bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-0.5 h-3 bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-0.5 h-1.5 bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </span>
+            )}
+            {sleepEndsAt !== null && (
+              <span
+                className="flex items-center space-x-0.5 text-[10px] tabular-nums text-sky-400"
+                title="Sleep Timer remaining"
+              >
+                <Timer className="w-3 h-3" />
+                <span>{formatSleepRemaining(sleepRemainingMs)}</span>
+              </span>
+            )}
           </>
         ) : (
           <>
@@ -1093,19 +1380,48 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                 {unlockedCount} / {NOISE_PROFILES.length}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={stopAllLayers}
-              disabled={!isPlaying}
-              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                isPlaying
-                  ? 'bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer'
-                  : `border ${borderCol} ${textMuted} cursor-default`
-              }`}
-            >
-              {isPlaying ? `STOP ALL (${layers.length})` : 'MIX EMPTY'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              {isPlaying && (
+                <button
+                  type="button"
+                  onClick={isPaused ? resumePlayback : pausePlayback}
+                  className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/60 text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer flex items-center space-x-1`}
+                  aria-label={isPaused ? 'Resume mix' : 'Pause mix'}
+                >
+                  {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                  <span>{isPaused ? 'RESUME' : 'PAUSE'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={stopAllLayers}
+                disabled={!isPlaying}
+                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  isPlaying
+                    ? 'bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer'
+                    : `border ${borderCol} ${textMuted} cursor-default`
+                }`}
+              >
+                {isPlaying ? `STOP ALL (${layers.length})` : 'MIX EMPTY'}
+              </button>
+            </div>
           </div>
+
+          {sleepNotice && (
+            <div className="p-2 border border-sky-500/50 bg-sky-500/10 text-sky-300 text-[10px] flex items-center justify-between">
+              <span className="flex items-center space-x-1.5">
+                <Timer className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>{sleepNotice}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSleepNotice(null)}
+                className="text-[9px] underline ml-2 cursor-pointer"
+              >
+                DISMISS
+              </button>
+            </div>
+          )}
 
           {lockedNotice && (
             <div className="p-2 border border-amber-500/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center justify-between">
@@ -1172,6 +1488,87 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {isPlaying && (
+            <div className={`p-2 border ${sleepEndsAt !== null ? 'border-sky-500/50 bg-sky-500/5' : borderCol} space-y-2`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`flex items-center space-x-1.5 text-[10px] uppercase tracking-wider ${sleepEndsAt !== null ? 'text-sky-400 font-bold' : textMuted}`}>
+                  <Timer className="w-3.5 h-3.5" />
+                  <span>Sleep Timer</span>
+                </span>
+                {sleepEndsAt !== null ? (
+                  <span className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold tabular-nums text-sky-400">
+                      {formatSleepRemaining(sleepRemainingMs)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearSleepTimer}
+                      className="text-[9px] text-amber-400 hover:text-amber-300 cursor-pointer uppercase font-bold"
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <span className={`text-[9px] ${textMuted}`}>OFF</span>
+                )}
+              </div>
+              {sleepEndsAt !== null && (
+                <p className={`text-[9px] font-sans ${textMuted}`}>
+                  Stops at{' '}
+                  {new Date(sleepEndsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} with a{' '}
+                  {SLEEP_FADE_SECONDS}s fade-out. Pick another preset to reset.
+                </p>
+              )}
+              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
+                {SLEEP_TIMER_PRESETS_MIN.map((min) => (
+                  <button
+                    key={min}
+                    type="button"
+                    onClick={() => startSleepTimer(min)}
+                    className={`min-h-[32px] sm:min-h-0 py-1 text-[10px] border cursor-pointer transition-colors ${borderCol} hover:border-sky-500/70 hover:text-sky-400`}
+                  >
+                    {formatPresetLabel(min)}
+                  </button>
+                ))}
+              </div>
+              <form onSubmit={handleCustomSleepSubmit} className="flex items-center gap-1">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={customSleepUnit === 'hr' ? 0.1 : 1}
+                  max={customSleepUnit === 'hr' ? MAX_SLEEP_TIMER_MIN / 60 : MAX_SLEEP_TIMER_MIN}
+                  step={customSleepUnit === 'hr' ? 0.5 : 1}
+                  value={customSleepValue}
+                  onChange={(e) => setCustomSleepValue(e.target.value)}
+                  placeholder="Custom"
+                  aria-label="Custom sleep timer duration"
+                  className={`flex-1 min-w-0 min-h-[32px] sm:min-h-0 px-2 py-1 border ${borderCol} bg-transparent text-[11px] outline-none focus:border-sky-500/70`}
+                />
+                <div className={`flex border ${borderCol} text-[10px]`}>
+                  {(['min', 'hr'] as const).map((unit) => (
+                    <button
+                      key={unit}
+                      type="button"
+                      onClick={() => setCustomSleepUnit(unit)}
+                      className={`min-h-[30px] sm:min-h-0 px-2 py-1 uppercase cursor-pointer ${
+                        customSleepUnit === unit ? 'bg-sky-500/20 text-sky-400 font-bold' : textMuted
+                      }`}
+                    >
+                      {unit}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="submit"
+                  disabled={!customSleepValue || Number(customSleepValue) <= 0}
+                  className="min-h-[32px] sm:min-h-0 px-2.5 py-1 text-[10px] font-bold uppercase border border-sky-500/60 text-sky-400 hover:bg-sky-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  Set
+                </button>
+              </form>
             </div>
           )}
 
@@ -1666,6 +2063,10 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cardTheme, setCardTheme] = useState<'dark' | 'light'>('dark');
+  // Phones default to the 4:5 portrait card; larger screens to the 16:9 one.
+  const [cardLayout, setCardLayout] = useState<StatusCardLayout>(() =>
+    typeof window !== 'undefined' && window.matchMedia?.('(max-width: 639px)').matches ? 'portrait' : 'wide'
+  );
   const [showCategoriesOnCard, setShowCategoriesOnCard] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -1673,80 +2074,8 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
   const renderCardToCanvas = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
 
-    const W = 1200;
-    const H = 675;
-    canvas.width = W;
-    canvas.height = H;
-
-    const dark = cardTheme === 'dark';
-    const bg = dark ? '#09090b' : '#fafafa';
-    const panelBg = dark ? '#111113' : '#ffffff';
-    const stroke = dark ? '#27272a' : '#e4e4e7';
-    const textPrimary = dark ? '#f4f4f5' : '#18181b';
-    const textSub = dark ? '#71717a' : '#71717a';
-    const accent = clearance.current.color || avatarColor || '#10b981';
-
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.strokeStyle = dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, H);
-      ctx.stroke();
-    }
-    for (let y = 0; y < H; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(28, 28, W - 56, H - 56);
-
-    ctx.fillStyle = accent;
-    ctx.fillRect(28, 28, W - 56, 5);
-
-    ctx.fillStyle = textPrimary;
-    ctx.font = 'bold 22px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText('TYPBOX.ME', 60, 78);
-
-    ctx.fillStyle = textSub;
-    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText('// QUANTIFIED STUDY & TELEMETRY ARCHIVE', 200, 78);
-
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-    ctx.textAlign = 'right';
-    ctx.fillStyle = textSub;
-    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText(`SNAPSHOT // ${todayStr}`, W - 60, 78);
-    ctx.textAlign = 'left';
-
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(28, 102);
-    ctx.lineTo(W - 28, 102);
-    ctx.stroke();
-
-    const avatarX = 60;
-    const avatarY = 130;
-    const avatarSize = 76;
-
-    ctx.fillStyle = `${avatarColor}22`;
-    ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
-    ctx.strokeStyle = avatarColor;
-    ctx.lineWidth = 2.5;
-    ctx.strokeRect(avatarX, avatarY, avatarSize, avatarSize);
-
-    let drewCustomImg = false;
+    let avatarImg: HTMLImageElement | null = null;
     if (avatarImage) {
       try {
         const img = new Image();
@@ -1756,256 +2085,30 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           img.onerror = () => reject();
           img.src = avatarImage;
         });
-        ctx.drawImage(img, avatarX + 2, avatarY + 2, avatarSize - 4, avatarSize - 4);
-        drewCustomImg = true;
+        avatarImg = img;
       } catch {
-        drewCustomImg = false;
+        avatarImg = null;
       }
     }
-    if (!drewCustomImg) {
-      ctx.fillStyle = avatarColor;
-      ctx.font = 'bold 34px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(
-        (username || 'U').slice(0, 2).toUpperCase(),
-        avatarX + avatarSize / 2,
-        avatarY + avatarSize / 2 + 2
-      );
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
-    }
 
-    ctx.fillStyle = textPrimary;
-    ctx.font = 'bold 32px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText(username || 'OPERATOR', 156, 162);
-
-    const lvlTag = `LV.${String(clearance.current.level).padStart(4, '0')} // ${clearance.current.title}`;
-    ctx.font = 'bold 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    const pillWidth = ctx.measureText(lvlTag).width + 24;
-    ctx.fillStyle = accent;
-    ctx.fillRect(156, 176, pillWidth, 28);
-    ctx.fillStyle = '#09090b';
-    ctx.fillText(lvlTag, 168, 195);
-
-    ctx.fillStyle = textSub;
-    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    const cycleTag =
-      clearance.totalAscensions > 0
-        ? `CYCLE ${String(clearance.cycleNumber).padStart(2, '0')} (✦${clearance.totalAscensions})`
-        : `CYCLE ${String(clearance.cycleNumber).padStart(2, '0')}`;
-    ctx.fillText(
-      `${cycleTag}  •  DIVISION: ${clearance.current.division}  •  PHASE ${clearance.subPhase}/5`,
-      156 + pillWidth + 16,
-      195
-    );
-
-    const progX = 760;
-    const progY = 142;
-    const progW = W - 60 - progX;
-    ctx.fillStyle = textSub;
-    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText(
-      clearance.ascensionAvailable
-        ? 'CLEARANCE PROGRESS // ASCENSION AVAILABLE'
-        : clearance.next
-        ? `CLEARANCE PROGRESS // NEXT: LV.${String(clearance.next.level).padStart(4, '0')} (${clearance.next.requiredHours}H)`
-        : 'CLEARANCE STATUS // CYCLE COMPLETE',
-      progX,
-      progY
-    );
-    ctx.textAlign = 'right';
-    ctx.fillStyle = accent;
-    ctx.font = 'bold 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText(`${clearance.progressPct}%`, W - 60, progY);
-    ctx.textAlign = 'left';
-
-    ctx.fillStyle = dark ? '#27272a' : '#e4e4e7';
-    ctx.fillRect(progX, progY + 12, progW, 10);
-    ctx.fillStyle = accent;
-    ctx.fillRect(progX, progY + 12, (progW * clearance.progressPct) / 100, 10);
-
-    for (let p = 0; p < 5; p++) {
-      const pipW = (progW - 16) / 5;
-      ctx.fillStyle = p < clearance.subPhase ? '#10b981' : dark ? '#27272a' : '#e4e4e7';
-      ctx.fillRect(progX + p * (pipW + 4), progY + 28, pipW, 4);
-    }
-
-    const metricY = 232;
-    const metricH = 118;
-    const metricW = (W - 120 - 36) / 4;
-    const metrics = [
-      { label: '01 / TOTAL ARCHIVED', val: `${totalHours}`, unit: 'HRS' },
-      { label: '02 / CURRENT STREAK', val: `${currentStreak}`, unit: 'DAYS' },
-      { label: '03 / PEAK STREAK', val: `${longestStreak}`, unit: 'DAYS' },
-      { label: '04 / 7D & 30D OUTPUT', val: `${weeklyHours}h`, unit: `/ ${monthlyHours}h (MO)` },
-    ];
-
-    metrics.forEach((m, idx) => {
-      const mx = 60 + idx * (metricW + 12);
-      ctx.fillStyle = panelBg;
-      ctx.fillRect(mx, metricY, metricW, metricH);
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(mx, metricY, metricW, metricH);
-
-      ctx.fillStyle = textSub;
-      ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillText(m.label, mx + 18, metricY + 28);
-
-      ctx.fillStyle = textPrimary;
-      ctx.font = 'bold 38px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillText(m.val, mx + 18, metricY + 82);
-
-      const valWidth = ctx.measureText(m.val).width;
-      ctx.fillStyle = accent;
-      ctx.font = 'bold 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillText(m.unit, mx + 24 + valWidth, metricY + 82);
+    drawStatusCard(canvas, cardLayout, {
+      username,
+      avatarColor,
+      avatarImg,
+      clearance,
+      totalHours,
+      weeklyHours,
+      monthlyHours,
+      currentStreak,
+      longestStreak,
+      activeDaysCount,
+      categories,
+      logs,
+      theme: cardTheme,
+      showCategories: showCategoriesOnCard,
     });
-
-    const bottomY = 374;
-    const bottomH = 228;
-    const matrixBoxW = showCategoriesOnCard ? 660 : W - 120;
-
-    ctx.fillStyle = panelBg;
-    ctx.fillRect(60, bottomY, matrixBoxW, bottomH);
-    ctx.strokeStyle = stroke;
-    ctx.strokeRect(60, bottomY, matrixBoxW, bottomH);
-
-    ctx.fillStyle = textSub;
-    ctx.font = 'bold 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText(
-      `TELEMETRY CADENCE MATRIX // ${activeDaysCount} ACTIVE DAYS LOGGED`,
-      80,
-      bottomY + 28
-    );
-
-    const activeDateSet = new Set(logs.filter((l) => l.durationMinutes > 0).map((l) => l.date));
-    const maxCols = showCategoriesOnCard ? 28 : 48;
-    const cellSize = 16;
-    const cellGap = 4;
-    const gridStartX = 80;
-    const gridStartY = bottomY + 50;
-
-    const now = new Date();
-    const dayOfWeek = (now.getDay() + 6) % 7;
-    const currentMon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
-
-    // Mirror the live dashboard's adaptive window: the grid starts at the
-    // Monday of the user's FIRST logged week (not a fixed lookback ending
-    // today), so a newer account's cadence visibly fills in from the
-    // top-left instead of being squeezed into the right-hand columns of an
-    // otherwise-empty fixed-size grid.
-    let originMon = new Date(currentMon);
-    if (logs.length > 0) {
-      const oldestStr = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
-      const oldestDate = new Date(`${oldestStr}T00:00:00`);
-      if (!isNaN(oldestDate.getTime())) {
-        const oldestDow = (oldestDate.getDay() + 6) % 7;
-        originMon = new Date(
-          oldestDate.getFullYear(),
-          oldestDate.getMonth(),
-          oldestDate.getDate() - oldestDow
-        );
-      }
-    }
-    const weeksOfHistory =
-      Math.round((currentMon.getTime() - originMon.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-    const cols = Math.min(maxCols, Math.max(1, weeksOfHistory));
-
-    for (let c = 0; c < cols; c++) {
-      const weekOffset = cols - 1 - c;
-      for (let r = 0; r < 7; r++) {
-        const cellDate = new Date(currentMon);
-        cellDate.setDate(currentMon.getDate() - weekOffset * 7 + r);
-        const yyyy = cellDate.getFullYear();
-        const mm = String(cellDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(cellDate.getDate()).padStart(2, '0');
-        const dStr = `${yyyy}-${mm}-${dd}`;
-
-        const cx = gridStartX + c * (cellSize + cellGap);
-        const cy = gridStartY + r * (cellSize + cellGap);
-
-        const isActive = activeDateSet.has(dStr);
-        ctx.fillStyle = isActive ? '#10b981' : dark ? '#1f1f23' : '#e4e4e7';
-        ctx.fillRect(cx, cy, cellSize, cellSize);
-      }
-    }
-
-    if (showCategoriesOnCard) {
-      const catBoxX = 60 + matrixBoxW + 16;
-      const catBoxW = W - 60 - catBoxX;
-      ctx.fillStyle = panelBg;
-      ctx.fillRect(catBoxX, bottomY, catBoxW, bottomH);
-      ctx.strokeStyle = stroke;
-      ctx.strokeRect(catBoxX, bottomY, catBoxW, bottomH);
-
-      ctx.fillStyle = textSub;
-      ctx.font = 'bold 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillText('TOP CATEGORY ALLOCATION', catBoxX + 20, bottomY + 28);
-
-      const totalMin = Math.max(
-        1,
-        logs.reduce((acc, l) => acc + l.durationMinutes, 0)
-      );
-      const catStats = categories
-        .map((cat) => {
-          const min = logs
-            .filter((l) => String(l.categoryId) === String(cat.id))
-            .reduce((acc, l) => acc + l.durationMinutes, 0);
-          return {
-            code: cat.code,
-            name: cat.name,
-            color: cat.color,
-            hours: (min / 60).toFixed(1),
-            pct: Math.round((min / totalMin) * 100),
-            min,
-          };
-        })
-        .sort((a, b) => b.min - a.min)
-        .slice(0, 4);
-
-      if (catStats.length === 0) {
-        ctx.fillStyle = textSub;
-        ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-        ctx.fillText('No category telemetry recorded yet.', catBoxX + 20, bottomY + 70);
-      } else {
-        catStats.forEach((cs, idx) => {
-          const rowY = bottomY + 58 + idx * 40;
-          ctx.fillStyle = cs.color;
-          ctx.fillRect(catBoxX + 20, rowY - 10, 8, 8);
-
-          ctx.fillStyle = textPrimary;
-          ctx.font = 'bold 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-          const label = `[${cs.code}] ${cs.name}`.slice(0, 22);
-          ctx.fillText(label, catBoxX + 36, rowY - 2);
-
-          ctx.textAlign = 'right';
-          ctx.fillStyle = textSub;
-          ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-          ctx.fillText(`${cs.hours}h (${cs.pct}%)`, catBoxX + catBoxW - 20, rowY - 2);
-          ctx.textAlign = 'left';
-
-          const barW = catBoxW - 40;
-          ctx.fillStyle = dark ? '#27272a' : '#e4e4e7';
-          ctx.fillRect(catBoxX + 20, rowY + 6, barW, 6);
-          ctx.fillStyle = cs.color;
-          ctx.fillRect(catBoxX + 20, rowY + 6, Math.max(4, (barW * cs.pct) / 100), 6);
-        });
-      }
-    }
-
-    ctx.fillStyle = textSub;
-    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillText(
-      `VERIFIED TELEMETRY // CLEARANCE LV.${String(clearance.current.level).padStart(4, '0')} (${clearance.current.title})`,
-      60,
-      H - 42
-    );
-    ctx.textAlign = 'right';
-    ctx.fillText('typbox.me', W - 60, H - 42);
-    ctx.textAlign = 'left';
   }, [
+    cardLayout,
     cardTheme,
     showCategoriesOnCard,
     clearance,
@@ -2036,7 +2139,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     const dataUrl = canvas.toDataURL('image/png');
     const link = document.createElement('a');
     const dateStr = new Date().toISOString().slice(0, 10);
-    link.download = `typbox-status-${username || 'operator'}-${dateStr}.png`;
+    link.download = `typbox-status-${username || 'operator'}-${cardLayout}-${dateStr}.png`;
     link.href = dataUrl;
     link.click();
   };
@@ -2056,22 +2159,16 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     }
   };
 
-  const handleShareX = () => {
-    const text = `TYPBOX // TELEMETRY SNAPSHOT\nCLEARANCE: LV.${String(clearance.current.level).padStart(4, '0')} [${clearance.current.title}]\nTOTAL: ${totalHours} HRS | STREAK: ${currentStreak} DAYS\n#TYPBOX #StudyLog`;
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
       <div
-        className={`w-full max-w-3xl border ${borderCol} ${bgCard} p-6 space-y-5 shadow-2xl my-8 font-mono`}
+        className={`w-full max-w-3xl border ${borderCol} ${bgCard} p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl my-4 sm:my-8 font-mono`}
       >
         <div className="flex items-center justify-between border-b pb-3 border-zinc-800">
           <div className="flex items-center space-x-2">
             <Share2 className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-xs uppercase tracking-widest font-bold">
-              TELEMETRY STATUS CARD GENERATOR // SNAPSHOT
+            <h3 className="text-[11px] sm:text-xs uppercase tracking-widest font-bold">
+              <span className="hidden sm:inline">TELEMETRY </span>STATUS CARD GENERATOR // SNAPSHOT
             </h3>
           </div>
           <button
@@ -2081,6 +2178,47 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           >
             [ESC]
           </button>
+        </div>
+
+        <div className="space-y-1.5">
+          <span className={`text-[10px] uppercase ${textMuted}`}>Card Shape:</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="radiogroup" aria-label="Card shape">
+            {STATUS_CARD_LAYOUTS.map((l) => {
+              const active = cardLayout === l.id;
+              // Mini aspect-ratio glyph, normalized to a 22px-tall box.
+              const glyphH = 22;
+              const glyphW = Math.max(9, Math.round((l.width / l.height) * glyphH));
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setCardLayout(l.id)}
+                  className={`min-h-[52px] px-2.5 py-2 border flex items-center gap-2.5 text-left cursor-pointer transition-colors ${
+                    active
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
+                      : `${borderCol} hover:border-zinc-500`
+                  }`}
+                >
+                  <span className="w-8 flex items-center justify-center shrink-0">
+                    <span
+                      className={`block border-2 ${active ? 'border-emerald-400' : 'border-zinc-500'}`}
+                      style={{ width: glyphW, height: glyphH }}
+                    />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[11px] font-bold leading-tight">
+                      {l.label} <span className="font-normal opacity-80">{l.ratio}</span>
+                    </span>
+                    <span className={`block text-[9px] font-sans leading-tight ${active ? 'text-emerald-400/80' : textMuted}`}>
+                      {l.hint}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -2127,11 +2265,18 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           </label>
         </div>
 
-        <div className={`border ${borderCol} p-2 ${isDark ? 'bg-black/50' : 'bg-zinc-100'}`}>
-          <canvas
-            ref={canvasRef}
-            className="w-full h-auto block border border-zinc-800/50 shadow-lg"
-          />
+        {/* Fixed-height stage: switching shapes never changes the modal's
+            height (no layout shift). The canvas is scaled down to fit inside
+            it, contain-style; the exported PNG is always full resolution. */}
+        <div
+          className={`status-card-stage relative border ${borderCol} ${isDark ? 'bg-black/50' : 'bg-zinc-100'}`}
+        >
+          <div className="absolute inset-2 flex items-center justify-center overflow-hidden">
+            <canvas
+              ref={canvasRef}
+              className="block w-auto h-auto max-w-full max-h-full min-w-0 min-h-0 border border-zinc-800/50 shadow-lg"
+            />
+          </div>
         </div>
 
         {copyError && (
@@ -2142,14 +2287,16 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <p className={`text-[11px] font-sans ${textMuted}`}>
-            Tip: Click <strong>COPY IMAGE</strong> to paste directly (Cmd+V / Ctrl+V) into X (Twitter) or Discord!
+            Tip: <strong>COPY IMAGE</strong> to paste anywhere (Cmd+V / Ctrl+V), or <strong>DOWNLOAD PNG</strong>{' '}
+            ({STATUS_CARD_LAYOUTS.find((l) => l.id === cardLayout)?.width}×
+            {STATUS_CARD_LAYOUTS.find((l) => l.id === cardLayout)?.height}px).
           </p>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={handleCopyImage}
-              className={`px-4 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-bold flex items-center space-x-1.5 cursor-pointer`}
+              className={`min-h-[42px] sm:min-h-0 px-4 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-bold flex items-center justify-center space-x-1.5 cursor-pointer`}
             >
               {copied ? (
                 <>
@@ -2167,20 +2314,12 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
             <button
               type="button"
               onClick={handleDownloadPNG}
-              className="px-4 py-2 bg-emerald-500 text-zinc-950 hover:bg-emerald-400 text-xs font-bold flex items-center space-x-1.5 cursor-pointer"
+              className="min-h-[42px] sm:min-h-0 px-4 py-2 bg-emerald-500 text-zinc-950 hover:bg-emerald-400 text-xs font-bold flex items-center justify-center space-x-1.5 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>DOWNLOAD PNG</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleShareX}
-              className={`px-3.5 py-2 border ${borderCol} hover:bg-zinc-500/10 text-xs font-bold flex items-center space-x-1.5 cursor-pointer`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>POST ON X</span>
-            </button>
           </div>
         </div>
       </div>

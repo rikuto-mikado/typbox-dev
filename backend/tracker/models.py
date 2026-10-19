@@ -6,7 +6,8 @@ from django.utils import timezone
 class UserProfile(models.Model):
     """
     Extended profile settings for a User, including hybrid avatar customization
-    (color accent, preset icon, or compressed base64 Data URL image stored in DB).
+    (color accent, preset icon, or compressed base64 Data URL image stored in DB)
+    and the account-wide Surface Theme preference.
     """
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -16,6 +17,9 @@ class UserProfile(models.Model):
     avatar_color = models.CharField(max_length=20, default='#10b981')
     avatar_preset = models.CharField(max_length=30, default='initial')
     avatar_image = models.TextField(blank=True, default='')
+    # Selected Surface Theme Pair id (e.g. 'monolith'), synced across devices.
+    # Blank means the user has never picked one on any device yet.
+    surface_theme = models.CharField(max_length=64, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

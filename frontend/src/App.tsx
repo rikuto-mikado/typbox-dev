@@ -44,7 +44,7 @@ import {
   Camera,
   Share2,
 } from 'lucide-react';
-import { api, getAccessToken } from './api';
+import { api, apiFetch, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
 import {
   getClearanceStatus,
@@ -95,6 +95,7 @@ export interface AuthUser {
   avatar_color?: string;
   avatar_preset?: string;
   avatar_image?: string;
+  surface_theme?: string;
 }
 
 type Theme = 'dark' | 'light';
@@ -267,7 +268,7 @@ const THEME_STORAGE_KEY = 'typbox_theme';
 const SURFACE_THEME_STORAGE_KEY = 'typbox_surface_theme';
 const ASCENSION_STORAGE_PREFIX = 'typbox_ascension_';
 
-// Ascension (Prestige) claims are device-local, same as theme/sound prefs —
+// Ascension (Prestige) claims are device-local, same as polarity/sound prefs —
 // there is no dedicated backend field for this yet, so a claim made on one
 // device won't sync to another. Nothing destructive happens either way:
 // worst case is being re-prompted to claim an already-claimed cycle.
@@ -334,6 +335,81 @@ const AmbientOverlay: React.FC = () => (
         }
       />
     ))}
+  </div>
+);
+
+// ==========================================
+// Toast Notifications
+// ==========================================
+
+type ToastKind = 'success' | 'error';
+
+interface ToastItem {
+  id: number;
+  kind: ToastKind;
+  title: string;
+  message?: string;
+}
+
+const TOAST_DURATION_MS = 3600;
+
+const ToastStack: React.FC<{
+  toasts: ToastItem[];
+  isDark: boolean;
+  onDismiss: (id: number) => void;
+}> = ({ toasts, isDark, onDismiss }) => (
+  <div
+    className="fixed z-[70] bottom-4 inset-x-3 sm:inset-x-auto sm:right-4 sm:w-[360px] flex flex-col gap-2 pointer-events-none"
+    role="status"
+    aria-live="polite"
+  >
+    {toasts.map((toast) => {
+      const ok = toast.kind === 'success';
+      return (
+        <div
+          key={toast.id}
+          className={`typbox-toast pointer-events-auto relative overflow-hidden border font-mono shadow-2xl ${
+            ok ? 'border-emerald-500/70' : 'border-rose-500/70'
+          } ${isDark ? 'bg-zinc-950/95 text-zinc-100' : 'bg-white/95 text-zinc-900'}`}
+        >
+          <div className="flex items-start gap-3 p-3 pr-2">
+            <span
+              className={`mt-0.5 w-7 h-7 shrink-0 flex items-center justify-center ${
+                ok ? 'bg-emerald-500 text-zinc-950 typbox-toast-pop' : 'bg-rose-500 text-white'
+              }`}
+            >
+              {ok ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div
+                className={`text-[11px] font-bold uppercase tracking-widest ${
+                  ok ? 'text-emerald-400' : 'text-rose-400'
+                }`}
+              >
+                {toast.title}
+              </div>
+              {toast.message && (
+                <div className={`text-[11px] mt-0.5 break-words ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                  {toast.message}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => onDismiss(toast.id)}
+              className={`text-[10px] px-1.5 py-0.5 cursor-pointer ${isDark ? 'text-zinc-500 hover:text-zinc-200' : 'text-zinc-400 hover:text-zinc-800'}`}
+              aria-label="Dismiss notification"
+            >
+              [X]
+            </button>
+          </div>
+          <span
+            className={`typbox-toast-timer absolute left-0 bottom-0 h-0.5 w-full ${ok ? 'bg-emerald-500' : 'bg-rose-500'}`}
+            style={{ animationDuration: `${TOAST_DURATION_MS}ms` }}
+          />
+        </div>
+      );
+    })}
   </div>
 );
 
@@ -738,6 +814,49 @@ export default function App() {
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
 
   // Log Edit State
+  // Commit (log submit) feedback: button state machine + toast + row flash
+  const [commitState, setCommitState] = useState<'idle' | 'submitting' | 'success'>('idle');
+  const [flashLogId, setFlashLogId] = useState<string | number | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastSeqRef = React.useRef<number>(0);
+  const commitResetTimerRef = React.useRef<number | null>(null);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const pushToast = useCallback(
+    (kind: ToastKind, title: string, message?: string) => {
+      toastSeqRef.current += 1;
+      const id = toastSeqRef.current;
+      // Keep at most 3 on screen; newest at the bottom.
+      setToasts((prev) => [...prev.slice(-2), { id, kind, title, message }]);
+      window.setTimeout(() => dismissToast(id), TOAST_DURATION_MS);
+    },
+    [dismissToast]
+  );
+
+  // Shared success feedback for every path that commits a new log.
+  const announceLogCommitted = useCallback(
+    (logId: string | number, catCode: string | undefined, minutes: number, date: string) => {
+      pushToast(
+        'success',
+        'SUCCESS // LOG COMMITTED',
+        `[${catCode ?? 'MISC'}] ${minutes}m → ${date.replace(/-/g, '.')}`
+      );
+      setFlashLogId(logId);
+      window.setTimeout(() => setFlashLogId((cur) => (cur === logId ? null : cur)), 2400);
+    },
+    [pushToast]
+  );
+
+  useEffect(
+    () => () => {
+      if (commitResetTimerRef.current !== null) window.clearTimeout(commitResetTimerRef.current);
+    },
+    []
+  );
+
   const [editingLogId, setEditingLogId] = useState<string | number | null>(null);
   const [editLogCatId, setEditLogCatId] = useState<string | number>('');
   const [editLogDate, setEditLogDate] = useState<string>('');
@@ -918,6 +1037,93 @@ export default function App() {
     }
   }, [selectedCatId]);
 
+  // ==========================================
+  // Account-Synced Surface Theme
+  // ==========================================
+  // The selected Surface Theme lives on the account (UserProfile.surface_theme)
+  // so it follows the user across devices. localStorage is kept only as a
+  // fast first-paint cache / signed-out fallback. Selections are debounced
+  // before PATCHing so rapidly browsing themes doesn't spam the API, and a
+  // pending local change always wins over a server value fetched meanwhile.
+  const pendingSurfaceThemeRef = React.useRef<string | null>(null);
+  const surfaceThemeSaveTimerRef = React.useRef<number | null>(null);
+  const lastSurfaceThemePullRef = React.useRef<number>(0);
+
+  const applyServerSurfaceTheme = useCallback((me: AuthUser) => {
+    lastSurfaceThemePullRef.current = Date.now();
+    if (pendingSurfaceThemeRef.current !== null) return;
+    if (me.surface_theme) {
+      setSurfaceThemeId(me.surface_theme);
+      return;
+    }
+    // First sync for this account: adopt the theme this device already uses
+    // instead of resetting it, so existing users keep their current look.
+    const local = localStorage.getItem(SURFACE_THEME_STORAGE_KEY);
+    if (local) {
+      api.auth.updateProfile({ surface_theme: local }).catch(() => {});
+    }
+  }, []);
+
+  const flushSurfaceThemeSave = useCallback((keepalive = false) => {
+    if (surfaceThemeSaveTimerRef.current !== null) {
+      window.clearTimeout(surfaceThemeSaveTimerRef.current);
+      surfaceThemeSaveTimerRef.current = null;
+    }
+    const target = pendingSurfaceThemeRef.current;
+    if (target === null) return;
+    apiFetch('/auth/me/', {
+      method: 'PATCH',
+      body: JSON.stringify({ surface_theme: target }),
+      keepalive,
+    })
+      .catch((err: unknown) => {
+        console.warn('TYPBOX: failed to sync surface theme to account', err);
+      })
+      .finally(() => {
+        if (pendingSurfaceThemeRef.current === target) {
+          pendingSurfaceThemeRef.current = null;
+        }
+      });
+  }, []);
+
+  const handleSelectSurfaceTheme = useCallback(
+    (id: string) => {
+      setSurfaceThemeId(id);
+      if (!user) return;
+      pendingSurfaceThemeRef.current = id;
+      if (surfaceThemeSaveTimerRef.current !== null) {
+        window.clearTimeout(surfaceThemeSaveTimerRef.current);
+      }
+      surfaceThemeSaveTimerRef.current = window.setTimeout(() => flushSurfaceThemeSave(), 600);
+    },
+    [user, flushSurfaceThemeSave]
+  );
+
+  // Flush a pending save when the tab is hidden/closed, and pull the latest
+  // account theme when the tab regains focus (picks up changes made on
+  // another device without needing a full reload).
+  useEffect(() => {
+    if (!user) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        flushSurfaceThemeSave(true);
+        return;
+      }
+      if (Date.now() - lastSurfaceThemePullRef.current < 30_000) return;
+      api.auth
+        .getMe()
+        .then(applyServerSurfaceTheme)
+        .catch(() => {});
+    };
+    const handlePageHide = () => flushSurfaceThemeSave(true);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [user, applyServerSurfaceTheme, flushSurfaceThemeSave]);
+
   // Initial Auth Check and Splash Loader on site access
   useEffect(() => {
     const initAuth = async () => {
@@ -927,6 +1133,7 @@ export default function App() {
         if (token) {
           const me = await api.auth.getMe();
           setUser(me);
+          applyServerSurfaceTheme(me);
           await loadUserData();
         }
       } catch {
@@ -944,7 +1151,7 @@ export default function App() {
       }
     };
     initAuth();
-  }, [loadUserData]);
+  }, [loadUserData, applyServerSurfaceTheme]);
 
   // ==========================================
   // Auth & Account Settings Handlers
@@ -1020,6 +1227,7 @@ export default function App() {
 
       const me = await api.auth.getMe();
       setUser(me);
+      applyServerSurfaceTheme(me);
       closeAuthModal();
       await loadUserData();
     } catch (err: unknown) {
@@ -1167,6 +1375,8 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    // Send any debounced theme change while the access token still exists.
+    flushSurfaceThemeSave(true);
     api.auth.logout();
     setUser(null);
     setCategories([]);
@@ -1213,6 +1423,13 @@ export default function App() {
       inputMode === 'timer' ? Math.max(1, Math.round(elapsedSeconds / 60)) : durationMinutes;
 
     if (!selectedCatId || finalMinutes <= 0) return;
+    if (commitState === 'submitting') return;
+
+    setCommitState('submitting');
+    if (commitResetTimerRef.current !== null) {
+      window.clearTimeout(commitResetTimerRef.current);
+      commitResetTimerRef.current = null;
+    }
 
     try {
       const created = await api.logs.create({
@@ -1237,16 +1454,23 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
 
-      setLogs([newLogItem, ...logs]);
+      setLogs((prev) => [newLogItem, ...prev]);
       if (inputMode === 'timer') {
         setIsRunning(false);
         setElapsedSeconds(0);
         accumulatedSecondsRef.current = 0;
         timerStartTimestampRef.current = null;
       }
+      announceLogCommitted(newLogItem.id, cat?.code, Number(finalMinutes), logDate);
+      setCommitState('success');
+      commitResetTimerRef.current = window.setTimeout(() => {
+        setCommitState('idle');
+        commitResetTimerRef.current = null;
+      }, 1800);
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Error saving log: ${error.message}`);
+      setCommitState('idle');
+      pushToast('error', 'COMMIT FAILED', error.message || 'Could not save this log. Please try again.');
     }
   };
 
@@ -1278,12 +1502,13 @@ export default function App() {
         };
 
         setLogs((prev) => [newLogItem, ...prev]);
+        announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
       } catch (err: unknown) {
         const error = err as Error;
-        alert(`Error saving quick log: ${error.message}`);
+        pushToast('error', 'QUICK LOG FAILED', error.message || 'Could not save this log. Please try again.');
       }
     },
-    [user, categories]
+    [user, categories, announceLogCommitted, pushToast]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -2911,15 +3136,34 @@ export default function App() {
 
                 <button
                   type="submit"
-                  disabled={categories.length === 0}
-                  className={`w-full min-h-[46px] lg:min-h-0 py-3.5 lg:py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors flex items-center justify-center space-x-2 cursor-pointer ${
-                    isDark
-                      ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300'
-                      : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                  disabled={categories.length === 0 || commitState === 'submitting'}
+                  aria-busy={commitState === 'submitting'}
+                  className={`w-full min-h-[46px] lg:min-h-0 py-3.5 lg:py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors duration-300 flex items-center justify-center space-x-2 ${
+                    commitState === 'success'
+                      ? 'bg-emerald-500 text-zinc-950 commit-success-flash cursor-default'
+                      : commitState === 'submitting'
+                      ? `${isDark ? 'bg-zinc-300 text-zinc-700' : 'bg-zinc-700 text-zinc-200'} cursor-wait`
+                      : isDark
+                      ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300 cursor-pointer'
+                      : 'bg-zinc-900 text-white hover:bg-zinc-800 cursor-pointer'
                   }`}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>{t.saveLog}</span>
+                  {commitState === 'submitting' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>COMMITTING...</span>
+                    </>
+                  ) : commitState === 'success' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 typbox-toast-pop" />
+                      <span>COMMITTED</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>{t.saveLog}</span>
+                    </>
+                  )}
                 </button>
               </form>
             </div>
@@ -4273,7 +4517,12 @@ export default function App() {
                       const cat = categories.find((c) => String(c.id) === String(log.categoryId));
                       const isEditingLog = String(editingLogId) === String(log.id);
                       return (
-                        <div key={log.id} className="py-3 space-y-3 group">
+                        <div
+                          key={log.id}
+                          className={`py-3 space-y-3 group ${
+                            String(flashLogId) === String(log.id) ? 'log-row-flash' : ''
+                          }`}
+                        >
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs flex-1 min-w-0">
                               <span
@@ -4885,7 +5134,7 @@ export default function App() {
               {settingsTab === 'themes' && (
                 <SurfaceThemeSelectorPanel
                   activeThemeId={surfaceThemeId}
-                  onSelectThemeId={(id) => setSurfaceThemeId(id)}
+                  onSelectThemeId={handleSelectSurfaceTheme}
                   isDark={isDark}
                   onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
                   userClearanceLevel={clearanceStatus.rewardUnlockLevel}
@@ -5480,6 +5729,8 @@ export default function App() {
         onExportJSON={handleExportJSON}
         onExportCSV={handleExportCSV}
       />
+
+      <ToastStack toasts={toasts} isDark={isDark} onDismiss={dismissToast} />
     </div>
   );
 }

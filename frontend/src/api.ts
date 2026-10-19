@@ -144,6 +144,7 @@ export interface AuthUserResponse {
   avatar_color?: string;
   avatar_preset?: string;
   avatar_image?: string;
+  surface_theme?: string;
 }
 
 export const api = {
@@ -174,6 +175,7 @@ export const api = {
         avatar_color: string;
         avatar_preset: string;
         avatar_image: string;
+        surface_theme: string;
       }>
     ) => {
       return apiFetch<AuthUserResponse>('/auth/me/', {

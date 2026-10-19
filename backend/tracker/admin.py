@@ -4,7 +4,7 @@ from .models import Category, StudyLog, UserProfile
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'avatar_preset', 'avatar_color', 'updated_at')
+    list_display = ('user', 'avatar_preset', 'avatar_color', 'surface_theme', 'updated_at')
     search_fields = ('user__username', 'user__email')
 
 

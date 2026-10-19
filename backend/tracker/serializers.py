@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
@@ -25,6 +27,12 @@ VALID_AVATAR_PRESETS = {
     'database',
 }
 
+# Surface Theme ids are slug-like keys defined in the frontend catalog
+# (e.g. 'monolith', 'cement-chalk-dust'). The backend doesn't mirror that
+# catalog, so it only enforces the shape; unknown ids fall back to the
+# default theme on the client.
+SURFACE_THEME_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
+
 
 # ==========================================
 # Authentication & User Serializers
@@ -38,6 +46,7 @@ class UserSerializer(serializers.ModelSerializer):
     avatar_color = serializers.CharField(required=False, max_length=20)
     avatar_preset = serializers.CharField(required=False, max_length=30)
     avatar_image = serializers.CharField(required=False, allow_blank=True)
+    surface_theme = serializers.CharField(required=False, allow_blank=True, max_length=64)
 
     class Meta:
         model = User
@@ -48,6 +57,7 @@ class UserSerializer(serializers.ModelSerializer):
             'avatar_color',
             'avatar_preset',
             'avatar_image',
+            'surface_theme',
         )
         read_only_fields = ('id',)
 
@@ -57,6 +67,7 @@ class UserSerializer(serializers.ModelSerializer):
         data['avatar_color'] = profile.avatar_color
         data['avatar_preset'] = profile.avatar_preset
         data['avatar_image'] = profile.avatar_image
+        data['surface_theme'] = profile.surface_theme
         return data
 
     def validate_username(self, value):
@@ -109,16 +120,24 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Avatar image data exceeds maximum size limit (~130KB).')
         return cleaned
 
+    def validate_surface_theme(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and not SURFACE_THEME_ID_RE.match(cleaned):
+            raise serializers.ValidationError('Invalid surface theme id.')
+        return cleaned
+
     def update(self, instance, validated_data):
         avatar_color = validated_data.pop('avatar_color', None)
         avatar_preset = validated_data.pop('avatar_preset', None)
         avatar_image = validated_data.pop('avatar_image', None)
+        surface_theme = validated_data.pop('surface_theme', None)
 
-        if 'username' in validated_data:
-            instance.username = validated_data['username']
-        if 'email' in validated_data:
-            instance.email = validated_data['email']
-        instance.save()
+        if 'username' in validated_data or 'email' in validated_data:
+            if 'username' in validated_data:
+                instance.username = validated_data['username']
+            if 'email' in validated_data:
+                instance.email = validated_data['email']
+            instance.save()
 
         profile, _ = UserProfile.objects.get_or_create(user=instance)
         profile_updated = False
@@ -130,6 +149,9 @@ class UserSerializer(serializers.ModelSerializer):
             profile_updated = True
         if avatar_image is not None:
             profile.avatar_image = avatar_image
+            profile_updated = True
+        if surface_theme is not None:
+            profile.surface_theme = surface_theme
             profile_updated = True
         if profile_updated:
             profile.save()
