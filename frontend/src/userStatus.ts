@@ -1,10 +1,21 @@
 // User status / market tags shown on the profile (multi-select, max 5).
 // Ids must stay in sync with USER_STATUS_IDS in backend/tracker/serializers.py.
+// Ids are stored on accounts: never rename or remove one, only add.
 import type { Lang } from './i18n';
 
 export const MAX_USER_STATUSES = 5;
 
-export type UserStatusGroup = 'study' | 'work' | 'independent' | 'life';
+export type UserStatusGroup =
+  | 'school'
+  | 'major'
+  | 'research'
+  | 'tech'
+  | 'data'
+  | 'creative'
+  | 'business'
+  | 'industry'
+  | 'independent'
+  | 'life';
 
 export interface UserStatusOption {
   id: string;
@@ -12,39 +23,150 @@ export interface UserStatusOption {
   label: Record<Lang, string>;
 }
 
-export const USER_STATUS_GROUPS: UserStatusGroup[] = ['study', 'work', 'independent', 'life'];
-
-export const USER_STATUS_OPTIONS: UserStatusOption[] = [
-  { id: 'student_cs', group: 'study', label: { en: 'Student (Computer Science)', ja: '学生（情報系・CS）' } },
-  { id: 'student_engineering', group: 'study', label: { en: 'Student (Engineering)', ja: '学生（工学系）' } },
-  { id: 'student_science', group: 'study', label: { en: 'Student (Science / Math)', ja: '学生（理学・数学）' } },
-  { id: 'student_business', group: 'study', label: { en: 'Student (Business / Economics)', ja: '学生（経営・経済）' } },
-  { id: 'student_humanities', group: 'study', label: { en: 'Student (Humanities / Social Sci.)', ja: '学生（人文・社会科学）' } },
-  { id: 'student_other', group: 'study', label: { en: 'Student (Other)', ja: '学生（その他）' } },
-  { id: 'graduate_research', group: 'study', label: { en: 'Graduate / Researcher', ja: '大学院生・研究者' } },
-  { id: 'bootcamp_self_taught', group: 'study', label: { en: 'Bootcamp / Self-Taught', ja: 'ブートキャンプ・独学' } },
-
-  { id: 'tech_market', group: 'work', label: { en: 'Tech Market (Engineer / Dev)', ja: 'テック業界（エンジニア・開発）' } },
-  { id: 'data_ai', group: 'work', label: { en: 'Data / AI / ML', ja: 'データ・AI・機械学習' } },
-  { id: 'design_creative', group: 'work', label: { en: 'Design / Creative', ja: 'デザイン・クリエイティブ' } },
-  { id: 'business_corporate', group: 'work', label: { en: 'Business / Corporate', ja: 'ビジネス・企業勤務' } },
-  { id: 'finance_consulting', group: 'work', label: { en: 'Finance / Consulting', ja: '金融・コンサルティング' } },
-  { id: 'engineering_trades', group: 'work', label: { en: 'Engineering / Facility / Trades', ja: '技術職・設備・現場' } },
-  { id: 'healthcare', group: 'work', label: { en: 'Healthcare / Medical', ja: '医療・ヘルスケア' } },
-  { id: 'education_teaching', group: 'work', label: { en: 'Education / Teaching', ja: '教育・講師' } },
-  { id: 'public_sector', group: 'work', label: { en: 'Public Sector / Government', ja: '公共・行政' } },
-
-  { id: 'startup_founder', group: 'independent', label: { en: 'Startup / Founder / CEO', ja: 'スタートアップ・創業者・CEO' } },
-  { id: 'freelance', group: 'independent', label: { en: 'Freelance / Independent', ja: 'フリーランス・個人事業' } },
-  { id: 'content_creator', group: 'independent', label: { en: 'Content Creator', ja: 'コンテンツクリエイター' } },
-  { id: 'side_project', group: 'independent', label: { en: 'Side Project / Indie Hacker', ja: '副業・個人開発' } },
-
-  { id: 'gap_year', group: 'life', label: { en: 'Gap Year', ja: 'ギャップイヤー' } },
-  { id: 'job_seeking', group: 'life', label: { en: 'Job Seeking / Career Change', ja: '就職・転職活動中' } },
-  { id: 'career_break', group: 'life', label: { en: 'Career Break / Caregiving', ja: 'キャリアブレイク・育児介護' } },
-  { id: 'lifelong_learner', group: 'life', label: { en: 'Retired / Lifelong Learner', ja: 'リタイア・生涯学習' } },
-  { id: 'other', group: 'life', label: { en: 'Other', ja: 'その他' } },
+export const USER_STATUS_GROUPS: UserStatusGroup[] = [
+  'school',
+  'major',
+  'research',
+  'tech',
+  'data',
+  'creative',
+  'business',
+  'industry',
+  'independent',
+  'life',
 ];
+
+type Row = [id: string, en: string, ja: string];
+
+const GROUP_ROWS: Record<UserStatusGroup, Row[]> = {
+  school: [
+    ['high_school_student', 'High School Student', '高校生'],
+    ['exam_prep', 'Entrance Exam Prep', '受験生'],
+    ['vocational_student', 'Vocational / Technical School', '専門学校生'],
+    ['online_degree', 'Online Degree Student', '通信制・オンライン学位'],
+    ['exchange_student', 'Exchange / Study Abroad', '交換留学・海外留学中'],
+    ['international_student', 'International Student', '留学生'],
+    ['mature_student', 'Working Adult Student', '社会人学生'],
+    ['bootcamp_self_taught', 'Bootcamp / Self-Taught', 'ブートキャンプ・独学'],
+  ],
+  major: [
+    ['student_cs', 'Student (Computer Science)', '学生（情報系・CS）'],
+    ['student_data_science', 'Student (Data Science / AI)', '学生（データサイエンス・AI）'],
+    ['student_engineering', 'Student (Engineering)', '学生（工学系）'],
+    ['student_science', 'Student (Science / Math)', '学生（理学・数学）'],
+    ['student_medicine', 'Student (Medicine / Health)', '学生（医学・保健）'],
+    ['student_business', 'Student (Business / Economics)', '学生（経営・経済）'],
+    ['student_law', 'Student (Law / Policy)', '学生（法学・政策）'],
+    ['student_humanities', 'Student (Humanities / Social Sci.)', '学生（人文・社会科学）'],
+    ['student_languages', 'Student (Languages / Linguistics)', '学生（語学・言語学）'],
+    ['student_design_arts', 'Student (Design / Fine Arts)', '学生（デザイン・芸術）'],
+    ['student_architecture', 'Student (Architecture)', '学生（建築）'],
+    ['student_other', 'Student (Other)', '学生（その他）'],
+  ],
+  research: [
+    ['graduate_research', 'Graduate / Researcher', '大学院生・研究者'],
+    ['phd_candidate', 'PhD Candidate', '博士課程'],
+    ['postdoc', 'Postdoctoral Researcher', 'ポスドク'],
+    ['academic_faculty', 'Professor / Faculty', '教員・大学教授'],
+    ['industry_rnd', 'Industry R&D', '企業研究・R&D'],
+  ],
+  tech: [
+    ['tech_market', 'Tech Market (Engineer / Dev)', 'テック業界（エンジニア・開発）'],
+    ['frontend_dev', 'Frontend Developer', 'フロントエンドエンジニア'],
+    ['backend_dev', 'Backend Developer', 'バックエンドエンジニア'],
+    ['fullstack_dev', 'Full-Stack Developer', 'フルスタックエンジニア'],
+    ['mobile_dev', 'Mobile App Developer', 'モバイルアプリ開発'],
+    ['game_dev', 'Game Developer', 'ゲーム開発'],
+    ['embedded_iot', 'Embedded / IoT', '組み込み・IoT'],
+    ['devops_sre', 'DevOps / SRE', 'DevOps・SRE'],
+    ['cloud_infra', 'Cloud / Infrastructure', 'クラウド・インフラ'],
+    ['security', 'Cybersecurity', 'サイバーセキュリティ'],
+    ['blockchain_web3', 'Blockchain / Web3', 'ブロックチェーン・Web3'],
+    ['robotics', 'Robotics', 'ロボティクス'],
+    ['product_manager', 'Product Manager', 'プロダクトマネージャー'],
+  ],
+  data: [
+    ['data_ai', 'Data / AI / ML', 'データ・AI・機械学習'],
+    ['data_analyst', 'Data Analyst / BI', 'データアナリスト・BI'],
+    ['data_engineer', 'Data Engineer', 'データエンジニア'],
+    ['ml_engineer', 'ML Engineer / MLOps', 'MLエンジニア・MLOps'],
+    ['llm_builder', 'LLM / AI App Builder', 'LLM・生成AIアプリ開発'],
+    ['quant', 'Quant / Algorithmic Trading', 'クオンツ・アルゴリズム取引'],
+  ],
+  creative: [
+    ['design_creative', 'Design / Creative', 'デザイン・クリエイティブ'],
+    ['ux_ui_designer', 'UX / UI Designer', 'UX・UIデザイナー'],
+    ['graphic_designer', 'Graphic / Brand Designer', 'グラフィック・ブランドデザイナー'],
+    ['illustrator_artist', 'Illustrator / Artist', 'イラストレーター・アーティスト'],
+    ['video_film', 'Video / Film', '映像・映画制作'],
+    ['music_audio', 'Music / Audio', '音楽・オーディオ'],
+    ['writer_editor', 'Writer / Editor', 'ライター・編集者'],
+    ['photographer', 'Photographer', 'フォトグラファー'],
+    ['architect_interior', 'Architect / Interior', '建築家・インテリア'],
+  ],
+  business: [
+    ['business_corporate', 'Business / Corporate', 'ビジネス・企業勤務'],
+    ['finance_consulting', 'Finance / Consulting', '金融・コンサルティング'],
+    ['investor_vc', 'VC / Angel Investor', 'VC・エンジェル投資家'],
+    ['individual_investor', 'Individual Investor / Trader', '個人投資家・トレーダー'],
+    ['accounting_tax', 'Accounting / Tax', '会計・税務'],
+    ['legal', 'Legal / Compliance', '法務・コンプライアンス'],
+    ['sales_bd', 'Sales / Business Development', '営業・事業開発'],
+    ['marketing_growth', 'Marketing / Growth', 'マーケティング・グロース'],
+    ['hr_people', 'HR / Recruiting', '人事・採用'],
+    ['operations_supply', 'Operations / Supply Chain', 'オペレーション・SCM'],
+    ['real_estate', 'Real Estate', '不動産'],
+  ],
+  industry: [
+    ['engineering_trades', 'Engineering / Facility / Trades', '技術職・設備・現場'],
+    ['electrician', 'Electrician / Electrical Works', '電気工事・電気設備'],
+    ['construction', 'Construction / Civil', '建設・土木'],
+    ['manufacturing', 'Manufacturing / Factory', '製造・工場'],
+    ['energy_utilities', 'Energy / Utilities', 'エネルギー・インフラ事業'],
+    ['logistics_transport', 'Logistics / Transport', '物流・運輸'],
+    ['healthcare', 'Healthcare / Medical', '医療・ヘルスケア'],
+    ['nurse_care', 'Nursing / Care Work', '看護・介護'],
+    ['pharma_biotech', 'Pharma / Biotech', '製薬・バイオ'],
+    ['education_teaching', 'Education / Teaching', '教育・講師'],
+    ['public_sector', 'Public Sector / Government', '公共・行政'],
+    ['ngo_nonprofit', 'NGO / Nonprofit', 'NGO・NPO'],
+    ['media_journalism', 'Media / Journalism', 'メディア・報道'],
+    ['hospitality_food', 'Hospitality / Food Service', 'ホスピタリティ・飲食'],
+    ['retail_service', 'Retail / Service', '小売・サービス'],
+    ['agriculture', 'Agriculture / Fisheries', '農業・水産'],
+    ['sports_athlete', 'Athlete / Sports Industry', 'アスリート・スポーツ業界'],
+  ],
+  independent: [
+    ['startup_founder', 'Startup / Founder / CEO', 'スタートアップ・創業者・CEO'],
+    ['solo_saas', 'Solo SaaS / Bootstrapper', '個人SaaS・ブートストラップ'],
+    ['small_business_owner', 'Small Business Owner', '個人店・中小企業経営'],
+    ['freelance', 'Freelance / Independent', 'フリーランス・個人事業'],
+    ['consultant_coach', 'Independent Consultant / Coach', '独立コンサル・コーチ'],
+    ['content_creator', 'Content Creator', 'コンテンツクリエイター'],
+    ['streamer_vtuber', 'Streamer / VTuber', '配信者・VTuber'],
+    ['side_project', 'Side Project / Indie Hacker', '副業・個人開発'],
+    ['open_source', 'Open Source Maintainer', 'OSSメンテナー'],
+    ['digital_nomad', 'Digital Nomad / Remote', 'デジタルノマド・フルリモート'],
+  ],
+  life: [
+    ['gap_year', 'Gap Year', 'ギャップイヤー'],
+    ['job_hunting_grad', 'Graduate Job Hunting', '就職活動中（新卒）'],
+    ['first_job', 'First Year at Work', '新社会人'],
+    ['job_seeking', 'Job Seeking / Career Change', '就職・転職活動中'],
+    ['reskilling', 'Reskilling / Upskilling', 'リスキリング中'],
+    ['certification_prep', 'Certification / License Prep', '資格・検定の勉強中'],
+    ['language_learner', 'Language Learner', '語学学習中'],
+    ['working_parent', 'Working Parent', '子育てと両立中'],
+    ['career_break', 'Career Break / Caregiving', 'キャリアブレイク・育児介護'],
+    ['hobbyist', 'Hobbyist / Learning for Fun', '趣味で学習'],
+    ['lifelong_learner', 'Retired / Lifelong Learner', 'リタイア・生涯学習'],
+    ['other', 'Other', 'その他'],
+  ],
+};
+
+export const USER_STATUS_OPTIONS: UserStatusOption[] = USER_STATUS_GROUPS.flatMap((group) =>
+  GROUP_ROWS[group].map(([id, en, ja]) => ({ id, group, label: { en, ja } }))
+);
 
 const KNOWN_STATUS_IDS = new Set(USER_STATUS_OPTIONS.map((o) => o.id));
 
@@ -61,3 +183,12 @@ export function sanitizeUserStatuses(value: unknown): string[] {
 
 export const getUserStatusOption = (id: string): UserStatusOption | undefined =>
   USER_STATUS_OPTIONS.find((o) => o.id === id);
+
+/** Case-insensitive match against both language labels and the id. */
+export const matchesStatusQuery = (opt: UserStatusOption, query: string): boolean => {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    opt.label.en.toLowerCase().includes(q) || opt.label.ja.toLowerCase().includes(q) || opt.id.includes(q)
+  );
+};

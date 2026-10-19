@@ -107,6 +107,7 @@ import {
   USER_STATUS_GROUPS,
   USER_STATUS_OPTIONS,
   getUserStatusOption,
+  matchesStatusQuery,
   sanitizeUserStatuses,
   type UserStatusGroup,
 } from './userStatus';
@@ -118,6 +119,7 @@ import {
   type ChronoProgress,
 } from './chronometerThemes';
 import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
+import { SurfaceFxLayer } from './SurfaceFx';
 
 // ==========================================
 // Types & Interfaces
@@ -299,6 +301,9 @@ const getRecentDateString = (daysAgo: number, timeZone: string): string => {
 
 const THEME_STORAGE_KEY = 'typbox_theme';
 const SURFACE_THEME_STORAGE_KEY = 'typbox_surface_theme';
+// Motion FX for NEO Surface Themes: a device-local comfort setting (like
+// polarity), so it isn't synced to the account.
+const SURFACE_FX_STORAGE_KEY = 'typbox_surface_fx';
 const ASCENSION_STORAGE_PREFIX = 'typbox_ascension_';
 
 // Ascension (Prestige) claims are device-local, same as polarity/sound prefs —
@@ -495,8 +500,14 @@ const getInitialChronoTheme = (): string => {
 };
 
 const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
-  study: 'statusGroupStudy',
-  work: 'statusGroupWork',
+  school: 'statusGroupSchool',
+  major: 'statusGroupMajor',
+  research: 'statusGroupResearch',
+  tech: 'statusGroupTech',
+  data: 'statusGroupData',
+  creative: 'statusGroupCreative',
+  business: 'statusGroupBusiness',
+  industry: 'statusGroupIndustry',
   independent: 'statusGroupIndependent',
   life: 'statusGroupLife',
 };
@@ -633,6 +644,13 @@ export default function App() {
   // UI Preferences (Persisted across reloads and responsive to OS preferences)
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [surfaceThemeId, setSurfaceThemeId] = useState<string>(getInitialSurfaceTheme);
+  const [surfaceFxEnabled, setSurfaceFxEnabled] = useState<boolean>(
+    () => typeof window === 'undefined' || localStorage.getItem(SURFACE_FX_STORAGE_KEY) !== 'off'
+  );
+
+  useEffect(() => {
+    localStorage.setItem(SURFACE_FX_STORAGE_KEY, surfaceFxEnabled ? 'on' : 'off');
+  }, [surfaceFxEnabled]);
   const [periodView, setPeriodView] = useState<PeriodView>('weekly');
 
   // UI language & time zone: account-synced (UserProfile.language/timezone),
@@ -863,6 +881,8 @@ export default function App() {
   const [profileAvatarImage, setProfileAvatarImage] = useState<string>('');
   const [profileStatuses, setProfileStatuses] = useState<string[]>([]);
   const [statusLimitHit, setStatusLimitHit] = useState<boolean>(false);
+  const [statusQuery, setStatusQuery] = useState<string>('');
+  const [openStatusGroups, setOpenStatusGroups] = useState<UserStatusGroup[]>([]);
   const [profileSaving, setProfileSaving] = useState<boolean>(false);
   const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [regionStatus, setRegionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -907,9 +927,15 @@ export default function App() {
         setProfileAvatarColor(user.avatar_color || '#10b981');
         setProfileAvatarPreset(user.avatar_preset || 'initial');
         setProfileAvatarImage(user.avatar_image || '');
-        setProfileStatuses(sanitizeUserStatuses(user.user_statuses));
+        const statuses = sanitizeUserStatuses(user.user_statuses);
+        setProfileStatuses(statuses);
+        // ~100 options: open only the groups that already hold a pick.
+        setOpenStatusGroups(
+          USER_STATUS_GROUPS.filter((g) => statuses.some((id) => getUserStatusOption(id)?.group === g))
+        );
       }
       setStatusLimitHit(false);
+      setStatusQuery('');
       setProfileStatus(null);
       setRegionStatus(null);
       setPasswordStatus(null);
@@ -2738,9 +2764,19 @@ export default function App() {
   return (
     <I18nContext.Provider value={i18n}>
     <div
-      className={`min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
+      className={`isolate min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
     >
+      {/* NEO Surface Theme motion layer (behind everything; see SurfaceFx.tsx) */}
+      {surfaceFxEnabled && activeSurfacePair.fx && (
+        <SurfaceFxLayer
+          key={`${activeSurfacePair.id}-${isDark ? 'd' : 'l'}`}
+          fx={activeSurfacePair.fx}
+          accentHex={activeSurfacePair.accentHex}
+          isDark={isDark}
+        />
+      )}
+
       {/* Ambient Mode: dimmed overlay + drifting sensor dust while the
           stopwatch runs unattended (see the Wake Lock effect above). */}
       {isAmbientMode && <AmbientOverlay />}
@@ -5648,7 +5684,7 @@ export default function App() {
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
             <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1">
-              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (288 PAIRS = 576 SURFACES) */}
+              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (600 PAIRS = 1,200 SURFACES) */}
               {settingsTab === 'themes' && (
                 <SurfaceThemeSelectorPanel
                   activeThemeId={surfaceThemeId}
@@ -5660,6 +5696,8 @@ export default function App() {
                   userTotalHours={clearanceStatus.totalHours}
                   borderCol={borderCol}
                   textMuted={textMuted}
+                  fxEnabled={surfaceFxEnabled}
+                  onToggleFx={() => setSurfaceFxEnabled((prev) => !prev)}
                 />
               )}
 
@@ -5993,38 +6031,102 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="space-y-2.5">
-                    {USER_STATUS_GROUPS.map((group) => (
-                      <div key={group}>
-                        <span className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                          {t[STATUS_GROUP_LABEL_KEY[group]]}
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {USER_STATUS_OPTIONS.filter((o) => o.group === group).map((opt) => {
-                            const selected = profileStatuses.includes(opt.id);
-                            const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
-                            return (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() => toggleProfileStatus(opt.id)}
-                                className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
-                                  selected
-                                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                                    : atLimit
-                                    ? `${borderCol} ${textMuted} opacity-45`
-                                    : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
-                                }`}
-                              >
-                                {selected ? '✓ ' : ''}
-                                {opt.label[lang]}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="search"
+                      value={statusQuery}
+                      onChange={(e) => setStatusQuery(e.target.value)}
+                      placeholder={tf(t.statusSearch, { n: USER_STATUS_OPTIONS.length })}
+                      aria-label={tf(t.statusSearch, { n: USER_STATUS_OPTIONS.length })}
+                      className={`flex-1 min-h-[34px] px-2.5 py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenStatusGroups(
+                          openStatusGroups.length === USER_STATUS_GROUPS.length ? [] : [...USER_STATUS_GROUPS]
+                        )
+                      }
+                      className={`px-2.5 py-1.5 border ${borderCol} ${textMuted} text-[10px] hover:text-emerald-400 cursor-pointer shrink-0`}
+                    >
+                      {openStatusGroups.length === USER_STATUS_GROUPS.length ? t.statusCollapseAll : t.statusExpandAll}
+                    </button>
+                  </div>
+
+                  <div className={`border ${borderCol} divide-y divide-[var(--tb-border)]`}>
+                    {(() => {
+                      const searching = statusQuery.trim().length > 0;
+                      const groups = USER_STATUS_GROUPS.map((group) => ({
+                        group,
+                        options: USER_STATUS_OPTIONS.filter(
+                          (o) => o.group === group && matchesStatusQuery(o, statusQuery)
+                        ),
+                        picked: profileStatuses.filter((id) => getUserStatusOption(id)?.group === group).length,
+                      })).filter((g) => g.options.length > 0);
+                      if (groups.length === 0) {
+                        return (
+                          <div className={`p-3 text-[10px] ${textMuted}`}>{tf(t.statusNoMatch, { q: statusQuery.trim() })}</div>
+                        );
+                      }
+                      return groups.map(({ group, options, picked }) => {
+                        // A search shows every matching group expanded.
+                        const isOpen = searching || openStatusGroups.includes(group);
+                        return (
+                          <div key={group}>
+                            <button
+                              type="button"
+                              aria-expanded={isOpen}
+                              onClick={() =>
+                                setOpenStatusGroups(
+                                  openStatusGroups.includes(group)
+                                    ? openStatusGroups.filter((g) => g !== group)
+                                    : [...openStatusGroups, group]
+                                )
+                              }
+                              className="w-full px-2.5 py-2 flex items-center justify-between text-[10px] uppercase cursor-pointer hover:bg-emerald-500/5"
+                            >
+                              <span className="flex items-center space-x-1.5">
+                                <ChevronDown
+                                  className={`w-3 h-3 transition-transform ${isOpen ? '' : '-rotate-90'} ${textMuted}`}
+                                />
+                                <span className="font-semibold tracking-wider">{t[STATUS_GROUP_LABEL_KEY[group]]}</span>
+                                <span className={textMuted}>({options.length})</span>
+                              </span>
+                              {picked > 0 && (
+                                <span className="text-emerald-400 normal-case">{tf(t.statusGroupPicked, { n: picked })}</span>
+                              )}
+                            </button>
+                            {isOpen && (
+                              <div className="px-2.5 pb-2.5 flex flex-wrap gap-1.5">
+                                {options.map((opt) => {
+                                  const selected = profileStatuses.includes(opt.id);
+                                  const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
+                                  return (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      aria-pressed={selected}
+                                      onClick={() => toggleProfileStatus(opt.id)}
+                                      title={lang === 'ja' ? opt.label.en : opt.label.ja}
+                                      className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
+                                        selected
+                                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                                          : atLimit
+                                          ? `${borderCol} ${textMuted} opacity-45`
+                                          : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
+                                      }`}
+                                    >
+                                      {selected ? '✓ ' : ''}
+                                      {opt.label[lang]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
 
                   <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>

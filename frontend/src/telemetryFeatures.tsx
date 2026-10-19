@@ -19,10 +19,13 @@ import {
   Timer,
   Pause,
   Play,
+  Sparkles,
 } from 'lucide-react';
 import type { Category, StudyLog } from './App';
 import { useI18n, tf } from './i18n';
 import { drawStatusCard, STATUS_CARD_LAYOUTS, type StatusCardLayout } from './statusCard';
+import { isNeoPattern, neoPatternLayer, type NeoPattern } from './surfacePatterns';
+import { NEO_PRESTIGE_THEME_PAIRS, NEO_SURFACE_THEME_PAIRS } from './surfaceNeo';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -3154,7 +3157,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 };
 
 // ==========================================
-// 6. DUAL-POLARITY SURFACE THEME PAIRS (288 PAIRS = 576 DARK/LIGHT SURFACES)
+// 6. DUAL-POLARITY SURFACE THEME PAIRS (600 PAIRS = 1,200 DARK/LIGHT SURFACES:
+//    288 archive + 300 NEO SIGNAL + 12 prestige)
 // ==========================================
 
 export type SurfacePatternType =
@@ -3186,7 +3190,26 @@ export type SurfacePatternType =
   // Prestige-exclusive patterns (Ascension-gated themes only)
   | 'aurum'
   | 'argentum'
-  | 'prism';
+  | 'prism'
+  // NEO SIGNAL series: SVG tile motifs (surfacePatterns.ts)
+  | NeoPattern;
+
+// Ambient motion layer a NEO theme may carry (SurfaceFx.tsx). Purely
+// decorative and switchable off; it never changes the static palette.
+export type SurfaceFx =
+  | 'dust'
+  | 'snow'
+  | 'rain'
+  | 'fireflies'
+  | 'stars'
+  | 'embers'
+  | 'scan'
+  | 'glitch'
+  | 'pulse'
+  | 'bubbles'
+  | 'matrix'
+  | 'aurora'
+  | 'sweep';
 
 export interface SurfacePolarityPalette {
   label: string;
@@ -3216,6 +3239,9 @@ export interface SurfaceThemePair {
   // Ascension count instead — a reward track that only grows for players
   // who keep cycling past LV.3000, independent of in-cycle rank.
   requiredAscensions?: number;
+  /** 'neo' = NEO SIGNAL wave (surfaceThemesNeo.json); absent = original archive. */
+  series?: 'neo';
+  fx?: SurfaceFx;
 }
 
 // Centralized unlock check for a Surface Theme: prestige-exclusive themes
@@ -5249,13 +5275,21 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   // 240 GENERATED EXPANSION PAIRS (see EXTRA_THEME_SPECS above)
   // ==========================================
   ...buildExtraThemePairs(),
+
+  // ==========================================
+  // NEO SIGNAL WAVE — 300 pairs (30 per division, surfaceThemesNeo.json).
+  // Appended AFTER every archive pair so, within each division, the
+  // archive pairs keep their index: rebalancing over a longer list can only
+  // lower an existing pair's level, never lock one a user already has.
+  // ==========================================
+  ...NEO_SURFACE_THEME_PAIRS,
 ];
 
 // Rebalances every pair's clearanceHintLv with even spacing across its own
 // division's level range (CLEARANCE_DIVISIONS[].minLevel..maxLevel), rather
-// than the ad-hoc numbers assigned while authoring each batch. With 288
+// than the ad-hoc numbers assigned while authoring each batch. With 588
 // pairs spread over 3,000 ranks a new Surface Theme now unlocks roughly
-// every ~10 ranks (and interleaved with the 60 Noise profiles below, a
+// every ~5 ranks (and interleaved with the 60 Noise profiles below, a
 // visual or audio reward lands every few dozen ranks instead of droughts
 // stretching across whole divisions). 'monolith' stays pinned to LV.1 since
 // it's the universal unlock-gate fallback theme used for locked selections.
@@ -5395,6 +5429,7 @@ const PRESTIGE_THEME_PAIRS: SurfaceThemePair[] = (() => {
 export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   ...rebalanceThemeClearanceLevels(RAW_SURFACE_THEME_PAIRS),
   ...PRESTIGE_THEME_PAIRS,
+  ...NEO_PRESTIGE_THEME_PAIRS,
 ];
 
 // Fast lookup of theme reward by Clearance Level
@@ -5588,15 +5623,27 @@ export function getSurfaceBackgroundStyle(
       push(`radial-gradient(circle at 50% 0%, ${pal.glowTint}, transparent 70%)`);
       break;
     case 'none':
+      push(glow);
+      break;
     default:
       push(glow);
+      if (isNeoPattern(pair.pattern)) {
+        // CSS paints the FIRST background layer on top, and the dark-mode
+        // corner wash above is made of opaque colors — so the motif goes to
+        // the front of the stack, or the wash would hide it near the top.
+        const tile = neoPatternLayer(pair.pattern, pal.patternTint);
+        images.unshift(tile.image);
+        sizes.unshift(tile.size);
+      }
       break;
   }
 
   // Signature dark-mode geometric watermark: a faint white isometric mesh
   // layered on top of every dark surface, so black mode always has its own
   // identity regardless of which per-theme `pattern` is assigned above.
-  if (isDark) {
+  // NEO themes skip it: their SVG motif already is the identity layer, and
+  // stacking both would get busy behind text.
+  if (isDark && pair.series !== 'neo') {
     push(
       'repeating-linear-gradient(55deg, rgba(255,255,255,0.045) 0px, rgba(255,255,255,0.045) 1px, transparent 1px, transparent 64px)',
       'auto'
@@ -5625,7 +5672,12 @@ interface SurfaceThemeSelectorPanelProps {
   userTotalHours: number;
   borderCol: string;
   textMuted: string;
+  /** Motion FX layer for NEO themes (device-local preference). */
+  fxEnabled: boolean;
+  onToggleFx: () => void;
 }
+
+type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx';
 
 export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps> = ({
   activeThemeId,
@@ -5637,9 +5689,12 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   userTotalHours,
   borderCol,
   textMuted,
+  fxEnabled,
+  onToggleFx,
 }) => {
   const { t } = useI18n();
   const [unlockFilter, setUnlockFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
+  const [seriesFilter, setSeriesFilter] = useState<SurfaceSeriesFilter>('all');
   const [selectedDiv, setSelectedDiv] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
@@ -5664,18 +5719,33 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       if (unlockFilter === 'unlocked' && !isUnlocked) return false;
       if (unlockFilter === 'locked' && isUnlocked) return false;
       if (selectedDiv !== 'ALL' && item.divisionCode !== selectedDiv) return false;
+      if (seriesFilter === 'archive' && item.series === 'neo') return false;
+      if (seriesFilter === 'neo' && item.series !== 'neo') return false;
+      if (seriesFilter === 'fx' && !item.fx) return false;
       if (q) {
         return (
           item.name.toLowerCase().includes(q) ||
           item.code.toLowerCase().includes(q) ||
           item.pairLabel.toLowerCase().includes(q) ||
           item.pattern.toLowerCase().includes(q) ||
-          item.divisionCode.toLowerCase().includes(q)
+          item.divisionCode.toLowerCase().includes(q) ||
+          (item.fx ?? '').includes(q) ||
+          item.description.toLowerCase().includes(q)
         );
       }
       return true;
     });
-  }, [unlockFilter, selectedDiv, searchQuery, checkUnlocked]);
+  }, [unlockFilter, selectedDiv, seriesFilter, searchQuery, checkUnlocked]);
+
+  const seriesCounts = useMemo(
+    () => ({
+      all: SURFACE_THEME_PAIRS.length,
+      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo').length,
+      neo: SURFACE_THEME_PAIRS.filter((p) => p.series === 'neo').length,
+      fx: SURFACE_THEME_PAIRS.filter((p) => p.fx).length,
+    }),
+    []
+  );
 
   const getReqHoursForLevel = (lv: number): number => {
     const found = CLEARANCE_LEVELS[lv - 1];
@@ -5703,6 +5773,23 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
             <div className={`text-[10px] mt-0.5 ${textMuted}`}>{activePair.pairLabel}</div>
           </div>
 
+          <div className="flex flex-wrap items-center gap-1.5">
+          {/* Motion FX switch (only NEO themes with an fx actually animate) */}
+          <button
+            type="button"
+            onClick={onToggleFx}
+            aria-pressed={fxEnabled}
+            title={t.surfaceFxHint}
+            className={`px-3 py-1.5 border flex items-center space-x-1.5 text-[10px] font-bold cursor-pointer transition-colors ${
+              fxEnabled ? 'border-emerald-500/60 text-emerald-400' : `${borderCol} ${textMuted}`
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>
+              {t.surfaceFxLabel}: {fxEnabled ? t.surfaceFxOn : t.surfaceFxOff}
+            </span>
+            {activePair.fx && <span className="font-normal opacity-70">({activePair.fx.toUpperCase()})</span>}
+          </button>
           {/* Instant Polarity Switcher to preview both sides of the active pair */}
           <button
             type="button"
@@ -5721,6 +5808,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               </>
             )}
           </button>
+          </div>
         </div>
 
         {/* Side-by-Side Dual-Polarity Live Specimen */}
@@ -5848,10 +5936,33 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           </div>
         </div>
 
+        {/* Series Filter: original archive vs. NEO SIGNAL wave vs. animated */}
+        <div className={`flex flex-wrap border ${borderCol} text-[10px] w-fit`}>
+          {(
+            [
+              ['all', t.all],
+              ['archive', t.seriesArchive],
+              ['neo', t.seriesNeo],
+              ['fx', t.seriesFx],
+            ] as const
+          ).map(([key, label], idx) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSeriesFilter(key)}
+              className={`px-2.5 py-1 uppercase cursor-pointer transition-colors ${idx > 0 ? `border-l ${borderCol}` : ''} ${
+                seriesFilter === key ? 'bg-emerald-500 text-zinc-950 font-bold' : `${textMuted} hover:opacity-100`
+              }`}
+            >
+              {label} ({seriesCounts[key]})
+            </button>
+          ))}
+        </div>
+
         {/* Division Filter Strip — horizontally scrollable on mobile so 11
             buttons never spend multiple lines of the limited viewport height. */}
         <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
-          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10'].map(
+          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE'].map(
             (divCode) => (
               <button
                 key={divCode}
@@ -5908,7 +6019,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   );
                 }
               }}
-              className={`p-3 border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 ${
+              className={`p-3 border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_168px] ${
                 isSelected
                   ? 'border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5'
                   : isUnlocked
@@ -5958,8 +6069,16 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
 
                 <div className="flex items-center justify-between text-[9px]">
                   <span className={`truncate ${textMuted}`}>{item.pairLabel}</span>
-                  <span className={`uppercase px-1 border ${borderCol} ${textMuted} shrink-0 ml-1`}>
-                    {item.pattern}
+                  <span className="flex items-center gap-1 shrink-0 ml-1">
+                    {item.series === 'neo' && (
+                      <span className="uppercase px-1 border border-cyan-500/40 text-cyan-400">NEO</span>
+                    )}
+                    {item.fx && (
+                      <span className="uppercase px-1 border border-fuchsia-500/40 text-fuchsia-400" title={t.surfaceFxHint}>
+                        FX·{item.fx}
+                      </span>
+                    )}
+                    <span className={`uppercase px-1 border ${borderCol} ${textMuted}`}>{item.pattern}</span>
                   </span>
                 </div>
                 <p className={`text-[10px] font-sans leading-snug line-clamp-2 ${textMuted}`}>
@@ -5968,13 +6087,10 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               </div>
 
               {/* Dual Swatch Strip (Left = Dark Mode Surface, Right = Light Mode Surface) */}
-              <div className="w-full grid grid-cols-2 border border-zinc-700/50 overflow-hidden h-7 shrink-0">
+              <div className="w-full grid grid-cols-2 border border-zinc-700/50 overflow-hidden h-9 shrink-0">
                 <div
                   className="px-2 flex items-center justify-between text-[9px] font-bold"
-                  style={{
-                    backgroundColor: item.dark.bgMain,
-                    color: item.dark.textMain,
-                  }}
+                  style={getSurfaceBackgroundStyle(item, true)}
                 >
                   <span className="truncate">DARK</span>
                   <span
@@ -5987,10 +6103,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 </div>
                 <div
                   className="px-2 flex items-center justify-between text-[9px] font-bold border-l border-zinc-700/40"
-                  style={{
-                    backgroundColor: item.light.bgMain,
-                    color: item.light.textMain,
-                  }}
+                  style={getSurfaceBackgroundStyle(item, false)}
                 >
                   <span className="truncate">LIGHT</span>
                   <span
