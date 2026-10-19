@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from datetime import date as date_cls, timedelta, timezone as dt_timezone
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -18,7 +19,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Category, StudyLog, monthly_to_weekly_hours
+from .models import Category, StudyLog
 from .serializers import (
     CategorySerializer,
     ChangePasswordSerializer,
@@ -266,6 +267,12 @@ class CategoryViewSet(viewsets.ModelViewSet):
 # Study Log ViewSet
 # ==========================================
 
+def _log_import_key(category_code, log_date, duration_minutes, created_at):
+    """Identity of a log for duplicate detection on backup import."""
+    created = created_at.astimezone(dt_timezone.utc).replace(microsecond=0).isoformat() if created_at else ''
+    return (category_code.upper(), log_date, duration_minutes, created)
+
+
 class StudyLogViewSet(viewsets.ModelViewSet):
     """
     CRUD API for study logs of the authenticated user.
@@ -298,16 +305,32 @@ class StudyLogViewSet(viewsets.ModelViewSet):
     def clear_all(self, request):
         """
         DELETE /api/logs/clear-all/
-        Delete all study logs for the authenticated user while preserving categories and account.
+        Delete all study logs AND categories for the authenticated user; only
+        the account itself is kept.
+
+        Categories are deliberately not carried over: the usual next step is
+        importing a backup, and leftover categories would shadow the backup's
+        own (same code -> its targets/status are skipped).
         """
-        deleted_count, _ = StudyLog.objects.filter(user=request.user).delete()
-        return Response({'deleted': deleted_count}, status=status.HTTP_200_OK)
+        with transaction.atomic():
+            deleted_count, _ = StudyLog.objects.filter(user=request.user).delete()
+            deleted_cats, _ = Category.objects.filter(user=request.user).delete()
+        return Response(
+            {'deleted': deleted_count, 'deleted_categories': deleted_cats},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=['post'], url_path='import-backup')
     def import_backup(self, request):
         """
         POST /api/logs/import-backup/
         Restore categories and study logs from an exported TYPBOX JSON backup file.
+
+        Importing never inflates totals: a backup log that already exists on
+        the account (same category, date, duration and commit timestamp) is
+        skipped, so re-importing the same file adds nothing. Logs whose
+        category isn't in the account or the backup are kept uncategorized
+        rather than credited to some other category.
         """
         raw_categories = request.data.get('categories', [])
         raw_logs = request.data.get('logs', [])
@@ -328,17 +351,19 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                     if not code or not name or code in existing_cats:
                         continue
                     color = str(item.get('color', '#10b981')).strip()[:20] or '#10b981'
-                    weekly = item.get('weeklyTargetHours') or item.get('weekly_target_hours')
-                    monthly = item.get('monthlyTargetHours') or item.get('monthly_target_hours')
+                    # Backups from before the weekly switch only carry
+                    # monthlyTargetHours; the number is taken as-is as the
+                    # weekly target (no monthly -> weekly scaling), so a
+                    # restore never shrinks the user's targets.
+                    target = (
+                        item.get('weeklyTargetHours')
+                        or item.get('weekly_target_hours')
+                        or item.get('monthlyTargetHours')
+                        or item.get('monthly_target_hours')
+                        or 5
+                    )
                     try:
-                        if weekly:
-                            target_int = int(weekly)
-                        elif monthly:
-                            # Backups from before the weekly switch: monthly -> weekly.
-                            target_int = monthly_to_weekly_hours(int(monthly))
-                        else:
-                            target_int = 5
-                        target_int = max(1, min(168, target_int))
+                        target_int = max(1, min(168, int(target)))
                     except (ValueError, TypeError):
                         target_int = 5
                     raw_active = item.get('isActive', item.get('is_active', True))
@@ -355,16 +380,23 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                     existing_cats[code] = new_cat
                     created_cats += 1
 
-            default_cat = next(iter(existing_cats.values()), None)
             logs_to_create = []
             original_created_at = []
+            skipped_logs = 0
             fallback_date = user_localdate(request.user)
+
+            # Multiset of logs already on the account, so legit repeats inside
+            # one backup (two 60m sessions on the same day) still import.
+            existing_keys = Counter(
+                _log_import_key(log.category.code if log.category else '', log.date, log.duration_minutes, log.created_at)
+                for log in StudyLog.objects.filter(user=request.user).select_related('category')
+            )
 
             for entry in raw_logs[:5000]:
                 if not isinstance(entry, dict):
                     continue
                 cat_code = str(entry.get('categoryCode') or entry.get('category_code') or '').strip().upper()
-                cat_obj = existing_cats.get(cat_code) or default_cat
+                cat_obj = existing_cats.get(cat_code)
 
                 date_str = str(entry.get('date', '')).strip()
                 try:
@@ -386,6 +418,13 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 created_dt = parse_datetime(str(raw_created)) if raw_created else None
                 if created_dt is not None and timezone.is_naive(created_dt):
                     created_dt = timezone.make_aware(created_dt, dt_timezone.utc)
+
+                key = _log_import_key(cat_obj.code if cat_obj else '', parsed_date, dur_int, created_dt)
+                if existing_keys[key] > 0:
+                    existing_keys[key] -= 1
+                    skipped_logs += 1
+                    continue
+
                 original_created_at.append(created_dt)
 
                 logs_to_create.append(
@@ -414,6 +453,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 'imported_logs': len(logs_to_create),
+                'skipped_logs': skipped_logs,
                 'created_categories': created_cats,
             },
             status=status.HTTP_201_CREATED

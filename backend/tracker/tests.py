@@ -175,6 +175,62 @@ class StudyLogTimestampTests(APITestCase):
         self.assertIsNotNone(StudyLog.objects.get(user=self.user, date=date(2025, 3, 2)).created_at)
 
 
+class ResetAndImportTests(APITestCase):
+    """Reset wipes logs and categories; re-importing a backup never inflates totals."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.client.force_authenticate(user=self.user)
+        self.category = Category.objects.create(user=self.user, name='Dev', code='DEV', weekly_target_hours=9)
+        StudyLog.objects.create(user=self.user, category=self.category, date=date(2026, 10, 1), duration_minutes=90)
+
+    def _backup(self):
+        return {
+            'categories': [{'code': 'DEV', 'name': 'Dev', 'color': '#10b981', 'weeklyTargetHours': 12}],
+            'logs': [
+                {'categoryCode': 'DEV', 'date': '2026-10-01', 'durationMinutes': 60,
+                 'createdAt': '2026-10-01T09:00:00.123456Z'},
+                {'categoryCode': 'DEV', 'date': '2026-10-01', 'durationMinutes': 60,
+                 'createdAt': '2026-10-01T11:00:00Z'},
+            ],
+        }
+
+    def test_clear_all_removes_logs_and_categories_but_keeps_account(self):
+        res = self.client.delete('/api/logs/clear-all/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data, {'deleted': 1, 'deleted_categories': 1})
+        self.assertFalse(StudyLog.objects.filter(user=self.user).exists())
+        self.assertFalse(Category.objects.filter(user=self.user).exists())
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
+    def test_import_after_reset_restores_backup_categories_exactly(self):
+        self.client.delete('/api/logs/clear-all/')
+        res = self.client.post('/api/logs/import-backup/', self._backup(), format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['imported_logs'], 2)
+        self.assertEqual(Category.objects.get(user=self.user, code='DEV').weekly_target_hours, 12)
+
+    def test_reimporting_same_backup_adds_nothing(self):
+        self.client.delete('/api/logs/clear-all/')
+        self.client.post('/api/logs/import-backup/', self._backup(), format='json')
+        res = self.client.post('/api/logs/import-backup/', self._backup(), format='json')
+        self.assertEqual(res.data['imported_logs'], 0)
+        self.assertEqual(res.data['skipped_logs'], 2)
+        self.assertEqual(StudyLog.objects.filter(user=self.user).count(), 2)
+
+    def test_unknown_category_code_is_not_credited_to_another_category(self):
+        res = self.client.post(
+            '/api/logs/import-backup/',
+            {'categories': [], 'logs': [{'categoryCode': 'GONE', 'date': '2026-10-02', 'durationMinutes': 120}]},
+            format='json',
+        )
+        self.assertEqual(res.data['imported_logs'], 1)
+        self.assertIsNone(StudyLog.objects.get(user=self.user, date=date(2026, 10, 2)).category)
+        self.assertEqual(StudyLog.objects.filter(category=self.category).count(), 1)
+
+
 class CategoryWeeklyTargetTests(APITestCase):
     """Category targets are weekly; inactive categories are parked, not deleted."""
 
@@ -209,7 +265,7 @@ class CategoryWeeklyTargetTests(APITestCase):
         self.assertEqual(cat.weekly_target_hours, 8)
         self.assertEqual(StudyLog.objects.filter(category=cat).count(), 1)
 
-    def test_import_converts_legacy_monthly_targets(self):
+    def test_import_keeps_legacy_monthly_target_value_as_is(self):
         res = self.client.post(
             '/api/logs/import-backup/',
             {
@@ -222,7 +278,7 @@ class CategoryWeeklyTargetTests(APITestCase):
             format='json',
         )
         self.assertEqual(res.status_code, 201)
-        self.assertEqual(Category.objects.get(user=self.user, code='OLD').weekly_target_hours, 9)
+        self.assertEqual(Category.objects.get(user=self.user, code='OLD').weekly_target_hours, 40)
         new = Category.objects.get(user=self.user, code='NEW')
         self.assertEqual((new.weekly_target_hours, new.is_active), (7, False))
 
