@@ -498,7 +498,6 @@ class HubTelemetryView(APIView):
         # Inclusive 7-day window (today + 6 previous days = 7 days total, matching frontend)
         seven_days_ago = now - timedelta(days=6)
         first_day_of_month = now.replace(day=1)
-        first_day_of_week = now - timedelta(days=now.weekday())  # Monday
 
         public_logs = StudyLog.objects.filter(user=user, is_public_to_hub=True).select_related('category')
 
@@ -523,7 +522,7 @@ class HubTelemetryView(APIView):
             week_min=Coalesce(
                 Sum(
                     'logs__duration_minutes',
-                    filter=Q(logs__is_public_to_hub=True, logs__date__gte=first_day_of_week)
+                    filter=Q(logs__is_public_to_hub=True, logs__date__gte=seven_days_ago)
                 ),
                 0
             ),

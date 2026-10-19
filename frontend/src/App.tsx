@@ -94,7 +94,7 @@ export interface Category {
   name: string;
   code: string;
   color: string;
-  /** Target per calendar week (Mon–Sun in the user's time zone). */
+  /** Target per rolling 7 days (today + previous 6 days in the user's time zone). */
   weeklyTargetHours: number;
   /** Inactive = parked: history stays, no weekly target is tracked. */
   isActive: boolean;
@@ -1981,34 +1981,27 @@ export default function App() {
     return daysInTargetMonth.days.reduce((acc, d) => acc + d.minutes, 0);
   }, [daysInTargetMonth]);
 
-  // Current calendar week (Mon–Sun) in the user's zone: the window that
-  // weekly category targets are measured against.
-  const currentWeekDates = useMemo(() => {
-    const today = nowInZone(timeZone);
-    const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
-    return Array.from({ length: 7 }, (_, i) =>
-      formatLocalDateString(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i))
-    );
-  }, [timeZone]);
+  // Rolling 7 days (today + previous 6) in the user's zone: the window that
+  // weekly category targets are measured against. Same window as the
+  // "weekly hours" stat, so progress doesn't drop to zero every Monday.
+  const currentWeekDates = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => getRecentDateString(6 - i, timeZone)),
+    [timeZone]
+  );
 
   const weeklyBreakdown = useMemo(() => {
     const weekSet = new Set(currentWeekDates);
+    const weekLogs = logs.filter((l) => weekSet.has(l.date));
     const rows = categories.map((cat) => {
-      // Progress is measured against this week, but the month and all-time
-      // totals are shown too so the category reflects the full study log
-      // (early in the week the weekly figure alone looks near-empty).
-      let minutes = 0;
-      let monthMinutes = 0;
-      let totalMinutes = 0;
-      for (const l of logs) {
-        if (String(l.categoryId) !== String(cat.id)) continue;
-        totalMinutes += l.durationMinutes;
-        if (l.date.startsWith(currentMonthPrefix)) monthMinutes += l.durationMinutes;
-        if (weekSet.has(l.date)) minutes += l.durationMinutes;
-      }
+      const catLogs = weekLogs.filter((l) => String(l.categoryId) === String(cat.id));
+      const minutes = catLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
       const hours = +(minutes / 60).toFixed(1);
-      const monthHours = +(monthMinutes / 60).toFixed(1);
-      const totalHours = +(totalMinutes / 60).toFixed(1);
+      // Oldest day of the window falls out at the next midnight; surfaced so
+      // the drop isn't a surprise.
+      const expiringMinutes = catLogs
+        .filter((l) => l.date === currentWeekDates[0])
+        .reduce((acc, l) => acc + l.durationMinutes, 0);
+      const expiringHours = +(expiringMinutes / 60).toFixed(1);
       const progress = cat.isActive
         ? Math.min(100, Math.round((hours / Math.max(1, cat.weeklyTargetHours)) * 100))
         : 0;
@@ -2016,15 +2009,14 @@ export default function App() {
         ...cat,
         hours,
         minutes,
-        monthHours,
-        totalHours,
+        expiringHours,
         progress,
         targetMet: cat.isActive && hours >= cat.weeklyTargetHours,
       };
     });
     // Active categories first; original order is kept within each group.
     return [...rows.filter((r) => r.isActive), ...rows.filter((r) => !r.isActive)];
-  }, [logs, categories, currentWeekDates, currentMonthPrefix]);
+  }, [logs, categories, currentWeekDates]);
 
   const activeCategoryCount = useMemo(() => categories.filter((c) => c.isActive).length, [categories]);
 
@@ -3522,6 +3514,9 @@ export default function App() {
                     <span>
                       {tf(t.activeOfTotal, { a: activeCategoryCount, b: categories.length })}
                     </span>
+                    <span className="basis-full normal-case tracking-normal">
+                      {tf(t.weekWindowHint, { tz: timeZone })}
+                    </span>
                   </div>
                 )}
                 {categories.length === 0 ? (
@@ -3621,14 +3616,14 @@ export default function App() {
                           <div className="w-full h-1.5 opacity-35" style={{ backgroundImage: inactiveHatch(cat.color) }} />
                         )}
 
-                        <div className={`flex justify-end gap-3 font-mono text-[10px] tabular-nums ${textMuted}`}>
-                          <span>
-                            {t.catThisMonth} {cat.monthHours}h
-                          </span>
-                          <span>
-                            {t.catAllTime} {cat.totalHours}h
-                          </span>
-                        </div>
+                        {cat.expiringHours > 0 && (
+                          <div className={`text-right font-mono text-[10px] tabular-nums ${textMuted}`}>
+                            {tf(t.weekDropsOff, {
+                              h: cat.expiringHours,
+                              date: currentWeekDates[0].slice(5).replace('-', '.'),
+                            })}
+                          </div>
+                        )}
 
                         {/* Inline Category Edit Form */}
                         {isEditing && (

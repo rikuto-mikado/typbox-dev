@@ -56,7 +56,7 @@ class Category(models.Model):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=10)  # e.g., 'BACK', 'ELEC', 'NET'
     color = models.CharField(max_length=20, default='#10b981')  # Hex color string
-    # Target per calendar week (Mon–Sun, in the user's time zone).
+    # Target per rolling 7 days (today + previous 6, in the user's time zone).
     weekly_target_hours = models.PositiveIntegerField(default=5)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
