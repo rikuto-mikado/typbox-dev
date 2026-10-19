@@ -147,6 +147,10 @@ export interface AuthUserResponse {
   surface_theme?: string;
   language?: string;
   timezone?: string;
+  /** 'mon' | 'sun' — first day of the calendar week. */
+  week_start?: string;
+  chrono_theme?: string;
+  user_statuses?: string[];
 }
 
 export const api = {
@@ -180,6 +184,9 @@ export const api = {
         surface_theme: string;
         language: string;
         timezone: string;
+        week_start: string;
+        chrono_theme: string;
+        user_statuses: string[];
       }>
     ) => {
       return apiFetch<AuthUserResponse>('/auth/me/', {

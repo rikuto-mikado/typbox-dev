@@ -1,0 +1,571 @@
+{
+  "families": [
+    { "id": "CORE", "label": "Core", "color": "#a1a1aa" },
+    { "id": "CYBER", "label": "Cyber / Neon", "color": "#22d3ee" },
+    { "id": "PIXEL", "label": "Pixel / 8-Bit", "color": "#f472b6" },
+    { "id": "DEVICE", "label": "Device / Tube", "color": "#f59e0b" },
+    { "id": "CLASSIC", "label": "Classic / Ancient", "color": "#eab308" },
+    { "id": "SCRIPT", "label": "World Numerals", "color": "#10b981" },
+    { "id": "CODE", "label": "Code / Radix", "color": "#3b82f6" },
+    { "id": "SIGNAL", "label": "Signal / Glyph", "color": "#a855f7" },
+    { "id": "PRESTIGE", "label": "Prestige", "color": "#fde047" }
+  ],
+  "themes": [
+    {
+      "id": "system-mono",
+      "code": "CHR-001",
+      "name": "SYSTEM MONO",
+      "desc": "The stock telemetry readout: light monospace digits, emerald seconds.",
+      "family": "CORE",
+      "render": { "kind": "text" },
+      "unlock": { "type": "default" }
+    },
+    {
+      "id": "lcd-segment",
+      "code": "CHR-002",
+      "name": "LCD SEVEN-SEGMENT",
+      "desc": "Reflective liquid-crystal panel with faint ghost segments, like a 1980s desk clock.",
+      "family": "DEVICE",
+      "render": {
+        "kind": "segment",
+        "on": "#1f2b1c",
+        "off": "rgba(31,43,28,0.09)",
+        "panel": { "bg": "#a7b59a", "border": "#7d8a72" }
+      },
+      "unlock": { "type": "default" }
+    },
+    {
+      "id": "typewriter",
+      "code": "CHR-003",
+      "name": "TYPEWRITER RIBBON",
+      "desc": "Inked slug-type digits struck through a worn fabric ribbon.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Special Elite", "google": true } },
+      "unlock": { "type": "default" }
+    },
+    {
+      "id": "hairline",
+      "code": "CHR-004",
+      "name": "HAIRLINE SANS",
+      "desc": "Ultra-thin grotesk numerals for a quiet, gallery-wall readout.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "stack": "ui-sans-serif, system-ui, sans-serif", "weight": 100 } },
+      "unlock": { "type": "level", "value": 3 }
+    },
+    {
+      "id": "pixel-8bit",
+      "code": "CHR-005",
+      "name": "8-BIT ARCADE",
+      "desc": "Chunky cabinet-era bitmap digits straight off an insert-coin attract screen.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Press Start 2P", "google": true }, "scale": 0.72, "color": "#f472b6", "colorLight": "#be185d" },
+      "unlock": { "type": "level", "value": 6 }
+    },
+    {
+      "id": "orbital-hud",
+      "code": "CHR-006",
+      "name": "ORBITAL HUD",
+      "desc": "Squared-off spacecraft heads-up display numerals with a cyan halo.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Orbitron", "weight": 500, "google": true }, "fx": "neon", "color": "#22d3ee", "colorLight": "#0e7490", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 10 }
+    },
+    {
+      "id": "led-red",
+      "code": "CHR-007",
+      "name": "RED LED ALARM",
+      "desc": "Glowing red seven-segment LEDs from a bedside alarm clock at 3 AM.",
+      "family": "DEVICE",
+      "render": {
+        "kind": "segment",
+        "on": "#ff3b3b",
+        "off": "rgba(255,59,59,0.07)",
+        "glow": true,
+        "panel": { "bg": "#120606", "border": "#3b0d0d" }
+      },
+      "unlock": { "type": "level", "value": 12 }
+    },
+    {
+      "id": "dot-matrix-amber",
+      "code": "CHR-008",
+      "name": "AMBER DOT MATRIX",
+      "desc": "Round amber LEDs on a 5×7 grid, like a railway departure board.",
+      "family": "PIXEL",
+      "render": {
+        "kind": "dotmatrix",
+        "shape": "round",
+        "on": "#fbbf24",
+        "off": "rgba(251,191,36,0.10)",
+        "glow": true,
+        "panel": { "bg": "#0d0a04", "border": "#3a2a08" }
+      },
+      "unlock": { "type": "level", "value": 15 }
+    },
+    {
+      "id": "netrunner",
+      "code": "CHR-009",
+      "name": "NETRUNNER TERMINAL",
+      "desc": "Phosphor-green terminal glyphs flickering on a jacked-in deck.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Share Tech Mono", "google": true }, "fx": "matrix", "color": "#4ade80", "colorLight": "#15803d" },
+      "unlock": { "type": "level", "value": 22 }
+    },
+    {
+      "id": "binary",
+      "code": "CHR-010",
+      "name": "PURE BINARY",
+      "desc": "Hours and minutes as raw 6-bit strings. 22:44 → 010110:101100.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 2, "pad": 6 }, "scale": 0.5, "color": "#60a5fa", "colorLight": "#1d4ed8" },
+      "unlock": { "type": "level", "value": 28 }
+    },
+    {
+      "id": "pixel-block",
+      "code": "CHR-011",
+      "name": "PIXEL BLOCK",
+      "desc": "Hard-edged square pixels rendered cell by cell, no anti-aliasing.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "square", "on": "currentColor", "off": "rgba(127,127,127,0.10)" },
+      "unlock": { "type": "level", "value": 34 }
+    },
+    {
+      "id": "hex-dump",
+      "code": "CHR-012",
+      "name": "HEX DUMP",
+      "desc": "Memory-inspector hexadecimal with 0x prefixes. 22:44 → 0x16:0x2C.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 16, "pad": 2, "prefix": "0x" }, "font": { "family": "Share Tech Mono", "google": true }, "scale": 0.82 },
+      "unlock": { "type": "level", "value": 40 }
+    },
+    {
+      "id": "devanagari",
+      "code": "CHR-013",
+      "name": "DEVANAGARI",
+      "desc": "Hindi / Sanskrit numerals ०–९ used across North India and Nepal.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"], "font": { "family": "Noto Sans Devanagari", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 46 }
+    },
+    {
+      "id": "phosphor-crt",
+      "code": "CHR-014",
+      "name": "PHOSPHOR CRT",
+      "desc": "VT-series terminal raster font with scanline flicker and green bloom.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "VT323", "google": true }, "fx": "crt", "color": "#86efac", "colorLight": "#166534", "scale": 1.25 },
+      "unlock": { "type": "level", "value": 55 }
+    },
+    {
+      "id": "arabic-indic",
+      "code": "CHR-015",
+      "name": "ARABIC-INDIC",
+      "desc": "Eastern Arabic numerals ٠–٩ as written across the Arab world.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"], "font": { "family": "Noto Naskh Arabic", "google": true } },
+      "unlock": { "type": "level", "value": 62 }
+    },
+    {
+      "id": "stencil-ops",
+      "code": "CHR-016",
+      "name": "OPS STENCIL",
+      "desc": "Spray-through military crate stencil with bridged counters.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Black Ops One", "google": true }, "color": "#a3e635", "colorLight": "#4d7c0f", "scale": 0.92 },
+      "unlock": { "type": "level", "value": 70 }
+    },
+    {
+      "id": "marquee",
+      "code": "CHR-017",
+      "name": "MARQUEE SIGNAGE",
+      "desc": "Bold display-sign numerals built for highway billboards and theatre fronts.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bungee", "google": true }, "scale": 0.85, "color": "#fb923c", "colorLight": "#c2410c" },
+      "unlock": { "type": "level", "value": 85 }
+    },
+    {
+      "id": "roman",
+      "code": "CHR-018",
+      "name": "ROMAN NUMERALS",
+      "desc": "Imperial inscriptional capitals. 22:44 → XXII:XLIV, midnight is N (nulla).",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "roman", "font": { "family": "Cinzel", "weight": 600, "google": true }, "scale": 0.62, "sep": "·" },
+      "unlock": { "type": "level", "value": 100 }
+    },
+    {
+      "id": "neon-sign",
+      "code": "CHR-019",
+      "name": "NEON SIGN",
+      "desc": "Bent-glass pink neon tubing buzzing in a late-night diner window.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Tilt Neon", "google": true }, "fx": "neon", "color": "#f472b6", "colorLight": "#be185d" },
+      "unlock": { "type": "level", "value": 120 }
+    },
+    {
+      "id": "vfd-cyan",
+      "code": "CHR-020",
+      "name": "VFD CYAN DISPLAY",
+      "desc": "Vacuum fluorescent display segments in that unmistakable hi-fi teal.",
+      "family": "DEVICE",
+      "render": {
+        "kind": "segment",
+        "on": "#5eead4",
+        "off": "rgba(94,234,212,0.08)",
+        "glow": true,
+        "slant": true,
+        "panel": { "bg": "#03110f", "border": "#0f3b35" }
+      },
+      "unlock": { "type": "level", "value": 140 }
+    },
+    {
+      "id": "kanji",
+      "code": "CHR-021",
+      "name": "KANJI NUMERALS",
+      "desc": "Japanese kanji reading of the hour: 二十二時四十四分.",
+      "family": "CLASSIC",
+      "render": {
+        "kind": "text",
+        "numeral": "cjk",
+        "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] },
+        "font": { "family": "Noto Serif JP", "weight": 500, "google": true },
+        "scale": 0.62
+      },
+      "unlock": { "type": "level", "value": 160 }
+    },
+    {
+      "id": "dotgothic",
+      "code": "CHR-022",
+      "name": "DOTGOTHIC KIOSK",
+      "desc": "Low-res Japanese ticket-machine bitmap face.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "DotGothic16", "google": true } },
+      "unlock": { "type": "level", "value": 180 }
+    },
+    {
+      "id": "wireframe",
+      "code": "CHR-023",
+      "name": "WIREFRAME OUTLINE",
+      "desc": "Hollow stroked glyphs like vector CAD previews before render.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Rubik Mono One", "google": true }, "fx": "outline", "scale": 0.8 },
+      "unlock": { "type": "level", "value": 210 }
+    },
+    {
+      "id": "blackletter",
+      "code": "CHR-024",
+      "name": "GOTHIC BLACKLETTER",
+      "desc": "Fraktur numerals from a cathedral clockmaker's ledger.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "UnifrakturMaguntia", "google": true }, "scale": 1.05 },
+      "unlock": { "type": "level", "value": 240 }
+    },
+    {
+      "id": "persian",
+      "code": "CHR-025",
+      "name": "PERSIAN",
+      "desc": "Extended Arabic-Indic digits ۰–۹ used in Iran and Afghanistan.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"], "font": { "family": "Vazirmatn", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 270 }
+    },
+    {
+      "id": "glitch-core",
+      "code": "CHR-026",
+      "name": "GLITCH CORE",
+      "desc": "Corrupted RGB-split numerals that jitter like a dying video signal.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Rubik Glitch", "google": true }, "fx": "glitch", "scale": 0.92 },
+      "unlock": { "type": "level", "value": 300 }
+    },
+    {
+      "id": "bengali",
+      "code": "CHR-027",
+      "name": "BENGALI",
+      "desc": "Bangla numerals ০–৯ from Bangladesh and West Bengal.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"], "font": { "family": "Noto Sans Bengali", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 350 }
+    },
+    {
+      "id": "nixie",
+      "code": "CHR-028",
+      "name": "NIXIE TUBE",
+      "desc": "Cold-cathode neon digits glowing orange inside individual glass tubes.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Nixie One", "google": true }, "fx": "nixie", "cells": "nixie", "color": "#ff9a3c", "colorLight": "#ff9a3c" },
+      "unlock": { "type": "level", "value": 400 }
+    },
+    {
+      "id": "thai",
+      "code": "CHR-029",
+      "name": "THAI",
+      "desc": "Traditional Thai numerals ๐–๙, still used on temple signs and banknotes.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["๐", "๑", "๒", "๓", "๔", "๕", "๖", "๗", "๘", "๙"], "font": { "family": "Noto Sans Thai", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 450 }
+    },
+    {
+      "id": "synthwave",
+      "code": "CHR-030",
+      "name": "SYNTHWAVE SUNSET",
+      "desc": "Chrome-lined retro numerals over a magenta-to-amber sunset gradient.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Monoton", "google": true }, "fx": "sunset", "scale": 0.95 },
+      "unlock": { "type": "level", "value": 520 }
+    },
+    {
+      "id": "split-flap",
+      "code": "CHR-031",
+      "name": "SPLIT-FLAP BOARD",
+      "desc": "Mechanical flap tiles with a center hinge, clacking over every minute.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bebas Neue", "google": true }, "cells": "flap", "scale": 0.95 },
+      "unlock": { "type": "level", "value": 600 }
+    },
+    {
+      "id": "tamil",
+      "code": "CHR-032",
+      "name": "TAMIL",
+      "desc": "Tamil numerals ௦–௯ from one of the world's oldest living scripts.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["௦", "௧", "௨", "௩", "௪", "௫", "௬", "௭", "௮", "௯"], "font": { "family": "Noto Sans Tamil", "weight": 300, "google": true }, "scale": 0.8 },
+      "unlock": { "type": "level", "value": 660 }
+    },
+    {
+      "id": "attic-greek",
+      "code": "CHR-033",
+      "name": "IONIC GREEK",
+      "desc": "Alphabetic Greek numerals with keraia: 22 → κβʹ, and Ptolemy's ο for zero.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "greek", "font": { "family": "GFS Didot", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 720 }
+    },
+    {
+      "id": "khmer",
+      "code": "CHR-034",
+      "name": "KHMER",
+      "desc": "Cambodian numerals ០–៩ — home of the oldest dated zero (683 CE).",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["០", "១", "២", "៣", "៤", "៥", "៦", "៧", "៨", "៩"], "font": { "family": "Noto Sans Khmer", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 800 }
+    },
+    {
+      "id": "daiji",
+      "code": "CHR-035",
+      "name": "DAIJI LEDGER",
+      "desc": "Tamper-proof formal numerals from Japanese contracts: 弐拾弐時.",
+      "family": "CLASSIC",
+      "render": {
+        "kind": "text",
+        "numeral": "cjk",
+        "cjk": { "digits": ["零", "壱", "弐", "参", "肆", "伍", "陸", "漆", "捌", "玖"], "ten": "拾", "units": ["時", "分", "秒"] },
+        "font": { "family": "Noto Serif JP", "weight": 500, "google": true },
+        "scale": 0.62,
+        "color": "#dc2626",
+        "colorLight": "#b91c1c"
+      },
+      "unlock": { "type": "level", "value": 900 }
+    },
+    {
+      "id": "mayan",
+      "code": "CHR-036",
+      "name": "MAYAN VIGESIMAL",
+      "desc": "Base-20 bar-and-dot numerals stacked by place value, with the shell glyph for zero.",
+      "family": "CLASSIC",
+      "render": { "kind": "mayan", "on": "currentColor" },
+      "unlock": { "type": "level", "value": 1000 }
+    },
+    {
+      "id": "tibetan",
+      "code": "CHR-037",
+      "name": "TIBETAN",
+      "desc": "Tibetan numerals ༠–༩ from Himalayan monastery manuscripts.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["༠", "༡", "༢", "༣", "༤", "༥", "༦", "༧", "༨", "༩"], "font": { "family": "Noto Serif Tibetan", "google": true } },
+      "unlock": { "type": "level", "value": 1100 }
+    },
+    {
+      "id": "burmese",
+      "code": "CHR-038",
+      "name": "BURMESE",
+      "desc": "Myanmar numerals ၀–၉ with their distinctive round forms.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["၀", "၁", "၂", "၃", "၄", "၅", "၆", "၇", "၈", "၉"], "font": { "family": "Noto Sans Myanmar", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 1200 }
+    },
+    {
+      "id": "suzhou",
+      "code": "CHR-039",
+      "name": "SUZHOU MARKET",
+      "desc": "Huama numerals 〡〢〣 once scrawled on Chinese market price tags.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["〇", "〡", "〢", "〣", "〤", "〥", "〦", "〧", "〨", "〩"], "font": { "family": "Noto Sans TC", "weight": 300, "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 1350 }
+    },
+    {
+      "id": "mongolian",
+      "code": "CHR-040",
+      "name": "MONGOLIAN",
+      "desc": "Traditional Mongolian script numerals ᠐–᠙.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᠐", "᠑", "᠒", "᠓", "᠔", "᠕", "᠖", "᠗", "᠘", "᠙"], "font": { "family": "Noto Sans Mongolian", "google": true } },
+      "unlock": { "type": "level", "value": 1500 }
+    },
+    {
+      "id": "lao",
+      "code": "CHR-041",
+      "name": "LAO",
+      "desc": "Lao numerals ໐–໙ from the Mekong valley.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["໐", "໑", "໒", "໓", "໔", "໕", "໖", "໗", "໘", "໙"], "font": { "family": "Noto Sans Lao", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 1700 }
+    },
+    {
+      "id": "hangul",
+      "code": "CHR-042",
+      "name": "HANGUL SINO-KOREAN",
+      "desc": "Sino-Korean number words in Hangul: 이십이:사십사.",
+      "family": "SCRIPT",
+      "render": {
+        "kind": "text",
+        "numeral": "cjk",
+        "cjk": { "digits": ["영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"], "ten": "십" },
+        "font": { "family": "Noto Sans KR", "weight": 300, "google": true },
+        "scale": 0.62
+      },
+      "unlock": { "type": "level", "value": 1900 }
+    },
+    {
+      "id": "binary-lights",
+      "code": "CHR-043",
+      "name": "BCD BINARY LIGHTS",
+      "desc": "The classic geek binary clock: each decimal digit as a column of 4 lit bits.",
+      "family": "CODE",
+      "render": { "kind": "bcd", "on": "#3b82f6", "off": "rgba(127,127,127,0.16)", "glow": true },
+      "unlock": { "type": "level", "value": 2100 }
+    },
+    {
+      "id": "octal",
+      "code": "CHR-044",
+      "name": "OCTAL PDP",
+      "desc": "Base-8 readout as toggled on a minicomputer front panel. 22:44 → 26:54.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 8, "pad": 2 }, "font": { "family": "VT323", "google": true }, "scale": 1.2, "color": "#fbbf24", "colorLight": "#b45309" },
+      "unlock": { "type": "level", "value": 2400 }
+    },
+    {
+      "id": "spelled",
+      "code": "CHR-045",
+      "name": "SPELLED OUT",
+      "desc": "The time written in plain words, like an engraved word clock.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "words", "font": { "family": "Syncopate", "weight": 700, "google": true }, "scale": 0.36, "sep": " · " },
+      "unlock": { "type": "level", "value": 2800 }
+    },
+    {
+      "id": "circled",
+      "code": "CHR-046",
+      "name": "CIRCLED GLYPHS",
+      "desc": "Enclosed alphanumerics ⓪①②, earned by a 3-day study streak.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"], "font": { "family": "Noto Sans Symbols", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "streak", "value": 3 }
+    },
+    {
+      "id": "negative-circled",
+      "code": "CHR-047",
+      "name": "INVERTED DISCS",
+      "desc": "Negative circled digits ⓿❶❷ — awarded for a 7-day streak.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"], "font": { "family": "Noto Sans Symbols", "google": true }, "scale": 0.9, "color": "#a855f7", "colorLight": "#7e22ce" },
+      "unlock": { "type": "streak", "value": 7 }
+    },
+    {
+      "id": "double-struck",
+      "code": "CHR-048",
+      "name": "BLACKBOARD BOLD",
+      "desc": "Mathematical double-struck digits 𝟘𝟙𝟚 — awarded for a 14-day streak.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"], "font": { "family": "Noto Sans Math", "google": true } },
+      "unlock": { "type": "streak", "value": 14 }
+    },
+    {
+      "id": "morse",
+      "code": "CHR-049",
+      "name": "MORSE CODE",
+      "desc": "Each digit keyed as five dits and dahs — awarded for a 30-day streak.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "morse", "scale": 0.42, "sep": " / " },
+      "unlock": { "type": "streak", "value": 30 }
+    },
+    {
+      "id": "keycap",
+      "code": "CHR-050",
+      "name": "KEYCAP EMOJI",
+      "desc": "Glossy emoji keycaps 2️⃣2️⃣ — awarded after committing 10 study logs.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"], "scale": 0.7, "sep": " " },
+      "unlock": { "type": "sessions", "value": 10 }
+    },
+    {
+      "id": "fullwidth",
+      "code": "CHR-051",
+      "name": "FULLWIDTH CJK",
+      "desc": "Zenkaku full-width digits ０１２ from East Asian typesetting — 50 logs committed.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["０", "１", "２", "３", "４", "５", "６", "７", "８", "９"], "font": { "family": "Noto Sans TC", "weight": 300, "google": true }, "sep": "：", "scale": 0.85 },
+      "unlock": { "type": "sessions", "value": 50 }
+    },
+    {
+      "id": "braille",
+      "code": "CHR-052",
+      "name": "BRAILLE CELLS",
+      "desc": "Six-dot braille with the ⠼ numeric indicator — 250 logs committed.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["⠚", "⠁", "⠃", "⠉", "⠙", "⠑", "⠋", "⠛", "⠓", "⠊"], "numberPrefix": "⠼", "font": { "family": "Noto Sans Symbols 2", "google": true }, "sep": " " },
+      "unlock": { "type": "sessions", "value": 250 }
+    },
+    {
+      "id": "stadium",
+      "code": "CHR-053",
+      "name": "STADIUM SCOREBOARD",
+      "desc": "Big incandescent bulb grid from a ballpark scoreboard — 100-day streak.",
+      "family": "PIXEL",
+      "render": {
+        "kind": "dotmatrix",
+        "shape": "round",
+        "on": "#fde047",
+        "off": "rgba(253,224,71,0.08)",
+        "glow": true,
+        "panel": { "bg": "#07130a", "border": "#14532d" }
+      },
+      "unlock": { "type": "streak", "value": 100 }
+    },
+    {
+      "id": "hologram",
+      "code": "CHR-054",
+      "name": "HOLOGRAM PRISM",
+      "desc": "Iridescent shifting-spectrum numerals reserved for the first Ascension.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Audiowide", "google": true }, "fx": "holo", "scale": 0.92 },
+      "unlock": { "type": "ascension", "value": 1 }
+    },
+    {
+      "id": "gilded",
+      "code": "CHR-055",
+      "name": "GILDED REGALIA",
+      "desc": "Engraved gold-leaf decorative capitals for twice-Ascended operators.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "numeral": "roman", "font": { "family": "Cinzel Decorative", "weight": 700, "google": true }, "fx": "gold", "scale": 0.6, "sep": "·" },
+      "unlock": { "type": "ascension", "value": 2 }
+    },
+    {
+      "id": "quantum",
+      "code": "CHR-056",
+      "name": "QUANTUM STATE",
+      "desc": "Superposed glitch-and-prism readout for operators past their third Ascension.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Orbitron", "weight": 700, "google": true }, "fx": "quantum", "scale": 0.9 },
+      "unlock": { "type": "ascension", "value": 3 }
+    }
+  ]
+}

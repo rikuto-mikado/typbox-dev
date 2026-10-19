@@ -7,6 +7,7 @@
 import type { Category, StudyLog } from './App';
 import type { UserClearanceStatus } from './telemetryFeatures';
 import { nowInActiveZone } from './i18n';
+import { getActiveWeekStart, weekdayPosition } from './week';
 
 export type StatusCardLayout = 'wide' | 'square' | 'portrait' | 'story';
 
@@ -126,7 +127,7 @@ function buildMetrics(data: StatusCardData) {
     { label: '01 / TOTAL ARCHIVED', val: `${data.totalHours}`, unit: 'HRS' },
     { label: '02 / CURRENT STREAK', val: `${data.currentStreak}`, unit: 'DAYS' },
     { label: '03 / PEAK STREAK', val: `${data.longestStreak}`, unit: 'DAYS' },
-    { label: '04 / 7D & 30D OUTPUT', val: `${data.weeklyHours}h`, unit: `/ ${data.monthlyHours}h (MO)` },
+    { label: '04 / WK & MO OUTPUT', val: `${data.weeklyHours}h`, unit: `/ ${data.monthlyHours}h (MO)` },
   ];
 }
 
@@ -310,13 +311,15 @@ function paintMetricCard(
 }
 
 // Cadence window. Mirrors the live dashboard's adaptive window: the grid
-// starts at the Monday of the user's FIRST logged week (not a fixed lookback
+// starts at the first day (Monday or Sunday, per the user's week-start
+// setting) of the user's FIRST logged week (not a fixed lookback
 // ending today), so a newer account's cadence visibly fills in from the
 // top-left instead of being squeezed into the right-hand columns of an
 // otherwise-empty fixed-size grid.
 function cadenceWindow(logs: StudyLog[]): { currentMon: Date; weeksOfHistory: number } {
   const now = nowInActiveZone();
-  const dayOfWeek = (now.getDay() + 6) % 7;
+  const weekStart = getActiveWeekStart();
+  const dayOfWeek = weekdayPosition(now.getDay(), weekStart);
   const currentMon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
 
   let originMon = new Date(currentMon);
@@ -324,7 +327,7 @@ function cadenceWindow(logs: StudyLog[]): { currentMon: Date; weeksOfHistory: nu
     const oldestStr = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
     const oldestDate = new Date(`${oldestStr}T00:00:00`);
     if (!isNaN(oldestDate.getTime())) {
-      const oldestDow = (oldestDate.getDay() + 6) % 7;
+      const oldestDow = weekdayPosition(oldestDate.getDay(), weekStart);
       originMon = new Date(oldestDate.getFullYear(), oldestDate.getMonth(), oldestDate.getDate() - oldestDow);
     }
   }

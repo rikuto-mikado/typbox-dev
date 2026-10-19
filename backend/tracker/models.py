@@ -12,8 +12,17 @@ class UserProfile(models.Model):
     """
     Extended profile settings for a User, including hybrid avatar customization
     (color accent, preset icon, or compressed base64 Data URL image stored in DB),
-    the account-wide Surface Theme preference, and UI language / time zone.
+    the account-wide Surface Theme preference, UI language / time zone, the
+    first day of the user's calendar week, Chronometer Theme and self-declared
+    user statuses (role / market tags).
     """
+    WEEK_START_MONDAY = 'mon'
+    WEEK_START_SUNDAY = 'sun'
+    WEEK_START_CHOICES = [
+        (WEEK_START_MONDAY, 'Monday'),
+        (WEEK_START_SUNDAY, 'Sunday'),
+    ]
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -30,6 +39,12 @@ class UserProfile(models.Model):
     # IANA time zone name (e.g. 'Asia/Tokyo') used to render the user's UTC
     # timestamps and to decide their "today". Blank = not set yet.
     timezone = models.CharField(max_length=64, blank=True, default='')
+    # First day of the calendar week that weekly totals / targets reset on.
+    week_start = models.CharField(max_length=3, choices=WEEK_START_CHOICES, default=WEEK_START_MONDAY)
+    # Selected Chronometer Theme id (frontend catalog). Blank = default face.
+    chrono_theme = models.CharField(max_length=64, blank=True, default='')
+    # Up to 5 status ids (e.g. ['student_cs', 'startup_founder']), ordered as picked.
+    user_statuses = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -56,7 +71,8 @@ class Category(models.Model):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=10)  # e.g., 'BACK', 'ELEC', 'NET'
     color = models.CharField(max_length=20, default='#10b981')  # Hex color string
-    # Target per rolling 7 days (today + previous 6, in the user's time zone).
+    # Target per calendar week (starting on the user's week_start day, in
+    # their time zone); resets at 00:00 on that day.
     weekly_target_hours = models.PositiveIntegerField(default=5)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

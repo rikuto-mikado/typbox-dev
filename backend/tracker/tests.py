@@ -305,3 +305,140 @@ class CategoryWeeklyTargetTests(APITestCase):
         self.assertEqual(
             [monthly_to_weekly_hours(m) for m in (1, 10, 20, 40, 744)], [1, 2, 5, 9, 168]
         )
+
+
+class WeekStartSettingTests(APITestCase):
+    """
+    Weekly totals follow the calendar week (not a rolling 7 days); the first
+    day of that week is a per-account setting (Monday or Sunday).
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_defaults_to_monday(self):
+        res = self.client.get('/api/auth/me/')
+        self.assertEqual(res.data['week_start'], 'mon')
+
+    def test_patch_week_start_persists_and_validates(self):
+        res = self.client.patch('/api/auth/me/', {'week_start': ' SUN '}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['week_start'], 'sun')
+        self.assertEqual(UserProfile.objects.get(user=self.user).week_start, 'sun')
+        for bad in ('tue', '', 'monday'):
+            res = self.client.patch('/api/auth/me/', {'week_start': bad}, format='json')
+            self.assertEqual(res.status_code, 400, bad)
+        self.assertEqual(UserProfile.objects.get(user=self.user).week_start, 'sun')
+
+    def test_week_start_date_helper(self):
+        from .timezones import week_start_date
+
+        wed = date(2026, 10, 21)
+        self.assertEqual(week_start_date(wed, 'mon'), date(2026, 10, 19))
+        self.assertEqual(week_start_date(wed, 'sun'), date(2026, 10, 18))
+        mon = date(2026, 10, 19)
+        self.assertEqual(week_start_date(mon, 'mon'), mon)
+        self.assertEqual(week_start_date(mon, 'sun'), date(2026, 10, 18))
+        sun = date(2026, 10, 25)
+        self.assertEqual(week_start_date(sun, 'mon'), date(2026, 10, 19))
+        self.assertEqual(week_start_date(sun, 'sun'), sun)
+
+    def _hub_weekly_hours(self, today):
+        with mock.patch('tracker.views.user_localdate', return_value=today):
+            res = self.client.get('/api/hub/telemetry/', {'username': 'operator'})
+        self.assertEqual(res.status_code, 200)
+        return res.data['summary']['weekly_hours'], res.data['categories'][0]['weekly_hours']
+
+    def test_hub_weekly_hours_use_calendar_week(self):
+        cat = Category.objects.create(user=self.user, name='Backend', code='BACK', weekly_target_hours=5)
+        # Sun 10/18 (60m), Mon 10/19 (120m), Wed 10/21 (30m)
+        for d, m in ((date(2026, 10, 18), 60), (date(2026, 10, 19), 120), (date(2026, 10, 21), 30)):
+            StudyLog.objects.create(user=self.user, category=cat, date=d, duration_minutes=m)
+
+        # Monday-start week on Wed 10/21 = Mon 10/19..Sun 10/25 -> 150m
+        self.assertEqual(self._hub_weekly_hours(date(2026, 10, 21)), (2.5, 2.5))
+        # From Monday 00:00 the previous Sunday already belongs to last week.
+        self.assertEqual(self._hub_weekly_hours(date(2026, 10, 19)), (2.5, 2.5))
+        # The week before (Mon 10/12..Sun 10/18) only holds the Sunday log.
+        self.assertEqual(self._hub_weekly_hours(date(2026, 10, 18)), (1.0, 1.0))
+
+        UserProfile.objects.update_or_create(user=self.user, defaults={'week_start': 'sun'})
+        # Sunday-start week on Wed 10/21 = Sun 10/18..Sat 10/24 -> 210m
+        self.assertEqual(self._hub_weekly_hours(date(2026, 10, 21)), (3.5, 3.5))
+        # Next Sunday a fresh week starts.
+        self.assertEqual(self._hub_weekly_hours(date(2026, 10, 25)), (0.0, 0.0))
+
+
+class UserStatusTests(APITestCase):
+    """Self-declared status / market tags: multi-select, max 5, known ids only."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_defaults_to_empty(self):
+        res = self.client.get('/api/auth/me/')
+        self.assertEqual(res.data['user_statuses'], [])
+
+    def test_patch_statuses_keeps_order_and_dedupes(self):
+        res = self.client.patch(
+            '/api/auth/me/',
+            {'user_statuses': ['student_cs', 'STARTUP_FOUNDER', 'student_cs']},
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['user_statuses'], ['student_cs', 'startup_founder'])
+        self.assertEqual(
+            UserProfile.objects.get(user=self.user).user_statuses, ['student_cs', 'startup_founder']
+        )
+
+    def test_rejects_more_than_five(self):
+        six = ['student_cs', 'gap_year', 'tech_market', 'business_corporate', 'startup_founder', 'freelance']
+        res = self.client.patch('/api/auth/me/', {'user_statuses': six}, format='json')
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch('/api/auth/me/', {'user_statuses': six[:5]}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data['user_statuses']), 5)
+
+    def test_rejects_unknown_ids(self):
+        self.client.patch('/api/auth/me/', {'user_statuses': ['gap_year']}, format='json')
+        res = self.client.patch('/api/auth/me/', {'user_statuses': ['gap_year', 'astronaut']}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(UserProfile.objects.get(user=self.user).user_statuses, ['gap_year'])
+
+    def test_unknown_stored_ids_are_hidden(self):
+        self.client.get('/api/auth/me/')
+        UserProfile.objects.filter(user=self.user).update(user_statuses=['retired_id', 'gap_year'])
+        self.assertEqual(self.client.get('/api/auth/me/').data['user_statuses'], ['gap_year'])
+
+    def test_rejects_non_list(self):
+        res = self.client.patch('/api/auth/me/', {'user_statuses': 'gap_year'}, format='json')
+        self.assertEqual(res.status_code, 400)
+
+    def test_can_clear_statuses(self):
+        self.client.patch('/api/auth/me/', {'user_statuses': ['gap_year']}, format='json')
+        res = self.client.patch('/api/auth/me/', {'user_statuses': []}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['user_statuses'], [])
+
+
+class ChronoThemeSyncTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_patch_chrono_theme_persists_and_validates(self):
+        self.assertEqual(self.client.get('/api/auth/me/').data['chrono_theme'], '')
+        res = self.client.patch('/api/auth/me/', {'chrono_theme': 'Nixie-Tube'}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['chrono_theme'], 'nixie-tube')
+        res = self.client.patch('/api/auth/me/', {'chrono_theme': '<b>'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(UserProfile.objects.get(user=self.user).chrono_theme, 'nixie-tube')

@@ -29,7 +29,7 @@ from .serializers import (
     StudyLogSerializer,
     UserSerializer,
 )
-from .timezones import get_user_zone, user_localdate
+from .timezones import get_user_zone, user_localdate, user_week_start, week_start_date
 
 User = get_user_model()
 
@@ -495,15 +495,18 @@ class HubTelemetryView(APIView):
 
         user_zone = get_user_zone(user)
         now = user_localdate(user)
-        # Inclusive 7-day window (today + 6 previous days = 7 days total, matching frontend)
-        seven_days_ago = now - timedelta(days=6)
+        # Current calendar week (7 days from the user's week-start day,
+        # matching the frontend); resets at 00:00 on that day.
+        week_start = user_week_start(user)
+        week_start_day = week_start_date(now, week_start)
+        week_end_day = week_start_day + timedelta(days=6)
         first_day_of_month = now.replace(day=1)
 
         public_logs = StudyLog.objects.filter(user=user, is_public_to_hub=True).select_related('category')
 
         aggregates = public_logs.aggregate(
             total_min=Coalesce(Sum('duration_minutes'), 0),
-            weekly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=seven_days_ago)), 0),
+            weekly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=week_start_day, date__lte=week_end_day)), 0),
             monthly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=first_day_of_month)), 0),
         )
         total_min = aggregates['total_min']
@@ -522,7 +525,11 @@ class HubTelemetryView(APIView):
             week_min=Coalesce(
                 Sum(
                     'logs__duration_minutes',
-                    filter=Q(logs__is_public_to_hub=True, logs__date__gte=seven_days_ago)
+                    filter=Q(
+                        logs__is_public_to_hub=True,
+                        logs__date__gte=week_start_day,
+                        logs__date__lte=week_end_day,
+                    )
                 ),
                 0
             ),
@@ -559,6 +566,8 @@ class HubTelemetryView(APIView):
             'timestamp': timezone.now().isoformat(),
             'user': user.username,
             'timezone': user_zone.key if user_zone else 'UTC',
+            'week_start': week_start,
+            'week_start_date': week_start_day.isoformat(),
             'summary': {
                 'total_hours': round(total_min / 60, 1),
                 'weekly_hours': round(weekly_min / 60, 1),

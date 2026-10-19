@@ -43,6 +43,8 @@ import {
   Database,
   Camera,
   Share2,
+  Palette,
+  Briefcase,
 } from 'lucide-react';
 import { api, apiFetch, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
@@ -84,6 +86,38 @@ import {
   Award,
   type AnalyticsHorizonMode,
 } from './telemetryFeatures';
+import {
+  DEFAULT_WEEK_START,
+  WEEK_START_STORAGE_KEY,
+  addDays,
+  isWeekStart,
+  orderedWeekdayLabels,
+  parseDateStr,
+  setActiveWeekStart,
+  startOfWeek,
+  startOfWeekStr,
+  toDateStr,
+  weekDates,
+  weekdayPosition,
+  weeksBetween,
+  type WeekStart,
+} from './week';
+import {
+  MAX_USER_STATUSES,
+  USER_STATUS_GROUPS,
+  USER_STATUS_OPTIONS,
+  getUserStatusOption,
+  sanitizeUserStatuses,
+  type UserStatusGroup,
+} from './userStatus';
+import {
+  CHRONO_THEME_STORAGE_KEY,
+  DEFAULT_CHRONO_THEME_ID,
+  getChronoThemeById,
+  isChronoThemeUnlocked,
+  type ChronoProgress,
+} from './chronometerThemes';
+import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
 
 // ==========================================
 // Types & Interfaces
@@ -94,7 +128,7 @@ export interface Category {
   name: string;
   code: string;
   color: string;
-  /** Target per rolling 7 days (today + previous 6 days in the user's time zone). */
+  /** Target per calendar week (from the user's week-start day, in their time zone). */
   weeklyTargetHours: number;
   /** Inactive = parked: history stays, no weekly target is tracked. */
   isActive: boolean;
@@ -124,6 +158,9 @@ export interface AuthUser {
   surface_theme?: string;
   language?: string;
   timezone?: string;
+  week_start?: string;
+  chrono_theme?: string;
+  user_statuses?: string[];
 }
 
 type Theme = 'dark' | 'light';
@@ -442,6 +479,28 @@ const getInitialTimeZone = (): string => {
   return getDeviceTimeZone();
 };
 
+const getInitialWeekStart = (): WeekStart => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(WEEK_START_STORAGE_KEY);
+    if (isWeekStart(saved)) return saved;
+  }
+  return DEFAULT_WEEK_START;
+};
+
+const getInitialChronoTheme = (): string => {
+  if (typeof window !== 'undefined') {
+    return getChronoThemeById(localStorage.getItem(CHRONO_THEME_STORAGE_KEY)).id;
+  }
+  return DEFAULT_CHRONO_THEME_ID;
+};
+
+const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
+  study: 'statusGroupStudy',
+  work: 'statusGroupWork',
+  independent: 'statusGroupIndependent',
+  life: 'statusGroupLife',
+};
+
 const getInitialSurfaceTheme = (): string => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(SURFACE_THEME_STORAGE_KEY);
@@ -586,6 +645,25 @@ export default function App() {
   const i18n = useMemo(() => buildI18nValue(lang, timeZone), [lang, timeZone]);
   const { t, formatDateTime, locale } = i18n;
   const deviceTimeZone = useMemo(() => getDeviceTimeZone(), []);
+
+  // First day of the calendar week (account-synced, UserProfile.week_start).
+  // Weekly totals, category targets and the analytics week axis restart at
+  // 00:00 on this day.
+  const [weekStart, setWeekStart] = useState<WeekStart>(getInitialWeekStart);
+  setActiveWeekStart(weekStart);
+
+  useEffect(() => {
+    localStorage.setItem(WEEK_START_STORAGE_KEY, weekStart);
+  }, [weekStart]);
+
+  // Chronometer Theme (collectible clock face, account-synced like the
+  // Surface Theme; see handleSelectChronoTheme).
+  const [chronoThemeId, setChronoThemeId] = useState<string>(getInitialChronoTheme);
+  const [showChronoPicker, setShowChronoPicker] = useState<boolean>(false);
+
+  useEffect(() => {
+    localStorage.setItem(CHRONO_THEME_STORAGE_KEY, chronoThemeId);
+  }, [chronoThemeId]);
 
   useEffect(() => {
     localStorage.setItem(LANG_STORAGE_KEY, lang);
@@ -755,11 +833,24 @@ export default function App() {
       hh,
       mm,
       ss,
+      hour: p.hour,
+      minute: p.minute,
+      second: p.second,
       dateDot: `${yyyy}.${mo}.${dd}`,
       dayStr,
       tzLabel,
     };
   }, [currentTime, timeZone, t, i18n]);
+
+  // The user's calendar day, re-derived from the ticking clock so every
+  // day/week window below rolls over at local midnight (e.g. weekly totals
+  // restart at 00:00 on the week-start day) without a reload. The string
+  // only changes once a day, so dependent memos don't recompute per tick.
+  const todayStr = useMemo(() => {
+    const p = getZonedParts(currentTime, timeZone);
+    return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+  }, [currentTime, timeZone]);
+  const currentWeekStartStr = useMemo(() => startOfWeekStr(todayStr, weekStart), [todayStr, weekStart]);
 
   // User Dropdown, Account Settings Modal & Account Deletion State
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
@@ -770,6 +861,8 @@ export default function App() {
   const [profileAvatarColor, setProfileAvatarColor] = useState<string>('#10b981');
   const [profileAvatarPreset, setProfileAvatarPreset] = useState<string>('initial');
   const [profileAvatarImage, setProfileAvatarImage] = useState<string>('');
+  const [profileStatuses, setProfileStatuses] = useState<string[]>([]);
+  const [statusLimitHit, setStatusLimitHit] = useState<boolean>(false);
   const [profileSaving, setProfileSaving] = useState<boolean>(false);
   const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [regionStatus, setRegionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -814,7 +907,9 @@ export default function App() {
         setProfileAvatarColor(user.avatar_color || '#10b981');
         setProfileAvatarPreset(user.avatar_preset || 'initial');
         setProfileAvatarImage(user.avatar_image || '');
+        setProfileStatuses(sanitizeUserStatuses(user.user_statuses));
       }
+      setStatusLimitHit(false);
       setProfileStatus(null);
       setRegionStatus(null);
       setPasswordStatus(null);
@@ -1085,6 +1180,8 @@ export default function App() {
   // before PATCHing so rapidly browsing themes doesn't spam the API, and a
   // pending local change always wins over a server value fetched meanwhile.
   const pendingSurfaceThemeRef = React.useRef<string | null>(null);
+  const pendingChronoThemeRef = React.useRef<string | null>(null);
+  const chronoThemeSaveTimerRef = React.useRef<number | null>(null);
   const surfaceThemeSaveTimerRef = React.useRef<number | null>(null);
   const lastSurfaceThemePullRef = React.useRef<number>(0);
 
@@ -1110,6 +1207,18 @@ export default function App() {
     }
     if (firstSync.language || firstSync.timezone) {
       api.auth.updateProfile(firstSync).catch(() => {});
+    }
+    if (isWeekStart(me.week_start)) setWeekStart(me.week_start);
+
+    if (pendingChronoThemeRef.current === null) {
+      if (me.chrono_theme) {
+        setChronoThemeId(getChronoThemeById(me.chrono_theme).id);
+      } else {
+        const localChrono = localStorage.getItem(CHRONO_THEME_STORAGE_KEY);
+        if (localChrono && localChrono !== DEFAULT_CHRONO_THEME_ID) {
+          api.auth.updateProfile({ chrono_theme: localChrono }).catch(() => {});
+        }
+      }
     }
 
     if (pendingSurfaceThemeRef.current !== null) return;
@@ -1160,6 +1269,43 @@ export default function App() {
     [user, flushSurfaceThemeSave]
   );
 
+  // Chronometer Theme: same debounced account sync as the Surface Theme, so
+  // clicking through faces in the picker sends a single PATCH.
+  const flushChronoThemeSave = useCallback((keepalive = false) => {
+    if (chronoThemeSaveTimerRef.current !== null) {
+      window.clearTimeout(chronoThemeSaveTimerRef.current);
+      chronoThemeSaveTimerRef.current = null;
+    }
+    const target = pendingChronoThemeRef.current;
+    if (target === null) return;
+    apiFetch('/auth/me/', {
+      method: 'PATCH',
+      body: JSON.stringify({ chrono_theme: target }),
+      keepalive,
+    })
+      .catch((err: unknown) => {
+        console.warn('TYPBOX: failed to sync chronometer theme to account', err);
+      })
+      .finally(() => {
+        if (pendingChronoThemeRef.current === target) {
+          pendingChronoThemeRef.current = null;
+        }
+      });
+  }, []);
+
+  const handleSelectChronoTheme = useCallback(
+    (id: string) => {
+      setChronoThemeId(id);
+      if (!user) return;
+      pendingChronoThemeRef.current = id;
+      if (chronoThemeSaveTimerRef.current !== null) {
+        window.clearTimeout(chronoThemeSaveTimerRef.current);
+      }
+      chronoThemeSaveTimerRef.current = window.setTimeout(() => flushChronoThemeSave(), 600);
+    },
+    [user, flushChronoThemeSave]
+  );
+
   // Flush a pending save when the tab is hidden/closed, and pull the latest
   // account theme when the tab regains focus (picks up changes made on
   // another device without needing a full reload).
@@ -1168,6 +1314,7 @@ export default function App() {
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
         flushSurfaceThemeSave(true);
+        flushChronoThemeSave(true);
         return;
       }
       if (Date.now() - lastSurfaceThemePullRef.current < 30_000) return;
@@ -1176,14 +1323,17 @@ export default function App() {
         .then(applyServerSurfaceTheme)
         .catch(() => {});
     };
-    const handlePageHide = () => flushSurfaceThemeSave(true);
+    const handlePageHide = () => {
+      flushSurfaceThemeSave(true);
+      flushChronoThemeSave(true);
+    };
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('pagehide', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [user, applyServerSurfaceTheme, flushSurfaceThemeSave]);
+  }, [user, applyServerSurfaceTheme, flushSurfaceThemeSave, flushChronoThemeSave]);
 
   // Initial Auth Check and Splash Loader on site access
   useEffect(() => {
@@ -1311,6 +1461,7 @@ export default function App() {
         avatar_color: profileAvatarColor,
         avatar_preset: profileAvatarPreset,
         avatar_image: profileAvatarImage,
+        user_statuses: profileStatuses,
       });
       setUser(updated);
       setProfileStatus({ type: 'success', text: t.msgProfileUpdated });
@@ -1324,8 +1475,9 @@ export default function App() {
 
   // Language / time zone apply instantly and are PATCHed to the account so
   // they follow the user to every device and the next sign-in.
-  const handleUpdateRegion = async (patch: { language?: Lang; timezone?: string }) => {
+  const handleUpdateRegion = async (patch: { language?: Lang; timezone?: string; week_start?: WeekStart }) => {
     if (patch.language) setLang(patch.language);
+    if (patch.week_start) setWeekStart(patch.week_start);
     if (patch.timezone) {
       if (!isValidTimeZone(patch.timezone)) return;
       setTimeZone(patch.timezone);
@@ -1352,6 +1504,20 @@ export default function App() {
       label: `${tz.replace(/_/g, ' ')} (${formatUtcOffset(getZoneOffsetMinutes(now, tz))})`,
     }));
   }, [showSettingsModal, settingsTab, timeZone]);
+
+  const toggleProfileStatus = (id: string) => {
+    if (profileStatuses.includes(id)) {
+      setProfileStatuses(profileStatuses.filter((s) => s !== id));
+      setStatusLimitHit(false);
+      return;
+    }
+    if (profileStatuses.length >= MAX_USER_STATUSES) {
+      setStatusLimitHit(true);
+      return;
+    }
+    setProfileStatuses([...profileStatuses, id]);
+    setStatusLimitHit(false);
+  };
 
   const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1475,6 +1641,7 @@ export default function App() {
   const handleSignOut = () => {
     // Send any debounced theme change while the access token still exists.
     flushSurfaceThemeSave(true);
+    flushChronoThemeSave(true);
     api.auth.logout();
     setUser(null);
     setCategories([]);
@@ -1814,12 +1981,9 @@ export default function App() {
 
   const maxWeeksAgo = useMemo(() => {
     if (logs.length === 0) return 12;
-    const now = nowInZone(timeZone);
     const oldest = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
-    const oldestDate = new Date(oldest + 'T00:00:00');
-    const diffDays = Math.max(0, Math.ceil((now.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)));
-    return Math.max(12, Math.ceil(diffDays / 7));
-  }, [logs, timeZone]);
+    return Math.max(12, weeksBetween(startOfWeekStr(oldest, weekStart), currentWeekStartStr));
+  }, [logs, weekStart, currentWeekStartStr]);
 
   const maxMonthsAgo = useMemo(() => {
     if (logs.length === 0) return 4;
@@ -1830,15 +1994,14 @@ export default function App() {
     return Math.max(4, Math.max(0, diffMonths));
   }, [logs, timeZone]);
 
-  const currentMonthPrefix = useMemo(() => {
-    return formatLocalDateString(nowInZone(timeZone)).slice(0, 7); // YYYY-MM in the user's zone
-  }, [timeZone]);
+  const currentMonthPrefix = todayStr.slice(0, 7); // YYYY-MM in the user's zone
 
   const stats = useMemo(() => {
     const totalMin = logs.reduce((acc, l) => acc + l.durationMinutes, 0);
-    const recent7Days = Array.from({ length: 7 }, (_, i) => getRecentDateString(6 - i, timeZone));
+    // Current calendar week: restarts at 00:00 on the week-start day.
+    const thisWeek = new Set(weekDates(currentWeekStartStr));
     const weeklyMin = logs
-      .filter((l) => recent7Days.includes(l.date))
+      .filter((l) => thisWeek.has(l.date))
       .reduce((acc, l) => acc + l.durationMinutes, 0);
     const monthlyMin = logs
       .filter((l) => l.date.startsWith(currentMonthPrefix))
@@ -1850,7 +2013,7 @@ export default function App() {
       weeklyHours: (weeklyMin / 60).toFixed(1),
       monthlyHours: (monthlyMin / 60).toFixed(1),
     };
-  }, [logs, currentMonthPrefix, timeZone]);
+  }, [logs, currentMonthPrefix, currentWeekStartStr]);
 
   const clearanceStatus = useMemo(() => {
     return getClearanceStatus(user ? stats.totalMin : 0, claimedCycles);
@@ -1901,11 +2064,12 @@ export default function App() {
     localStorage.setItem(SURFACE_THEME_STORAGE_KEY, surfaceThemeId);
   }, [theme, surfaceThemeId, activeSurfacePair]);
 
-  // Weekly Navigation Data
-  const selectedWeeklyDays = useMemo(() => {
-    const baseDaysAgo = weeklyOffset * 7;
-    return Array.from({ length: 7 }, (_, i) => getRecentDateString(baseDaysAgo + 6 - i, timeZone));
-  }, [weeklyOffset, timeZone]);
+  // Weekly Navigation Data: one calendar week, left edge pinned to its
+  // first day (Monday or Sunday per the user's setting).
+  const selectedWeeklyDays = useMemo(
+    () => weekDates(addDays(currentWeekStartStr, -7 * weeklyOffset)),
+    [weeklyOffset, currentWeekStartStr]
+  );
 
   const weeklyWindowLabel = useMemo(() => {
     if (selectedWeeklyDays.length < 7) return '';
@@ -1913,6 +2077,7 @@ export default function App() {
   }, [selectedWeeklyDays]);
 
   const weeklyChartData = useMemo(() => {
+    const weekdayNames = t.weekdaysShortSun.split(',');
     return selectedWeeklyDays.map((dateStr) => {
       const dayLogs = logs.filter((l) => l.date === dateStr);
       const totalDayMin = dayLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -1925,11 +2090,14 @@ export default function App() {
       return {
         date: dateStr,
         label: dateStr.slice(5),
+        weekday: weekdayNames[parseDateStr(dateStr).getDay()],
+        isToday: dateStr === todayStr,
+        isFuture: dateStr > todayStr,
         totalMinutes: totalDayMin,
         byCategory,
       };
     });
-  }, [logs, categories, selectedWeeklyDays]);
+  }, [logs, categories, selectedWeeklyDays, todayStr, t]);
 
   const weeklyPeriodTotalMinutes = useMemo(() => {
     return weeklyChartData.reduce((acc, d) => acc + d.totalMinutes, 0);
@@ -1963,7 +2131,7 @@ export default function App() {
     const month = targetMonthDate.getMonth();
     const numDays = new Date(year, month + 1, 0).getDate();
     const rawDay = new Date(year, month, 1).getDay();
-    const startDayOfWeek = (rawDay + 6) % 7; // Monday = 0, Sunday = 6
+    const startDayOfWeek = weekdayPosition(rawDay, weekStart); // leading blanks before day 1
 
     const days = Array.from({ length: numDays }, (_, i) => {
       const dayNum = String(i + 1).padStart(2, '0');
@@ -1975,19 +2143,17 @@ export default function App() {
     });
 
     return { days, startDayOfWeek, numDays };
-  }, [targetMonthDate, targetMonthPrefix, logs]);
+  }, [targetMonthDate, targetMonthPrefix, logs, weekStart]);
 
   const monthlyPeriodTotalMinutes = useMemo(() => {
     return daysInTargetMonth.days.reduce((acc, d) => acc + d.minutes, 0);
   }, [daysInTargetMonth]);
 
-  // Rolling 7 days (today + previous 6) in the user's zone: the window that
-  // weekly category targets are measured against. Same window as the
-  // "weekly hours" stat, so progress doesn't drop to zero every Monday.
-  const currentWeekDates = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => getRecentDateString(6 - i, timeZone)),
-    [timeZone]
-  );
+  // Current calendar week in the user's zone (week-start day 00:00 through
+  // the 7th day): the window weekly category targets are measured against,
+  // same as the "this week" stat. Progress starts from zero on the first day
+  // of each week; earlier weeks stay available in Analytics.
+  const currentWeekDates = useMemo(() => weekDates(currentWeekStartStr), [currentWeekStartStr]);
 
   const weeklyBreakdown = useMemo(() => {
     const weekSet = new Set(currentWeekDates);
@@ -1996,12 +2162,6 @@ export default function App() {
       const catLogs = weekLogs.filter((l) => String(l.categoryId) === String(cat.id));
       const minutes = catLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
       const hours = +(minutes / 60).toFixed(1);
-      // Oldest day of the window falls out at the next midnight; surfaced so
-      // the drop isn't a surprise.
-      const expiringMinutes = catLogs
-        .filter((l) => l.date === currentWeekDates[0])
-        .reduce((acc, l) => acc + l.durationMinutes, 0);
-      const expiringHours = +(expiringMinutes / 60).toFixed(1);
       const progress = cat.isActive
         ? Math.min(100, Math.round((hours / Math.max(1, cat.weeklyTargetHours)) * 100))
         : 0;
@@ -2009,7 +2169,6 @@ export default function App() {
         ...cat,
         hours,
         minutes,
-        expiringHours,
         progress,
         targetMet: cat.isActive && hours >= cat.weeklyTargetHours,
       };
@@ -2037,16 +2196,15 @@ export default function App() {
     );
   };
 
-  // 12-Week Aggregation Data (1 Bar = 1 Full 7-Day Week Bucket, ending at weeklyOffset)
+  // 12-Week Aggregation Data (1 Bar = 1 Calendar Week Bucket, ending at weeklyOffset)
   const weeklyAggBuckets = useMemo(() => {
     const buckets = Array.from({ length: 12 }, (_, idx) => {
       const weeksBackFromSelected = 11 - idx;
       const totalWeeksAgo = weeklyOffset + weeksBackFromSelected;
-      const baseDaysAgo = totalWeeksAgo * 7;
-      const weekDates = Array.from({ length: 7 }, (__, d) => getRecentDateString(baseDaysAgo + 6 - d, timeZone));
-      const startStr = weekDates[0];
-      const endStr = weekDates[6];
-      const dateSet = new Set(weekDates);
+      const bucketDates = weekDates(addDays(currentWeekStartStr, -7 * totalWeeksAgo));
+      const startStr = bucketDates[0];
+      const endStr = bucketDates[6];
+      const dateSet = new Set(bucketDates);
       const weekLogs = logs.filter((l) => dateSet.has(l.date));
       const totalMinutes = weekLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
       const byCategory = categories.map((cat) => {
@@ -2076,7 +2234,7 @@ export default function App() {
       maxWeekMinutes,
       windowLabel,
     };
-  }, [weeklyOffset, logs, categories, timeZone]);
+  }, [weeklyOffset, logs, categories, currentWeekStartStr]);
 
   // 12-Month Aggregation Data (1 Bar = 1 Full Calendar Month Bucket, ending at monthlyOffset)
   const monthlyAggBuckets = useMemo(() => {
@@ -2195,30 +2353,20 @@ export default function App() {
       dayMap.set(l.date, existing);
     });
 
-    const getMonday = (d: Date) => {
-      const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      const day = copy.getDay();
-      const diff = (day + 6) % 7; // Monday = 0, Sunday = 6
-      copy.setDate(copy.getDate() - diff);
-      return copy;
-    };
+    const currentWeekStartDate = parseDateStr(currentWeekStartStr);
 
-    const today = nowInZone(timeZone);
-    const todayStr = formatLocalDateString(today);
-    const currentMonday = getMonday(today);
-
-    let originMonday = new Date(currentMonday);
+    let originWeekStart = new Date(currentWeekStartDate);
     if (logs.length > 0) {
       const oldestStr = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
       const oldestDate = new Date(oldestStr + 'T00:00:00');
       if (!isNaN(oldestDate.getTime())) {
-        originMonday = getMonday(oldestDate);
+        originWeekStart = startOfWeek(oldestDate, weekStart);
       }
     }
 
     const weeksElapsed = Math.max(
       0,
-      Math.round((currentMonday.getTime() - originMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+      Math.round((currentWeekStartDate.getTime() - originWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000))
     );
     const totalActiveWeeks = weeksElapsed + 1;
 
@@ -2235,12 +2383,12 @@ export default function App() {
         ? Math.max(0, (targetEpochIndex - 1) * unitWeeks)
         : targetEpochIndex * unitWeeks;
 
-    const blockStartMonday = new Date(originMonday);
-    blockStartMonday.setDate(blockStartMonday.getDate() + startWeekIndex * 7);
+    const blockStartDate = new Date(originWeekStart);
+    blockStartDate.setDate(blockStartDate.getDate() + startWeekIndex * 7);
 
     const weeks: Array<{
       weekIndex: number;
-      mondayDate: string;
+      weekStartDate: string;
       monthLabel: string | null;
       days: Array<{
         date: string;
@@ -2258,20 +2406,20 @@ export default function App() {
     let totalMinutesInBlock = 0;
 
     for (let w = 0; w < displayWeeksCount; w++) {
-      const weekMonday = new Date(blockStartMonday);
-      weekMonday.setDate(weekMonday.getDate() + w * 7);
-      const m = weekMonday.getMonth();
+      const weekFirstDay = new Date(blockStartDate);
+      weekFirstDay.setDate(weekFirstDay.getDate() + w * 7);
+      const m = weekFirstDay.getMonth();
       let monthLabel: string | null = null;
       if (m !== lastMonth) {
-        if (w === 0 || weekMonday.getDate() <= 7) {
-          monthLabel = weekMonday.toLocaleDateString(locale, { month: 'short' }).toUpperCase();
+        if (w === 0 || weekFirstDay.getDate() <= 7) {
+          monthLabel = weekFirstDay.toLocaleDateString(locale, { month: 'short' }).toUpperCase();
           lastMonth = m;
         }
       }
 
       const days = [];
       for (let d = 0; d < 7; d++) {
-        const cellDate = new Date(weekMonday);
+        const cellDate = new Date(weekFirstDay);
         cellDate.setDate(cellDate.getDate() + d);
         const dateStr = formatLocalDateString(cellDate);
         const info = dayMap.get(dateStr);
@@ -2299,7 +2447,7 @@ export default function App() {
 
       weeks.push({
         weekIndex: startWeekIndex + w,
-        mondayDate: formatLocalDateString(weekMonday),
+        weekStartDate: toDateStr(weekFirstDay),
         monthLabel,
         days,
       });
@@ -2321,7 +2469,7 @@ export default function App() {
       startLabel,
       endLabel,
     };
-  }, [logs, baseFitWeeks, matrixSpanMultiplier, matrixPageOffset, locale, timeZone]);
+  }, [logs, baseFitWeeks, matrixSpanMultiplier, matrixPageOffset, locale, todayStr, currentWeekStartStr, weekStart]);
 
   // ==========================================
   // Study Insights & Streak Calculations
@@ -2434,6 +2582,28 @@ export default function App() {
       peakDayName,
     };
   }, [logs, categories, t]);
+
+  // Chronometer Theme unlocks: Clearance level (like Surface Themes / Noise),
+  // plus achievement-style rules on streaks, log count and Ascensions.
+  const chronoProgress = useMemo<ChronoProgress>(
+    () => ({
+      rewardUnlockLevel: clearanceStatus.rewardUnlockLevel,
+      totalAscensions: clearanceStatus.totalAscensions,
+      longestStreak: user ? streakStats.longestStreak : 0,
+      sessionCount: user ? logs.length : 0,
+    }),
+    [clearanceStatus.rewardUnlockLevel, clearanceStatus.totalAscensions, user, streakStats.longestStreak, logs.length]
+  );
+
+  // A face that is (no longer) unlocked falls back to the default without
+  // forgetting the saved pick, mirroring activeSurfacePair.
+  const activeChronoTheme = useMemo(() => {
+    const candidate = getChronoThemeById(chronoThemeId);
+    if (!authLoading && !dataLoading && !isChronoThemeUnlocked(candidate, chronoProgress)) {
+      return getChronoThemeById(DEFAULT_CHRONO_THEME_ID);
+    }
+    return candidate;
+  }, [chronoThemeId, authLoading, dataLoading, chronoProgress]);
 
   const handleExportCSV = () => {
     if (logs.length === 0) {
@@ -3126,28 +3296,42 @@ export default function App() {
                   />
                   <span className="font-semibold">{t.chronometer}</span>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 min-w-0">
                   {isRunning ? (
                     <span className="px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold">
                       {t.recActive}
                     </span>
                   ) : (
-                    <span className={textMuted}>SYNC // {clockReadout.tzLabel}</span>
+                    <span className={`${textMuted} truncate`}>SYNC // {clockReadout.tzLabel}</span>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setShowChronoPicker((prev) => !prev)}
+                    aria-expanded={showChronoPicker}
+                    aria-label={t.chronoThemesOpen}
+                    title={`${t.chronoThemesOpen} — ${activeChronoTheme.name}`}
+                    className={`shrink-0 min-h-[28px] lg:min-h-0 px-1.5 py-0.5 border flex items-center space-x-1 cursor-pointer transition-colors ${
+                      showChronoPicker
+                        ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400'
+                        : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
+                    }`}
+                  >
+                    <Palette className="w-3 h-3" />
+                    <span className="tabular-nums">{activeChronoTheme.code}</span>
+                  </button>
                 </div>
               </div>
 
               <div className="flex items-baseline justify-between gap-3">
-                <div className="font-mono tracking-tight flex items-baseline">
-                  <span className="text-3xl sm:text-4xl font-light tabular-nums">
-                    {clockReadout.hh}:{clockReadout.mm}
-                  </span>
-                  <span className="text-lg sm:text-xl font-mono text-emerald-500 ml-1 tabular-nums font-medium">
-                    :{clockReadout.ss}
-                  </span>
-                </div>
+                <ChronoDisplay
+                  theme={activeChronoTheme}
+                  hh={clockReadout.hour}
+                  mm={clockReadout.minute}
+                  ss={clockReadout.second}
+                  isDark={isDark}
+                />
 
-                <div className="text-right font-mono">
+                <div className="text-right font-mono shrink-0">
                   <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums">
                     {clockReadout.dateDot}
                   </div>
@@ -3156,6 +3340,19 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {showChronoPicker && (
+                <ChronometerThemePicker
+                  activeThemeId={activeChronoTheme.id}
+                  onSelect={handleSelectChronoTheme}
+                  progress={chronoProgress}
+                  hh={clockReadout.hour}
+                  mm={clockReadout.minute}
+                  isDark={isDark}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                />
+              )}
             </div>
 
             {/* SESSION LOGGER PANEL */}
@@ -3511,11 +3708,17 @@ export default function App() {
                         {currentWeekDates[0].slice(5).replace('-', '.')} — {currentWeekDates[6].slice(5).replace('-', '.')}
                       </span>
                     </span>
+                    <span className="tabular-nums">
+                      {tf(t.weekResetsOn, { date: addDays(currentWeekStartStr, 7).slice(5).replace('-', '.') })}
+                    </span>
                     <span>
                       {tf(t.activeOfTotal, { a: activeCategoryCount, b: categories.length })}
                     </span>
                     <span className="basis-full normal-case tracking-normal">
-                      {tf(t.weekWindowHint, { tz: timeZone })}
+                      {tf(t.weekWindowHint, {
+                        tz: timeZone,
+                        day: t.weekdaysLong.split(',')[weekStart === 'sun' ? 0 : 1],
+                      })}
                     </span>
                   </div>
                 )}
@@ -3614,15 +3817,6 @@ export default function App() {
                         ) : (
                           // Parked: no target to fill, just a faint hatch in the category color.
                           <div className="w-full h-1.5 opacity-35" style={{ backgroundImage: inactiveHatch(cat.color) }} />
-                        )}
-
-                        {cat.expiringHours > 0 && (
-                          <div className={`text-right font-mono text-[10px] tabular-nums ${textMuted}`}>
-                            {tf(t.weekDropsOff, {
-                              h: cat.expiringHours,
-                              date: currentWeekDates[0].slice(5).replace('-', '.'),
-                            })}
-                          </div>
                         )}
 
                         {/* Inline Category Edit Form */}
@@ -4035,7 +4229,9 @@ export default function App() {
                         <div
                           key={day.date}
                           {...trendBarProps(idx)}
-                          className={`flex-1 flex flex-col items-center h-full justify-end group ${trendBarRing(idx)}`}
+                          className={`flex-1 flex flex-col items-center h-full justify-end group ${trendBarRing(idx)} ${
+                            day.isFuture ? 'opacity-45' : ''
+                          }`}
                         >
                           <span className={`font-mono text-[10px] mb-1.5 ${textMuted}`}>
                             {day.totalMinutes > 0 ? `${(day.totalMinutes / 60).toFixed(1)}h` : '-'}
@@ -4066,7 +4262,16 @@ export default function App() {
                             })}
                           </div>
 
-                          <span className="font-mono text-[11px] mt-2.5">{day.label}</span>
+                          <span
+                            className={`font-mono text-[9px] mt-2 tracking-wider ${
+                              day.isToday ? 'text-emerald-400 font-bold' : textMuted
+                            }`}
+                          >
+                            {day.weekday}
+                          </span>
+                          <span className={`font-mono text-[11px] mt-0.5 ${day.isToday ? 'text-emerald-400 font-semibold' : ''}`}>
+                            {day.label}
+                          </span>
                         </div>
                       );
                     })}
@@ -4283,9 +4488,9 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Weekday Labels (Mon to Sun) */}
+                    {/* Weekday Labels (Mon to Sun, or Sun to Sat per week-start setting) */}
                     <div className="grid grid-cols-7 gap-1.5 mb-2 text-center font-mono text-[10px] text-zinc-500">
-                      {t.weekdaysShortMon.split(',').map((d) => (
+                      {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d) => (
                         <span key={d}>{d}</span>
                       ))}
                     </div>
@@ -4591,11 +4796,11 @@ export default function App() {
 
               {/* Matrix Grid Container (7 Vertical Days x Dynamic Horizontal Weeks) */}
               <div className="flex items-start space-x-2.5 pt-1">
-                {/* 7-Day Vertical Axis Labels (MON - SUN) */}
+                {/* 7-Day Vertical Axis Labels (first day of week at the top) */}
                 <div
                   className={`flex flex-col justify-between pt-[18px] font-mono text-[9px] leading-none select-none shrink-0 h-[133px] ${textMuted}`}
                 >
-                  {t.weekdaysShortMon.split(',').map((d, i) => (
+                  {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d, i) => (
                     <span key={d} className={`h-[13px] flex items-center ${i % 2 === 1 ? 'opacity-50' : ''}`}>
                       {d}
                     </span>
@@ -4612,7 +4817,7 @@ export default function App() {
                     {/* Month Markers Row */}
                     <div className="flex gap-[4px] h-[14px] mb-[4px] font-mono text-[9px] leading-none select-none">
                       {cadenceMatrixData.weeks.map((wk) => (
-                        <div key={`month-${wk.mondayDate}`} className="w-[13px] shrink-0 relative">
+                        <div key={`month-${wk.weekStartDate}`} className="w-[13px] shrink-0 relative">
                           {wk.monthLabel && (
                             <span className={`absolute left-0 top-0 whitespace-nowrap ${textMuted}`}>
                               {wk.monthLabel}
@@ -4625,7 +4830,7 @@ export default function App() {
                     {/* Week Columns x 7 Day Cells */}
                     <div className="flex gap-[4px] justify-between">
                       {cadenceMatrixData.weeks.map((wk) => (
-                        <div key={wk.mondayDate} className="flex flex-col gap-[4px] shrink-0">
+                        <div key={wk.weekStartDate} className="flex flex-col gap-[4px] shrink-0">
                           {wk.days.map((cell) => {
                             const hasCommit = cell.minutes > 0;
                             let cellStyle: string;
@@ -5555,6 +5760,31 @@ export default function App() {
                         )}
                       </div>
                     </div>
+
+                    <div>
+                      <span className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>{t.weekStartLabel}</span>
+                      <div className={`grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.weekStartLabel}>
+                        {(['mon', 'sun'] as const).map((opt, idx) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            role="radio"
+                            aria-checked={weekStart === opt}
+                            onClick={() => weekStart !== opt && handleUpdateRegion({ week_start: opt })}
+                            className={`min-h-[38px] px-3 py-2 transition-colors cursor-pointer ${
+                              idx > 0 ? `border-l ${borderCol}` : ''
+                            } ${
+                              weekStart === opt
+                                ? 'bg-emerald-500 text-zinc-950 font-bold'
+                                : `${textMuted} hover:text-emerald-400`
+                            }`}
+                          >
+                            {opt === 'mon' ? t.weekStartMon : t.weekStartSun}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className={`self-end text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.weekStartHint}</p>
                   </div>
 
                   <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.timezoneHint}</p>
@@ -5711,6 +5941,95 @@ export default function App() {
                       className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
                     />
                   </div>
+                </div>
+
+                {/* User Status / Market (multi-select, max 5) */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
+                      <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{t.statusTitle}</span>
+                    </div>
+                    <span className={`text-[10px] tabular-nums ${profileStatuses.length > 0 ? 'text-emerald-400' : textMuted}`}>
+                      {tf(t.statusCount, { n: profileStatuses.length, max: MAX_USER_STATUSES })}
+                    </span>
+                  </div>
+
+                  {/* Current selection (in pick order) */}
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-[26px]">
+                    {profileStatuses.length === 0 ? (
+                      <span className={`text-[10px] ${textMuted}`}>{t.statusNone}</span>
+                    ) : (
+                      <>
+                        {profileStatuses.map((id) => (
+                          <button
+                            key={`sel-${id}`}
+                            type="button"
+                            onClick={() => toggleProfileStatus(id)}
+                            className="px-2 py-1 border border-emerald-500 bg-emerald-500/15 text-emerald-400 text-[10px] font-bold flex items-center space-x-1.5 cursor-pointer hover:bg-emerald-500/25"
+                          >
+                            <span>{getUserStatusOption(id)?.label[lang] ?? id}</span>
+                            <span aria-hidden>×</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileStatuses([]);
+                            setStatusLimitHit(false);
+                          }}
+                          className={`px-1.5 py-1 text-[10px] ${textMuted} hover:text-rose-400 underline underline-offset-2 cursor-pointer`}
+                        >
+                          {t.statusClear}
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {statusLimitHit && (
+                    <div className="p-2 border border-amber-500/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center space-x-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{tf(t.statusMaxReached, { max: MAX_USER_STATUSES })}</span>
+                    </div>
+                  )}
+
+                  <div className="space-y-2.5">
+                    {USER_STATUS_GROUPS.map((group) => (
+                      <div key={group}>
+                        <span className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                          {t[STATUS_GROUP_LABEL_KEY[group]]}
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {USER_STATUS_OPTIONS.filter((o) => o.group === group).map((opt) => {
+                            const selected = profileStatuses.includes(opt.id);
+                            const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => toggleProfileStatus(opt.id)}
+                                className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
+                                  selected
+                                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                                    : atLimit
+                                    ? `${borderCol} ${textMuted} opacity-45`
+                                    : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
+                                }`}
+                              >
+                                {selected ? '✓ ' : ''}
+                                {opt.label[lang]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.statusHint, { max: MAX_USER_STATUSES })}
+                  </p>
                 </div>
 
                 <button

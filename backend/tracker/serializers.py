@@ -37,6 +37,44 @@ SURFACE_THEME_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
 SUPPORTED_LANGUAGES = {'en', 'ja'}
 
+SUPPORTED_WEEK_STARTS = {'mon', 'sun'}
+
+# Chronometer Theme ids follow the same slug shape as Surface Themes; the
+# catalog (and its unlock rules) lives in the frontend.
+CHRONO_THEME_ID_RE = SURFACE_THEME_ID_RE
+
+# User status / market tags. Must stay in sync with USER_STATUS_OPTIONS in
+# frontend/src/userStatus.ts (labels and grouping live there).
+USER_STATUS_IDS = (
+    'student_cs',
+    'student_engineering',
+    'student_science',
+    'student_business',
+    'student_humanities',
+    'student_other',
+    'graduate_research',
+    'bootcamp_self_taught',
+    'gap_year',
+    'job_seeking',
+    'tech_market',
+    'data_ai',
+    'design_creative',
+    'business_corporate',
+    'finance_consulting',
+    'public_sector',
+    'education_teaching',
+    'healthcare',
+    'engineering_trades',
+    'startup_founder',
+    'freelance',
+    'content_creator',
+    'side_project',
+    'career_break',
+    'lifelong_learner',
+    'other',
+)
+MAX_USER_STATUSES = 5
+
 
 # ==========================================
 # Authentication & User Serializers
@@ -53,6 +91,11 @@ class UserSerializer(serializers.ModelSerializer):
     surface_theme = serializers.CharField(required=False, allow_blank=True, max_length=64)
     language = serializers.CharField(required=False, allow_blank=True, max_length=8)
     timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    week_start = serializers.CharField(required=False, max_length=3)
+    chrono_theme = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    user_statuses = serializers.ListField(
+        child=serializers.CharField(max_length=40), required=False, allow_empty=True
+    )
 
     class Meta:
         model = User
@@ -66,6 +109,9 @@ class UserSerializer(serializers.ModelSerializer):
             'surface_theme',
             'language',
             'timezone',
+            'week_start',
+            'chrono_theme',
+            'user_statuses',
         )
         read_only_fields = ('id',)
 
@@ -78,6 +124,9 @@ class UserSerializer(serializers.ModelSerializer):
         data['surface_theme'] = profile.surface_theme
         data['language'] = profile.language
         data['timezone'] = profile.timezone
+        data['week_start'] = profile.week_start or UserProfile.WEEK_START_MONDAY
+        data['chrono_theme'] = profile.chrono_theme
+        data['user_statuses'] = [s for s in (profile.user_statuses or []) if s in USER_STATUS_IDS]
         return data
 
     def validate_username(self, value):
@@ -148,6 +197,30 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Unknown time zone. Use an IANA name such as "Asia/Tokyo".')
         return cleaned
 
+    def validate_week_start(self, value):
+        cleaned = value.strip().lower()
+        if cleaned not in SUPPORTED_WEEK_STARTS:
+            raise serializers.ValidationError('Week start must be "mon" or "sun".')
+        return cleaned
+
+    def validate_chrono_theme(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and not CHRONO_THEME_ID_RE.match(cleaned):
+            raise serializers.ValidationError('Invalid chronometer theme id.')
+        return cleaned
+
+    def validate_user_statuses(self, value):
+        cleaned = []
+        for item in value:
+            key = item.strip().lower()
+            if key not in USER_STATUS_IDS:
+                raise serializers.ValidationError(f'Unknown status "{item}".')
+            if key not in cleaned:
+                cleaned.append(key)
+        if len(cleaned) > MAX_USER_STATUSES:
+            raise serializers.ValidationError(f'Select at most {MAX_USER_STATUSES} statuses.')
+        return cleaned
+
     def update(self, instance, validated_data):
         avatar_color = validated_data.pop('avatar_color', None)
         avatar_preset = validated_data.pop('avatar_preset', None)
@@ -155,6 +228,9 @@ class UserSerializer(serializers.ModelSerializer):
         surface_theme = validated_data.pop('surface_theme', None)
         language = validated_data.pop('language', None)
         tz_name = validated_data.pop('timezone', None)
+        week_start = validated_data.pop('week_start', None)
+        chrono_theme = validated_data.pop('chrono_theme', None)
+        user_statuses = validated_data.pop('user_statuses', None)
 
         if 'username' in validated_data or 'email' in validated_data:
             if 'username' in validated_data:
@@ -182,6 +258,15 @@ class UserSerializer(serializers.ModelSerializer):
             profile_updated = True
         if tz_name is not None:
             profile.timezone = tz_name
+            profile_updated = True
+        if week_start is not None:
+            profile.week_start = week_start
+            profile_updated = True
+        if chrono_theme is not None:
+            profile.chrono_theme = chrono_theme
+            profile_updated = True
+        if user_statuses is not None:
+            profile.user_statuses = user_statuses
             profile_updated = True
         if profile_updated:
             profile.save()
