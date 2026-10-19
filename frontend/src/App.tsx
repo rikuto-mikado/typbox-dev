@@ -1435,7 +1435,11 @@ export default function App() {
       await loadUserData();
       setDataStatus({
         type: 'success',
-        text: tf(t.msgImported, { logs: res.imported_logs, cats: res.created_categories }),
+        text: tf(t.msgImported, {
+          logs: res.imported_logs,
+          cats: res.created_categories,
+          skipped: res.skipped_logs ?? 0,
+        }),
       });
     } catch (err: unknown) {
       const error = err as Error;
@@ -1453,10 +1457,12 @@ export default function App() {
     try {
       const res = await api.logs.clearAll();
       setLogs([]);
+      setCategories([]);
+      setSelectedCatId('');
       setClearLogsConfirmText('');
       setDataStatus({
         type: 'success',
-        text: tf(t.msgCleared, { n: res.deleted }),
+        text: tf(t.msgCleared, { n: res.deleted, cats: res.deleted_categories ?? 0 }),
       });
     } catch (err: unknown) {
       const error = err as Error;
@@ -1987,20 +1993,38 @@ export default function App() {
 
   const weeklyBreakdown = useMemo(() => {
     const weekSet = new Set(currentWeekDates);
-    const weekLogs = logs.filter((l) => weekSet.has(l.date));
     const rows = categories.map((cat) => {
-      const minutes = weekLogs
-        .filter((l) => String(l.categoryId) === String(cat.id))
-        .reduce((acc, l) => acc + l.durationMinutes, 0);
+      // Progress is measured against this week, but the month and all-time
+      // totals are shown too so the category reflects the full study log
+      // (early in the week the weekly figure alone looks near-empty).
+      let minutes = 0;
+      let monthMinutes = 0;
+      let totalMinutes = 0;
+      for (const l of logs) {
+        if (String(l.categoryId) !== String(cat.id)) continue;
+        totalMinutes += l.durationMinutes;
+        if (l.date.startsWith(currentMonthPrefix)) monthMinutes += l.durationMinutes;
+        if (weekSet.has(l.date)) minutes += l.durationMinutes;
+      }
       const hours = +(minutes / 60).toFixed(1);
+      const monthHours = +(monthMinutes / 60).toFixed(1);
+      const totalHours = +(totalMinutes / 60).toFixed(1);
       const progress = cat.isActive
         ? Math.min(100, Math.round((hours / Math.max(1, cat.weeklyTargetHours)) * 100))
         : 0;
-      return { ...cat, hours, minutes, progress, targetMet: cat.isActive && hours >= cat.weeklyTargetHours };
+      return {
+        ...cat,
+        hours,
+        minutes,
+        monthHours,
+        totalHours,
+        progress,
+        targetMet: cat.isActive && hours >= cat.weeklyTargetHours,
+      };
     });
     // Active categories first; original order is kept within each group.
     return [...rows.filter((r) => r.isActive), ...rows.filter((r) => !r.isActive)];
-  }, [logs, categories, currentWeekDates]);
+  }, [logs, categories, currentWeekDates, currentMonthPrefix]);
 
   const activeCategoryCount = useMemo(() => categories.filter((c) => c.isActive).length, [categories]);
 
@@ -3596,6 +3620,15 @@ export default function App() {
                           // Parked: no target to fill, just a faint hatch in the category color.
                           <div className="w-full h-1.5 opacity-35" style={{ backgroundImage: inactiveHatch(cat.color) }} />
                         )}
+
+                        <div className={`flex justify-end gap-3 font-mono text-[10px] tabular-nums ${textMuted}`}>
+                          <span>
+                            {t.catThisMonth} {cat.monthHours}h
+                          </span>
+                          <span>
+                            {t.catAllTime} {cat.totalHours}h
+                          </span>
+                        </div>
 
                         {/* Inline Category Edit Form */}
                         {isEditing && (
@@ -5862,7 +5895,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Reset All Study Logs (Keep Account) */}
+                {/* Reset All Study Logs & Categories (Keep Account) */}
                 <div className="p-4 border border-amber-500/30 bg-amber-500/5 space-y-3">
                   <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
                     {t.resetLogsTitle}
@@ -5881,7 +5914,7 @@ export default function App() {
                     />
                     <button
                       type="button"
-                      disabled={clearLogsConfirmText !== 'CLEAR' || clearingLogs || logs.length === 0}
+                      disabled={clearLogsConfirmText !== 'CLEAR' || clearingLogs || (logs.length === 0 && categories.length === 0)}
                       onClick={handleClearAllLogs}
                       className="px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                     >

@@ -311,12 +311,12 @@ export const api = {
       });
     },
     clearAll: async () => {
-      return apiFetch<{ deleted: number }>('/logs/clear-all/', {
+      return apiFetch<{ deleted: number; deleted_categories?: number }>('/logs/clear-all/', {
         method: 'DELETE',
       });
     },
     importBackup: async (payload: { categories?: unknown[]; logs: unknown[] }) => {
-      return apiFetch<{ imported_logs: number; created_categories: number }>('/logs/import-backup/', {
+      return apiFetch<{ imported_logs: number; skipped_logs?: number; created_categories: number }>('/logs/import-backup/', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
