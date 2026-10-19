@@ -21,6 +21,7 @@ import {
   Play,
 } from 'lucide-react';
 import type { Category, StudyLog } from './App';
+import { useI18n, tf } from './i18n';
 import { drawStatusCard, STATUS_CARD_LAYOUTS, type StatusCardLayout } from './statusCard';
 
 // ==========================================
@@ -805,6 +806,48 @@ function formatPresetLabel(min: number): string {
 // media (keeps playing with the silent switch on / screen locked).
 type NavigatorWithAudioSession = Navigator & { audioSession?: { type: string } };
 
+// Android Chrome treats an <audio> fed by a MediaStream (srcObject) as a live
+// WebRTC-style stream: it gets no media notification / foreground service,
+// so the renderer is throttled and NOISE dies once the screen turns off.
+// There we play the mix straight to ctx.destination and keep the tab
+// registered as "playing media" with a looping near-silent file-backed
+// <audio> element instead (an audio wake lock), which Chrome does keep alive.
+const IS_ANDROID = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+
+let keepAliveUrl: string | null = null;
+
+// 10s, 8kHz, 16-bit mono WAV with ±1 LSB dither (-90 dBFS: inaudible, but not
+// digital silence, which some engines treat as "not playing"). Chrome only
+// grants a media notification to media at least 5s long, hence 10s.
+function getKeepAliveUrl(): string {
+  if (keepAliveUrl) return keepAliveUrl;
+  const sampleRate = 8000;
+  const numSamples = sampleRate * 10;
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+  for (let i = 0; i < numSamples; i++) {
+    view.setInt16(44 + i * 2, i % 2 === 0 ? 1 : -1, true);
+  }
+  keepAliveUrl = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  return keepAliveUrl;
+}
+
 export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   isDark,
   borderCol,
@@ -813,6 +856,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   userClearanceLevel,
   userTotalHours,
 }) => {
+  const { t, formatTime } = useI18n();
   const [layers, setLayers] = useState<MixLayer[]>([]);
   const [masterVolume, setMasterVolume] = useState<number>(0.35);
   const [showPopover, setShowPopover] = useState(false);
@@ -835,8 +879,13 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   // by a hidden <audio> element. Mobile browsers suspend a bare
   // AudioContext when the screen locks or the tab is backgrounded, but keep
   // a playing media element alive (and expose it to lock-screen controls).
+  // On Android, bgAudioElRef instead holds the silent keep-alive element
+  // (see IS_ANDROID) and mediaStreamDestRef stays null.
   const mediaStreamDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const bgAudioElRef = useRef<HTMLAudioElement | null>(null);
+  // True while the user (not the OS) has paused the mix — the auto-resume
+  // paths must never override an explicit pause.
+  const userPausedRef = useRef(false);
   // Node-based audio graph, keyed per layer so one layer can be added/removed
   // or have its fader adjusted without touching any other active layer.
   const layerNodesRef = useRef<Map<string, AudioNode[]>>(new Map());
@@ -867,7 +916,14 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       master.gain.value = masterVolume;
       masterGainRef.current = master;
 
-      if (typeof ctx.createMediaStreamDestination === 'function') {
+      if (IS_ANDROID) {
+        master.connect(ctx.destination);
+        const el = new Audio(getKeepAliveUrl());
+        el.loop = true;
+        el.preload = 'auto';
+        el.setAttribute('playsinline', '');
+        bgAudioElRef.current = el;
+      } else if (typeof ctx.createMediaStreamDestination === 'function') {
         const dest = ctx.createMediaStreamDestination();
         const el = new Audio();
         el.srcObject = dest.stream;
@@ -887,6 +943,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   // back to direct AudioContext output so NOISE still plays in the
   // foreground.
   const startOutput = useCallback(() => {
+    userPausedRef.current = false;
     const el = bgAudioElRef.current;
     const ctx = audioCtxRef.current;
     if (ctx && ctx.state !== 'running') {
@@ -1051,6 +1108,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 
   const pausePlayback = useCallback(() => {
     if (layerNodesRef.current.size === 0) return;
+    userPausedRef.current = true;
     setIsPaused(true);
     bgAudioElRef.current?.pause();
     audioCtxRef.current?.suspend().catch(() => {});
@@ -1099,17 +1157,19 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       const reqHours = CLEARANCE_LEVELS[profile.clearanceHintLv - 1]?.requiredHours ?? 0;
       const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
       setLockedNotice(
-        `[${profile.code} // ${profile.name}] unlocks at CLEARANCE LV.${String(
-          profile.clearanceHintLv
-        ).padStart(4, '0')} (${reqHours}H — need ${hoursRemaining}H more).`
+        tf(t.noiseLockedNotice, {
+          code: profile.code,
+          name: profile.name,
+          lv: String(profile.clearanceHintLv).padStart(4, '0'),
+          req: reqHours,
+          rem: hoursRemaining,
+        })
       );
       return;
     }
 
     if (layers.length >= MAX_MIX_LAYERS) {
-      setLockedNotice(
-        `Mix is full (${MAX_MIX_LAYERS}/${MAX_MIX_LAYERS}) — remove a layer before adding another.`
-      );
+      setLockedNotice(tf(t.mixFull, { n: MAX_MIX_LAYERS }));
       return;
     }
 
@@ -1150,12 +1210,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
         layerNodesRef.current.forEach((_nodes, id) => stopLayerNodes(id));
         setLayers([]);
         handleMixEmptied();
-        const at = new Date(sleepEndsAt);
-        setSleepNotice(
-          `SLEEP TIMER ELAPSED — NOISE stopped at ${String(at.getHours()).padStart(2, '0')}:${String(
-            at.getMinutes()
-          ).padStart(2, '0')}.`
-        );
+        setSleepNotice(tf(t.sleepElapsed, { time: formatTime(sleepEndsAt) }));
       }
     };
     const intervalId = window.setInterval(tick, 1000);
@@ -1164,7 +1219,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', tick);
     };
-  }, [sleepEndsAt, stopLayerNodes, handleMixEmptied]);
+  }, [sleepEndsAt, stopLayerNodes, handleMixEmptied, t, formatTime]);
 
   // Coming back to the tab (or unlocking the phone): if the OS interrupted
   // the AudioContext (iOS does this for calls/Siri), pick playback back up.
@@ -1187,6 +1242,37 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       window.removeEventListener('focus', handleVisible);
     };
   }, [layers.length, isPaused, startOutput, applyMasterGain]);
+
+  // Background self-heal: if the OS suspends/interrupts the AudioContext
+  // while hidden (Android power saving), resume it right away instead of
+  // waiting for the tab to become visible again. If the OS pauses the media
+  // element itself (audio focus lost to a call / another app), mirror that
+  // as a regular pause so the mix doesn't fight it and the notification
+  // shows a resume button. Explicit user pauses are left alone.
+  useEffect(() => {
+    if (layers.length === 0 || isPaused) return;
+    const ctx = audioCtxRef.current;
+    const el = bgAudioElRef.current;
+    const shouldRun = () => layerNodesRef.current.size > 0 && !userPausedRef.current;
+    const handleCtxState = () => {
+      if (!ctx || !shouldRun()) return;
+      const state = ctx.state as string; // includes Safari's 'interrupted'
+      if (state === 'suspended' || state === 'interrupted') {
+        ctx.resume().catch(() => {});
+      }
+    };
+    const handleElPause = () => {
+      if (shouldRun()) pausePlayback();
+    };
+    ctx?.addEventListener('statechange', handleCtxState);
+    // iOS's MediaStream bridge already survives screen lock; only mirror
+    // element pauses for the Android keep-alive.
+    if (IS_ANDROID) el?.addEventListener('pause', handleElPause);
+    return () => {
+      ctx?.removeEventListener('statechange', handleCtxState);
+      el?.removeEventListener('pause', handleElPause);
+    };
+  }, [layers.length, isPaused, pausePlayback]);
 
   // MediaSession: lock-screen / notification / hardware-key controls.
   useEffect(() => {
@@ -1284,6 +1370,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
       if (bgAudioElRef.current) {
         bgAudioElRef.current.pause();
         bgAudioElRef.current.srcObject = null;
+        bgAudioElRef.current.removeAttribute('src');
       }
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {});
@@ -1326,8 +1413,8 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
             ? 'border-emerald-500/70 bg-emerald-500/10 text-emerald-400'
             : `${borderCol} hover:opacity-80`
         }`}
-        aria-label="Ambient Soundscape Mixer"
-        title="Ambient Soundscape Mixer"
+        aria-label={t.mixerTitle}
+        title={t.mixerTitle}
       >
         {isPlaying ? (
           <>
@@ -1338,7 +1425,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
             )}
             <span className="hidden md:inline font-semibold tracking-wider">
               {isPaused
-                ? 'PAUSED'
+                ? t.paused
                 : layers.length === 1
                 ? NOISE_PROFILES.find((p) => p.id === layers[0].id)?.code
                 : `MIX ×${layers.length}`}
@@ -1353,7 +1440,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
             {sleepEndsAt !== null && (
               <span
                 className="flex items-center space-x-0.5 text-[10px] tabular-nums text-sky-400"
-                title="Sleep Timer remaining"
+                title={t.sleepRemaining}
               >
                 <Timer className="w-3 h-3" />
                 <span>{formatSleepRemaining(sleepRemainingMs)}</span>
@@ -1370,39 +1457,41 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 
       {showPopover && (
         <div
-          className={`fixed left-3 right-3 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] border ${borderCol} ${bgCard} shadow-2xl z-50 p-4 font-mono text-xs space-y-3`}
+          className={`fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] overflow-y-auto overscroll-contain sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] sm:max-h-[80vh] border ${borderCol} ${bgCard} shadow-2xl z-50 p-3 sm:p-4 font-mono text-xs space-y-3`}
         >
-          <div className="flex items-center justify-between border-b pb-2.5 border-zinc-800/60">
-            <div className="flex items-center space-x-2">
-              <Radio className={`w-3.5 h-3.5 ${isPlaying ? 'text-emerald-400 animate-pulse' : textMuted}`} />
-              <span className="text-[11px] font-bold uppercase tracking-widest">SOUNDSCAPE MIXER</span>
-              <span className={`text-[9px] px-1.5 py-0.2 border ${borderCol} text-emerald-400`}>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-2.5 border-zinc-800/60">
+            <div className="flex items-center gap-2 min-w-0">
+              <Radio className={`w-3.5 h-3.5 shrink-0 ${isPlaying ? 'text-emerald-400 animate-pulse' : textMuted}`} />
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest whitespace-nowrap">
+                {t.mixerHeader}
+              </span>
+              <span className={`text-[9px] px-1.5 py-0.5 border ${borderCol} text-emerald-400 whitespace-nowrap shrink-0`}>
                 {unlockedCount} / {NOISE_PROFILES.length}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 ml-auto shrink-0">
               {isPlaying && (
                 <button
                   type="button"
                   onClick={isPaused ? resumePlayback : pausePlayback}
-                  className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/60 text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer flex items-center space-x-1`}
-                  aria-label={isPaused ? 'Resume mix' : 'Pause mix'}
+                  className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap border border-emerald-500/60 text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer flex items-center gap-1`}
+                  aria-label={isPaused ? t.resumeMix : t.pauseMix}
                 >
                   {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-                  <span>{isPaused ? 'RESUME' : 'PAUSE'}</span>
+                  <span>{isPaused ? t.resume : t.pause}</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={stopAllLayers}
                 disabled={!isPlaying}
-                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                className={`px-2 sm:px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
                   isPlaying
                     ? 'bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer'
                     : `border ${borderCol} ${textMuted} cursor-default`
                 }`}
               >
-                {isPlaying ? `STOP ALL (${layers.length})` : 'MIX EMPTY'}
+                {isPlaying ? tf(t.stopAll, { n: layers.length }) : t.mixEmpty}
               </button>
             </div>
           </div>
@@ -1418,7 +1507,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                 onClick={() => setSleepNotice(null)}
                 className="text-[9px] underline ml-2 cursor-pointer"
               >
-                DISMISS
+                {t.dismiss}
               </button>
             </div>
           )}
@@ -1434,7 +1523,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                 onClick={() => setLockedNotice(null)}
                 className="text-[9px] underline ml-2 cursor-pointer"
               >
-                DISMISS
+                {t.dismiss}
               </button>
             </div>
           )}
@@ -1442,7 +1531,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
           {layers.length > 0 && (
             <div className="space-y-1.5">
               <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>
-                Active Mix ({layers.length}/{MAX_MIX_LAYERS})
+                {tf(t.activeMix, { n: layers.length, max: MAX_MIX_LAYERS })}
               </div>
               <div className="space-y-1.5">
                 {layers.map((layer) => {
@@ -1465,7 +1554,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                           onClick={() => toggleLayer(profile)}
                           className="text-[9px] text-amber-400 hover:text-amber-300 cursor-pointer shrink-0 uppercase font-bold"
                         >
-                          Remove
+                          {t.remove}
                         </button>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -1496,7 +1585,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <span className={`flex items-center space-x-1.5 text-[10px] uppercase tracking-wider ${sleepEndsAt !== null ? 'text-sky-400 font-bold' : textMuted}`}>
                   <Timer className="w-3.5 h-3.5" />
-                  <span>Sleep Timer</span>
+                  <span>{t.sleepTimer}</span>
                 </span>
                 {sleepEndsAt !== null ? (
                   <span className="flex items-center gap-2">
@@ -1508,18 +1597,16 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                       onClick={clearSleepTimer}
                       className="text-[9px] text-amber-400 hover:text-amber-300 cursor-pointer uppercase font-bold"
                     >
-                      Cancel
+                      {t.cancelLower}
                     </button>
                   </span>
                 ) : (
-                  <span className={`text-[9px] ${textMuted}`}>OFF</span>
+                  <span className={`text-[9px] ${textMuted}`}>{t.off}</span>
                 )}
               </div>
               {sleepEndsAt !== null && (
                 <p className={`text-[9px] font-sans ${textMuted}`}>
-                  Stops at{' '}
-                  {new Date(sleepEndsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} with a{' '}
-                  {SLEEP_FADE_SECONDS}s fade-out. Pick another preset to reset.
+                  {tf(t.sleepStopsAt, { time: formatTime(sleepEndsAt), s: SLEEP_FADE_SECONDS })}
                 </p>
               )}
               <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
@@ -1543,8 +1630,8 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                   step={customSleepUnit === 'hr' ? 0.5 : 1}
                   value={customSleepValue}
                   onChange={(e) => setCustomSleepValue(e.target.value)}
-                  placeholder="Custom"
-                  aria-label="Custom sleep timer duration"
+                  placeholder={t.custom}
+                  aria-label={t.customSleep}
                   className={`flex-1 min-w-0 min-h-[32px] sm:min-h-0 px-2 py-1 border ${borderCol} bg-transparent text-[11px] outline-none focus:border-sky-500/70`}
                 />
                 <div className={`flex border ${borderCol} text-[10px]`}>
@@ -1566,7 +1653,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                   disabled={!customSleepValue || Number(customSleepValue) <= 0}
                   className="min-h-[32px] sm:min-h-0 px-2.5 py-1 text-[10px] font-bold uppercase border border-sky-500/60 text-sky-400 hover:bg-sky-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-default"
                 >
-                  Set
+                  {t.set}
                 </button>
               </form>
             </div>
@@ -1579,7 +1666,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={`Search ${NOISE_PROFILES.length} procedural spectra...`}
+                placeholder={tf(t.searchSpectra, { n: NOISE_PROFILES.length })}
                 className="w-full bg-transparent text-xs outline-none"
               />
             </div>
@@ -1593,7 +1680,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                     : `${borderCol} ${textMuted}`
                 }`}
               >
-                ALL
+                {t.all}
               </button>
               {NOISE_FAMILIES.map((fam) => (
                 <button
@@ -1646,7 +1733,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                       </span>
                       {inMix && (
                         <span className="text-[9px] px-1 py-0.2 bg-emerald-500 text-zinc-950 font-bold uppercase">
-                          In Mix
+                          {t.inMix}
                         </span>
                       )}
                       {!unlocked && (
@@ -1670,7 +1757,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
 
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-[10px]">
-              <span className={`uppercase ${textMuted}`}>Master Output</span>
+              <span className={`uppercase ${textMuted}`}>{t.masterOutput}</span>
               <span className="font-bold text-emerald-400">{Math.round(masterVolume * 100)}%</span>
             </div>
             <input
@@ -1710,6 +1797,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
   textMuted,
   onClaimAscension,
 }) => {
+  const { t } = useI18n();
   const [filterMode, setFilterMode] = useState<
     'all' | 'rewards' | 'milestones' | 'unlocked' | 'locked'
   >('all');
@@ -1764,13 +1852,13 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                   {clearance.current.division}
                 </span>
                 <span className={`text-[10px] px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
-                  CYCLE {String(clearance.cycleNumber).padStart(2, '0')}
+                  {tf(t.cycleN, { n: String(clearance.cycleNumber).padStart(2, '0') })}
                 </span>
               </div>
               <div className={`text-[10px] ${textMuted}`}>
-                LIFETIME ARCHIVED: <strong className="text-emerald-400">{clearance.totalHours}H</strong> //{' '}
-                CYCLE: <strong className="text-emerald-400">{clearance.cycleHours}H / 1,000H</strong> //{' '}
-                {clearance.unlockedCount} OF {clearance.totalRanks.toLocaleString()} CLEARANCE RANKS UNLOCKED
+                {t.lifetimeArchived} <strong className="text-emerald-400">{clearance.totalHours}H</strong> //{' '}
+                {t.cycleLabel} <strong className="text-emerald-400">{clearance.cycleHours}H / 1,000H</strong> //{' '}
+                {tf(t.ranksUnlocked, { a: clearance.unlockedCount, b: clearance.totalRanks.toLocaleString() })}
               </div>
             </div>
           </div>
@@ -1785,16 +1873,16 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                       ? 'bg-emerald-400 border-emerald-400'
                       : `${borderCol} opacity-40`
                   }`}
-                  title={`Sub-Phase ${pip}/5`}
+                  title={tf(t.subPhaseN, { n: pip })}
                 />
               ))}
               <span className="ml-1.5 text-[10px] text-emerald-400 font-bold">
-                PHASE {clearance.subPhase}/5
+                {tf(t.phaseN, { n: clearance.subPhase })}
               </span>
             </div>
             {clearance.next && (
               <div className={`text-[10px] mt-0.5 ${textMuted}`}>
-                NEXT RANK IN{' '}
+                {t.nextRankIn}{' '}
                 <span className="text-emerald-400 font-bold">{clearance.hoursRemainingToNext}H</span>
               </div>
             )}
@@ -1805,8 +1893,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
         <div className="space-y-1">
           <div className="flex justify-between text-[10px]">
             <span>
-              CURRENT: LV.{String(clearance.current.level).padStart(4, '0')} (
-              {clearance.current.requiredHours}H)
+              {tf(t.currentLv, { lv: String(clearance.current.level).padStart(4, '0'), h: clearance.current.requiredHours })}
             </span>
             {clearance.ascensionAvailable && onClaimAscension ? (
               <button
@@ -1814,15 +1901,19 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                 onClick={onClaimAscension}
                 className="text-amber-400 font-bold uppercase tracking-wider animate-pulse cursor-pointer hover:text-amber-300"
               >
-                ⚡ ASCENSION AVAILABLE — CLAIM NOW
+                {t.ascensionClaim}
               </button>
             ) : clearance.next ? (
               <span>
-                NEXT: LV.{String(clearance.next.level).padStart(4, '0')} {clearance.next.title} (
-                {clearance.next.requiredHours}H) — {clearance.progressPct}%
+                {tf(t.nextLvTitle, {
+                  lv: String(clearance.next.level).padStart(4, '0'),
+                  title: clearance.next.title,
+                  h: clearance.next.requiredHours,
+                  pct: clearance.progressPct,
+                })}
               </span>
             ) : (
-              <span className="text-emerald-400 font-bold">CYCLE COMPLETE (1,000H+)</span>
+              <span className="text-emerald-400 font-bold">{t.cycleComplete}</span>
             )}
           </div>
           <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
@@ -1844,7 +1935,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
             <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
             <input
               type="text"
-              placeholder={`Search ${CLEARANCE_LEVELS.length.toLocaleString()} ranks or theme rewards (e.g. 10000h, SOVEREIGN, THM-24)...`}
+              placeholder={tf(t.searchRanks, { n: CLEARANCE_LEVELS.length.toLocaleString() })}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -1857,11 +1948,11 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
           <div className={`flex flex-wrap border ${borderCol} text-[10px]`}>
             {(
               [
-                { id: 'all', label: 'ALL' },
-                { id: 'rewards', label: `REWARDS (${SURFACE_THEME_PAIRS.length})` },
-                { id: 'milestones', label: 'MILESTONES' },
-                { id: 'unlocked', label: 'UNLOCKED' },
-                { id: 'locked', label: 'LOCKED' },
+                { id: 'all', label: t.all },
+                { id: 'rewards', label: tf(t.filterRewards, { n: SURFACE_THEME_PAIRS.length }) },
+                { id: 'milestones', label: t.filterMilestones },
+                { id: 'unlocked', label: t.filterUnlocked },
+                { id: 'locked', label: t.filterLocked },
               ] as const
             ).map((m) => (
               <button
@@ -1897,7 +1988,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                 : `${borderCol} ${textMuted}`
             }`}
           >
-            ALL ({CLEARANCE_LEVELS.length.toLocaleString()})
+            {t.all} ({CLEARANCE_LEVELS.length.toLocaleString()})
           </button>
           {CLEARANCE_DIVISIONS.map((div) => {
             const isSelected = selectedDiv === div.index;
@@ -1961,26 +2052,26 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                     <span className="font-bold text-xs truncate">{lvl.title}</span>
                     {lvl.isMajorMilestone && (
                       <span className="px-1.5 py-0.2 border border-amber-500/50 text-amber-400 text-[9px] font-bold uppercase shrink-0">
-                        MILESTONE
+                        {t.milestone}
                       </span>
                     )}
                     {rewardTheme && (
                       <span
                         className="px-1.5 py-0.2 border border-cyan-500/50 text-cyan-400 text-[9px] font-bold uppercase shrink-0 flex items-center space-x-1"
-                        title={`Unlocks Surface Theme Pair: ${rewardTheme.code} // ${rewardTheme.name}`}
+                        title={tf(t.unlocksTheme, { code: rewardTheme.code, name: rewardTheme.name })}
                       >
                         <span
                           className="w-1.5 h-1.5 rounded-full inline-block"
                           style={{ backgroundColor: rewardTheme.accentHex }}
                         />
                         <span>
-                          REWARD: {rewardTheme.code} // {rewardTheme.name}
+                          {t.rewardLabel} {rewardTheme.code} // {rewardTheme.name}
                         </span>
                       </span>
                     )}
                     {isCurrent && (
                       <span className="px-1.5 py-0.2 bg-emerald-500 text-zinc-950 text-[9px] font-bold uppercase shrink-0">
-                        CURRENT
+                        {t.current}
                       </span>
                     )}
                   </div>
@@ -1994,11 +2085,11 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                 <div className="text-right">
                   <div className="font-bold text-xs tabular-nums">
                     {lvl.requiredHours.toLocaleString()}{' '}
-                    <span className={`text-[10px] ${textMuted}`}>HRS</span>
+                    <span className={`text-[10px] ${textMuted}`}>{t.unitHrs}</span>
                   </div>
                   {!unlocked && (
                     <div className={`text-[9px] ${textMuted}`}>
-                      -{Math.max(0.1, Number((lvl.requiredHours - clearance.totalHours).toFixed(1)))}H REQ
+                      {tf(t.hoursReq, { h: Math.max(0.1, Number((lvl.requiredHours - clearance.totalHours).toFixed(1))) })}
                     </div>
                   )}
                 </div>
@@ -2061,6 +2152,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
   bgCard,
   textMuted,
 }) => {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cardTheme, setCardTheme] = useState<'dark' | 'light'>('dark');
   // Phones default to the 4:5 portrait card; larger screens to the 16:9 one.
@@ -2155,7 +2247,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
-      setCopyError('Clipboard image copy is not supported in this browser. Please use DOWNLOAD PNG.');
+      setCopyError(t.clipboardUnsupported);
     }
   };
 
@@ -2168,7 +2260,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           <div className="flex items-center space-x-2">
             <Share2 className="w-4 h-4 text-emerald-400" />
             <h3 className="text-[11px] sm:text-xs uppercase tracking-widest font-bold">
-              <span className="hidden sm:inline">TELEMETRY </span>STATUS CARD GENERATOR // SNAPSHOT
+              <span className="hidden sm:inline">{t.cardGenTitlePrefix}</span>{t.cardGenTitle}
             </h3>
           </div>
           <button
@@ -2181,8 +2273,8 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
         </div>
 
         <div className="space-y-1.5">
-          <span className={`text-[10px] uppercase ${textMuted}`}>Card Shape:</span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="radiogroup" aria-label="Card shape">
+          <span className={`text-[10px] uppercase ${textMuted}`}>{t.cardShape}</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="radiogroup" aria-label={t.cardShapeAria}>
             {STATUS_CARD_LAYOUTS.map((l) => {
               const active = cardLayout === l.id;
               // Mini aspect-ratio glyph, normalized to a 22px-tall box.
@@ -2223,7 +2315,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
 
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center space-x-2">
-            <span className={`text-[10px] uppercase ${textMuted}`}>Card Theme:</span>
+            <span className={`text-[10px] uppercase ${textMuted}`}>{t.cardTheme}</span>
             <div className={`flex border ${borderCol} text-[10px]`}>
               <button
                 type="button"
@@ -2261,7 +2353,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
               onChange={(e) => setShowCategoriesOnCard(e.target.checked)}
               className="accent-emerald-500"
             />
-            <span>Include Category Breakdown</span>
+            <span>{t.includeCategories}</span>
           </label>
         </div>
 
@@ -2287,7 +2379,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <p className={`text-[11px] font-sans ${textMuted}`}>
-            Tip: <strong>COPY IMAGE</strong> to paste anywhere (Cmd+V / Ctrl+V), or <strong>DOWNLOAD PNG</strong>{' '}
+            {t.cardTipPre} <strong>{t.copyImage}</strong> {t.cardTipMid} <strong>{t.downloadPng}</strong>{' '}
             ({STATUS_CARD_LAYOUTS.find((l) => l.id === cardLayout)?.width}×
             {STATUS_CARD_LAYOUTS.find((l) => l.id === cardLayout)?.height}px).
           </p>
@@ -2301,12 +2393,12 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
               {copied ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">COPIED TO CLIPBOARD!</span>
+                  <span className="text-emerald-400">{t.copied}</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>COPY IMAGE</span>
+                  <span>{t.copyImage}</span>
                 </>
               )}
             </button>
@@ -2317,7 +2409,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
               className="min-h-[42px] sm:min-h-0 px-4 py-2 bg-emerald-500 text-zinc-950 hover:bg-emerald-400 text-xs font-bold flex items-center justify-center space-x-1.5 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>DOWNLOAD PNG</span>
+              <span>{t.downloadPng}</span>
             </button>
 
           </div>
@@ -2472,6 +2564,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onExportJSON,
   onExportCSV,
 }) => {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
@@ -2516,15 +2609,15 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       const hrsStr = (minutes / 60).toFixed(1);
       items.push({
         id: `instant-log-${category.id}-${minutes}`,
-        group: 'INSTANT TELEMETRY COMMIT',
-        title: `COMMIT SESSION: [${category.code}] ${category.name} — ${minutes} MIN (${hrsStr}H)`,
-        subtitle: `Immediately record ${minutes} minutes to Django backend for today`,
-        badge: 'ENTER TO COMMIT',
+        group: t.pgInstant,
+        title: tf(t.pcCommitTitle, { code: category.code, name: category.name, min: minutes, h: hrsStr }),
+        subtitle: tf(t.pcCommitSub, { min: minutes }),
+        badge: t.pcEnterToCommit,
         accentColor: category.color,
         keywords: `log commit ${category.code} ${category.name} ${minutes}`,
         action: async () => {
           await onQuickLog(category.id, minutes);
-          setStatusBanner(`COMMITTED ${minutes} MIN TO [${category.code}] ${category.name}`);
+          setStatusBanner(tf(t.pcCommitted, { min: minutes, code: category.code, name: category.name }));
           setTimeout(() => {
             onClose();
           }, 450);
@@ -2532,21 +2625,22 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       });
     }
 
-    // 2. Category Quick-Log Presets
+    // 2. Category Quick-Log Presets (active categories only; the free-form
+    // "log 90m CODE" command above still reaches inactive ones)
     if (isAuthenticated && categories.length > 0) {
-      categories.forEach((cat) => {
+      categories.filter((cat) => cat.isActive).forEach((cat) => {
         [30, 60, 90, 120].forEach((mins) => {
           items.push({
             id: `preset-log-${cat.id}-${mins}`,
-            group: 'QUICK LOG SESSION',
-            title: `Log ${mins}m (${(mins / 60).toFixed(1)}h) → [${cat.code}] ${cat.name}`,
-            subtitle: `One-keystroke commit (${mins} minutes) to ${cat.name}`,
+            group: t.pgQuickLog,
+            title: tf(t.pcPresetTitle, { min: mins, h: (mins / 60).toFixed(1), code: cat.code, name: cat.name }),
+            subtitle: tf(t.pcPresetSub, { min: mins, name: cat.name }),
             badge: `log ${mins}m ${cat.code.toLowerCase()}`,
             accentColor: cat.color,
             keywords: `log ${mins}m ${mins / 60}h ${cat.code} ${cat.name} session commit`,
             action: async () => {
               await onQuickLog(cat.id, mins);
-              setStatusBanner(`COMMITTED ${mins} MIN TO [${cat.code}] ${cat.name}`);
+              setStatusBanner(tf(t.pcCommitted, { min: mins, code: cat.code, name: cat.name }));
               setTimeout(() => {
                 onClose();
               }, 450);
@@ -2557,9 +2651,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     } else if (!isAuthenticated) {
       items.push({
         id: 'auth-signin',
-        group: 'AUTHENTICATION',
-        title: 'Sign In / Create Account to Record Telemetry',
-        subtitle: 'Open authentication modal',
+        group: t.pgAuth,
+        title: t.pcAuthTitle,
+        subtitle: t.pcAuthSub,
         badge: 'AUTH',
         keywords: 'login signin register account auth',
         action: () => {
@@ -2573,9 +2667,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     items.push(
       {
         id: 'sound-brown',
-        group: 'ACOUSTIC FOCUS ENGINE',
-        title: 'Audio: Play Brown Noise (Deep Low-Frequency Rumble)',
-        subtitle: 'Start procedural brown noise synthesizer',
+        group: t.pgAudio,
+        title: t.pcBrown,
+        subtitle: t.pcBrownSub,
         badge: 'sound brown',
         keywords: 'audio sound noise brown deep focus play',
         action: () => {
@@ -2585,9 +2679,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'sound-pink',
-        group: 'ACOUSTIC FOCUS ENGINE',
-        title: 'Audio: Play Pink Noise (Balanced Rainfall Spectrum)',
-        subtitle: 'Start procedural -3dB/octave pink noise synthesizer',
+        group: t.pgAudio,
+        title: t.pcPink,
+        subtitle: t.pcPinkSub,
         badge: 'sound pink',
         keywords: 'audio sound noise pink rain focus play',
         action: () => {
@@ -2597,9 +2691,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'sound-white',
-        group: 'ACOUSTIC FOCUS ENGINE',
-        title: 'Audio: Play White Noise (Crisp Masking Static)',
-        subtitle: 'Start procedural white noise synthesizer',
+        group: t.pgAudio,
+        title: t.pcWhite,
+        subtitle: t.pcWhiteSub,
         badge: 'sound white',
         keywords: 'audio sound noise white static focus play',
         action: () => {
@@ -2609,9 +2703,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'sound-drone',
-        group: 'ACOUSTIC FOCUS ENGINE',
-        title: 'Audio: Play 40Hz Binaural Focus Drone',
-        subtitle: 'Start warm harmonic drone + sub-bass pad',
+        group: t.pgAudio,
+        title: t.pcDrone,
+        subtitle: t.pcDroneSub,
         badge: 'sound drone',
         keywords: 'audio sound noise drone 40hz ambient focus play',
         action: () => {
@@ -2621,9 +2715,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'sound-stop',
-        group: 'ACOUSTIC FOCUS ENGINE',
-        title: 'Audio: Stop / Mute Ambient Focus Sound',
-        subtitle: 'Silence active procedural audio generator',
+        group: t.pgAudio,
+        title: t.pcStop,
+        subtitle: t.pcStopSub,
         badge: 'sound off',
         keywords: 'audio sound noise off mute stop silence',
         action: () => {
@@ -2637,10 +2731,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     items.push(
       {
         id: 'analytics-7d',
-        group: 'ANALYTICS HORIZON',
-        title: 'Analytics: 7D Daily Breakdown (1 Bar = 1 Day)',
-        subtitle: 'Switch analytics chart to 7-day daily stacked bars',
-        badge: '7D DAYS',
+        group: t.pgAnalytics,
+        title: t.pc7d,
+        subtitle: t.pc7dSub,
+        badge: t.hzDays,
         keywords: 'analytics chart daily 7d week bars',
         action: () => {
           onSetAnalyticsMode('daily7d');
@@ -2649,10 +2743,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'analytics-12w',
-        group: 'ANALYTICS HORIZON',
-        title: 'Analytics: 12W Weekly Aggregation (1 Bar = 1 Full Week)',
-        subtitle: 'Compare weekly total hours across 12 consecutive weeks',
-        badge: '12W WEEKS',
+        group: t.pgAnalytics,
+        title: t.pc12w,
+        subtitle: t.pc12wSub,
+        badge: t.hzWeeks,
         keywords: 'analytics chart weekly 12w weeks aggregation bucket',
         action: () => {
           onSetAnalyticsMode('weekly12w');
@@ -2661,10 +2755,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'analytics-12m',
-        group: 'ANALYTICS HORIZON',
-        title: 'Analytics: 12M Monthly Aggregation (1 Bar = 1 Full Month)',
-        subtitle: 'Compare monthly total hours across 12 consecutive months',
-        badge: '12M MONTHS',
+        group: t.pgAnalytics,
+        title: t.pc12m,
+        subtitle: t.pc12mSub,
+        badge: t.hzMonths,
         keywords: 'analytics chart monthly 12m months year aggregation bucket',
         action: () => {
           onSetAnalyticsMode('monthly12m');
@@ -2673,10 +2767,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'analytics-cal',
-        group: 'ANALYTICS HORIZON',
-        title: 'Analytics: Monthly Calendar Matrix (Day-by-Day Grid)',
-        subtitle: 'Switch analytics view to monthly calendar heatmap',
-        badge: '1M CAL',
+        group: t.pgAnalytics,
+        title: t.pcCal,
+        subtitle: t.pcCalSub,
+        badge: t.hzCal,
         keywords: 'analytics calendar month grid matrix',
         action: () => {
           onSetAnalyticsMode('monthlyCal');
@@ -2689,10 +2783,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     items.push(
       {
         id: 'timer-toggle',
-        group: 'TIMER & WORKSPACE',
-        title: isRunning ? 'Timer: Pause Active Study Stopwatch' : 'Timer: Start Study Stopwatch',
-        subtitle: 'Switch to Timer mode and toggle stopwatch state',
-        badge: isRunning ? 'PAUSE' : 'START',
+        group: t.pgTimer,
+        title: isRunning ? t.pcTimerPause : t.pcTimerStart,
+        subtitle: t.pcTimerSub,
+        badge: isRunning ? t.pause : t.start,
         keywords: 'timer stopwatch start pause run clock',
         action: () => {
           onSetInputMode('timer');
@@ -2702,10 +2796,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'timer-reset',
-        group: 'TIMER & WORKSPACE',
-        title: 'Timer: Reset Stopwatch to 00:00:00',
-        subtitle: 'Clear elapsed stopwatch counter',
-        badge: 'RESET',
+        group: t.pgTimer,
+        title: t.pcTimerReset,
+        subtitle: t.pcTimerResetSub,
+        badge: t.reset,
         keywords: 'timer stopwatch reset clear',
         action: () => {
           onResetTimer();
@@ -2714,10 +2808,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'system-card',
-        group: 'SYSTEM & TELEMETRY',
-        title: 'Share: Open Telemetry Status Card Generator (PNG / X)',
-        subtitle: 'Render high-DPI 1200x675 shareable telemetry card',
-        badge: 'CARD',
+        group: t.pgSystem,
+        title: t.pcCard,
+        subtitle: t.pcCardSub,
+        badge: t.cardShort,
         keywords: 'share status card image png twitter x snapshot',
         action: () => {
           onClose();
@@ -2726,10 +2820,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'system-clearance',
-        group: 'SYSTEM & TELEMETRY',
-        title: `Clearance: Open ${CLEARANCE_LEVELS.length.toLocaleString()} Ranks Directory (0h – ${CYCLE_HOURS.toLocaleString()}h per cycle)`,
-        subtitle: `Inspect all ${CLEARANCE_LEVELS.length.toLocaleString()} telemetry clearance titles, milestones, and ${SURFACE_THEME_PAIRS.length} theme rewards`,
-        badge: `${CLEARANCE_LEVELS.length.toLocaleString()} RANKS`,
+        group: t.pgSystem,
+        title: tf(t.pcClearance, { n: CLEARANCE_LEVELS.length.toLocaleString(), h: CYCLE_HOURS.toLocaleString() }),
+        subtitle: tf(t.pcClearanceSub, { n: CLEARANCE_LEVELS.length.toLocaleString(), m: SURFACE_THEME_PAIRS.length }),
+        badge: tf(t.nRanks, { n: CLEARANCE_LEVELS.length.toLocaleString() }),
         keywords: 'clearance ranks levels titles 3000 progression badge rewards',
         action: () => {
           onClose();
@@ -2742,10 +2836,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'system-settings',
-        group: 'SYSTEM & TELEMETRY',
-        title: 'Account: Open Profile, Avatar & Security Settings',
-        subtitle: 'Configure avatar, username, password, and data vault',
-        badge: 'SETTINGS',
+        group: t.pgSystem,
+        title: t.pcSettings,
+        subtitle: t.pcSettingsSub,
+        badge: t.pcSettingsBadge,
         keywords: 'settings profile avatar password account security',
         action: () => {
           onClose();
@@ -2758,10 +2852,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'system-theme',
-        group: 'SYSTEM & TELEMETRY',
-        title: `Theme: Switch to ${isDark ? 'Light' : 'Dark'} Mode`,
-        subtitle: 'Toggle workspace monochrome color scheme',
-        badge: isDark ? 'LIGHT' : 'DARK',
+        group: t.pgSystem,
+        title: isDark ? t.pcThemeLight : t.pcThemeDark,
+        subtitle: t.pcThemeSub,
+        badge: isDark ? t.pcLight : t.pcDark,
         keywords: 'theme dark light mode color toggle',
         action: () => {
           onToggleTheme();
@@ -2770,9 +2864,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'matrix-shade',
-        group: 'SYSTEM & TELEMETRY',
-        title: 'Cadence Matrix: Toggle Shaded / Binary Signal Mode',
-        subtitle: 'Switch contribution matrix between 4-tier shade and binary signal',
+        group: t.pgSystem,
+        title: t.pcMatrixShade,
+        subtitle: t.pcMatrixShadeSub,
         badge: 'MATRIX',
         keywords: 'matrix cadence shaded binary color mode',
         action: () => {
@@ -2782,9 +2876,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'matrix-span',
-        group: 'SYSTEM & TELEMETRY',
-        title: 'Cadence Matrix: Toggle 1X / 2X Week Horizon',
-        subtitle: 'Expand or compact horizontal week capacity in matrix',
+        group: t.pgSystem,
+        title: t.pcMatrixSpan,
+        subtitle: t.pcMatrixSpanSub,
         badge: '1X / 2X',
         keywords: 'matrix cadence 1x 2x span horizon weeks',
         action: () => {
@@ -2794,9 +2888,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'vault-json',
-        group: 'SYSTEM & TELEMETRY',
-        title: 'Vault: Export Full Telemetry Archive (JSON)',
-        subtitle: 'Download complete backup of categories and study logs',
+        group: t.pgSystem,
+        title: t.pcJson,
+        subtitle: t.pcJsonSub,
         badge: 'JSON',
         keywords: 'export download backup json archive vault',
         action: () => {
@@ -2806,9 +2900,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
       {
         id: 'vault-csv',
-        group: 'SYSTEM & TELEMETRY',
-        title: 'Vault: Export Study Log Spreadsheet (CSV)',
-        subtitle: 'Download study log records in CSV format',
+        group: t.pgSystem,
+        title: t.pcCsv,
+        subtitle: t.pcCsvSub,
         badge: 'CSV',
         keywords: 'export download csv spreadsheet logs',
         action: () => {
@@ -2857,6 +2951,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onToggleMatrixSpan,
     onExportJSON,
     onExportCSV,
+    t,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -2899,7 +2994,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             type="text"
             value={query}
             onChange={(e) => updateQuery(e.target.value)}
-            placeholder={`Type a command or quick-log (e.g., "log 90m ${sampleCatCode}", "sound brown", "12w", "card")...`}
+            placeholder={tf(t.pcPlaceholder, { code: sampleCatCode })}
             className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-zinc-500"
           />
           {query && (
@@ -2908,7 +3003,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               onClick={() => updateQuery('')}
               className={`text-[10px] px-1.5 py-0.5 border ${borderCol} ${textMuted} hover:opacity-80 cursor-pointer shrink-0`}
             >
-              CLEAR
+              {t.clearShort}
             </button>
           )}
           <button
@@ -2929,7 +3024,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-emerald-400 font-bold flex items-center space-x-1">
               <Zap className="w-3 h-3" />
-              <span>CLI QUICK-LOG:</span>
+              <span>{t.pcCliQuickLog}</span>
             </span>
             <button
               type="button"
@@ -2962,7 +3057,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               sound brown
             </button>
           </div>
-          <span className={`hidden sm:inline ${textMuted}`}>↑↓ NAVIGATE // ↵ EXECUTE</span>
+          <span className={`hidden sm:inline ${textMuted}`}>{t.pcNavigate}</span>
         </div>
 
         {/* Status Confirmation Banner */}
@@ -2977,8 +3072,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         <div ref={listRef} className="max-h-[380px] overflow-y-auto divide-y divide-zinc-800/40">
           {commands.length === 0 ? (
             <div className={`py-10 text-center text-xs ${textMuted}`}>
-              No matching telemetry commands. Try typing{' '}
-              <span className="text-emerald-400 font-semibold">log 90m {sampleCatCode}</span> or{' '}
+              {t.pcNoMatchPre}{' '}
+              <span className="text-emerald-400 font-semibold">log 90m {sampleCatCode}</span> {t.pcOr}{' '}
               <span className="text-emerald-400 font-semibold">sound</span>.
             </div>
           ) : (
@@ -3050,7 +3145,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             isDark ? 'bg-zinc-950' : 'bg-zinc-50'
           } flex items-center justify-between text-[10px] ${textMuted}`}
         >
-          <span>TYPBOX COMMAND PALETTE // DIRECT TELEMETRY DISPATCH</span>
+          <span>{t.pcFooter}</span>
           <span>CMD+K / CTRL+K</span>
         </div>
       </div>
@@ -5543,6 +5638,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   borderCol,
   textMuted,
 }) => {
+  const { t } = useI18n();
   const [unlockFilter, setUnlockFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
   const [selectedDiv, setSelectedDiv] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -5557,7 +5653,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   );
 
   const unlockedCount = useMemo(
-    () => SURFACE_THEME_PAIRS.filter((t) => checkUnlocked(t)).length,
+    () => SURFACE_THEME_PAIRS.filter((pair) => checkUnlocked(pair)).length,
     [checkUnlocked]
   );
 
@@ -5601,7 +5697,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               </span>
               <span className="font-bold text-xs tracking-wider">{activePair.name}</span>
               <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} text-emerald-400`}>
-                {unlockedCount} / {SURFACE_THEME_PAIRS.length} PAIRS UNLOCKED
+                {tf(t.pairsUnlocked, { a: unlockedCount, b: SURFACE_THEME_PAIRS.length })}
               </span>
             </div>
             <div className={`text-[10px] mt-0.5 ${textMuted}`}>{activePair.pairLabel}</div>
@@ -5616,12 +5712,12 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
             {isDark ? (
               <>
                 <Moon className="w-3.5 h-3.5 text-emerald-400" />
-                <span>ACTIVE: DARK // SWITCH TO LIGHT</span>
+                <span>{t.activeDarkSwitch}</span>
               </>
             ) : (
               <>
                 <Sun className="w-3.5 h-3.5 text-amber-500" />
-                <span>ACTIVE: LIGHT // SWITCH TO DARK</span>
+                <span>{t.activeLightSwitch}</span>
               </>
             )}
           </button>
@@ -5658,7 +5754,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 color: activePair.dark.textMain,
               }}
             >
-              <span>MODULE CARD</span>
+              <span>{t.moduleCard}</span>
               <span style={{ color: activePair.dark.textMuted }}>{activePair.dark.bgMain}</span>
             </div>
           </div>
@@ -5692,7 +5788,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 color: activePair.light.textMain,
               }}
             >
-              <span>MODULE CARD</span>
+              <span>{t.moduleCard}</span>
               <span style={{ color: activePair.light.textMuted }}>{activePair.light.bgMain}</span>
             </div>
           </div>
@@ -5709,7 +5805,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               onClick={() => setLockedNotice(null)}
               className="text-[9px] underline ml-2 cursor-pointer"
             >
-              DISMISS
+              {t.dismiss}
             </button>
           </div>
         )}
@@ -5724,16 +5820,16 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Search ${SURFACE_THEME_PAIRS.length} theme pairs (e.g., Blueprint, Matcha, Apollo, THM-24)...`}
+              placeholder={tf(t.searchThemes, { n: SURFACE_THEME_PAIRS.length })}
               className="w-full bg-transparent text-xs outline-none"
             />
           </div>
           <div className={`flex border ${borderCol} text-[10px]`}>
             {(
               [
-                ['all', `ALL (${SURFACE_THEME_PAIRS.length})`],
-                ['unlocked', `UNLOCKED (${unlockedCount})`],
-                ['locked', `LOCKED (${SURFACE_THEME_PAIRS.length - unlockedCount})`],
+                ['all', `${t.all} (${SURFACE_THEME_PAIRS.length})`],
+                ['unlocked', `${t.filterUnlocked} (${unlockedCount})`],
+                ['locked', `${t.filterLocked} (${SURFACE_THEME_PAIRS.length - unlockedCount})`],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -5767,7 +5863,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                     : `${borderCol} ${textMuted}`
                 }`}
               >
-                {divCode}
+                {divCode === 'ALL' ? t.all : divCode}
               </button>
             )
           )}
@@ -5793,13 +5889,22 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   onSelectThemeId(item.id);
                 } else if (isPrestigeExclusive) {
                   setLockedNotice(
-                    `[${item.code} // ${item.name}] is a PRESTIGE-EXCLUSIVE reward — requires ${item.requiredAscensions} Ascension(s) (you have ${userTotalAscensions}).`
+                    tf(t.themePrestigeNotice, {
+                      code: item.code,
+                      name: item.name,
+                      n: item.requiredAscensions ?? 0,
+                      have: userTotalAscensions,
+                    })
                   );
                 } else {
                   setLockedNotice(
-                    `[${item.code} // ${item.name}] unlocks at CLEARANCE LV.${String(
-                      item.clearanceHintLv
-                    ).padStart(4, '0')} (${reqHours}H — need ${hoursRemaining}H more).`
+                    tf(t.noiseLockedNotice, {
+                      code: item.code,
+                      name: item.name,
+                      lv: String(item.clearanceHintLv).padStart(4, '0'),
+                      req: reqHours,
+                      rem: hoursRemaining,
+                    })
                   );
                 }
               }}
@@ -5824,16 +5929,16 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   </div>
                   {isSelected ? (
                     <span className="px-1.5 py-0.2 bg-emerald-500 text-zinc-950 text-[9px] font-bold uppercase shrink-0">
-                      EQUIPPED
+                      {t.equipped}
                     </span>
                   ) : isUnlocked ? (
                     <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
-                      UNLOCKED
+                      {t.filterUnlocked}
                     </span>
                   ) : isPrestigeExclusive ? (
                     <span
                       className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
-                      title={`Prestige-exclusive — requires ${item.requiredAscensions} Ascension(s)`}
+                      title={tf(t.prestigeRequires, { n: item.requiredAscensions ?? 0 })}
                     >
                       <Lock className="w-2.5 h-2.5" />
                       <span>✦ ×{item.requiredAscensions}</span>
@@ -5841,7 +5946,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   ) : (
                     <span
                       className={`text-[9px] px-1.5 py-0.2 border ${borderCol} text-amber-400 flex items-center space-x-1 shrink-0`}
-                      title={`Requires Clearance LV.${item.clearanceHintLv} (${reqHours}H)`}
+                      title={tf(t.requiresClearance, { lv: item.clearanceHintLv, h: reqHours })}
                     >
                       <Lock className="w-2.5 h-2.5" />
                       <span>

@@ -145,6 +145,8 @@ export interface AuthUserResponse {
   avatar_preset?: string;
   avatar_image?: string;
   surface_theme?: string;
+  language?: string;
+  timezone?: string;
 }
 
 export const api = {
@@ -176,6 +178,8 @@ export const api = {
         avatar_preset: string;
         avatar_image: string;
         surface_theme: string;
+        language: string;
+        timezone: string;
       }>
     ) => {
       return apiFetch<AuthUserResponse>('/auth/me/', {
@@ -220,11 +224,20 @@ export const api = {
         name: string;
         code: string;
         color: string;
-        monthly_target_hours: number;
+        weekly_target_hours?: number;
+        is_active?: boolean;
+        /** Legacy (pre-weekly) field; only used as a fallback during rollout. */
+        monthly_target_hours?: number;
         created_at: string;
       }>>('/categories/');
     },
-    create: async (data: { name: string; code: string; color: string; monthly_target_hours: number }) => {
+    create: async (data: {
+      name: string;
+      code: string;
+      color: string;
+      weekly_target_hours: number;
+      is_active?: boolean;
+    }) => {
       return apiFetch('/categories/', {
         method: 'POST',
         body: JSON.stringify(data),
@@ -232,7 +245,7 @@ export const api = {
     },
     update: async (
       id: string | number,
-      data: Partial<{ name: string; code: string; color: string; monthly_target_hours: number }>
+      data: Partial<{ name: string; code: string; color: string; weekly_target_hours: number; is_active: boolean }>
     ) => {
       return apiFetch(`/categories/${id}/`, {
         method: 'PATCH',

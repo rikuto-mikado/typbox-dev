@@ -248,3 +248,17 @@ canvas {
   height: clamp(240px, 46vh, 440px);
   height: clamp(240px, 46svh, 440px);
 }
+
+/* ==========================================
+   Logo protection (casual-copy deterrent)
+   No text selection, image drag, or iOS long-press "Save Image" callout on
+   the TYPBOX mark. Paired with the contextmenu/dragstart guards in
+   TypboxLogo.tsx.
+========================================== */
+.typbox-mark,
+.typbox-mark * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}

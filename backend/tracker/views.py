@@ -1,5 +1,5 @@
 import re
-from datetime import date as date_cls, timedelta
+from datetime import date as date_cls, timedelta, timezone as dt_timezone
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -8,6 +8,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, permissions, status, viewsets
@@ -17,7 +18,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Category, StudyLog
+from .models import Category, StudyLog, monthly_to_weekly_hours
 from .serializers import (
     CategorySerializer,
     ChangePasswordSerializer,
@@ -27,6 +28,7 @@ from .serializers import (
     StudyLogSerializer,
     UserSerializer,
 )
+from .timezones import get_user_zone, user_localdate
 
 User = get_user_model()
 
@@ -285,7 +287,12 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        extra = {}
+        if 'date' not in serializer.validated_data:
+            # No explicit study date: use "today" in the user's own zone
+            # rather than the server's UTC date.
+            extra['date'] = user_localdate(self.request.user)
+        serializer.save(user=self.request.user, **extra)
 
     @action(detail=False, methods=['delete'], url_path='clear-all')
     def clear_all(self, request):
@@ -321,24 +328,37 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                     if not code or not name or code in existing_cats:
                         continue
                     color = str(item.get('color', '#10b981')).strip()[:20] or '#10b981'
-                    target = item.get('monthlyTargetHours') or item.get('monthly_target_hours') or 20
+                    weekly = item.get('weeklyTargetHours') or item.get('weekly_target_hours')
+                    monthly = item.get('monthlyTargetHours') or item.get('monthly_target_hours')
                     try:
-                        target_int = max(1, min(744, int(target)))
+                        if weekly:
+                            target_int = int(weekly)
+                        elif monthly:
+                            # Backups from before the weekly switch: monthly -> weekly.
+                            target_int = monthly_to_weekly_hours(int(monthly))
+                        else:
+                            target_int = 5
+                        target_int = max(1, min(168, target_int))
                     except (ValueError, TypeError):
-                        target_int = 20
+                        target_int = 5
+                    raw_active = item.get('isActive', item.get('is_active', True))
+                    is_active = raw_active if isinstance(raw_active, bool) else True
 
                     new_cat = Category.objects.create(
                         user=request.user,
                         code=code,
                         name=name,
                         color=color,
-                        monthly_target_hours=target_int,
+                        weekly_target_hours=target_int,
+                        is_active=is_active,
                     )
                     existing_cats[code] = new_cat
                     created_cats += 1
 
             default_cat = next(iter(existing_cats.values()), None)
             logs_to_create = []
+            original_created_at = []
+            fallback_date = user_localdate(request.user)
 
             for entry in raw_logs[:5000]:
                 if not isinstance(entry, dict):
@@ -350,7 +370,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 try:
                     parsed_date = date_cls.fromisoformat(date_str)
                 except ValueError:
-                    parsed_date = timezone.localdate()
+                    parsed_date = fallback_date
 
                 raw_dur = entry.get('durationMinutes') or entry.get('duration_minutes') or 60
                 try:
@@ -359,6 +379,14 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                     dur_int = 60
 
                 topic_str = ''
+
+                # Keep the original commit timestamp from the backup (UTC
+                # ISO-8601; naive values are treated as UTC).
+                raw_created = entry.get('createdAt') or entry.get('created_at')
+                created_dt = parse_datetime(str(raw_created)) if raw_created else None
+                if created_dt is not None and timezone.is_naive(created_dt):
+                    created_dt = timezone.make_aware(created_dt, dt_timezone.utc)
+                original_created_at.append(created_dt)
 
                 logs_to_create.append(
                     StudyLog(
@@ -372,7 +400,16 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 )
 
             if logs_to_create:
-                StudyLog.objects.bulk_create(logs_to_create)
+                created = StudyLog.objects.bulk_create(logs_to_create)
+                # created_at is auto_now_add (overwritten on insert), so the
+                # original timestamps are restored in a second pass.
+                restored = []
+                for obj, original in zip(created, original_created_at):
+                    if original is not None and obj.pk is not None:
+                        obj.created_at = original
+                        restored.append(obj)
+                if restored:
+                    StudyLog.objects.bulk_update(restored, ['created_at'])
 
         return Response(
             {
@@ -416,10 +453,12 @@ class HubTelemetryView(APIView):
                 }
             )
 
-        now = timezone.localdate()
+        user_zone = get_user_zone(user)
+        now = user_localdate(user)
         # Inclusive 7-day window (today + 6 previous days = 7 days total, matching frontend)
         seven_days_ago = now - timedelta(days=6)
         first_day_of_month = now.replace(day=1)
+        first_day_of_week = now - timedelta(days=now.weekday())  # Monday
 
         public_logs = StudyLog.objects.filter(user=user, is_public_to_hub=True).select_related('category')
 
@@ -432,7 +471,7 @@ class HubTelemetryView(APIView):
         weekly_min = aggregates['weekly_min']
         monthly_min = aggregates['monthly_min']
 
-        # Calculate category hours for this month in a single annotated query
+        # Category hours for this month and this week in a single annotated query
         categories = Category.objects.filter(user=user).annotate(
             month_min=Coalesce(
                 Sum(
@@ -440,14 +479,25 @@ class HubTelemetryView(APIView):
                     filter=Q(logs__is_public_to_hub=True, logs__date__gte=first_day_of_month)
                 ),
                 0
-            )
+            ),
+            week_min=Coalesce(
+                Sum(
+                    'logs__duration_minutes',
+                    filter=Q(logs__is_public_to_hub=True, logs__date__gte=first_day_of_week)
+                ),
+                0
+            ),
         )
         cat_data = [
             {
                 'code': cat.code,
                 'name': cat.name,
+                'is_active': cat.is_active,
                 'monthly_hours': round(cat.month_min / 60, 1),
-                'target_hours': cat.monthly_target_hours,
+                'weekly_hours': round(cat.week_min / 60, 1),
+                'weekly_target_hours': cat.weekly_target_hours if cat.is_active else None,
+                # Kept for existing consumers; now the weekly target.
+                'target_hours': cat.weekly_target_hours if cat.is_active else None,
             }
             for cat in categories
         ]
@@ -460,6 +510,7 @@ class HubTelemetryView(APIView):
                 'category_code': log.category.code if log.category else 'MISC',
                 'duration_minutes': log.duration_minutes,
                 'topic': log.topic,
+                'created_at': log.created_at.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z'),
             }
             for log in recent_public
         ]
@@ -468,6 +519,7 @@ class HubTelemetryView(APIView):
             'source': 'typbox.me',
             'timestamp': timezone.now().isoformat(),
             'user': user.username,
+            'timezone': user_zone.key if user_zone else 'UTC',
             'summary': {
                 'total_hours': round(total_min / 60, 1),
                 'weekly_hours': round(weekly_min / 60, 1),

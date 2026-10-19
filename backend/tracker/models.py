@@ -3,11 +3,16 @@ from django.db import models
 from django.utils import timezone
 
 
+def monthly_to_weekly_hours(monthly_hours):
+    """Monthly target -> equivalent weekly target (12 months / 52 weeks), clamped to 1..168."""
+    return max(1, min(168, round(monthly_hours * 12 / 52)))
+
+
 class UserProfile(models.Model):
     """
     Extended profile settings for a User, including hybrid avatar customization
-    (color accent, preset icon, or compressed base64 Data URL image stored in DB)
-    and the account-wide Surface Theme preference.
+    (color accent, preset icon, or compressed base64 Data URL image stored in DB),
+    the account-wide Surface Theme preference, and UI language / time zone.
     """
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -20,6 +25,11 @@ class UserProfile(models.Model):
     # Selected Surface Theme Pair id (e.g. 'monolith'), synced across devices.
     # Blank means the user has never picked one on any device yet.
     surface_theme = models.CharField(max_length=64, blank=True, default='')
+    # UI language ('en' / 'ja'). Blank = never chosen; the client default applies.
+    language = models.CharField(max_length=8, blank=True, default='')
+    # IANA time zone name (e.g. 'Asia/Tokyo') used to render the user's UTC
+    # timestamps and to decide their "today". Blank = not set yet.
+    timezone = models.CharField(max_length=64, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -33,7 +43,10 @@ class UserProfile(models.Model):
 class Category(models.Model):
     """
     Study category model, linked to a specific user.
-    Example: [BACK] Backend & Architecture (#10b981) - Target: 40 hrs/month
+    Example: [BACK] Backend & Architecture (#10b981) - Target: 9 hrs/week
+
+    Inactive categories keep their history (logs, analytics) but no longer
+    carry a weekly target; they're parked rather than deleted.
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -43,7 +56,9 @@ class Category(models.Model):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=10)  # e.g., 'BACK', 'ELEC', 'NET'
     color = models.CharField(max_length=20, default='#10b981')  # Hex color string
-    monthly_target_hours = models.PositiveIntegerField(default=10)
+    # Target per calendar week (Mon–Sun, in the user's time zone).
+    weekly_target_hours = models.PositiveIntegerField(default=5)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

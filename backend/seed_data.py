@@ -66,10 +66,10 @@ SAMPLE_TOPICS = [
 ]
 
 DEFAULT_CATEGORIES_SPEC = [
-    {'name': 'Full-stack Development', 'code': 'DEV', 'color': '#10b981', 'monthly_target_hours': 40},
-    {'name': 'Network & Infrastructure', 'code': 'NET', 'color': '#f59e0b', 'monthly_target_hours': 30},
-    {'name': 'English / Academic Writing', 'code': 'LANG', 'color': '#a855f7', 'monthly_target_hours': 20},
-    {'name': 'Systems & Architecture', 'code': 'SYS', 'color': '#3b82f6', 'monthly_target_hours': 35},
+    {'name': 'Full-stack Development', 'code': 'DEV', 'color': '#10b981', 'weekly_target_hours': 9},
+    {'name': 'Network & Infrastructure', 'code': 'NET', 'color': '#f59e0b', 'weekly_target_hours': 7},
+    {'name': 'English / Academic Writing', 'code': 'LANG', 'color': '#a855f7', 'weekly_target_hours': 5},
+    {'name': 'Systems & Architecture', 'code': 'SYS', 'color': '#3b82f6', 'weekly_target_hours': 8},
 ]
 
 
@@ -92,7 +92,7 @@ def seed(username: str, count: int, days_span: int = 120):
                 name=spec['name'],
                 code=spec['code'],
                 color=spec['color'],
-                monthly_target_hours=spec['monthly_target_hours'],
+                weekly_target_hours=spec['weekly_target_hours'],
             )
             existing_cats.append(cat)
             print(f"[+] Created category: [{cat.code}] {cat.name}")

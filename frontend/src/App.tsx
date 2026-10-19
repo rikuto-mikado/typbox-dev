@@ -46,6 +46,29 @@ import {
 } from 'lucide-react';
 import { api, apiFetch, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
+import { CategoryTrendTable } from './CategoryTrendTable';
+import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
+import {
+  I18nContext,
+  LANG_OPTIONS,
+  LANG_STORAGE_KEY,
+  STRINGS,
+  TZ_STORAGE_KEY,
+  buildI18nValue,
+  formatUtcOffset,
+  getDeviceTimeZone,
+  getZoneOffsetMinutes,
+  getZonedParts,
+  isLang,
+  isValidTimeZone,
+  listTimeZones,
+  nowInZone,
+  setActiveTimeZone,
+  tf,
+  useI18n,
+  type Dict,
+  type Lang,
+} from './i18n';
 import {
   getClearanceStatus,
   AmbientSoundControl,
@@ -71,7 +94,10 @@ export interface Category {
   name: string;
   code: string;
   color: string;
-  monthlyTargetHours: number;
+  /** Target per calendar week (Mon–Sun in the user's time zone). */
+  weeklyTargetHours: number;
+  /** Inactive = parked: history stays, no weekly target is tracked. */
+  isActive: boolean;
 }
 
 export interface StudyLog {
@@ -96,6 +122,8 @@ export interface AuthUser {
   avatar_preset?: string;
   avatar_image?: string;
   surface_theme?: string;
+  language?: string;
+  timezone?: string;
 }
 
 type Theme = 'dark' | 'light';
@@ -163,35 +191,6 @@ const ACCENT_PALETTE = [
   { name: 'Silver', hex: '#a1a1aa' },
 ];
 
-const DICT = {
-  subtitle: 'QUANTIFIED STUDY & ARCHIVE',
-  signIn: 'SIGN IN',
-  signOut: 'SIGN OUT',
-  totalHours: 'TOTAL LOGGED',
-  weeklyHours: 'LAST 7 DAYS',
-  monthlyHours: 'THIS MONTH',
-  activeCategories: 'CATEGORIES',
-  recordSession: 'LOG SESSION',
-  manualMode: 'MANUAL',
-  timerMode: 'STOPWATCH',
-  category: 'CATEGORY',
-  durationMin: 'DURATION (MIN)',
-  date: 'DATE',
-  topicMemo: 'TOPIC / LOG NOTE',
-  saveLog: 'COMMIT LOG',
-  categoriesTitle: 'CATEGORY REGISTRY',
-  addCategory: 'NEW CATEGORY',
-  catName: 'Category Name',
-  catCode: 'Code (Max 4 chars)',
-  catTarget: 'Monthly Target (Hrs)',
-  create: 'CREATE',
-  analyticsTitle: 'ANALYTICS',
-  weeklyView: 'WEEKLY (7D)',
-  monthlyView: 'MONTHLY (30D)',
-  recentLogs: 'CHRONOLOGICAL LOG STREAM',
-  noLogs: 'No study logs recorded yet.',
-};
-
 // Social Icon Components for Footer
 const GithubIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -246,11 +245,6 @@ const socialLinks = [
   },
 ];
 
-const ui = {
-  footerContact: 'Direct Contact',
-  copyright: '© 2026 Rikuto Mikado. All rights reserved.',
-};
-
 const formatLocalDateString = (d: Date): string => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -258,8 +252,10 @@ const formatLocalDateString = (d: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const getRecentDateString = (daysAgo: number): string => {
-  const d = new Date();
+// "Today" is the user's calendar day in their account time zone (see
+// nowInZone), not necessarily the device's.
+const getRecentDateString = (daysAgo: number, timeZone: string): string => {
+  const d = nowInZone(timeZone);
   d.setDate(d.getDate() - daysAgo);
   return formatLocalDateString(d);
 };
@@ -283,6 +279,7 @@ const PrestigeChip: React.FC<{ totalAscensions: number; className?: string }> = 
   totalAscensions,
   className = '',
 }) => {
+  const { t } = useI18n();
   const badge = getPrestigeBadge(totalAscensions);
   if (!badge) return null;
   return (
@@ -291,7 +288,7 @@ const PrestigeChip: React.FC<{ totalAscensions: number; className?: string }> = 
         badge.isPrism ? 'prestige-prism-text border-white/30' : ''
       } ${className}`}
       style={badge.isPrism ? undefined : { color: badge.colorHex, borderColor: `${badge.colorHex}80` }}
-      title={`Ascended ${totalAscensions} time${totalAscensions === 1 ? '' : 's'}`}
+      title={tf(t.ascendedTimes, { n: totalAscensions })}
     >
       {badge.label}
     </span>
@@ -357,7 +354,9 @@ const ToastStack: React.FC<{
   toasts: ToastItem[];
   isDark: boolean;
   onDismiss: (id: number) => void;
-}> = ({ toasts, isDark, onDismiss }) => (
+}> = ({ toasts, isDark, onDismiss }) => {
+  const { t } = useI18n();
+  return (
   <div
     className="fixed z-[70] bottom-4 inset-x-3 sm:inset-x-auto sm:right-4 sm:w-[360px] flex flex-col gap-2 pointer-events-none"
     role="status"
@@ -398,7 +397,7 @@ const ToastStack: React.FC<{
               type="button"
               onClick={() => onDismiss(toast.id)}
               className={`text-[10px] px-1.5 py-0.5 cursor-pointer ${isDark ? 'text-zinc-500 hover:text-zinc-200' : 'text-zinc-400 hover:text-zinc-800'}`}
-              aria-label="Dismiss notification"
+              aria-label={t.dismissNotification}
             >
               [X]
             </button>
@@ -411,7 +410,8 @@ const ToastStack: React.FC<{
       );
     })}
   </div>
-);
+  );
+};
 
 const getInitialTheme = (): Theme => {
   if (typeof window !== 'undefined') {
@@ -426,6 +426,22 @@ const getInitialTheme = (): Theme => {
   return 'dark';
 };
 
+const getInitialLang = (): Lang => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(LANG_STORAGE_KEY);
+    if (isLang(saved)) return saved;
+  }
+  return 'en';
+};
+
+const getInitialTimeZone = (): string => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(TZ_STORAGE_KEY);
+    if (isValidTimeZone(saved)) return saved;
+  }
+  return getDeviceTimeZone();
+};
+
 const getInitialSurfaceTheme = (): string => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(SURFACE_THEME_STORAGE_KEY);
@@ -434,17 +450,17 @@ const getInitialSurfaceTheme = (): string => {
   return 'monolith';
 };
 
-const compressAvatarFile = (file: File): Promise<string> => {
+const compressAvatarFile = (file: File, t: Dict): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
-      reject(new Error('Please select a valid image file (PNG, JPEG, WebP, GIF).'));
+      reject(new Error(t.errInvalidImage));
       return;
     }
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read image file.'));
+    reader.onerror = () => reject(new Error(t.errReadImage));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('Failed to decode image.'));
+      img.onerror = () => reject(new Error(t.errDecodeImage));
       img.onload = () => {
         const size = 128;
         const canvas = document.createElement('canvas');
@@ -452,7 +468,7 @@ const compressAvatarFile = (file: File): Promise<string> => {
         canvas.height = size;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          reject(new Error('Canvas context unavailable.'));
+          reject(new Error(t.errCanvas));
           return;
         }
         // Center-crop square
@@ -559,7 +575,26 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [surfaceThemeId, setSurfaceThemeId] = useState<string>(getInitialSurfaceTheme);
   const [periodView, setPeriodView] = useState<PeriodView>('weekly');
-  const t = DICT;
+
+  // UI language & time zone: account-synced (UserProfile.language/timezone),
+  // cached in localStorage for first paint and signed-out visits.
+  const [lang, setLang] = useState<Lang>(getInitialLang);
+  const [timeZone, setTimeZone] = useState<string>(getInitialTimeZone);
+  // Idempotent module sync so date helpers used during this render already
+  // see the selected zone.
+  setActiveTimeZone(timeZone);
+  const i18n = useMemo(() => buildI18nValue(lang, timeZone), [lang, timeZone]);
+  const { t, formatDateTime, locale } = i18n;
+  const deviceTimeZone = useMemo(() => getDeviceTimeZone(), []);
+
+  useEffect(() => {
+    localStorage.setItem(LANG_STORAGE_KEY, lang);
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  useEffect(() => {
+    localStorage.setItem(TZ_STORAGE_KEY, timeZone);
+  }, [timeZone]);
 
   // Synchronize with OS system preferences when not explicitly pinned
   useEffect(() => {
@@ -704,21 +739,17 @@ export default function App() {
   }, []);
 
   const clockReadout = useMemo(() => {
-    const hh = String(currentTime.getHours()).padStart(2, '0');
-    const mm = String(currentTime.getMinutes()).padStart(2, '0');
-    const ss = String(currentTime.getSeconds()).padStart(2, '0');
-    const yyyy = currentTime.getFullYear();
-    const mo = String(currentTime.getMonth() + 1).padStart(2, '0');
-    const dd = String(currentTime.getDate()).padStart(2, '0');
-    const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-    const dayStr = dayNames[currentTime.getDay()];
+    const p = getZonedParts(currentTime, timeZone);
+    const hh = String(p.hour).padStart(2, '0');
+    const mm = String(p.minute).padStart(2, '0');
+    const ss = String(p.second).padStart(2, '0');
+    const yyyy = p.year;
+    const mo = String(p.month).padStart(2, '0');
+    const dd = String(p.day).padStart(2, '0');
+    const dayNames = t.weekdaysShortSun.split(',');
+    const dayStr = dayNames[new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay()];
 
-    const offsetMin = -currentTime.getTimezoneOffset();
-    const sign = offsetMin >= 0 ? '+' : '-';
-    const absMin = Math.abs(offsetMin);
-    const tzH = String(Math.floor(absMin / 60)).padStart(2, '0');
-    const tzM = String(absMin % 60).padStart(2, '0');
-    const tzLabel = `UTC${sign}${tzH}:${tzM}`;
+    const tzLabel = `${i18n.tzAbbr(currentTime)} ${formatUtcOffset(getZoneOffsetMinutes(currentTime, timeZone))}`;
 
     return {
       hh,
@@ -728,7 +759,7 @@ export default function App() {
       dayStr,
       tzLabel,
     };
-  }, [currentTime]);
+  }, [currentTime, timeZone, t, i18n]);
 
   // User Dropdown, Account Settings Modal & Account Deletion State
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
@@ -741,6 +772,7 @@ export default function App() {
   const [profileAvatarImage, setProfileAvatarImage] = useState<string>('');
   const [profileSaving, setProfileSaving] = useState<boolean>(false);
   const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [regionStatus, setRegionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
@@ -784,6 +816,7 @@ export default function App() {
         setProfileAvatarImage(user.avatar_image || '');
       }
       setProfileStatus(null);
+      setRegionStatus(null);
       setPasswordStatus(null);
       setDataStatus(null);
       setCurrentPassword('');
@@ -810,7 +843,7 @@ export default function App() {
   // Log Form State
   const [inputMode, setInputMode] = useState<'manual' | 'timer'>('manual');
   const [selectedCatId, setSelectedCatId] = useState<string | number>('');
-  const [logDate, setLogDate] = useState<string>(getRecentDateString(0));
+  const [logDate, setLogDate] = useState<string>(getRecentDateString(0, timeZone));
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
 
   // Log Edit State
@@ -841,13 +874,13 @@ export default function App() {
     (logId: string | number, catCode: string | undefined, minutes: number, date: string) => {
       pushToast(
         'success',
-        'SUCCESS // LOG COMMITTED',
+        t.toastLogCommitted,
         `[${catCode ?? 'MISC'}] ${minutes}m → ${date.replace(/-/g, '.')}`
       );
       setFlashLogId(logId);
       window.setTimeout(() => setFlashLogId((cur) => (cur === logId ? null : cur)), 2400);
     },
-    [pushToast]
+    [pushToast, t]
   );
 
   useEffect(
@@ -980,14 +1013,15 @@ export default function App() {
   const [newCatName, setNewCatName] = useState<string>('');
   const [newCatCode, setNewCatCode] = useState<string>('');
   const [newCatColor, setNewCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
-  const [newCatTarget, setNewCatTarget] = useState<number>(20);
+  const [newCatTarget, setNewCatTarget] = useState<number>(5);
 
   // Category Edit State
   const [editingCatId, setEditingCatId] = useState<string | number | null>(null);
   const [editCatName, setEditCatName] = useState<string>('');
   const [editCatCode, setEditCatCode] = useState<string>('');
   const [editCatColor, setEditCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
-  const [editCatTarget, setEditCatTarget] = useState<number>(20);
+  const [editCatTarget, setEditCatTarget] = useState<number>(5);
+  const [editCatActive, setEditCatActive] = useState<boolean>(true);
 
   // ==========================================
   // Data Fetching: Categories & Logs
@@ -1007,7 +1041,12 @@ export default function App() {
         name: c.name,
         code: c.code,
         color: c.color,
-        monthlyTargetHours: c.monthly_target_hours,
+        // Fallbacks keep this build working against a backend that hasn't
+        // been migrated to weekly targets yet (frontend/backend deploy separately).
+        weeklyTargetHours:
+          c.weekly_target_hours ??
+          (c.monthly_target_hours ? Math.max(1, Math.round((c.monthly_target_hours * 12) / 52)) : 5),
+        isActive: c.is_active !== false,
       }));
 
       const formattedLogs: StudyLog[] = fetchedLogs.map((l) => ({
@@ -1027,7 +1066,7 @@ export default function App() {
       setCategories(formattedCats);
       setLogs(formattedLogs);
       if (formattedCats.length > 0 && !selectedCatId) {
-        setSelectedCatId(formattedCats[0].id);
+        setSelectedCatId((formattedCats.find((c) => c.isActive) ?? formattedCats[0]).id);
       }
     } catch (err: unknown) {
       const error = err as Error;
@@ -1051,6 +1090,28 @@ export default function App() {
 
   const applyServerSurfaceTheme = useCallback((me: AuthUser) => {
     lastSurfaceThemePullRef.current = Date.now();
+
+    // Language & time zone ride along with the same account sync. A blank
+    // server value means this account never chose one: adopt what this
+    // device uses (an explicitly picked language, or the device zone) so
+    // the backend has the user's zone from the first sign-in onward.
+    const firstSync: { language?: string; timezone?: string } = {};
+    if (isLang(me.language)) {
+      setLang(me.language);
+    } else {
+      const localLang = localStorage.getItem(LANG_STORAGE_KEY);
+      if (isLang(localLang)) firstSync.language = localLang;
+    }
+    if (isValidTimeZone(me.timezone)) {
+      setTimeZone(me.timezone);
+    } else {
+      const localTz = localStorage.getItem(TZ_STORAGE_KEY);
+      firstSync.timezone = isValidTimeZone(localTz) ? localTz : getDeviceTimeZone();
+    }
+    if (firstSync.language || firstSync.timezone) {
+      api.auth.updateProfile(firstSync).catch(() => {});
+    }
+
     if (pendingSurfaceThemeRef.current !== null) return;
     if (me.surface_theme) {
       setSurfaceThemeId(me.surface_theme);
@@ -1165,19 +1226,19 @@ export default function App() {
 
     if (authMode === 'forgot') {
       if (!authEmail.trim()) {
-        setAuthError('Please enter your registered email address.');
+        setAuthError(t.errEnterEmail);
         return;
       }
       setAuthSubmitting(true);
       try {
         const res = await api.auth.requestPasswordReset(authEmail.trim());
-        setAuthSuccessMsg(res.detail || 'If an account with that email exists, a reset link has been sent.');
+        setAuthSuccessMsg(lang === 'ja' ? t.msgResetLinkSent : res.detail || t.msgResetLinkSent);
         if (res.debug_reset_url) {
           setDebugResetUrl(res.debug_reset_url);
         }
       } catch (err: unknown) {
         const error = err as Error;
-        setAuthError(error.message || 'Failed to send password reset email.');
+        setAuthError(error.message || t.errSendResetEmail);
       } finally {
         setAuthSubmitting(false);
       }
@@ -1186,11 +1247,11 @@ export default function App() {
 
     if (authMode === 'reset_confirm') {
       if (authPassword.length < 8) {
-        setAuthError('New password must be at least 8 characters.');
+        setAuthError(t.errPasswordMin);
         return;
       }
       if (authPassword !== authConfirmPassword) {
-        setAuthError('Passwords do not match.');
+        setAuthError(t.errPasswordMismatch);
         return;
       }
       setAuthSubmitting(true);
@@ -1199,10 +1260,10 @@ export default function App() {
         setAuthMode('login');
         setAuthPassword('');
         setAuthConfirmPassword('');
-        setAuthSuccessMsg(res.detail || 'Password reset complete! Please sign in with your new password.');
+        setAuthSuccessMsg(lang === 'ja' ? t.msgResetComplete : res.detail || t.msgResetComplete);
       } catch (err: unknown) {
         const error = err as Error;
-        setAuthError(error.message || 'Invalid or expired password reset link.');
+        setAuthError(error.message || t.errResetLink);
       } finally {
         setAuthSubmitting(false);
       }
@@ -1210,7 +1271,7 @@ export default function App() {
     }
 
     if (authMode === 'register' && (!authEmail || !authEmail.trim())) {
-      setAuthError('Email address is required for registration.');
+      setAuthError(t.errEmailRequired);
       return;
     }
 
@@ -1232,7 +1293,7 @@ export default function App() {
       await loadUserData();
     } catch (err: unknown) {
       const error = err as Error;
-      setAuthError(error.message || 'Authentication failed. Please verify credentials.');
+      setAuthError(error.message || t.errAuthFailed);
     } finally {
       setAuthSubmitting(false);
     }
@@ -1252,25 +1313,56 @@ export default function App() {
         avatar_image: profileAvatarImage,
       });
       setUser(updated);
-      setProfileStatus({ type: 'success', text: 'Profile and avatar settings updated successfully.' });
+      setProfileStatus({ type: 'success', text: t.msgProfileUpdated });
     } catch (err: unknown) {
       const error = err as Error;
-      setProfileStatus({ type: 'error', text: error.message || 'Failed to update profile.' });
+      setProfileStatus({ type: 'error', text: error.message || t.errProfileUpdate });
     } finally {
       setProfileSaving(false);
     }
   };
+
+  // Language / time zone apply instantly and are PATCHed to the account so
+  // they follow the user to every device and the next sign-in.
+  const handleUpdateRegion = async (patch: { language?: Lang; timezone?: string }) => {
+    if (patch.language) setLang(patch.language);
+    if (patch.timezone) {
+      if (!isValidTimeZone(patch.timezone)) return;
+      setTimeZone(patch.timezone);
+    }
+    if (!user) return;
+    const dict = STRINGS[patch.language ?? lang];
+    setRegionStatus(null);
+    try {
+      const updated = await api.auth.updateProfile(patch);
+      setUser(updated);
+      setRegionStatus({ type: 'success', text: dict.msgRegionSaved });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setRegionStatus({ type: 'error', text: error.message || dict.errRegionSave });
+    }
+  };
+
+  // ~400 IANA zones; only built while the profile tab is actually open.
+  const timeZoneOptions = useMemo(() => {
+    if (!showSettingsModal || settingsTab !== 'profile') return [];
+    const now = new Date();
+    return listTimeZones(timeZone).map((tz) => ({
+      id: tz,
+      label: `${tz.replace(/_/g, ' ')} (${formatUtcOffset(getZoneOffsetMinutes(now, tz))})`,
+    }));
+  }, [showSettingsModal, settingsTab, timeZone]);
 
   const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setProfileStatus(null);
     try {
-      const compressedDataUrl = await compressAvatarFile(file);
+      const compressedDataUrl = await compressAvatarFile(file, t);
       setProfileAvatarImage(compressedDataUrl);
     } catch (err: unknown) {
       const error = err as Error;
-      setProfileStatus({ type: 'error', text: error.message || 'Could not process image.' });
+      setProfileStatus({ type: 'error', text: error.message || t.errProcessImage });
     } finally {
       e.target.value = '';
     }
@@ -1280,11 +1372,11 @@ export default function App() {
     e.preventDefault();
     setPasswordStatus(null);
     if (newPassword.length < 8) {
-      setPasswordStatus({ type: 'error', text: 'New password must be at least 8 characters.' });
+      setPasswordStatus({ type: 'error', text: t.errPasswordMin });
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordStatus({ type: 'error', text: 'New password and confirmation do not match.' });
+      setPasswordStatus({ type: 'error', text: t.errNewPasswordMismatch });
       return;
     }
     setPasswordSaving(true);
@@ -1293,10 +1385,10 @@ export default function App() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-      setPasswordStatus({ type: 'success', text: 'Password updated successfully.' });
+      setPasswordStatus({ type: 'success', text: t.msgPasswordUpdated });
     } catch (err: unknown) {
       const error = err as Error;
-      setPasswordStatus({ type: 'error', text: error.message || 'Failed to change password.' });
+      setPasswordStatus({ type: 'error', text: error.message || t.errChangePassword });
     } finally {
       setPasswordSaving(false);
     }
@@ -1310,8 +1402,8 @@ export default function App() {
       const res = await api.auth.requestPasswordReset(user.email);
       setPasswordStatus({
         type: 'success',
-        text: `Password reset email dispatched to ${user.email}.${
-          res.debug_reset_url ? ` (Dev URL logged to console)` : ''
+        text: `${tf(t.msgResetDispatched, { email: user.email })}${
+          res.debug_reset_url ? t.msgDevUrlLogged : ''
         }`,
       });
       if (res.debug_reset_url) {
@@ -1319,7 +1411,7 @@ export default function App() {
       }
     } catch (err: unknown) {
       const error = err as Error;
-      setPasswordStatus({ type: 'error', text: error.message || 'Failed to send reset email.' });
+      setPasswordStatus({ type: 'error', text: error.message || t.errSendReset });
     } finally {
       setPasswordSaving(false);
     }
@@ -1334,7 +1426,7 @@ export default function App() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (!parsed || !Array.isArray(parsed.logs)) {
-        throw new Error('Invalid backup JSON file: missing "logs" array.');
+        throw new Error(t.errBackupNoLogs);
       }
       const res = await api.logs.importBackup({
         categories: Array.isArray(parsed.categories) ? parsed.categories : [],
@@ -1343,11 +1435,11 @@ export default function App() {
       await loadUserData();
       setDataStatus({
         type: 'success',
-        text: `Imported ${res.imported_logs} log(s) and ${res.created_categories} new category(s).`,
+        text: tf(t.msgImported, { logs: res.imported_logs, cats: res.created_categories }),
       });
     } catch (err: unknown) {
       const error = err as Error;
-      setDataStatus({ type: 'error', text: error.message || 'Failed to import JSON backup.' });
+      setDataStatus({ type: 'error', text: error.message || t.errImport });
     } finally {
       setImportingBackup(false);
       e.target.value = '';
@@ -1364,11 +1456,11 @@ export default function App() {
       setClearLogsConfirmText('');
       setDataStatus({
         type: 'success',
-        text: `Cleared ${res.deleted} study log record(s). Categories and account remain intact.`,
+        text: tf(t.msgCleared, { n: res.deleted }),
       });
     } catch (err: unknown) {
       const error = err as Error;
-      setDataStatus({ type: 'error', text: error.message || 'Failed to clear study logs.' });
+      setDataStatus({ type: 'error', text: error.message || t.errClearLogs });
     } finally {
       setClearingLogs(false);
     }
@@ -1399,10 +1491,10 @@ export default function App() {
       setShowSettingsModal(false);
       setShowUserMenu(false);
       setDeleteConfirmUsername('');
-      alert('Your account and all associated study telemetry data have been permanently deleted.');
+      alert(t.msgAccountDeleted);
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Failed to delete account: ${error.message}`);
+      alert(tf(t.errDeleteAccount, { msg: error.message }));
     } finally {
       setDeletingAccount(false);
     }
@@ -1470,14 +1562,14 @@ export default function App() {
     } catch (err: unknown) {
       const error = err as Error;
       setCommitState('idle');
-      pushToast('error', 'COMMIT FAILED', error.message || 'Could not save this log. Please try again.');
+      pushToast('error', t.toastCommitFailed, error.message || t.errSaveLog);
     }
   };
 
   const handleQuickLogFromPalette = useCallback(
     async (categoryId: string | number, minutes: number) => {
       if (!user || minutes <= 0) return;
-      const todayDate = getRecentDateString(0);
+      const todayDate = getRecentDateString(0, timeZone);
       try {
         const created = await api.logs.create({
           category: categoryId,
@@ -1505,10 +1597,10 @@ export default function App() {
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
       } catch (err: unknown) {
         const error = err as Error;
-        pushToast('error', 'QUICK LOG FAILED', error.message || 'Could not save this log. Please try again.');
+        pushToast('error', t.toastQuickLogFailed, error.message || t.errSaveLog);
       }
     },
-    [user, categories, announceLogCommitted, pushToast]
+    [user, categories, announceLogCommitted, pushToast, t, timeZone]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -1558,7 +1650,7 @@ export default function App() {
       setEditingLogId(null);
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Failed to update log: ${error.message}`);
+      alert(tf(t.errUpdateLog, { msg: error.message }));
     }
   };
 
@@ -1575,7 +1667,7 @@ export default function App() {
         name: newCatName.trim(),
         code: newCatCode.trim().toUpperCase().slice(0, 4),
         color: newCatColor,
-        monthly_target_hours: Number(newCatTarget) || 10,
+        weekly_target_hours: Number(newCatTarget) || 5,
       });
 
       const newCat: Category = {
@@ -1583,7 +1675,8 @@ export default function App() {
         name: newCatName.trim(),
         code: newCatCode.trim().toUpperCase().slice(0, 4),
         color: newCatColor,
-        monthlyTargetHours: Number(newCatTarget) || 10,
+        weeklyTargetHours: Number(newCatTarget) || 5,
+        isActive: true,
       };
 
       setCategories([...categories, newCat]);
@@ -1593,7 +1686,7 @@ export default function App() {
       setShowCatForm(false);
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Error creating category: ${error.message}`);
+      alert(tf(t.errCreateCategory, { msg: error.message }));
     }
   };
 
@@ -1602,7 +1695,8 @@ export default function App() {
     setEditCatName(cat.name);
     setEditCatCode(cat.code);
     setEditCatColor(cat.color);
-    setEditCatTarget(cat.monthlyTargetHours);
+    setEditCatTarget(cat.weeklyTargetHours);
+    setEditCatActive(cat.isActive);
     setShowCatForm(false);
   };
 
@@ -1618,14 +1712,18 @@ export default function App() {
     const updatedName = editCatName.trim();
     const updatedCode = editCatCode.trim().toUpperCase().slice(0, 4);
     const updatedColor = editCatColor;
-    const updatedTarget = Number(editCatTarget) || 10;
+    // While inactive the target input is locked, so the last target is kept
+    // as-is and comes back when the category is reactivated.
+    const updatedTarget = Number(editCatTarget) || 5;
+    const updatedActive = editCatActive;
 
     try {
       await api.categories.update(editingCatId, {
         name: updatedName,
         code: updatedCode,
         color: updatedColor,
-        monthly_target_hours: updatedTarget,
+        weekly_target_hours: updatedTarget,
+        is_active: updatedActive,
       });
 
       setCategories((prev) =>
@@ -1636,7 +1734,8 @@ export default function App() {
                 name: updatedName,
                 code: updatedCode,
                 color: updatedColor,
-                monthlyTargetHours: updatedTarget,
+                weeklyTargetHours: updatedTarget,
+                isActive: updatedActive,
               }
             : c
         )
@@ -1658,19 +1757,19 @@ export default function App() {
       setEditingCatId(null);
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Failed to update category: ${error.message}`);
+      alert(tf(t.errUpdateCategory, { msg: error.message }));
     }
   };
 
   const handleDeleteCategory = async (id: string | number, name: string) => {
     if (categories.length <= 1) {
-      alert('At least one category is required for study logging.');
+      alert(t.errLastCategory);
       return;
     }
     const hasLogs = logs.some((l) => String(l.categoryId) === String(id));
     const confirmMsg = hasLogs
-      ? `Delete category "${name}"? Existing logs associated with this category will remain preserved.`
-      : `Delete category "${name}"?`;
+      ? tf(t.confirmDeleteCategoryLogs, { name })
+      : tf(t.confirmDeleteCategory, { name });
 
     if (!window.confirm(confirmMsg)) return;
 
@@ -1688,18 +1787,18 @@ export default function App() {
       }
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Failed to delete category: ${error.message}`);
+      alert(tf(t.errDeleteCategory, { msg: error.message }));
     }
   };
 
   const handleDeleteLog = async (id: string | number) => {
-    if (!window.confirm('Delete this study log entry?')) return;
+    if (!window.confirm(t.confirmDeleteLog)) return;
     try {
       await api.logs.delete(id);
       setLogs(logs.filter((l) => l.id !== id));
     } catch (err: unknown) {
       const error = err as Error;
-      alert(`Failed to delete log: ${error.message}`);
+      alert(tf(t.errDeleteLog, { msg: error.message }));
     }
   };
 
@@ -1709,29 +1808,29 @@ export default function App() {
 
   const maxWeeksAgo = useMemo(() => {
     if (logs.length === 0) return 12;
-    const now = new Date();
+    const now = nowInZone(timeZone);
     const oldest = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
     const oldestDate = new Date(oldest + 'T00:00:00');
     const diffDays = Math.max(0, Math.ceil((now.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)));
     return Math.max(12, Math.ceil(diffDays / 7));
-  }, [logs]);
+  }, [logs, timeZone]);
 
   const maxMonthsAgo = useMemo(() => {
     if (logs.length === 0) return 4;
-    const now = new Date();
+    const now = nowInZone(timeZone);
     const oldest = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
     const oldestDate = new Date(oldest + 'T00:00:00');
     const diffMonths = (now.getFullYear() - oldestDate.getFullYear()) * 12 + (now.getMonth() - oldestDate.getMonth());
     return Math.max(4, Math.max(0, diffMonths));
-  }, [logs]);
+  }, [logs, timeZone]);
 
   const currentMonthPrefix = useMemo(() => {
-    return formatLocalDateString(new Date()).slice(0, 7); // YYYY-MM in local timezone
-  }, []);
+    return formatLocalDateString(nowInZone(timeZone)).slice(0, 7); // YYYY-MM in the user's zone
+  }, [timeZone]);
 
   const stats = useMemo(() => {
     const totalMin = logs.reduce((acc, l) => acc + l.durationMinutes, 0);
-    const recent7Days = Array.from({ length: 7 }, (_, i) => getRecentDateString(6 - i));
+    const recent7Days = Array.from({ length: 7 }, (_, i) => getRecentDateString(6 - i, timeZone));
     const weeklyMin = logs
       .filter((l) => recent7Days.includes(l.date))
       .reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -1745,7 +1844,7 @@ export default function App() {
       weeklyHours: (weeklyMin / 60).toFixed(1),
       monthlyHours: (monthlyMin / 60).toFixed(1),
     };
-  }, [logs, currentMonthPrefix]);
+  }, [logs, currentMonthPrefix, timeZone]);
 
   const clearanceStatus = useMemo(() => {
     return getClearanceStatus(user ? stats.totalMin : 0, claimedCycles);
@@ -1799,8 +1898,8 @@ export default function App() {
   // Weekly Navigation Data
   const selectedWeeklyDays = useMemo(() => {
     const baseDaysAgo = weeklyOffset * 7;
-    return Array.from({ length: 7 }, (_, i) => getRecentDateString(baseDaysAgo + 6 - i));
-  }, [weeklyOffset]);
+    return Array.from({ length: 7 }, (_, i) => getRecentDateString(baseDaysAgo + 6 - i, timeZone));
+  }, [weeklyOffset, timeZone]);
 
   const weeklyWindowLabel = useMemo(() => {
     if (selectedWeeklyDays.length < 7) return '';
@@ -1837,11 +1936,11 @@ export default function App() {
 
   // Monthly Navigation Data
   const targetMonthDate = useMemo(() => {
-    const d = new Date();
+    const d = nowInZone(timeZone);
     d.setDate(1); // prevent month rollover bug
     d.setMonth(d.getMonth() - monthlyOffset);
     return d;
-  }, [monthlyOffset]);
+  }, [monthlyOffset, timeZone]);
 
   const targetMonthPrefix = useMemo(() => {
     const y = targetMonthDate.getFullYear();
@@ -1850,8 +1949,8 @@ export default function App() {
   }, [targetMonthDate]);
 
   const targetMonthName = useMemo(() => {
-    return targetMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase();
-  }, [targetMonthDate]);
+    return targetMonthDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' }).toUpperCase();
+  }, [targetMonthDate, locale]);
 
   const daysInTargetMonth = useMemo(() => {
     const year = targetMonthDate.getFullYear();
@@ -1876,17 +1975,51 @@ export default function App() {
     return daysInTargetMonth.days.reduce((acc, d) => acc + d.minutes, 0);
   }, [daysInTargetMonth]);
 
-  const monthlyBreakdown = useMemo(() => {
-    const monthLogs = logs.filter((l) => l.date.startsWith(currentMonthPrefix));
-    return categories.map((cat) => {
-      const minutes = monthLogs
+  // Current calendar week (Mon–Sun) in the user's zone: the window that
+  // weekly category targets are measured against.
+  const currentWeekDates = useMemo(() => {
+    const today = nowInZone(timeZone);
+    const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+    return Array.from({ length: 7 }, (_, i) =>
+      formatLocalDateString(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i))
+    );
+  }, [timeZone]);
+
+  const weeklyBreakdown = useMemo(() => {
+    const weekSet = new Set(currentWeekDates);
+    const weekLogs = logs.filter((l) => weekSet.has(l.date));
+    const rows = categories.map((cat) => {
+      const minutes = weekLogs
         .filter((l) => String(l.categoryId) === String(cat.id))
         .reduce((acc, l) => acc + l.durationMinutes, 0);
       const hours = +(minutes / 60).toFixed(1);
-      const progress = Math.min(100, Math.round((hours / cat.monthlyTargetHours) * 100));
-      return { ...cat, hours, minutes, progress };
+      const progress = cat.isActive
+        ? Math.min(100, Math.round((hours / Math.max(1, cat.weeklyTargetHours)) * 100))
+        : 0;
+      return { ...cat, hours, minutes, progress, targetMet: cat.isActive && hours >= cat.weeklyTargetHours };
     });
-  }, [logs, categories, currentMonthPrefix]);
+    // Active categories first; original order is kept within each group.
+    return [...rows.filter((r) => r.isActive), ...rows.filter((r) => !r.isActive)];
+  }, [logs, categories, currentWeekDates]);
+
+  const activeCategoryCount = useMemo(() => categories.filter((c) => c.isActive).length, [categories]);
+
+  // Category <select> options: active first, inactive (parked) ones grouped
+  // at the bottom so past logs can still be filed under them.
+  const renderCategoryOptions = () => {
+    const toOption = (c: Category) => (
+      <option key={c.id} value={c.id}>
+        [{c.code}] {c.name}
+      </option>
+    );
+    const inactive = categories.filter((c) => !c.isActive);
+    return (
+      <>
+        {categories.filter((c) => c.isActive).map(toOption)}
+        {inactive.length > 0 && <optgroup label={`— ${t.inactive} —`}>{inactive.map(toOption)}</optgroup>}
+      </>
+    );
+  };
 
   // 12-Week Aggregation Data (1 Bar = 1 Full 7-Day Week Bucket, ending at weeklyOffset)
   const weeklyAggBuckets = useMemo(() => {
@@ -1894,7 +2027,7 @@ export default function App() {
       const weeksBackFromSelected = 11 - idx;
       const totalWeeksAgo = weeklyOffset + weeksBackFromSelected;
       const baseDaysAgo = totalWeeksAgo * 7;
-      const weekDates = Array.from({ length: 7 }, (__, d) => getRecentDateString(baseDaysAgo + 6 - d));
+      const weekDates = Array.from({ length: 7 }, (__, d) => getRecentDateString(baseDaysAgo + 6 - d, timeZone));
       const startStr = weekDates[0];
       const endStr = weekDates[6];
       const dateSet = new Set(weekDates);
@@ -1927,21 +2060,21 @@ export default function App() {
       maxWeekMinutes,
       windowLabel,
     };
-  }, [weeklyOffset, logs, categories]);
+  }, [weeklyOffset, logs, categories, timeZone]);
 
   // 12-Month Aggregation Data (1 Bar = 1 Full Calendar Month Bucket, ending at monthlyOffset)
   const monthlyAggBuckets = useMemo(() => {
     const buckets = Array.from({ length: 12 }, (_, idx) => {
       const monthsBackFromSelected = 11 - idx;
       const totalMonthsAgo = monthlyOffset + monthsBackFromSelected;
-      const d = new Date();
+      const d = nowInZone(timeZone);
       d.setDate(1);
       d.setMonth(d.getMonth() - totalMonthsAgo);
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const monthPrefix = `${y}-${m}`;
-      const shortMonth = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-      const fullLabel = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase();
+      const shortMonth = d.toLocaleDateString(locale, { month: 'short' }).toUpperCase();
+      const fullLabel = d.toLocaleDateString(locale, { month: 'short', year: 'numeric' }).toUpperCase();
 
       const monthLogs = logs.filter((l) => l.date.startsWith(monthPrefix));
       const totalMinutes = monthLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -1976,7 +2109,60 @@ export default function App() {
       maxMonthMinutes,
       windowLabel,
     };
-  }, [monthlyOffset, logs, categories]);
+  }, [monthlyOffset, logs, categories, locale, timeZone]);
+
+  // Category Trend Matrix columns (one per bar in each stacked chart view)
+  const weeklyTrendColumns = useMemo(
+    () =>
+      weeklyChartData.map((day) => ({
+        id: day.date,
+        label: day.label.replace('-', '/'),
+        title: day.date,
+        totalMinutes: day.totalMinutes,
+        byCategory: day.byCategory,
+      })),
+    [weeklyChartData]
+  );
+
+  const weeklyAggTrendColumns = useMemo(
+    () =>
+      weeklyAggBuckets.buckets.map((wk) => ({
+        id: wk.id,
+        label: wk.shortLabel,
+        title: `${wk.startStr} — ${wk.endStr}`,
+        totalMinutes: wk.totalMinutes,
+        byCategory: wk.byCategory,
+      })),
+    [weeklyAggBuckets]
+  );
+
+  const monthlyAggTrendColumns = useMemo(
+    () =>
+      monthlyAggBuckets.buckets.map((mo) => ({
+        id: mo.id,
+        label: mo.shortLabel,
+        title: mo.fullLabel,
+        totalMinutes: mo.totalMinutes,
+        byCategory: mo.byCategory,
+      })),
+    [monthlyAggBuckets]
+  );
+
+  // Bar <-> table column cross-highlight. Scoped to the view it was set in so
+  // switching horizons never carries a stale index over.
+  const [trendHighlight, setTrendHighlightState] = useState<{ view: PeriodView; idx: number } | null>(null);
+  const trendHighlightIdx = trendHighlight?.view === periodView ? trendHighlight.idx : null;
+  const setTrendHighlight = useCallback(
+    (idx: number | null) => setTrendHighlightState(idx === null ? null : { view: periodView, idx }),
+    [periodView]
+  );
+  const trendBarProps = (idx: number) => ({
+    onMouseEnter: () => setTrendHighlight(idx),
+    onMouseLeave: () => setTrendHighlight(null),
+    onClick: () => setTrendHighlight(trendHighlightIdx === idx ? null : idx),
+  });
+  const trendBarRing = (idx: number) =>
+    trendHighlightIdx === idx ? 'bg-emerald-500/10' : '';
 
   // ==========================================
   // Telemetry Cadence Matrix (7 Days x Dynamic W Weeks, Epoch Expansion)
@@ -2001,7 +2187,7 @@ export default function App() {
       return copy;
     };
 
-    const today = new Date();
+    const today = nowInZone(timeZone);
     const todayStr = formatLocalDateString(today);
     const currentMonday = getMonday(today);
 
@@ -2062,7 +2248,7 @@ export default function App() {
       let monthLabel: string | null = null;
       if (m !== lastMonth) {
         if (w === 0 || weekMonday.getDate() <= 7) {
-          monthLabel = weekMonday.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+          monthLabel = weekMonday.toLocaleDateString(locale, { month: 'short' }).toUpperCase();
           lastMonth = m;
         }
       }
@@ -2119,7 +2305,7 @@ export default function App() {
       startLabel,
       endLabel,
     };
-  }, [logs, baseFitWeeks, matrixSpanMultiplier, matrixPageOffset]);
+  }, [logs, baseFitWeeks, matrixSpanMultiplier, matrixPageOffset, locale, timeZone]);
 
   // ==========================================
   // Study Insights & Streak Calculations
@@ -2133,11 +2319,11 @@ export default function App() {
     const uniqueDates = Array.from(new Set(logs.map((l) => l.date))).sort().reverse();
     const dateSet = new Set(uniqueDates);
 
-    const todayStr = getRecentDateString(0);
-    const yesterdayStr = getRecentDateString(1);
+    const todayStr = getRecentDateString(0, timeZone);
+    const yesterdayStr = getRecentDateString(1, timeZone);
 
     let current = 0;
-    const checkDate = new Date();
+    const checkDate = nowInZone(timeZone);
 
     if (!dateSet.has(todayStr) && dateSet.has(yesterdayStr)) {
       checkDate.setDate(checkDate.getDate() - 1);
@@ -2175,7 +2361,7 @@ export default function App() {
       }
     }
 
-    const last30Days = Array.from({ length: 30 }, (_, i) => getRecentDateString(i));
+    const last30Days = Array.from({ length: 30 }, (_, i) => getRecentDateString(i, timeZone));
     const activeDaysInLast30 = last30Days.filter((d) => dateSet.has(d)).length;
     const activeDayRatio = Math.round((activeDaysInLast30 / 30) * 100);
 
@@ -2185,7 +2371,7 @@ export default function App() {
       activeDaysInLast30,
       activeDayRatio,
     };
-  }, [logs]);
+  }, [logs, timeZone]);
 
   const habitInsights = useMemo(() => {
     if (logs.length === 0) {
@@ -2196,7 +2382,7 @@ export default function App() {
     const avgSessionMin = Math.round(totalMin / logs.length);
 
     const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
-    const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const dayNames = t.weekdaysLong.split(',');
     logs.forEach((l) => {
       const d = new Date(l.date + 'T00:00:00');
       const dayIdx = d.getDay();
@@ -2231,14 +2417,24 @@ export default function App() {
       avgSessionMin,
       peakDayName,
     };
-  }, [logs, categories]);
+  }, [logs, categories, t]);
 
   const handleExportCSV = () => {
     if (logs.length === 0) {
-      alert('No logs available to export.');
+      alert(t.errNoLogsExport);
       return;
     }
-    const headers = ['ID', 'Date', 'Category Code', 'Category Name', 'Duration (Min)', 'Topic', 'Public To Hub', 'Created At'];
+    const headers = [
+      'ID',
+      'Date',
+      'Category Code',
+      'Category Name',
+      'Duration (Min)',
+      'Topic',
+      'Public To Hub',
+      'Created At (UTC)',
+      `Created At (${timeZone})`,
+    ];
     const rows = logs.map((l) => [
       l.id,
       l.date,
@@ -2248,13 +2444,14 @@ export default function App() {
       `"${(l.topic || '').replace(/"/g, '""')}"`,
       l.isPublicToHub ? 'TRUE' : 'FALSE',
       l.createdAt,
+      `"${formatDateTime(l.createdAt)}"`,
     ]);
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `typbox_telemetry_${formatLocalDateString(new Date())}.csv`);
+    link.setAttribute('download', `typbox_telemetry_${formatLocalDateString(nowInZone(timeZone))}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2262,12 +2459,13 @@ export default function App() {
 
   const handleExportJSON = () => {
     if (logs.length === 0) {
-      alert('No logs available to export.');
+      alert(t.errNoLogsExport);
       return;
     }
     const exportData = {
       user: user?.username || 'anonymous',
       exportedAt: new Date().toISOString(),
+      timezone: timeZone,
       categories,
       logs,
     };
@@ -2276,7 +2474,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `typbox_telemetry_${formatLocalDateString(new Date())}.json`);
+    link.setAttribute('download', `typbox_telemetry_${formatLocalDateString(nowInZone(timeZone))}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2352,6 +2550,7 @@ export default function App() {
   );
 
   return (
+    <I18nContext.Provider value={i18n}>
     <div
       className={`min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
@@ -2375,7 +2574,7 @@ export default function App() {
               TYPBOX // TELEMETRY ARCHIVE
             </span>
             <span className="text-[10px] tracking-widest text-emerald-400 animate-pulse">
-              BOOTING ENVIRONMENT...
+              {t.splashBooting}
             </span>
           </div>
         </div>
@@ -2394,16 +2593,11 @@ export default function App() {
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-13 sm:h-16 flex items-center justify-between gap-2">
           {/* Brand Logo */}
-          <div className="flex items-center space-x-2.5 sm:space-x-4 min-w-0">
-            <div className="flex items-center space-x-2">
-              <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
-              <span className="font-mono text-base sm:text-lg font-bold tracking-tighter">TYPBOX</span>
-              <span className={`font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.2 sm:py-0.5 border ${borderCol} ${textMuted}`}>
-                .me
-              </span>
-            </div>
-            <span className={`hidden lg:inline-block font-mono text-[11px] tracking-widest truncate ${textMuted}`}>
-              // {t.subtitle}
+          <div className="flex items-center space-x-2 min-w-0">
+            <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
+            <span className="font-mono text-base sm:text-lg font-bold tracking-tighter">TYPBOX</span>
+            <span className={`font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
+              .me
             </span>
           </div>
 
@@ -2414,8 +2608,8 @@ export default function App() {
               type="button"
               onClick={() => setShowCommandPalette(true)}
               className={`hidden md:flex h-9 lg:h-auto px-2.5 py-1.5 lg:py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
-              aria-label="Open Command Palette (Cmd+K)"
-              title="Open Command Palette (Cmd+K / Ctrl+K)"
+              aria-label={t.openCmdPalette}
+              title={t.openCmdPalette}
             >
               <Terminal className="w-4 h-4 text-emerald-400" />
               <span className="hidden lg:inline font-semibold">CMD</span>
@@ -2429,11 +2623,11 @@ export default function App() {
               type="button"
               onClick={() => setShowStatusCardModal(true)}
               className={`hidden sm:flex h-9 lg:h-auto px-2.5 py-1.5 lg:py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
-              aria-label="Generate Telemetry Status Card"
-              title="Generate & Share Status Card Image"
+              aria-label={t.genStatusCard}
+              title={t.genStatusCard}
             >
               <Share2 className="w-4 h-4 text-emerald-400" />
-              <span className="hidden md:inline font-semibold">CARD</span>
+              <span className="hidden md:inline font-semibold">{t.cardShort}</span>
             </button>
 
             {/* Ambient Focus Sound / White Noise Generator */}
@@ -2450,11 +2644,11 @@ export default function App() {
             <button
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
               className={`h-9 w-9 lg:h-auto lg:w-auto lg:p-2 border ${borderCol} hover:opacity-80 flex items-center justify-center cursor-pointer`}
-              aria-label="Toggle Theme Polarity"
+              aria-label={t.togglePolarity}
               title={
                 isDark
-                  ? `Switch to Light Mode (${activeSurfacePair.light.label})`
-                  : `Switch to Dark Mode (${activeSurfacePair.dark.label})`
+                  ? tf(t.switchToLight, { label: activeSurfacePair.light.label })
+                  : tf(t.switchToDark, { label: activeSurfacePair.dark.label })
               }
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -2472,7 +2666,7 @@ export default function App() {
                   type="button"
                   onClick={() => setShowUserMenu(!showUserMenu)}
                   className={`h-9 lg:h-auto flex items-center space-x-1.5 sm:space-x-2 px-2 sm:px-3 py-1 sm:py-1.5 border ${borderCol} ${bgCard} hover:border-zinc-400 transition-colors cursor-pointer select-none`}
-                  aria-label="User Account Menu"
+                  aria-label={t.userMenu}
                 >
                   <AvatarBadge
                     username={user.username}
@@ -2517,11 +2711,11 @@ export default function App() {
                         <div className="min-w-0 flex-1 space-y-0.5">
                           <div className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold flex items-center space-x-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>ACTIVE ACCOUNT</span>
+                            <span>{t.activeAccount}</span>
                           </div>
                           <div className="font-bold text-sm truncate">{user.username}</div>
                           <div className={`text-[11px] truncate ${textMuted}`}>
-                            {user.email || 'No email registered'}
+                            {user.email || t.noEmail}
                           </div>
                         </div>
                       </div>
@@ -2545,7 +2739,7 @@ export default function App() {
                           onClick={claimAscension}
                           className="mt-1.5 w-full py-1.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer animate-pulse"
                         >
-                          ⚡ ASCEND TO CYCLE {String(clearanceStatus.cycleNumber + 1).padStart(2, '0')}
+                          {tf(t.ascendToCycle, { n: String(clearanceStatus.cycleNumber + 1).padStart(2, '0') })}
                         </button>
                       )}
                     </div>
@@ -2559,7 +2753,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>SURFACE THEMES ({SURFACE_THEME_PAIRS.length} PAIRS)</span>
+                          <span>{tf(t.menuSurfaceThemes, { n: SURFACE_THEME_PAIRS.length })}</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>{activeSurfacePair.code}</span>
                       </button>
@@ -2571,7 +2765,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Award className="w-3.5 h-3.5 text-amber-400" />
-                          <span>CLEARANCE RANKS ({clearanceStatus.totalRanks.toLocaleString()})</span>
+                          <span>{tf(t.menuClearanceRanks, { n: clearanceStatus.totalRanks.toLocaleString() })}</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>
                           LV.{String(clearanceStatus.current.level).padStart(4, '0')}
@@ -2588,7 +2782,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>SHARE STATUS CARD</span>
+                          <span>{t.menuShareCard}</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>PNG</span>
                       </button>
@@ -2603,7 +2797,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Terminal className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>COMMAND PALETTE</span>
+                          <span>{t.menuCmdPalette}</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>⌘K</span>
                       </button>
@@ -2615,7 +2809,7 @@ export default function App() {
                       >
                         <span className="flex items-center space-x-2.5">
                           <Settings className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>ACCOUNT SETTINGS</span>
+                          <span>{t.menuAccountSettings}</span>
                         </span>
                         <span className={`text-[10px] ${textMuted}`}>CFG</span>
                       </button>
@@ -2666,13 +2860,13 @@ export default function App() {
             <div className="max-w-3xl space-y-3.5 sm:space-y-4">
               <div className="inline-flex items-center space-x-2 px-2.5 py-1 text-[11px] font-mono border border-emerald-500/40 text-emerald-400 bg-emerald-500/10">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>PUBLIC GUEST MODE // STANDBY</span>
+                <span>{t.guestBadge}</span>
               </div>
               <h1 className="font-mono text-xl sm:text-3xl font-bold tracking-tight">
-                Quantified Study &amp; Archive
+                {t.guestTitle}
               </h1>
               <p className={`text-xs sm:text-sm leading-relaxed ${textMuted}`}>
-                TYPBOX is a minimal workspace to log study sessions, track time across categories, and archive your daily learning progress.
+                {t.guestBody}
               </p>
               <div className="pt-1 sm:pt-2 flex flex-wrap gap-2.5 sm:gap-3">
                 <button
@@ -2682,13 +2876,13 @@ export default function App() {
                   }`}
                 >
                   <LogIn className="w-4 h-4" />
-                  <span>SIGN IN TO START TRACKING</span>
+                  <span>{t.guestSignIn}</span>
                 </button>
                 <button
                   onClick={() => openAuthModal('register')}
                   className={`px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider border ${borderCol} hover:border-emerald-500/60 transition-colors cursor-pointer`}
                 >
-                  <span>CREATE ACCOUNT</span>
+                  <span>{t.createAccount}</span>
                 </button>
               </div>
             </div>
@@ -2700,13 +2894,13 @@ export default function App() {
           <div className="p-4 border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs font-mono flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <AlertCircle className="w-4 h-4 text-rose-400" />
-              <span>{apiError} (Ensure Django backend is running at http://localhost:8000)</span>
+              <span>{apiError} {t.apiErrorHint}</span>
             </div>
             <button
               onClick={loadUserData}
               className="px-3 py-1.5 border border-rose-500/40 hover:bg-rose-500/20 text-xs"
             >
-              RETRY
+              {t.retry}
             </button>
           </div>
         )}
@@ -2722,7 +2916,7 @@ export default function App() {
                 <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                   {user ? stats.totalHours : '0.0'}
                 </span>
-                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>HRS</span>
+                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs}</span>
               </div>
             </div>
 
@@ -2734,7 +2928,7 @@ export default function App() {
                 <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                   {user ? stats.weeklyHours : '0.0'}
                 </span>
-                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>HRS / 7D</span>
+                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs7d}</span>
               </div>
             </div>
 
@@ -2746,7 +2940,7 @@ export default function App() {
                 <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
                   {user ? stats.monthlyHours : '0.0'}
                 </span>
-                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>HRS ({currentMonthPrefix})</span>
+                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs} ({currentMonthPrefix})</span>
               </div>
             </div>
 
@@ -2757,9 +2951,13 @@ export default function App() {
               <div className="mt-1 sm:mt-2 flex items-baseline justify-between gap-2 min-w-0">
                 <div className="flex items-baseline space-x-1.5 sm:space-x-2 shrink-0">
                   <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
-                    {user ? categories.length : '0'}
+                    {user ? activeCategoryCount : '0'}
                   </span>
-                  <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>UNITS</span>
+                  <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>
+                    {user && activeCategoryCount !== categories.length
+                      ? tf(t.unitActiveOf, { n: categories.length })
+                      : t.unitUnits}
+                  </span>
                 </div>
                 {user && categories.length > 0 && (
                   <div className="flex flex-wrap items-center justify-end gap-1 max-w-[84px] sm:max-w-[148px]">
@@ -2767,8 +2965,8 @@ export default function App() {
                       <span
                         key={c.id}
                         className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: c.color }}
-                        title={`[${c.code}] ${c.name}`}
+                        style={swatchStyle(c.color, c.isActive)}
+                        title={`[${c.code}] ${c.name}${c.isActive ? '' : ` (${t.inactive})`}`}
                       />
                     ))}
                     {categories.length > 12 && (
@@ -2793,7 +2991,7 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
               <div className="flex items-center space-x-2 shrink-0">
                 <span className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
-                  CLEARANCE
+                  {t.clearanceLabel}
                 </span>
                 <span
                   className="px-2 py-0.5 text-xs font-bold text-zinc-950"
@@ -2802,7 +3000,7 @@ export default function App() {
                   LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                 </span>
                 <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} ${textMuted}`}>
-                  CYCLE {String(clearanceStatus.cycleNumber).padStart(2, '0')}
+                  {tf(t.cycleN, { n: String(clearanceStatus.cycleNumber).padStart(2, '0') })}
                 </span>
                 <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} />
               </div>
@@ -2827,11 +3025,11 @@ export default function App() {
                             ? 'bg-emerald-400 border-emerald-400'
                             : `${borderCol} opacity-40`
                         }`}
-                        title={`Sub-Phase ${pip}/5`}
+                        title={tf(t.subPhaseN, { n: pip })}
                       />
                     ))}
                     <span className="ml-1 text-emerald-400 font-bold">
-                      PHASE {clearanceStatus.subPhase}/5
+                      {tf(t.phaseN, { n: clearanceStatus.subPhase })}
                     </span>
                   </div>
                   {clearanceStatus.ascensionAvailable ? (
@@ -2840,13 +3038,17 @@ export default function App() {
                       onClick={claimAscension}
                       className="text-amber-400 font-bold uppercase tracking-wider animate-pulse cursor-pointer hover:text-amber-300"
                     >
-                      ⚡ ASCENSION AVAILABLE — CLAIM NOW
+                      {t.ascensionClaim}
                     </button>
                   ) : (
                     <span className={textMuted}>
                       {clearanceStatus.next
-                        ? `NEXT: LV.${String(clearanceStatus.next.level).padStart(4, '0')} IN ${clearanceStatus.hoursRemainingToNext}H (${clearanceStatus.progressPct}%)`
-                        : 'CYCLE COMPLETE (1,000H+)'}
+                        ? tf(t.nextLevel, {
+                            lv: String(clearanceStatus.next.level).padStart(4, '0'),
+                            h: clearanceStatus.hoursRemainingToNext,
+                            pct: clearanceStatus.progressPct,
+                          })
+                        : t.cycleComplete}
                     </span>
                   )}
                 </div>
@@ -2874,7 +3076,7 @@ export default function App() {
                   className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors`}
                 >
                   <Award className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{clearanceStatus.totalRanks.toLocaleString()} RANKS</span>
+                  <span>{tf(t.nRanks, { n: clearanceStatus.totalRanks.toLocaleString() })}</span>
                 </button>
                 <button
                   type="button"
@@ -2882,7 +3084,7 @@ export default function App() {
                   className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors`}
                 >
                   <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>SHARE CARD</span>
+                  <span>{t.shareCard}</span>
                 </button>
               </div>
             </div>
@@ -2906,12 +3108,12 @@ export default function App() {
                       isRunning ? 'bg-amber-400 animate-ping' : 'bg-emerald-500 animate-pulse'
                     }`}
                   />
-                  <span className="font-semibold">SYSTEM CHRONOMETER</span>
+                  <span className="font-semibold">{t.chronometer}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   {isRunning ? (
                     <span className="px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold">
-                      REC // ACTIVE
+                      {t.recActive}
                     </span>
                   ) : (
                     <span className={textMuted}>SYNC // {clockReadout.tzLabel}</span>
@@ -2958,17 +3160,17 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                      AUTHENTICATION REQUIRED
+                      {t.authRequired}
                     </h3>
                     <p className={`text-xs mt-1 max-w-[260px] ${textMuted}`}>
-                      Sign in to your account to record study sessions and commit telemetry.
+                      {t.authRequiredBody}
                     </p>
                   </div>
                   <button
                     onClick={() => openAuthModal('login')}
                     className="px-4 py-2.5 font-mono text-xs font-semibold bg-emerald-500 text-zinc-950 uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer"
                   >
-                    SIGN IN NOW
+                    {t.signInNow}
                   </button>
                 </div>
               )}
@@ -3024,7 +3226,7 @@ export default function App() {
                           className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>START</span>
+                          <span>{t.start}</span>
                         </button>
                       ) : (
                         <button
@@ -3033,7 +3235,7 @@ export default function App() {
                           className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-amber-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
                         >
                           <Square className="w-3.5 h-3.5 fill-current" />
-                          <span>PAUSE</span>
+                          <span>{t.pause}</span>
                         </button>
                       )}
                       <button
@@ -3046,7 +3248,7 @@ export default function App() {
                         }}
                         className={`min-h-[42px] lg:min-h-0 px-4 py-2.5 lg:px-3 lg:py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer`}
                       >
-                        RESET
+                        {t.reset}
                       </button>
                     </div>
                   </div>
@@ -3059,7 +3261,7 @@ export default function App() {
                   </label>
                   {categories.length === 0 ? (
                     <div className={`p-2.5 text-xs font-mono border ${borderCol} ${textMuted}`}>
-                      No categories registered yet.
+                      {t.noCategoriesYet}
                     </div>
                   ) : (
                     <select
@@ -3067,11 +3269,7 @@ export default function App() {
                       onChange={(e) => setSelectedCatId(e.target.value)}
                       className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
                     >
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          [{c.code}] {c.name}
-                        </option>
-                      ))}
+                      {renderCategoryOptions()}
                     </select>
                   )}
                 </div>
@@ -3127,7 +3325,7 @@ export default function App() {
                       type="button"
                       onClick={() => setDurationMinutes((prev) => Math.min(1440, (Number(prev) || 0) + 15))}
                       className={`min-h-[36px] lg:min-h-0 py-1.5 border ${borderCol} text-emerald-400 hover:bg-emerald-500/10 font-bold transition-colors cursor-pointer`}
-                      title="Add +15 minutes"
+                      title={t.add15m}
                     >
                       +15m
                     </button>
@@ -3151,12 +3349,12 @@ export default function App() {
                   {commitState === 'submitting' ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>COMMITTING...</span>
+                      <span>{t.committing}</span>
                     </>
                   ) : commitState === 'success' ? (
                     <>
                       <CheckCircle2 className="w-4 h-4 typbox-toast-pop" />
-                      <span>COMMITTED</span>
+                      <span>{t.committed}</span>
                     </>
                   ) : (
                     <>
@@ -3178,7 +3376,7 @@ export default function App() {
                 >
                   <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <p className="font-mono text-xs uppercase tracking-wider font-semibold">
-                    Sign in to configure categories
+                    {t.signInCategories}
                   </p>
                 </div>
               )}
@@ -3198,7 +3396,7 @@ export default function App() {
                   }}
                   className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 text-xs lg:text-[11px] font-mono border ${borderCol} hover:opacity-80 cursor-pointer`}
                 >
-                  {showCatForm ? 'CLOSE' : `+ ${t.addCategory}`}
+                  {showCatForm ? t.close : `+ ${t.addCategory}`}
                 </button>
               </div>
 
@@ -3212,7 +3410,7 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="e.g., Mathematics & Physics"
+                      placeholder={t.catNamePlaceholder}
                       value={newCatName}
                       onChange={(e) => setNewCatName(e.target.value)}
                       className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
@@ -3240,6 +3438,7 @@ export default function App() {
                       <input
                         type="number"
                         min={1}
+                        max={168}
                         value={newCatTarget}
                         onChange={(e) => setNewCatTarget(Number(e.target.value))}
                         className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg}`}
@@ -3249,7 +3448,7 @@ export default function App() {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className={`block font-mono text-[10px] uppercase ${textMuted}`}>
-                        Indicator Accent
+                        {t.indicatorAccent}
                       </label>
                       <span className="font-mono text-[10px] text-zinc-400">
                         {ACCENT_PALETTE.find((c) => c.hex === newCatColor)?.name} ({newCatColor})
@@ -3262,7 +3461,7 @@ export default function App() {
                           type="button"
                           onClick={() => setNewCatColor(col.hex)}
                           title={`${col.name} (${col.hex})`}
-                          aria-label={`Select ${col.name} color`}
+                          aria-label={tf(t.selectColor, { name: col.name })}
                           className={`w-7 h-7 lg:w-6 lg:h-6 rounded-full border transition-all cursor-pointer ${
                             newCatColor === col.hex
                               ? isDark
@@ -3288,12 +3487,25 @@ export default function App() {
 
               {/* Category List */}
               <div className="space-y-3">
+                {categories.length > 0 && (
+                  <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-wider ${textMuted}`}>
+                    <span>
+                      {t.thisWeek} //{' '}
+                      <span className="text-emerald-400 tabular-nums">
+                        {currentWeekDates[0].slice(5).replace('-', '.')} — {currentWeekDates[6].slice(5).replace('-', '.')}
+                      </span>
+                    </span>
+                    <span>
+                      {tf(t.activeOfTotal, { a: activeCategoryCount, b: categories.length })}
+                    </span>
+                  </div>
+                )}
                 {categories.length === 0 ? (
                   <div className={`py-6 text-center font-mono text-xs ${textMuted}`}>
-                    No categories configured yet.
+                    {t.noCategoriesConfigured}
                   </div>
                 ) : (
-                  monthlyBreakdown.map((cat) => {
+                  weeklyBreakdown.map((cat) => {
                     const isEditing = String(editingCatId) === String(cat.id);
                     return (
                       <div
@@ -3301,10 +3513,10 @@ export default function App() {
                         className="group space-y-2 p-2 -mx-2 rounded transition-colors hover:bg-zinc-500/5"
                       >
                         <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center space-x-2 min-w-0">
+                          <div className={`flex items-center space-x-2 min-w-0 ${cat.isActive ? '' : 'opacity-60'}`}>
                             <span
                               className="w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: cat.color }}
+                              style={swatchStyle(cat.color, cat.isActive)}
                             />
                             <span className="font-mono font-semibold text-[11px] shrink-0">
                               [{cat.code}]
@@ -3312,11 +3524,24 @@ export default function App() {
                             <span className="truncate max-w-[115px] sm:max-w-[155px] font-medium" title={cat.name}>
                               {cat.name}
                             </span>
+                            {!cat.isActive && (
+                              <span className={`shrink-0 px-1 py-px border border-dashed ${borderCol} font-mono text-[9px] uppercase tracking-wider`}>
+                                {t.inactive}
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0 ml-2">
-                            <span className="font-mono text-[11px] mr-0.5">
-                              {cat.hours}h <span className={textMuted}>/ {cat.monthlyTargetHours}h</span>
+                            <span className="font-mono text-[11px] mr-0.5 tabular-nums">
+                              {cat.isActive ? (
+                                <>
+                                  {cat.targetMet && <span className="text-emerald-400 mr-1" title={t.targetMet}>✓</span>}
+                                  <span className={cat.targetMet ? 'text-emerald-400 font-semibold' : ''}>{cat.hours}h</span>{' '}
+                                  <span className={textMuted}>/ {cat.weeklyTargetHours}h</span>
+                                </>
+                              ) : (
+                                <span className={textMuted}>{cat.hours}h</span>
+                              )}
                             </span>
 
                             <button
@@ -3329,8 +3554,8 @@ export default function App() {
                                   ? 'border-emerald-500/60 text-emerald-400 opacity-100'
                                   : `${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50`
                               }`}
-                              title={isEditing ? 'Close editor' : `Edit category [${cat.code}]`}
-                              aria-label={`Edit category ${cat.name}`}
+                              title={isEditing ? t.closeEditor : tf(t.editCategoryCode, { code: cat.code })}
+                              aria-label={tf(t.editCategoryName, { name: cat.name })}
                             >
                               <Pencil className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                             </button>
@@ -3346,25 +3571,31 @@ export default function App() {
                               }`}
                               title={
                                 categories.length <= 1
-                                  ? 'At least one category is required'
-                                  : `Delete category [${cat.code}]`
+                                  ? t.needOneCategory
+                                  : tf(t.deleteCategoryCode, { code: cat.code })
                               }
-                              aria-label={`Delete category ${cat.name}`}
+                              aria-label={tf(t.deleteCategoryName, { name: cat.name })}
                             >
                               <Trash2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                             </button>
                           </div>
                         </div>
 
-                        <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
-                          <div
-                            className="h-full transition-all duration-500"
-                            style={{
-                              width: `${cat.progress}%`,
-                              backgroundColor: cat.color,
-                            }}
-                          />
-                        </div>
+                        {cat.isActive ? (
+                          <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
+                            <div
+                              className="h-full transition-all duration-500"
+                              style={{
+                                width: `${cat.progress}%`,
+                                backgroundColor: cat.color,
+                                boxShadow: cat.targetMet ? `0 0 6px ${cat.color}` : undefined,
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          // Parked: no target to fill, just a faint hatch in the category color.
+                          <div className="w-full h-1.5 opacity-35" style={{ backgroundImage: inactiveHatch(cat.color) }} />
+                        )}
 
                         {/* Inline Category Edit Form */}
                         {isEditing && (
@@ -3376,15 +3607,51 @@ export default function App() {
                           >
                             <div className="flex items-center justify-between">
                               <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
-                                EDIT CATEGORY // [{cat.code}]
+                                {tf(t.editCategoryHeader, { code: cat.code })}
                               </span>
                               <button
                                 type="button"
                                 onClick={handleCancelEditCategory}
                                 className={`font-mono text-xs lg:text-[10px] py-1 px-2 uppercase ${textMuted} hover:underline cursor-pointer`}
                               >
-                                [CANCEL]
+                                {t.cancelBracket}
                               </button>
+                            </div>
+
+                            {/* Status: active categories carry a weekly target; inactive ones are parked. */}
+                            <div>
+                              <span className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
+                                {t.catStatus}
+                              </span>
+                              <div className={`grid grid-cols-2 border ${borderCol} font-mono text-xs`} role="radiogroup" aria-label={t.catStatus}>
+                                {([true, false] as const).map((active) => (
+                                  <button
+                                    key={String(active)}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={editCatActive === active}
+                                    onClick={() => setEditCatActive(active)}
+                                    className={`min-h-[38px] lg:min-h-0 py-2 lg:py-1.5 flex items-center justify-center gap-1.5 uppercase tracking-wider transition-colors cursor-pointer ${
+                                      active ? '' : `border-l ${borderCol}`
+                                    } ${
+                                      editCatActive === active
+                                        ? active
+                                          ? 'bg-emerald-500 text-zinc-950 font-bold'
+                                          : `${isDark ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-300 text-zinc-900'} font-bold`
+                                        : `${textMuted} hover:opacity-100`
+                                    }`}
+                                  >
+                                    <span
+                                      className="w-2 h-2 rounded-full"
+                                      style={swatchStyle(active ? '#10b981' : '#a1a1aa', active)}
+                                    />
+                                    {active ? t.active : t.inactive}
+                                  </button>
+                                ))}
+                              </div>
+                              {!editCatActive && (
+                                <p className={`mt-1.5 text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.inactiveHint}</p>
+                              )}
                             </div>
 
                             <div>
@@ -3421,9 +3688,13 @@ export default function App() {
                                 <input
                                   type="number"
                                   min={1}
+                                  max={168}
+                                  required={editCatActive}
+                                  disabled={!editCatActive}
+                                  title={editCatActive ? undefined : t.targetLockedTitle}
                                   value={editCatTarget}
                                   onChange={(e) => setEditCatTarget(Number(e.target.value))}
-                                  className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg}`}
+                                  className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg} disabled:opacity-35 disabled:cursor-not-allowed disabled:line-through`}
                                 />
                               </div>
                             </div>
@@ -3431,10 +3702,10 @@ export default function App() {
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
                                 <label className={`block font-mono text-[10px] uppercase ${textMuted}`}>
-                                  Indicator Accent
+                                  {t.indicatorAccent}
                                 </label>
                                 <span className="font-mono text-[10px] text-zinc-400">
-                                  {ACCENT_PALETTE.find((c) => c.hex === editCatColor)?.name || 'Custom'} ({editCatColor})
+                                  {ACCENT_PALETTE.find((c) => c.hex === editCatColor)?.name || t.custom} ({editCatColor})
                                 </span>
                               </div>
                               <div className="grid grid-cols-6 gap-2.5 pt-0.5">
@@ -3444,7 +3715,7 @@ export default function App() {
                                     type="button"
                                     onClick={() => setEditCatColor(col.hex)}
                                     title={`${col.name} (${col.hex})`}
-                                    aria-label={`Select ${col.name} color`}
+                                    aria-label={tf(t.selectColor, { name: col.name })}
                                     className={`w-7 h-7 lg:w-6 lg:h-6 rounded-full border transition-all cursor-pointer ${
                                       editCatColor === col.hex
                                         ? isDark
@@ -3464,7 +3735,7 @@ export default function App() {
                                 onClick={handleCancelEditCategory}
                                 className={`flex-1 min-h-[40px] lg:min-h-0 py-2 lg:py-1.5 font-mono text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
                               >
-                                CANCEL
+                                {t.cancel}
                               </button>
                               <button
                                 type="submit"
@@ -3472,7 +3743,7 @@ export default function App() {
                                   isDark ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'
                                 }`}
                               >
-                                SAVE CHANGES
+                                {t.saveChanges}
                               </button>
                             </div>
                           </form>
@@ -3490,7 +3761,7 @@ export default function App() {
                 <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
                   <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <p className="font-mono text-xs uppercase tracking-wider font-semibold">
-                    Sign in to view telemetry insights &amp; vault
+                    {t.signInInsights}
                   </p>
                 </div>
               )}
@@ -3500,12 +3771,12 @@ export default function App() {
                 <div className="flex items-center space-x-2">
                   <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                    STUDY INSIGHTS &amp; VAULT
+                    {t.insightsTitle}
                   </h2>
                 </div>
                 <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'} flex items-center space-x-1`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>LIVE ARCHIVE</span>
+                  <span>{t.liveArchive}</span>
                 </span>
               </div>
 
@@ -3513,25 +3784,25 @@ export default function App() {
               <div className="space-y-2.5">
                 <div className={`font-mono text-[10px] uppercase tracking-wider ${textMuted} flex items-center space-x-1.5`}>
                   <Flame className={`w-3.5 h-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
-                  <span>STREAK &amp; CONSISTENCY</span>
+                  <span>{t.streakTitle}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>CURRENT STREAK</span>
+                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.currentStreak}</span>
                     <div className="mt-1 flex items-baseline space-x-1.5">
                       <span className={`font-mono text-2xl font-bold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
                         {streakStats.currentStreak}
                       </span>
-                      <span className={`font-mono text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>DAYS</span>
+                      <span className={`font-mono text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>{t.unitDays}</span>
                     </div>
                   </div>
                   <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>ALL-TIME RECORD</span>
+                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.allTimeRecord}</span>
                     <div className="mt-1 flex items-baseline space-x-1.5">
                       <span className={`font-mono text-2xl font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
                         {streakStats.longestStreak}
                       </span>
-                      <span className={`font-mono text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>DAYS</span>
+                      <span className={`font-mono text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>{t.unitDays}</span>
                     </div>
                   </div>
                 </div>
@@ -3539,9 +3810,9 @@ export default function App() {
                 {/* Consistency Bar */}
                 <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-1.5 font-mono text-xs`}>
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className={textMuted}>30-DAY ACTIVE RATIO:</span>
+                    <span className={textMuted}>{t.activeRatio30}</span>
                     <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
-                      {streakStats.activeDaysInLast30} / 30 DAYS ({streakStats.activeDayRatio}%)
+                      {tf(t.activeDaysOf30, { n: streakStats.activeDaysInLast30, pct: streakStats.activeDayRatio })}
                     </span>
                   </div>
                   <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
@@ -3557,22 +3828,22 @@ export default function App() {
               <div className={`space-y-2.5 pt-2 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                 <div className={`font-mono text-[10px] uppercase tracking-wider ${textMuted} flex items-center space-x-1.5`}>
                   <TrendingUp className={`w-3.5 h-3.5 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <span>HABIT PATTERNS</span>
+                  <span>{t.habitPatterns}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>PEAK PRODUCTIVE DAY</span>
+                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.peakDay}</span>
                     <div className={`mt-1 font-mono text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
                       {habitInsights.peakDayName}
                     </div>
                   </div>
                   <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>AVG SESSION LENGTH</span>
+                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.avgSession}</span>
                     <div className="mt-1 flex items-baseline space-x-1 font-mono">
                       <span className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
                         {habitInsights.avgSessionMin}
                       </span>
-                      <span className={`text-[10px] ${textMuted}`}>MIN</span>
+                      <span className={`text-[10px] ${textMuted}`}>{t.unitMin}</span>
                     </div>
                   </div>
                 </div>
@@ -3584,7 +3855,7 @@ export default function App() {
                         className="w-2 h-2 rounded-full"
                         style={{ backgroundColor: habitInsights.topCategory.color }}
                       />
-                      <span className={textMuted}>PRIMARY FOCUS:</span>
+                      <span className={textMuted}>{t.primaryFocus}</span>
                       <span className={`font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
                         [{habitInsights.topCategory.code}] {habitInsights.topCategory.name}
                       </span>
@@ -3598,7 +3869,7 @@ export default function App() {
               <div className={`space-y-2.5 pt-2 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                 <div className={`font-mono text-[10px] uppercase tracking-wider ${textMuted} flex items-center space-x-1.5`}>
                   <Download className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`} />
-                  <span>DATA VAULT &amp; EXPORT</span>
+                  <span>{t.dataVault}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2.5 font-mono text-xs">
                   <button
@@ -3606,20 +3877,20 @@ export default function App() {
                     onClick={handleExportCSV}
                     disabled={logs.length === 0}
                     className={`min-h-[42px] lg:min-h-0 p-3 lg:p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title="Export study telemetry logs to CSV"
+                    title={t.exportCsvTitle}
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>EXPORT CSV</span>
+                    <span>{t.exportCsv}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleExportJSON}
                     disabled={logs.length === 0}
                     className={`min-h-[42px] lg:min-h-0 p-3 lg:p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title="Export full telemetry archive as JSON"
+                    title={t.exportJsonTitle}
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>EXPORT JSON</span>
+                    <span>{t.exportJson}</span>
                   </button>
                 </div>
               </div>
@@ -3643,7 +3914,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setPeriodView('weekly')}
-                    title="7-Day Daily Breakdown (1 Bar = 1 Day)"
+                    title={t.hzDaysTitle}
                     className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
                       periodView === 'weekly'
                         ? isDark
@@ -3653,12 +3924,12 @@ export default function App() {
                     }`}
                   >
                     <BarChart3 className="w-3 h-3 shrink-0" />
-                    <span>7D DAYS</span>
+                    <span>{t.hzDays}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPeriodView('weekly_agg')}
-                    title="12-Week Bucket Aggregation (1 Bar = 1 Full Week)"
+                    title={t.hzWeeksTitle}
                     className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
                       periodView === 'weekly_agg'
                         ? isDark
@@ -3668,12 +3939,12 @@ export default function App() {
                     }`}
                   >
                     <BarChart3 className="w-3 h-3 shrink-0" />
-                    <span>12W WEEKS</span>
+                    <span>{t.hzWeeks}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPeriodView('monthly_agg')}
-                    title="12-Month Bucket Aggregation (1 Bar = 1 Full Month)"
+                    title={t.hzMonthsTitle}
                     className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 sm:border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
                       periodView === 'monthly_agg'
                         ? isDark
@@ -3683,12 +3954,12 @@ export default function App() {
                     }`}
                   >
                     <BarChart3 className="w-3 h-3 shrink-0" />
-                    <span>12M MONTHS</span>
+                    <span>{t.hzMonths}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPeriodView('monthly')}
-                    title="Monthly Calendar Matrix (1 Cell = 1 Day)"
+                    title={t.hzCalTitle}
                     className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
                       periodView === 'monthly'
                         ? isDark
@@ -3698,7 +3969,7 @@ export default function App() {
                     }`}
                   >
                     <Calendar className="w-3 h-3 shrink-0" />
-                    <span>1M CAL</span>
+                    <span>{t.hzCal}</span>
                   </button>
                 </div>
               </div>
@@ -3709,20 +3980,20 @@ export default function App() {
                   {/* Active Window Info Banner */}
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={textMuted}>WINDOW (1 BAR = 1 DAY):</span>
+                      <span className={textMuted}>{t.windowDay}</span>
                       <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>{weeklyWindowLabel}</span>
                       {weeklyOffset === 0 ? (
                         <span className="px-1.5 py-0.5 text-[10px] border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 font-semibold">
-                          CURRENT WEEK
+                          {t.currentWeek}
                         </span>
                       ) : (
                         <span className="px-1.5 py-0.5 text-[10px] border border-amber-500/40 text-amber-400 bg-amber-500/10 font-semibold">
-                          {weeklyOffset} WEEKS AGO
+                          {tf(t.weeksAgo, { n: weeklyOffset })}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center space-x-1.5">
-                      <span className={textMuted}>7D TOTAL:</span>
+                      <span className={textMuted}>{t.total7d}</span>
                       <span className="font-semibold text-emerald-400">
                         {(weeklyPeriodTotalMinutes / 60).toFixed(1)}h
                       </span>
@@ -3731,11 +4002,12 @@ export default function App() {
 
                   {/* 7-Day Stacked Bar Chart */}
                   <div className={`h-52 flex items-end justify-between gap-3 pt-6 px-2 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
-                    {weeklyChartData.map((day) => {
+                    {weeklyChartData.map((day, idx) => {
                       return (
                         <div
                           key={day.date}
-                          className="flex-1 flex flex-col items-center h-full justify-end group"
+                          {...trendBarProps(idx)}
+                          className={`flex-1 flex flex-col items-center h-full justify-end group ${trendBarRing(idx)}`}
                         >
                           <span className={`font-mono text-[10px] mb-1.5 ${textMuted}`}>
                             {day.totalMinutes > 0 ? `${(day.totalMinutes / 60).toFixed(1)}h` : '-'}
@@ -3757,7 +4029,7 @@ export default function App() {
                                   key={seg.category.id}
                                   style={{
                                     height: `${heightPct}%`,
-                                    backgroundColor: seg.category.color,
+                                    ...segmentStyle(seg.category.color, seg.category.isActive),
                                   }}
                                   className="w-full transition-all duration-300 opacity-90 group-hover:opacity-100"
                                   title={`${seg.category.name}: ${seg.minutes} min (${(seg.minutes / 60).toFixed(1)}h)`}
@@ -3772,19 +4044,17 @@ export default function App() {
                     })}
                   </div>
 
-                  {/* Category Legend */}
-                  <div className="flex flex-wrap gap-4 pt-2">
-                    {categories.map((cat) => (
-                      <div key={cat.id} className="flex items-center space-x-1.5 text-xs font-mono">
-                        <span
-                          className="w-2.5 h-2.5 inline-block"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        <span className={textMuted}>{cat.code}:</span>
-                        <span>{cat.name}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* Category Trend Matrix (numeric breakdown + color legend) */}
+                  <CategoryTrendTable
+                    columns={weeklyTrendColumns}
+                    categories={categories}
+                    unitLabel={t.unitDay}
+                    isDark={isDark}
+                    borderCol={borderCol}
+                    textMuted={textMuted}
+                    highlightIdx={trendHighlightIdx}
+                    onHighlight={setTrendHighlight}
+                  />
                 </div>
               )}
 
@@ -3793,20 +4063,20 @@ export default function App() {
                 <div className="space-y-4">
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={textMuted}>12W HORIZON (1 BAR = 1 WEEK):</span>
+                      <span className={textMuted}>{t.window12w}</span>
                       <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>
                         {weeklyAggBuckets.windowLabel}
                       </span>
                     </div>
                     <div className="flex items-center space-x-3">
                       <div>
-                        <span className={textMuted}>12W TOTAL: </span>
+                        <span className={textMuted}>{t.total12w}</span>
                         <span className="font-semibold text-emerald-400">
                           {(weeklyAggBuckets.total12WMinutes / 60).toFixed(1)}h
                         </span>
                       </div>
                       <div>
-                        <span className={textMuted}>AVG/WK: </span>
+                        <span className={textMuted}>{t.avgWk}</span>
                         <span className="font-semibold">
                           {(weeklyAggBuckets.total12WMinutes / 60 / 12).toFixed(1)}h
                         </span>
@@ -3816,10 +4086,11 @@ export default function App() {
 
                   {/* 12-Week Stacked Bar Chart */}
                   <div className={`h-52 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
-                    {weeklyAggBuckets.buckets.map((wk) => (
+                    {weeklyAggBuckets.buckets.map((wk, idx) => (
                       <div
                         key={wk.id}
-                        className="flex-1 flex flex-col items-center h-full justify-end group min-w-0"
+                        {...trendBarProps(idx)}
+                        className={`flex-1 flex flex-col items-center h-full justify-end group min-w-0 ${trendBarRing(idx)}`}
                         title={`Week ${wk.startStr} — ${wk.endStr}: ${(wk.totalMinutes / 60).toFixed(1)}h (${wk.totalMinutes} min)`}
                       >
                         <span className={`font-mono text-[9px] sm:text-[10px] mb-1.5 truncate ${textMuted}`}>
@@ -3842,7 +4113,7 @@ export default function App() {
                                 key={seg.category.id}
                                 style={{
                                   height: `${heightPct}%`,
-                                  backgroundColor: seg.category.color,
+                                  ...segmentStyle(seg.category.color, seg.category.isActive),
                                 }}
                                 className="w-full transition-all duration-300 opacity-90 group-hover:opacity-100"
                                 title={`[${seg.category.code}] ${seg.category.name}: ${(seg.minutes / 60).toFixed(1)}h`}
@@ -3858,19 +4129,17 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* Category Legend */}
-                  <div className="flex flex-wrap gap-4 pt-2">
-                    {categories.map((cat) => (
-                      <div key={cat.id} className="flex items-center space-x-1.5 text-xs font-mono">
-                        <span
-                          className="w-2.5 h-2.5 inline-block"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        <span className={textMuted}>{cat.code}:</span>
-                        <span>{cat.name}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* Category Trend Matrix (numeric breakdown + color legend) */}
+                  <CategoryTrendTable
+                    columns={weeklyAggTrendColumns}
+                    categories={categories}
+                    unitLabel={t.unitWeek}
+                    isDark={isDark}
+                    borderCol={borderCol}
+                    textMuted={textMuted}
+                    highlightIdx={trendHighlightIdx}
+                    onHighlight={setTrendHighlight}
+                  />
                 </div>
               )}
 
@@ -3879,20 +4148,20 @@ export default function App() {
                 <div className="space-y-4">
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={textMuted}>12M HORIZON (1 BAR = 1 MONTH):</span>
+                      <span className={textMuted}>{t.window12m}</span>
                       <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>
                         {monthlyAggBuckets.windowLabel}
                       </span>
                     </div>
                     <div className="flex items-center space-x-3">
                       <div>
-                        <span className={textMuted}>12M TOTAL: </span>
+                        <span className={textMuted}>{t.total12m}</span>
                         <span className="font-semibold text-emerald-400">
                           {(monthlyAggBuckets.total12MMinutes / 60).toFixed(1)}h
                         </span>
                       </div>
                       <div>
-                        <span className={textMuted}>AVG/MO: </span>
+                        <span className={textMuted}>{t.avgMo}</span>
                         <span className="font-semibold">
                           {(monthlyAggBuckets.total12MMinutes / 60 / 12).toFixed(1)}h
                         </span>
@@ -3902,10 +4171,11 @@ export default function App() {
 
                   {/* 12-Month Stacked Bar Chart */}
                   <div className={`h-52 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
-                    {monthlyAggBuckets.buckets.map((mo) => (
+                    {monthlyAggBuckets.buckets.map((mo, idx) => (
                       <div
                         key={mo.id}
-                        className="flex-1 flex flex-col items-center h-full justify-end group min-w-0"
+                        {...trendBarProps(idx)}
+                        className={`flex-1 flex flex-col items-center h-full justify-end group min-w-0 ${trendBarRing(idx)}`}
                         title={`${mo.fullLabel}: ${(mo.totalMinutes / 60).toFixed(1)}h (${mo.totalMinutes} min)`}
                       >
                         <span className={`font-mono text-[9px] sm:text-[10px] mb-1.5 truncate ${textMuted}`}>
@@ -3928,7 +4198,7 @@ export default function App() {
                                 key={seg.category.id}
                                 style={{
                                   height: `${heightPct}%`,
-                                  backgroundColor: seg.category.color,
+                                  ...segmentStyle(seg.category.color, seg.category.isActive),
                                 }}
                                 className="w-full transition-all duration-300 opacity-90 group-hover:opacity-100"
                                 title={`[${seg.category.code}] ${seg.category.name}: ${(seg.minutes / 60).toFixed(1)}h`}
@@ -3944,19 +4214,17 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* Category Legend */}
-                  <div className="flex flex-wrap gap-4 pt-2">
-                    {categories.map((cat) => (
-                      <div key={cat.id} className="flex items-center space-x-1.5 text-xs font-mono">
-                        <span
-                          className="w-2.5 h-2.5 inline-block"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        <span className={textMuted}>{cat.code}:</span>
-                        <span>{cat.name}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* Category Trend Matrix (numeric breakdown + color legend) */}
+                  <CategoryTrendTable
+                    columns={monthlyAggTrendColumns}
+                    categories={categories}
+                    unitLabel={t.unitMonth}
+                    isDark={isDark}
+                    borderCol={borderCol}
+                    textMuted={textMuted}
+                    highlightIdx={trendHighlightIdx}
+                    onHighlight={setTrendHighlight}
+                  />
                 </div>
               )}
 
@@ -3967,20 +4235,20 @@ export default function App() {
                     {/* Active Month Info Banner */}
                     <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 mb-3 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={textMuted}>MONTH (CALENDAR):</span>
+                        <span className={textMuted}>{t.monthCalendar}</span>
                         <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>{targetMonthName}</span>
                         {monthlyOffset === 0 ? (
                           <span className="px-1.5 py-0.5 text-[10px] border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 font-semibold">
-                            CURRENT MONTH
+                            {t.currentMonth}
                           </span>
                         ) : (
                           <span className="px-1.5 py-0.5 text-[10px] border border-amber-500/40 text-amber-400 bg-amber-500/10 font-semibold">
-                            {monthlyOffset} MONTHS AGO
+                            {tf(t.monthsAgo, { n: monthlyOffset })}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center space-x-1.5">
-                        <span className={textMuted}>MONTH TOTAL:</span>
+                        <span className={textMuted}>{t.monthTotal}</span>
                         <span className="font-semibold text-emerald-400">
                           {(monthlyPeriodTotalMinutes / 60).toFixed(1)}h
                         </span>
@@ -3989,13 +4257,9 @@ export default function App() {
 
                     {/* Weekday Labels (Mon to Sun) */}
                     <div className="grid grid-cols-7 gap-1.5 mb-2 text-center font-mono text-[10px] text-zinc-500">
-                      <span>MON</span>
-                      <span>TUE</span>
-                      <span>WED</span>
-                      <span>THU</span>
-                      <span>FRI</span>
-                      <span>SAT</span>
-                      <span>SUN</span>
+                      {t.weekdaysShortMon.split(',').map((d) => (
+                        <span key={d}>{d}</span>
+                      ))}
                     </div>
 
                     {/* Calendar Month Matrix Grid */}
@@ -4026,7 +4290,7 @@ export default function App() {
                             key={cell.date}
                             onClick={() => setLogDate(cell.date)}
                             className={`p-2 border font-mono text-[10px] flex flex-col justify-between h-12 transition-colors cursor-pointer ${intensity}`}
-                            title={`${cell.date}: ${cell.minutes} min (${(cell.minutes / 60).toFixed(1)}h) — Click to select date`}
+                            title={tf(t.calCellTitle, { date: cell.date, min: cell.minutes, h: (cell.minutes / 60).toFixed(1) })}
                           >
                             <span className="opacity-70 text-[9px]">{cell.date.slice(8)}</span>
                             <span className="text-right font-medium">
@@ -4059,7 +4323,7 @@ export default function App() {
                   <div className="flex items-center space-x-2 min-w-0">
                     <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="font-semibold tracking-wider uppercase text-[11px] shrink-0">
-                      TIMELINE SCRUBBER
+                      {t.timelineScrubber}
                     </span>
                     <span
                       className={`px-2 py-0.5 text-[10px] border shrink-0 ${
@@ -4070,11 +4334,11 @@ export default function App() {
                     >
                       {isWeekly
                         ? weeklyOffset === 0
-                          ? 'CURRENT WEEK'
-                          : `-${weeklyOffset} WEEKS`
+                          ? t.currentWeek
+                          : tf(t.minusWeeks, { n: weeklyOffset })
                         : monthlyOffset === 0
-                        ? 'CURRENT MONTH'
-                        : `-${monthlyOffset} MONTHS`}
+                        ? t.currentMonth
+                        : tf(t.minusMonths, { n: monthlyOffset })}
                     </span>
                   </div>
 
@@ -4088,10 +4352,10 @@ export default function App() {
                           ? 'opacity-30 cursor-not-allowed border-zinc-800/40'
                           : `${borderCol} hover:border-zinc-400 ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-black'} cursor-pointer`
                       }`}
-                      title={isWeekly ? 'Rewind 1 week into past' : 'Rewind 1 month into past'}
+                      title={isWeekly ? t.rewindWeek : t.rewindMonth}
                     >
                       <ChevronLeft className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
-                      <span>{isWeekly ? '-1 WK' : '-1 MO'}</span>
+                      <span>{isWeekly ? t.minus1Wk : t.minus1Mo}</span>
                     </button>
 
                     <button
@@ -4103,9 +4367,9 @@ export default function App() {
                           ? 'opacity-30 cursor-not-allowed border-zinc-800/40'
                           : `${borderCol} hover:border-zinc-400 ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-black'} cursor-pointer`
                       }`}
-                      title={isWeekly ? 'Advance 1 week forward' : 'Advance 1 month forward'}
+                      title={isWeekly ? t.advanceWeek : t.advanceMonth}
                     >
-                      <span>{isWeekly ? '+1 WK' : '+1 MO'}</span>
+                      <span>{isWeekly ? t.plus1Wk : t.plus1Mo}</span>
                       <ChevronRight className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                     </button>
 
@@ -4118,10 +4382,10 @@ export default function App() {
                           ? 'opacity-30 cursor-not-allowed border-zinc-800/40'
                           : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-zinc-950 cursor-pointer'
                       }`}
-                      title="Reset to Present / Today"
+                      title={t.resetPresentTitle}
                     >
                       <RotateCcw className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
-                      <span>PRESENT</span>
+                      <span>{t.present}</span>
                     </button>
                   </div>
                 </div>
@@ -4137,19 +4401,19 @@ export default function App() {
                       value={currentSliderVal}
                       onChange={handleSliderChange}
                       className="w-full h-3 lg:h-2 bg-zinc-800 rounded-none appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 focus:outline-none"
-                      aria-label="Timeline navigation slider"
+                      aria-label={t.timelineSlider}
                     />
                   </div>
 
                   <div className="flex justify-between items-center text-[10px] font-mono select-none">
                     <span className={textMuted}>
-                      ◀ PAST ({isWeekly ? `-${maxWeeksAgo} WEEKS` : `-${maxMonthsAgo} MONTHS`})
+                      {isWeekly ? tf(t.pastWeeks, { n: maxWeeksAgo }) : tf(t.pastMonths, { n: maxMonthsAgo })}
                     </span>
                     <span className="text-zinc-500 hidden sm:inline">
-                      ◀ DRAG LEFT TO REWIND TIMELINE ▶
+                      {t.dragToRewind}
                     </span>
                     <span className={isAtPresent ? 'text-emerald-400 font-semibold' : textMuted}>
-                      TODAY (PRESENT) ▶
+                      {t.todayPresent}
                     </span>
                   </div>
                 </div>
@@ -4167,7 +4431,7 @@ export default function App() {
                 <div className="flex items-center space-x-2.5">
                   <Activity className="w-4 h-4 text-emerald-500" />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                    TELEMETRY CADENCE MATRIX
+                    {t.cadenceTitle}
                   </h2>
                   <span
                     className={`px-1.5 py-0.5 font-mono text-[10px] border ${
@@ -4176,7 +4440,7 @@ export default function App() {
                         : 'border-emerald-600/40 text-emerald-700 bg-emerald-500/10'
                     }`}
                   >
-                    EPOCH {cadenceMatrixData.targetEpochIndex} / {cadenceMatrixData.totalEpochs}
+                    {tf(t.epochN, { a: cadenceMatrixData.targetEpochIndex, b: cadenceMatrixData.totalEpochs })}
                   </span>
                 </div>
 
@@ -4193,9 +4457,9 @@ export default function App() {
                             : 'bg-zinc-900 text-white font-semibold'
                           : textMuted
                       }`}
-                      title="4-tier study duration shade mode"
+                      title={t.shadedTitle}
                     >
-                      SHADED
+                      {t.shaded}
                     </button>
                     <button
                       type="button"
@@ -4207,9 +4471,9 @@ export default function App() {
                             : 'bg-zinc-900 text-white font-semibold'
                           : textMuted
                       }`}
-                      title="Single-tone commit log signal mode"
+                      title={t.binaryTitle}
                     >
-                      BINARY
+                      {t.binary}
                     </button>
                   </div>
 
@@ -4225,7 +4489,7 @@ export default function App() {
                             : 'bg-emerald-600 text-white font-semibold'
                           : textMuted
                       }`}
-                      title="1x screen-fitted week columns"
+                      title={t.span1xTitle}
                     >
                       1X ({cadenceMatrixData.unitWeeks}W)
                     </button>
@@ -4239,7 +4503,7 @@ export default function App() {
                             : 'bg-emerald-600 text-white font-semibold'
                           : textMuted
                       }`}
-                      title="2x expanded horizon (double columns)"
+                      title={t.span2xTitle}
                     >
                       2X ({cadenceMatrixData.unitWeeks * 2}W)
                     </button>
@@ -4255,7 +4519,7 @@ export default function App() {
                           setMatrixPageOffset((p) => Math.min(p + 1, cadenceMatrixData.totalEpochs - 1))
                         }
                         className={`min-h-[36px] min-w-[36px] lg:min-h-0 lg:min-w-0 p-1.5 lg:p-1 border ${borderCol} flex items-center justify-center disabled:opacity-30 cursor-pointer`}
-                        title="Previous Epoch Block"
+                        title={t.prevEpoch}
                       >
                         <ChevronLeft className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                       </button>
@@ -4264,7 +4528,7 @@ export default function App() {
                         disabled={cadenceMatrixData.clampedOffset === 0}
                         onClick={() => setMatrixPageOffset((p) => Math.max(0, p - 1))}
                         className={`min-h-[36px] min-w-[36px] lg:min-h-0 lg:min-w-0 p-1.5 lg:p-1 border ${borderCol} flex items-center justify-center disabled:opacity-30 cursor-pointer`}
-                        title="Next Epoch Block"
+                        title={t.nextEpoch}
                       >
                         <ChevronRight className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                       </button>
@@ -4276,20 +4540,20 @@ export default function App() {
               {/* Sub-header Telemetry Readout */}
               <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
                 <div className="flex items-center space-x-2">
-                  <span className={textMuted}>SPAN:</span>
+                  <span className={textMuted}>{t.spanLabel}</span>
                   <span className="font-semibold">
                     {cadenceMatrixData.startLabel} — {cadenceMatrixData.endLabel}
                   </span>
                 </div>
                 <div className="flex items-center space-x-4">
                   <div>
-                    <span className={textMuted}>ACTIVE DAYS: </span>
+                    <span className={textMuted}>{t.activeDaysLabel}</span>
                     <span className="font-semibold text-emerald-400">
                       {cadenceMatrixData.activeDaysInBlock}D
                     </span>
                   </div>
                   <div>
-                    <span className={textMuted}>BLOCK VOLUME: </span>
+                    <span className={textMuted}>{t.blockVolume}</span>
                     <span className="font-semibold">
                       {(cadenceMatrixData.totalMinutesInBlock / 60).toFixed(1)}H
                     </span>
@@ -4303,13 +4567,11 @@ export default function App() {
                 <div
                   className={`flex flex-col justify-between pt-[18px] font-mono text-[9px] leading-none select-none shrink-0 h-[133px] ${textMuted}`}
                 >
-                  <span className="h-[13px] flex items-center">MON</span>
-                  <span className="h-[13px] flex items-center opacity-50">TUE</span>
-                  <span className="h-[13px] flex items-center">WED</span>
-                  <span className="h-[13px] flex items-center opacity-50">THU</span>
-                  <span className="h-[13px] flex items-center">FRI</span>
-                  <span className="h-[13px] flex items-center opacity-50">SAT</span>
-                  <span className="h-[13px] flex items-center">SUN</span>
+                  {t.weekdaysShortMon.split(',').map((d, i) => (
+                    <span key={d} className={`h-[13px] flex items-center ${i % 2 === 1 ? 'opacity-50' : ''}`}>
+                      {d}
+                    </span>
+                  ))}
                 </div>
 
                 {/* Auto-Measured Horizontal Weeks Stream */}
@@ -4403,10 +4665,10 @@ export default function App() {
                                 className={`w-[13px] h-[13px] border rounded-none transition-all duration-150 cursor-pointer hover:scale-125 hover:z-10 ${cellStyle} ${todayHighlight} ${ambientPulse}`}
                                 title={`${cell.date}: ${
                                   cell.minutes > 0
-                                    ? `${cell.minutes} min (${(cell.minutes / 60).toFixed(1)}h) across ${cell.count} log(s)`
+                                    ? tf(t.cellCommits, { min: cell.minutes, h: (cell.minutes / 60).toFixed(1), n: cell.count })
                                     : cell.isFuture
-                                    ? 'Unfilled future slot (Click to set date)'
-                                    : 'No commits logged (Click to set date)'
+                                    ? t.cellFuture
+                                    : t.cellEmpty
                                 }`}
                               />
                             );
@@ -4430,23 +4692,26 @@ export default function App() {
                       <span className="text-emerald-400 font-semibold">[{hoveredMatrixCell.date}]</span>
                       {hoveredMatrixCell.minutes > 0 ? (
                         <span>
-                          {hoveredMatrixCell.minutes} MIN ({(hoveredMatrixCell.minutes / 60).toFixed(1)}H) //{' '}
-                          {hoveredMatrixCell.count} COMMIT(S)
+                          {tf(t.inspectCommits, {
+                            min: hoveredMatrixCell.minutes,
+                            h: (hoveredMatrixCell.minutes / 60).toFixed(1),
+                            n: hoveredMatrixCell.count,
+                          })}
                         </span>
                       ) : (
-                        <span className={textMuted}>0 MIN // STANDBY SLOT (CLICK CELL TO SELECT DATE)</span>
+                        <span className={textMuted}>{t.inspectEmpty}</span>
                       )}
                     </div>
                   ) : (
                     <span className={textMuted}>
-                      TAP OR HOVER ANY CELL TO INSPECT DAILY TELEMETRY // AUTO-EXPANDS WHEN EPOCH FILLS
+                      {t.inspectHint}
                     </span>
                   )}
                 </div>
 
                 {/* Legend */}
                 <div className="flex items-center space-x-2 shrink-0 select-none">
-                  <span className={textMuted}>IDLE</span>
+                  <span className={textMuted}>{t.idle}</span>
                   <span
                     className={`w-2.5 h-2.5 border inline-block ${
                       isDark ? 'bg-zinc-900/70 border-zinc-800' : 'bg-zinc-100 border-zinc-200'
@@ -4482,7 +4747,7 @@ export default function App() {
                       }`}
                     />
                   )}
-                  <span className={textMuted}>COMMITTED</span>
+                  <span className={textMuted}>{t.committed}</span>
                 </div>
               </div>
             </div>
@@ -4497,18 +4762,18 @@ export default function App() {
                   </h2>
                 </div>
                 <span className={`font-mono text-[11px] ${textMuted}`}>
-                  {user ? `${logs.length} RECORDS` : 'STANDBY'}
+                  {user ? tf(t.nRecords, { n: logs.length }) : t.standby}
                 </span>
               </div>
 
               {dataLoading ? (
                 <div className="py-12 flex items-center justify-center space-x-2 font-mono text-xs text-zinc-500">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Loading records from Django backend...</span>
+                  <span>{t.loadingRecords}</span>
                 </div>
               ) : logs.length === 0 ? (
                 <div className={`py-12 text-center font-mono text-xs ${textMuted}`}>
-                  {user ? t.noLogs : 'Authenticate to view and manage your chronological study log stream.'}
+                  {user ? t.noLogs : t.authToViewLogs}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -4524,21 +4789,34 @@ export default function App() {
                           }`}
                         >
                           <div className="flex items-center justify-between gap-4">
-                            <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs flex-1 min-w-0">
-                              <span
-                                className="w-2.5 h-2.5 rounded-full shrink-0"
-                                style={{ backgroundColor: cat?.color || log.categoryColor || '#71717a' }}
-                              />
-                              <span className="font-bold">
-                                [{cat?.code || log.categoryCode || 'LOG'}]
-                              </span>
-                              <span className="truncate font-medium">
-                                {cat?.name || log.categoryName || 'Study Session'}
-                              </span>
-                              <span className={textMuted}>// {log.date}</span>
-                              <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60 font-semibold">
-                                {log.durationMinutes} MIN ({(log.durationMinutes / 60).toFixed(1)}H)
-                              </span>
+                            {/* Line 1: category identity. Line 2: when + how long. */}
+                            <div className="flex-1 min-w-0 space-y-1.5 font-mono text-xs">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={swatchStyle(cat?.color || log.categoryColor || '#71717a', cat?.isActive !== false)}
+                                />
+                                <span className="font-bold shrink-0">
+                                  [{cat?.code || log.categoryCode || 'LOG'}]
+                                </span>
+                                <span className="truncate font-medium">
+                                  {cat?.name || log.categoryName || t.studySession}
+                                </span>
+                              </div>
+                              <div className="pl-5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                                <span className={`tabular-nums ${textMuted}`}>// {log.date}</span>
+                                {log.createdAt && (
+                                  <span
+                                    className={`text-[10px] tabular-nums ${textMuted}`}
+                                    title={tf(t.loggedAtTitle, { stamp: formatDateTime(log.createdAt), utc: log.createdAt })}
+                                  >
+                                    {t.loggedAt} {formatDateTime(log.createdAt)}
+                                  </span>
+                                )}
+                                <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60 font-semibold tabular-nums">
+                                  {tf(t.logDurationChip, { min: log.durationMinutes, h: (log.durationMinutes / 60).toFixed(1) })}
+                                </span>
+                              </div>
                             </div>
 
                             <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0">
@@ -4552,8 +4830,8 @@ export default function App() {
                                     ? 'border-emerald-500/60 text-emerald-400'
                                     : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
                                 }`}
-                                title={isEditingLog ? 'Close Editor' : 'Edit Log'}
-                                aria-label="Edit Log"
+                                title={isEditingLog ? t.closeEditor : t.editLog}
+                                aria-label={t.editLog}
                               >
                                 <Pencil className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                               </button>
@@ -4561,8 +4839,8 @@ export default function App() {
                                 type="button"
                                 onClick={() => handleDeleteLog(log.id)}
                                 className={`p-2.5 lg:p-1.5 border ${borderCol} ${textMuted} hover:text-rose-500 hover:border-rose-500/50 transition-colors cursor-pointer`}
-                                title="Delete Log"
-                                aria-label="Delete Log"
+                                title={t.deleteLog}
+                                aria-label={t.deleteLog}
                               >
                                 <Trash2 className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                               </button>
@@ -4579,14 +4857,14 @@ export default function App() {
                             >
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
-                                  EDIT TELEMETRY RECORD // #{log.id}
+                                  {tf(t.editRecordHeader, { id: log.id })}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={handleCancelEditLog}
                                   className={`text-xs lg:text-[10px] py-1 px-2 uppercase ${textMuted} hover:underline cursor-pointer`}
                                 >
-                                  [CANCEL]
+                                  {t.cancelBracket}
                                 </button>
                               </div>
 
@@ -4600,11 +4878,7 @@ export default function App() {
                                     onChange={(e) => setEditLogCatId(e.target.value)}
                                     className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
                                   >
-                                    {categories.map((c) => (
-                                      <option key={c.id} value={c.id}>
-                                        [{c.code}] {c.name}
-                                      </option>
-                                    ))}
+                                    {renderCategoryOptions()}
                                   </select>
                                 </div>
 
@@ -4643,7 +4917,7 @@ export default function App() {
                                   onClick={handleCancelEditLog}
                                   className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
                                 >
-                                  CANCEL
+                                  {t.cancel}
                                 </button>
                                 <button
                                   type="submit"
@@ -4653,7 +4927,7 @@ export default function App() {
                                       : 'bg-zinc-900 text-white hover:bg-zinc-800'
                                   }`}
                                 >
-                                  SAVE CHANGES
+                                  {t.saveChanges}
                                 </button>
                               </div>
                             </form>
@@ -4666,7 +4940,7 @@ export default function App() {
                   {logs.length > INITIAL_VISIBLE_LOGS && (
                     <div className={`pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 border-t ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'} font-mono text-xs`}>
                       <span className={`text-[11px] ${textMuted}`}>
-                        DISPLAYING {Math.min(visibleLogCount, logs.length)} OF {logs.length} RECORDS
+                        {tf(t.displayingOf, { a: Math.min(visibleLogCount, logs.length), b: logs.length })}
                       </span>
                       <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
                         {visibleLogCount < logs.length && (
@@ -4680,7 +4954,7 @@ export default function App() {
                                   : 'text-emerald-700 border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100'
                               } font-bold transition-colors cursor-pointer`}
                             >
-                              SHOW MORE (+{Math.min(10, logs.length - visibleLogCount)})
+                              {tf(t.showMore, { n: Math.min(10, logs.length - visibleLogCount) })}
                             </button>
                             {logs.length - visibleLogCount > 10 && (
                               <button
@@ -4692,7 +4966,7 @@ export default function App() {
                                     : 'text-black hover:bg-zinc-100 hover:border-zinc-800'
                                 } hover:border-zinc-500 transition-colors cursor-pointer`}
                               >
-                                SHOW ALL ({logs.length})
+                                {tf(t.showAll, { n: logs.length })}
                               </button>
                             )}
                           </>
@@ -4707,7 +4981,7 @@ export default function App() {
                                 : 'text-zinc-700 hover:text-black hover:bg-zinc-100'
                             } transition-colors cursor-pointer`}
                           >
-                            COLLAPSE
+                            {t.collapse}
                           </button>
                         )}
                       </div>
@@ -4735,7 +5009,7 @@ export default function App() {
               <span
                 className={`text-xs uppercase tracking-widest font-sans block mb-1 font-medium ${textMuted}`}
               >
-                {ui.footerContact}
+                {t.footerContact}
               </span>
               <a
                 href="mailto:mikadorikuto@gmail.com"
@@ -4765,8 +5039,19 @@ export default function App() {
             </div>
           </div>
 
-          <div className={`text-center font-sans text-xs tracking-wide ${textMuted}`}>
-            {ui.copyright}
+          {/* Brand sign-off: same TYPBOX .me lockup as the header, then the
+              copyright / mark notice. */}
+          <div className="w-full flex flex-col items-center gap-3 font-mono text-center">
+            <div className="flex items-center space-x-2">
+              <TypboxLogo className="w-4 h-4" isDark={isDark} />
+              <span className="text-base font-bold tracking-tighter">TYPBOX</span>
+              <span className={`text-[10px] px-1 py-0.5 border ${borderCol} ${textMuted}`}>.me</span>
+            </div>
+            <div className={`text-[10px] sm:text-[11px] tracking-[0.2em] uppercase ${textMuted}`}>{t.copyrightLine}</div>
+            <div className={`flex items-center gap-2 text-[9px] sm:text-[10px] tracking-widest uppercase opacity-75 max-w-xl leading-relaxed ${textMuted}`}>
+              <span className="w-1 h-1 bg-emerald-500 shrink-0" aria-hidden="true" />
+              <span>{t.copyrightRights}</span>
+            </div>
           </div>
         </div>
       </footer>
@@ -4788,10 +5073,10 @@ export default function App() {
                 <Shield className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
                   {authMode === 'forgot'
-                    ? 'PASSWORD RECOVERY // EMAIL DISPATCH'
+                    ? t.authTitleForgot
                     : authMode === 'reset_confirm'
-                    ? 'SET NEW PASSWORD // TOKEN VERIFIED'
-                    : 'AUTHENTICATION GATEWAY'}
+                    ? t.authTitleReset
+                    : t.authTitle}
                 </h3>
               </div>
               <button
@@ -4799,7 +5084,7 @@ export default function App() {
                 onClick={closeAuthModal}
                 className="font-mono text-xs hover:underline cursor-pointer"
               >
-                [CLOSE]
+                {t.closeBracket}
               </button>
             </div>
 
@@ -4822,7 +5107,7 @@ export default function App() {
                       : textMuted
                   }`}
                 >
-                  SIGN IN
+                  {t.signIn}
                 </button>
                 <button
                   type="button"
@@ -4840,7 +5125,7 @@ export default function App() {
                       : textMuted
                   }`}
                 >
-                  CREATE ACCOUNT
+                  {t.createAccount}
                 </button>
               </div>
             )}
@@ -4864,7 +5149,7 @@ export default function App() {
                       href={debugResetUrl}
                       className="inline-block px-2.5 py-1 bg-emerald-500 text-zinc-950 font-bold text-[11px] uppercase hover:bg-emerald-400 transition-colors"
                     >
-                      [DEV MODE: OPEN PASSWORD RESET LINK]
+                      {t.devResetLink}
                     </a>
                   </div>
                 )}
@@ -4876,7 +5161,7 @@ export default function App() {
               {(authMode === 'login' || authMode === 'register') && (
                 <div>
                   <label htmlFor="auth-username" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                    Username
+                    {t.username}
                   </label>
                   <input
                     id="auth-username"
@@ -4884,7 +5169,7 @@ export default function App() {
                     type="text"
                     required
                     autoComplete="username"
-                    placeholder="e.g., engineer"
+                    placeholder={t.usernamePlaceholder}
                     value={authUsername}
                     onChange={(e) => setAuthUsername(e.target.value)}
                     className={`w-full px-3 py-2 text-xs font-mono border outline-none ${inputBg}`}
@@ -4896,7 +5181,7 @@ export default function App() {
               {(authMode === 'register' || authMode === 'forgot') && (
                 <div>
                   <label htmlFor="auth-email" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                    {authMode === 'forgot' ? 'Registered Email Address' : 'Email Address *'}
+                    {authMode === 'forgot' ? t.registeredEmail : t.emailRequiredLabel}
                   </label>
                   <input
                     id="auth-email"
@@ -4917,7 +5202,7 @@ export default function App() {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label htmlFor="auth-password" className={`block font-mono text-[10px] uppercase ${textMuted}`}>
-                      {authMode === 'reset_confirm' ? 'New Password (Min 8 chars)' : 'Password'}
+                      {authMode === 'reset_confirm' ? t.newPasswordMin : t.password}
                     </label>
                     {authMode === 'login' && (
                       <button
@@ -4929,12 +5214,12 @@ export default function App() {
                         }}
                         className="text-[10px] font-mono text-emerald-400 hover:underline cursor-pointer"
                       >
-                        Forgot password?
+                        {t.forgotPassword}
                       </button>
                     )}
                     {authMode === 'register' && (
                       <span className="text-[10px] font-mono text-emerald-400">
-                        Min 8 characters
+                        {t.min8}
                       </span>
                     )}
                   </div>
@@ -4955,8 +5240,8 @@ export default function App() {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer"
-                      title={showPassword ? 'Hide password' : 'Show password'}
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? t.hidePassword : t.showPassword}
+                      aria-label={showPassword ? t.hidePassword : t.showPassword}
                     >
                       {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
@@ -4968,7 +5253,7 @@ export default function App() {
               {authMode === 'reset_confirm' && (
                 <div>
                   <label htmlFor="auth-confirm-password" className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                    Confirm New Password
+                    {t.confirmNewPassword}
                   </label>
                   <input
                     id="auth-confirm-password"
@@ -4992,22 +5277,22 @@ export default function App() {
                 {authSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>PROCESSING...</span>
+                    <span>{t.processing}</span>
                   </>
                 ) : authMode === 'forgot' ? (
                   <>
                     <Mail className="w-4 h-4" />
-                    <span>SEND PASSWORD RESET LINK</span>
+                    <span>{t.sendResetLink}</span>
                   </>
                 ) : authMode === 'reset_confirm' ? (
                   <>
                     <KeyRound className="w-4 h-4" />
-                    <span>SAVE NEW PASSWORD</span>
+                    <span>{t.saveNewPassword}</span>
                   </>
                 ) : (
                   <>
                     <LogIn className="w-4 h-4" />
-                    <span>{authMode === 'login' ? 'AUTHORIZE & SIGN IN' : 'REGISTER & INITIALIZE'}</span>
+                    <span>{authMode === 'login' ? t.authorizeSignIn : t.registerInit}</span>
                   </>
                 )}
               </button>
@@ -5022,7 +5307,7 @@ export default function App() {
                   }}
                   className={`w-full py-2 font-mono text-xs border ${borderCol} hover:opacity-80 cursor-pointer`}
                 >
-                  ← BACK TO SIGN IN
+                  {t.backToSignIn}
                 </button>
               )}
             </form>
@@ -5047,7 +5332,7 @@ export default function App() {
               <div className="flex items-center space-x-2.5">
                 <Settings className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                  ACCOUNT &amp; ENVIRONMENT SETTINGS
+                  {t.settingsTitle}
                 </h3>
               </div>
               <button
@@ -5055,7 +5340,7 @@ export default function App() {
                 onClick={() => setShowSettingsModal(false)}
                 className="font-mono text-xs hover:underline cursor-pointer"
               >
-                [CLOSE]
+                {t.closeBracket}
               </button>
             </div>
 
@@ -5072,7 +5357,7 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                01 / PROFILE
+                {t.tabProfile}
               </button>
               <button
                 type="button"
@@ -5085,7 +5370,7 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                02 / THEMES ({SURFACE_THEME_PAIRS.length})
+                {tf(t.tabThemes, { n: SURFACE_THEME_PAIRS.length })}
               </button>
               <button
                 type="button"
@@ -5098,7 +5383,7 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                03 / CLEARANCE
+                {t.tabClearance}
               </button>
               <button
                 type="button"
@@ -5111,7 +5396,7 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                04 / PASSWORD
+                {t.tabPassword}
               </button>
               <button
                 type="button"
@@ -5124,7 +5409,7 @@ export default function App() {
                     : textMuted
                 }`}
               >
-                05 / DATA
+                {t.tabData}
               </button>
             </div>
 
@@ -5158,7 +5443,96 @@ export default function App() {
 
               {/* TAB 1: PROFILE & AVATAR */}
               {settingsTab === 'profile' && (
-                <form onSubmit={handleSaveProfile} className="space-y-5 font-mono text-xs">
+                <div className="space-y-5 font-mono text-xs">
+                {/* Region: UI Language & Time Zone (account-synced, applied instantly) */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3.5`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
+                      <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{t.regionTitle}</span>
+                    </div>
+                    <span className={`text-[10px] ${textMuted}`}>{t.regionAutoSave}</span>
+                  </div>
+
+                  {regionStatus && (
+                    <div
+                      className={`p-2 border text-[11px] flex items-center space-x-2 ${
+                        regionStatus.type === 'success'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                          : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                      }`}
+                    >
+                      {regionStatus.type === 'success' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                      )}
+                      <span>{regionStatus.text}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <span className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>{t.languageLabel}</span>
+                      <div className={`grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.languageLabel}>
+                        {LANG_OPTIONS.map((opt, idx) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={lang === opt.id}
+                            onClick={() => handleUpdateRegion({ language: opt.id })}
+                            className={`min-h-[38px] px-3 py-2 transition-colors cursor-pointer ${
+                              idx > 0 ? `border-l ${borderCol}` : ''
+                            } ${
+                              lang === opt.id
+                                ? 'bg-emerald-500 text-zinc-950 font-bold'
+                                : `${textMuted} hover:text-emerald-400`
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="settings-timezone" className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
+                        {t.timezoneLabel}
+                      </label>
+                      <select
+                        id="settings-timezone"
+                        value={timeZone}
+                        onChange={(e) => handleUpdateRegion({ timezone: e.target.value })}
+                        className={`w-full min-h-[38px] px-2.5 py-2 text-base sm:text-xs border outline-none ${inputBg}`}
+                      >
+                        {timeZoneOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px]">
+                        <span className="text-emerald-400 tabular-nums">
+                          {tf(t.timezoneNow, { time: formatDateTime(currentTime) })}
+                        </span>
+                        {timeZone !== deviceTimeZone && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateRegion({ timezone: deviceTimeZone })}
+                            className={`${textMuted} hover:text-emerald-400 underline underline-offset-2 cursor-pointer`}
+                          >
+                            {tf(t.useDeviceTz, { tz: deviceTimeZone })}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.timezoneHint}</p>
+                </div>
+
+                <form onSubmit={handleSaveProfile} className="space-y-5">
                 {profileStatus && (
                   <div
                     className={`p-3 border flex items-center space-x-2 ${
@@ -5189,10 +5563,10 @@ export default function App() {
                       />
                       <div className="space-y-1">
                         <div className="text-[11px] font-bold uppercase tracking-wider">
-                          ACCOUNT AVATAR // HYBRID BADGE
+                          {t.avatarTitle}
                         </div>
                         <p className={`text-[10px] ${textMuted} font-sans`}>
-                          Upload a custom photo (auto-resized to 128×128 in DB) or choose a preset icon &amp; accent color.
+                          {t.avatarBody}
                         </p>
                       </div>
                     </div>
@@ -5211,7 +5585,7 @@ export default function App() {
                         className={`px-3 py-1.5 border ${borderCol} hover:border-emerald-500/60 flex items-center space-x-1.5 cursor-pointer`}
                       >
                         <Camera className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>UPLOAD IMAGE</span>
+                        <span>{t.uploadImage}</span>
                       </button>
                       {profileAvatarImage && (
                         <button
@@ -5219,7 +5593,7 @@ export default function App() {
                           onClick={() => setProfileAvatarImage('')}
                           className={`px-2.5 py-1.5 border ${borderCol} text-rose-400 hover:bg-rose-500/10 cursor-pointer`}
                         >
-                          USE PRESET
+                          {t.usePreset}
                         </button>
                       )}
                     </div>
@@ -5228,7 +5602,7 @@ export default function App() {
                   {/* Preset Icon Selector */}
                   <div>
                     <label className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
-                      Preset Badge Icon {profileAvatarImage ? '(Clear uploaded image to display)' : ''}
+                      {t.presetIcon} {profileAvatarImage ? t.presetIconHint : ''}
                     </label>
                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                       {AVATAR_PRESET_OPTIONS.map((opt) => {
@@ -5258,7 +5632,7 @@ export default function App() {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className={`block text-[10px] uppercase ${textMuted}`}>
-                        Avatar Accent Ring / Badge Color (36 Colors)
+                        {t.avatarColor}
                       </label>
                       <span className="text-[10px] text-zinc-400">{profileAvatarColor}</span>
                     </div>
@@ -5285,7 +5659,7 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                      Account Username
+                      {t.accountUsername}
                     </label>
                     <input
                       type="text"
@@ -5299,7 +5673,7 @@ export default function App() {
                   </div>
                   <div>
                     <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                      Email Address (For Password Recovery)
+                      {t.emailForRecovery}
                     </label>
                     <input
                       type="email"
@@ -5316,9 +5690,10 @@ export default function App() {
                   disabled={profileSaving}
                   className="w-full py-2.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  {profileSaving ? 'SAVING PROFILE...' : 'SAVE PROFILE & AVATAR'}
+                  {profileSaving ? t.savingProfile : t.saveProfile}
                 </button>
               </form>
+                </div>
             )}
 
             {/* TAB 2: PASSWORD & SECURITY */}
@@ -5344,7 +5719,7 @@ export default function App() {
                 <form onSubmit={handleChangePassword} className="space-y-3.5">
                   <div>
                     <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                      Current Password
+                      {t.currentPassword}
                     </label>
                     <input
                       type="password"
@@ -5360,7 +5735,7 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div>
                       <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                        New Password (Min 8 chars)
+                        {t.newPasswordMin}
                       </label>
                       <input
                         type="password"
@@ -5375,7 +5750,7 @@ export default function App() {
                     </div>
                     <div>
                       <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                        Confirm New Password
+                        {t.confirmNewPassword}
                       </label>
                       <input
                         type="password"
@@ -5395,7 +5770,7 @@ export default function App() {
                     disabled={passwordSaving}
                     className="w-full py-2.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    {passwordSaving ? 'UPDATING PASSWORD...' : 'UPDATE PASSWORD'}
+                    {passwordSaving ? t.updatingPassword : t.updatePassword}
                   </button>
                 </form>
 
@@ -5403,11 +5778,10 @@ export default function App() {
                 <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-2.5`}>
                   <div className="flex items-center space-x-2 text-[11px] font-semibold">
                     <Mail className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>FORGOT CURRENT PASSWORD? // EMAIL RECOVERY</span>
+                    <span>{t.emailRecoveryTitle}</span>
                   </div>
                   <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    Send a one-time password reset link to your registered email address (
-                    <span className="font-mono">{user.email}</span>).
+                    {tf(t.emailRecoveryBody, { email: user.email })}
                   </p>
                   <button
                     type="button"
@@ -5415,7 +5789,7 @@ export default function App() {
                     onClick={handleSendResetEmailFromSettings}
                     className={`px-3.5 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-semibold cursor-pointer`}
                   >
-                    SEND PASSWORD RESET EMAIL
+                    {t.sendResetEmail}
                   </button>
                 </div>
               </div>
@@ -5445,10 +5819,10 @@ export default function App() {
                 <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
                   <div className="flex items-center space-x-2 font-semibold text-[11px]">
                     <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>BACKUP &amp; RESTORE TELEMETRY</span>
+                    <span>{t.backupTitle}</span>
                   </div>
                   <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    Restore study logs and categories from a previously exported TYPBOX JSON archive, or download a fresh snapshot.
+                    {t.backupBody}
                   </p>
                   <input
                     ref={backupFileInputRef}
@@ -5465,7 +5839,7 @@ export default function App() {
                       className="px-3.5 py-2 bg-emerald-500 text-zinc-950 font-semibold flex items-center space-x-1.5 hover:bg-emerald-400 cursor-pointer disabled:opacity-50"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      <span>{importingBackup ? 'IMPORTING...' : 'IMPORT JSON BACKUP'}</span>
+                      <span>{importingBackup ? t.importing : t.importJson}</span>
                     </button>
                     <button
                       type="button"
@@ -5474,7 +5848,7 @@ export default function App() {
                       className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>EXPORT JSON</span>
+                      <span>{t.exportJson}</span>
                     </button>
                     <button
                       type="button"
@@ -5483,7 +5857,7 @@ export default function App() {
                       className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>EXPORT CSV</span>
+                      <span>{t.exportCsv}</span>
                     </button>
                   </div>
                 </div>
@@ -5491,16 +5865,16 @@ export default function App() {
                 {/* Reset All Study Logs (Keep Account) */}
                 <div className="p-4 border border-amber-500/30 bg-amber-500/5 space-y-3">
                   <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
-                    RESET STUDY LOGS // KEEP ACCOUNT &amp; CATEGORIES
+                    {t.resetLogsTitle}
                   </div>
                   <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    Wipe all recorded study sessions ({logs.length} records) while preserving your account and category settings. Type{' '}
-                    <span className="font-mono font-bold text-amber-400">CLEAR</span> to unlock:
+                    {tf(t.resetLogsBody, { n: logs.length })}{' '}
+                    <span className="font-mono font-bold text-amber-400">CLEAR</span> {t.resetLogsBodyTail}
                   </p>
                   <div className="flex items-center space-x-2">
                     <input
                       type="text"
-                      placeholder="Type CLEAR"
+                      placeholder={t.typeClear}
                       value={clearLogsConfirmText}
                       onChange={(e) => setClearLogsConfirmText(e.target.value)}
                       className={`flex-1 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
@@ -5511,7 +5885,7 @@ export default function App() {
                       onClick={handleClearAllLogs}
                       className="px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                     >
-                      {clearingLogs ? 'CLEARING...' : 'CLEAR LOGS'}
+                      {clearingLogs ? t.clearing : t.clearLogs}
                     </button>
                   </div>
                 </div>
@@ -5520,10 +5894,10 @@ export default function App() {
                 <div className="p-4 border border-rose-500/40 bg-rose-500/5 space-y-3">
                   <div className="flex items-center space-x-2 text-rose-400 font-bold text-[11px] uppercase tracking-wider">
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>DANGER ZONE // PERMANENT ACCOUNT DELETION</span>
+                    <span>{t.dangerZone}</span>
                   </div>
                   <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    Permanently delete your account (<span className="font-mono">{user.username}</span>), categories, and all study telemetry. This cannot be undone.
+                    {tf(t.dangerBody, { name: user.username })}
                   </p>
                   <button
                     type="button"
@@ -5533,7 +5907,7 @@ export default function App() {
                     }}
                     className="px-4 py-2 border border-rose-500/60 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors font-bold uppercase cursor-pointer"
                   >
-                    PROCEED TO DELETE ACCOUNT...
+                    {t.proceedDelete}
                   </button>
                 </div>
               </div>
@@ -5553,26 +5927,26 @@ export default function App() {
               <div className="flex items-center space-x-2 text-rose-400">
                 <AlertCircle className="w-5 h-5 shrink-0" />
                 <h3 className="font-mono text-xs uppercase tracking-widest font-bold">
-                  PERMANENT ACCOUNT DELETION
+                  {t.deleteTitle}
                 </h3>
               </div>
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="font-mono text-xs hover:underline cursor-pointer"
               >
-                [CANCEL]
+                {t.cancelBracket}
               </button>
             </div>
 
             <div className="space-y-3">
               <p className="text-xs leading-relaxed text-rose-200/90">
-                Warning: This operation is <strong className="text-rose-400 uppercase">strictly irreversible</strong>.
-                All of your recorded study sessions, time metrics, and custom categories will be wiped permanently from the database.
+                {t.deleteWarnPre} <strong className="text-rose-400 uppercase">{t.deleteWarnStrong}</strong>
+                {t.deleteWarnPost}
               </p>
 
               <div className="p-3 border border-rose-500/20 bg-rose-500/5 font-mono text-xs space-y-2">
                 <label className="block text-[11px] text-zinc-400">
-                  Type your username <span className="text-white font-bold">"{user.username}"</span> to confirm:
+                  {t.typeUsernamePre} <span className="text-white font-bold">"{user.username}"</span> {t.typeUsernamePost}
                 </label>
                 <input
                   type="text"
@@ -5590,7 +5964,7 @@ export default function App() {
                 onClick={() => setShowDeleteModal(false)}
                 className={`flex-1 py-2.5 font-mono text-xs border ${borderCol} hover:opacity-80 transition-opacity cursor-pointer`}
               >
-                CANCEL
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -5601,12 +5975,12 @@ export default function App() {
                 {deletingAccount ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>DELETING...</span>
+                    <span>{t.deleting}</span>
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    <span>CONFIRM &amp; DELETE</span>
+                    <span>{t.confirmDelete}</span>
                   </>
                 )}
               </button>
@@ -5652,21 +6026,20 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-amber-400 text-[10px] uppercase tracking-[0.2em] font-bold">
-              ⚡ ASCENSION COMPLETE
+              {t.ascensionComplete}
             </div>
             <div className="text-2xl font-bold tracking-wider">
-              WELCOME TO CYCLE {String(clearanceStatus.cycleNumber).padStart(2, '0')}
+              {tf(t.welcomeCycle, { n: String(clearanceStatus.cycleNumber).padStart(2, '0') })}
             </div>
             <div className="flex justify-center">
               <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} />
             </div>
             <p className={`text-xs leading-relaxed ${textMuted}`}>
-              Your rank readout resets to LV.0001, but every title, Surface Theme, Noise profile and log
-              you have ever earned stays permanently unlocked.
+              {t.ascensionBody}
             </p>
             {clearanceStatus.totalAscensions >= 1 && (
               <div className="text-[11px] text-emerald-400 border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-                New Prestige-exclusive Surface Themes may now be available — check 02 / THEMES.
+                {t.ascensionPrestigeHint}
               </div>
             )}
             <button
@@ -5674,7 +6047,7 @@ export default function App() {
               onClick={() => setShowAscensionModal(false)}
               className="w-full py-2.5 bg-amber-500 text-zinc-950 font-bold text-xs uppercase tracking-wider cursor-pointer hover:bg-amber-400"
             >
-              CONTINUE
+              {t.continue}
             </button>
           </div>
         </div>
@@ -5732,5 +6105,6 @@ export default function App() {
 
       <ToastStack toasts={toasts} isDark={isDark} onDismiss={dismissToast} />
     </div>
+    </I18nContext.Provider>
   );
 }

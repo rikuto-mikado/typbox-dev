@@ -6,6 +6,7 @@
  */
 import type { Category, StudyLog } from './App';
 import type { UserClearanceStatus } from './telemetryFeatures';
+import { nowInActiveZone } from './i18n';
 
 export type StatusCardLayout = 'wide' | 'square' | 'portrait' | 'story';
 
@@ -314,7 +315,7 @@ function paintMetricCard(
 // top-left instead of being squeezed into the right-hand columns of an
 // otherwise-empty fixed-size grid.
 function cadenceWindow(logs: StudyLog[]): { currentMon: Date; weeksOfHistory: number } {
-  const now = new Date();
+  const now = nowInActiveZone();
   const dayOfWeek = (now.getDay() + 6) % 7;
   const currentMon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
 
@@ -475,7 +476,10 @@ function paintFooter(ctx: CanvasRenderingContext2D, W: number, H: number, s: num
   ctx.textAlign = 'left';
 }
 
-const snapshotDate = () => new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+const snapshotDate = () => {
+  const d = nowInActiveZone();
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+};
 
 // ------------------------------------------
 // Layout: WIDE 16:9 (original desktop card)

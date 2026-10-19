@@ -1,4 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect x="1" y="1" width="98" height="98" fill="#F6F4F0" stroke="rgba(0, 0, 0, 0.14)" stroke-width="2" />
-  <rect x="16" y="16" width="68" height="68" fill="#000000" />
+<!--
+  TYPBOX mark — Copyright (c) 2026 Rikuto Mikado / TYPBOX (typbox.me). All rights reserved.
+  This logo is proprietary. It is NOT covered by the repository's software license.
+  Reproduction, modification, or use of this mark in any other product, site, or
+  material without prior written permission is prohibited.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="typbox-title typbox-desc" data-owner="TYPBOX" data-copyright="(c) 2026 Rikuto Mikado / TYPBOX. All rights reserved.">
+  <title id="typbox-title">TYPBOX</title>
+  <desc id="typbox-desc">TYPBOX logo mark. Copyright (c) 2026 Rikuto Mikado / TYPBOX (typbox.me). All rights reserved. Unauthorized use prohibited.</desc>
+  <metadata>
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <rdf:Description rdf:about="https://typbox.me/favicon.svg">
+        <dc:title>TYPBOX mark</dc:title>
+        <dc:creator>Rikuto Mikado</dc:creator>
+        <dc:publisher>TYPBOX (typbox.me)</dc:publisher>
+        <dc:date>2026</dc:date>
+        <dc:rights>Copyright (c) 2026 Rikuto Mikado / TYPBOX. All rights reserved. Unauthorized use prohibited.</dc:rights>
+      </rdf:Description>
+    </rdf:RDF>
+  </metadata>
+  <!-- Ink flips with the browser/OS theme so it stays legible on light and dark tab strips. -->
+  <style>
+    .ink { fill: #0a0a0a; }
+    .led { fill: #059669; }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #f6f4f0; }
+      .led { fill: #34d399; }
+    }
+  </style>
+  <path class="ink" fill-rule="evenodd" d="M2 2h28v28H2zM5.5 5.5v21h21v-21z" />
+  <rect class="ink" x="10" y="10" width="4.5" height="12" />
+  <rect class="led" x="17.5" y="17.5" width="4.5" height="4.5" />
+  <!-- Invisible watermark: never painted, but survives copy/paste of the source. -->
+  <text x="0" y="31" font-size="1" fill-opacity="0" stroke="none" visibility="hidden" aria-hidden="true">© 2026 TYPBOX // RIKUTO MIKADO // ALL RIGHTS RESERVED // typbox.me</text>
 </svg>

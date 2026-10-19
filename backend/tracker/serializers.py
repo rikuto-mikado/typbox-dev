@@ -1,4 +1,5 @@
 import re
+from datetime import timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -8,7 +9,8 @@ from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 
-from .models import Category, StudyLog, UserProfile
+from .models import Category, StudyLog, UserProfile, monthly_to_weekly_hours
+from .timezones import is_valid_timezone
 
 User = get_user_model()
 
@@ -33,6 +35,8 @@ VALID_AVATAR_PRESETS = {
 # default theme on the client.
 SURFACE_THEME_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
+SUPPORTED_LANGUAGES = {'en', 'ja'}
+
 
 # ==========================================
 # Authentication & User Serializers
@@ -47,6 +51,8 @@ class UserSerializer(serializers.ModelSerializer):
     avatar_preset = serializers.CharField(required=False, max_length=30)
     avatar_image = serializers.CharField(required=False, allow_blank=True)
     surface_theme = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    language = serializers.CharField(required=False, allow_blank=True, max_length=8)
+    timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
 
     class Meta:
         model = User
@@ -58,6 +64,8 @@ class UserSerializer(serializers.ModelSerializer):
             'avatar_preset',
             'avatar_image',
             'surface_theme',
+            'language',
+            'timezone',
         )
         read_only_fields = ('id',)
 
@@ -68,6 +76,8 @@ class UserSerializer(serializers.ModelSerializer):
         data['avatar_preset'] = profile.avatar_preset
         data['avatar_image'] = profile.avatar_image
         data['surface_theme'] = profile.surface_theme
+        data['language'] = profile.language
+        data['timezone'] = profile.timezone
         return data
 
     def validate_username(self, value):
@@ -126,11 +136,25 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Invalid surface theme id.')
         return cleaned
 
+    def validate_language(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and cleaned not in SUPPORTED_LANGUAGES:
+            raise serializers.ValidationError('Unsupported language.')
+        return cleaned
+
+    def validate_timezone(self, value):
+        cleaned = value.strip()
+        if cleaned and not is_valid_timezone(cleaned):
+            raise serializers.ValidationError('Unknown time zone. Use an IANA name such as "Asia/Tokyo".')
+        return cleaned
+
     def update(self, instance, validated_data):
         avatar_color = validated_data.pop('avatar_color', None)
         avatar_preset = validated_data.pop('avatar_preset', None)
         avatar_image = validated_data.pop('avatar_image', None)
         surface_theme = validated_data.pop('surface_theme', None)
+        language = validated_data.pop('language', None)
+        tz_name = validated_data.pop('timezone', None)
 
         if 'username' in validated_data or 'email' in validated_data:
             if 'username' in validated_data:
@@ -152,6 +176,12 @@ class UserSerializer(serializers.ModelSerializer):
             profile_updated = True
         if surface_theme is not None:
             profile.surface_theme = surface_theme
+            profile_updated = True
+        if language is not None:
+            profile.language = language
+            profile_updated = True
+        if tz_name is not None:
+            profile.timezone = tz_name
             profile_updated = True
         if profile_updated:
             profile.save()
@@ -202,10 +232,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         UserProfile.objects.get_or_create(user=user)
         # Create default categories for convenience upon signup
         Category.objects.bulk_create([
-            Category(user=user, name='Backend & Architecture', code='BACK', color='#10b981', monthly_target_hours=40),
-            Category(user=user, name='Electrical & Facility Eng', code='ELEC', color='#3b82f6', monthly_target_hours=35),
-            Category(user=user, name='Network & Infrastructure', code='NET', color='#f59e0b', monthly_target_hours=25),
-            Category(user=user, name='English / Academic Writing', code='LANG', color='#a855f7', monthly_target_hours=20),
+            Category(user=user, name='Backend & Architecture', code='BACK', color='#10b981', weekly_target_hours=9),
+            Category(user=user, name='Electrical & Facility Eng', code='ELEC', color='#3b82f6', weekly_target_hours=8),
+            Category(user=user, name='Network & Infrastructure', code='NET', color='#f59e0b', weekly_target_hours=6),
+            Category(user=user, name='English / Academic Writing', code='LANG', color='#a855f7', weekly_target_hours=5),
         ])
         return user
 
@@ -277,7 +307,18 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 class CategorySerializer(serializers.ModelSerializer):
     """
     Serializer for study categories.
+
+    `monthly_target_hours` is a transitional alias from before the switch to
+    weekly targets, so a frontend build (or an already-open browser tab) that
+    still speaks the old field keeps working while frontend and backend are
+    deployed separately. Reads return the monthly equivalent; writes are
+    converted to weekly unless `weekly_target_hours` is also sent.
+    TODO: drop once every client uses weekly_target_hours.
     """
+    monthly_target_hours = serializers.IntegerField(
+        required=False, min_value=1, max_value=744, write_only=True
+    )
+
     class Meta:
         model = Category
         fields = (
@@ -285,11 +326,24 @@ class CategorySerializer(serializers.ModelSerializer):
             'name',
             'code',
             'color',
+            'weekly_target_hours',
+            'is_active',
             'monthly_target_hours',
             'created_at',
             'updated_at',
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['monthly_target_hours'] = max(1, round(instance.weekly_target_hours * 52 / 12))
+        return data
+
+    def validate(self, attrs):
+        monthly = attrs.pop('monthly_target_hours', None)
+        if monthly is not None and 'weekly_target_hours' not in attrs:
+            attrs['weekly_target_hours'] = monthly_to_weekly_hours(monthly)
+        return attrs
 
     def validate_code(self, value):
         cleaned = value.strip().upper()
@@ -304,9 +358,9 @@ class CategorySerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f'Category with code [{cleaned}] already exists.')
         return cleaned
 
-    def validate_monthly_target_hours(self, value):
-        if value < 1 or value > 744:
-            raise serializers.ValidationError('Monthly target hours must be between 1 and 744.')
+    def validate_weekly_target_hours(self, value):
+        if value < 1 or value > 168:
+            raise serializers.ValidationError('Weekly target hours must be between 1 and 168.')
         return value
 
 
@@ -322,6 +376,10 @@ class StudyLogSerializer(serializers.ModelSerializer):
     category_code = serializers.CharField(source='category.code', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     category_color = serializers.CharField(source='category.color', read_only=True)
+    # Always serialized as UTC ISO-8601 (e.g. 2026-10-19T09:22:00Z) no matter
+    # what settings.TIME_ZONE is; the client converts to the user's zone.
+    created_at = serializers.DateTimeField(read_only=True, default_timezone=dt_timezone.utc)
+    updated_at = serializers.DateTimeField(read_only=True, default_timezone=dt_timezone.utc)
 
     class Meta:
         model = StudyLog
