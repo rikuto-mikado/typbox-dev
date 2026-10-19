@@ -120,6 +120,7 @@ import {
 } from './chronometerThemes';
 import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
 import { SurfaceFxLayer } from './SurfaceFx';
+import { WeatherBadge, WeatherPanel, useWeather } from './Weather';
 
 // ==========================================
 // Types & Interfaces
@@ -163,6 +164,7 @@ export interface AuthUser {
   week_start?: string;
   chrono_theme?: string;
   user_statuses?: string[];
+  is_public?: boolean;
 }
 
 type Theme = 'dark' | 'light';
@@ -560,7 +562,7 @@ const compressAvatarFile = (file: File, t: Dict): Promise<string> => {
   });
 };
 
-const AvatarBadge = ({
+export const AvatarBadge = ({
   username,
   color = '#10b981',
   preset = 'initial',
@@ -678,6 +680,8 @@ export default function App() {
   // Surface Theme; see handleSelectChronoTheme).
   const [chronoThemeId, setChronoThemeId] = useState<string>(getInitialChronoTheme);
   const [showChronoPicker, setShowChronoPicker] = useState<boolean>(false);
+  const [showWeatherPanel, setShowWeatherPanel] = useState<boolean>(false);
+  const weather = useWeather(timeZone);
 
   useEffect(() => {
     localStorage.setItem(CHRONO_THEME_STORAGE_KEY, chronoThemeId);
@@ -886,6 +890,8 @@ export default function App() {
   const [profileSaving, setProfileSaving] = useState<boolean>(false);
   const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [regionStatus, setRegionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [publicSaving, setPublicSaving] = useState<boolean>(false);
+  const [publicStatus, setPublicStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
@@ -938,6 +944,7 @@ export default function App() {
       setStatusQuery('');
       setProfileStatus(null);
       setRegionStatus(null);
+      setPublicStatus(null);
       setPasswordStatus(null);
       setDataStatus(null);
       setCurrentPassword('');
@@ -1518,6 +1525,36 @@ export default function App() {
     } catch (err: unknown) {
       const error = err as Error;
       setRegionStatus({ type: 'error', text: error.message || dict.errRegionSave });
+    }
+  };
+
+  // Public profile is opt-in and applies instantly (no SAVE PROFILE needed).
+  const handleTogglePublicProfile = async () => {
+    if (!user) return;
+    setPublicSaving(true);
+    setPublicStatus(null);
+    try {
+      const updated = await api.auth.updateProfile({ is_public: !user.is_public });
+      setUser(updated);
+      setPublicStatus({ type: 'success', text: updated.is_public ? t.publicNowOn : t.publicNowOff });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setPublicStatus({ type: 'error', text: error.message || t.errPublicToggle });
+    } finally {
+      setPublicSaving(false);
+    }
+  };
+
+  const publicProfileUrl = user
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/u/${encodeURIComponent(user.username)}`
+    : '';
+
+  const handleCopyPublicUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(publicProfileUrl);
+      setPublicStatus({ type: 'success', text: t.publicCopied });
+    } catch {
+      setPublicStatus({ type: 'error', text: publicProfileUrl });
     }
   };
 
@@ -2617,8 +2654,10 @@ export default function App() {
       totalAscensions: clearanceStatus.totalAscensions,
       longestStreak: user ? streakStats.longestStreak : 0,
       sessionCount: user ? logs.length : 0,
+      totalHours: user ? clearanceStatus.totalHours : 0,
+      longestSessionMinutes: user ? logs.reduce((mx, l) => Math.max(mx, l.durationMinutes), 0) : 0,
     }),
-    [clearanceStatus.rewardUnlockLevel, clearanceStatus.totalAscensions, user, streakStats.longestStreak, logs.length]
+    [clearanceStatus.rewardUnlockLevel, clearanceStatus.totalAscensions, clearanceStatus.totalHours, user, streakStats.longestStreak, logs]
   );
 
   // A face that is (no longer) unlocked falls back to the default without
@@ -3331,6 +3370,15 @@ export default function App() {
                     }`}
                   />
                   <span className="font-semibold">{t.chronometer}</span>
+                  <WeatherBadge
+                    wx={weather}
+                    open={showWeatherPanel}
+                    onToggle={() => {
+                      setShowWeatherPanel((prev) => !prev);
+                      setShowChronoPicker(false);
+                    }}
+                    textMuted={textMuted}
+                  />
                 </div>
                 <div className="flex items-center space-x-2 min-w-0">
                   {isRunning ? (
@@ -3342,7 +3390,10 @@ export default function App() {
                   )}
                   <button
                     type="button"
-                    onClick={() => setShowChronoPicker((prev) => !prev)}
+                    onClick={() => {
+                      setShowChronoPicker((prev) => !prev);
+                      setShowWeatherPanel(false);
+                    }}
                     aria-expanded={showChronoPicker}
                     aria-label={t.chronoThemesOpen}
                     title={`${t.chronoThemesOpen} — ${activeChronoTheme.name}`}
@@ -3376,6 +3427,10 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {showWeatherPanel && (
+                <WeatherPanel wx={weather} isDark={isDark} borderCol={borderCol} textMuted={textMuted} />
+              )}
 
               {showChronoPicker && (
                 <ChronometerThemePicker
@@ -5826,6 +5881,66 @@ export default function App() {
                   </div>
 
                   <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.timezoneHint}</p>
+                </div>
+
+                {/* Public Profile (/u/<username>): opt-in, applied instantly */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
+                      <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{t.publicTitle}</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={Boolean(user.is_public)}
+                      disabled={publicSaving}
+                      onClick={handleTogglePublicProfile}
+                      className={`min-h-[30px] px-3 py-1 border text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-50 ${
+                        user.is_public
+                          ? 'bg-emerald-500 border-emerald-500 text-zinc-950'
+                          : `${borderCol} ${textMuted} hover:text-emerald-400`
+                      }`}
+                    >
+                      {user.is_public ? t.publicOn : t.publicOff}
+                    </button>
+                  </div>
+
+                  {publicStatus && (
+                    <div
+                      className={`p-2 border text-[11px] ${
+                        publicStatus.type === 'success'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                          : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                      }`}
+                    >
+                      {publicStatus.text}
+                    </div>
+                  )}
+
+                  <div className={`flex flex-wrap items-center gap-2 ${user.is_public ? '' : 'opacity-50'}`}>
+                    <code className={`flex-1 min-w-0 truncate px-2.5 py-1.5 border ${borderCol} text-[11px]`}>{publicProfileUrl}</code>
+                    <button
+                      type="button"
+                      onClick={handleCopyPublicUrl}
+                      disabled={!user.is_public}
+                      className={`px-2.5 py-1.5 border ${borderCol} text-[10px] cursor-pointer hover:text-emerald-400 disabled:cursor-not-allowed`}
+                    >
+                      {t.publicCopy}
+                    </button>
+                    {user.is_public && (
+                      <a
+                        href={publicProfileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`px-2.5 py-1.5 border ${borderCol} text-[10px] hover:text-emerald-400`}
+                      >
+                        {t.publicOpen}
+                      </a>
+                    )}
+                  </div>
+
+                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.publicHint}</p>
                 </div>
 
                 <form onSubmit={handleSaveProfile} className="space-y-5">

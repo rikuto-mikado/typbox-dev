@@ -8,6 +8,8 @@
     { "id": "SCRIPT", "label": "World Numerals", "color": "#10b981" },
     { "id": "CODE", "label": "Code / Radix", "color": "#3b82f6" },
     { "id": "SIGNAL", "label": "Signal / Glyph", "color": "#a855f7" },
+    { "id": "HAND", "label": "Hand / Brush", "color": "#fb7185" },
+    { "id": "DIAL", "label": "Dial / Instrument", "color": "#38bdf8" },
     { "id": "PRESTIGE", "label": "Prestige", "color": "#fde047" }
   ],
   "themes": [
@@ -26,12 +28,7 @@
       "name": "LCD SEVEN-SEGMENT",
       "desc": "Reflective liquid-crystal panel with faint ghost segments, like a 1980s desk clock.",
       "family": "DEVICE",
-      "render": {
-        "kind": "segment",
-        "on": "#1f2b1c",
-        "off": "rgba(31,43,28,0.09)",
-        "panel": { "bg": "#a7b59a", "border": "#7d8a72" }
-      },
+      "render": { "kind": "segment", "on": "#1f2b1c", "off": "rgba(31,43,28,0.09)", "panel": { "bg": "#a7b59a", "border": "#7d8a72" } },
       "unlock": { "type": "default" }
     },
     {
@@ -76,13 +73,7 @@
       "name": "RED LED ALARM",
       "desc": "Glowing red seven-segment LEDs from a bedside alarm clock at 3 AM.",
       "family": "DEVICE",
-      "render": {
-        "kind": "segment",
-        "on": "#ff3b3b",
-        "off": "rgba(255,59,59,0.07)",
-        "glow": true,
-        "panel": { "bg": "#120606", "border": "#3b0d0d" }
-      },
+      "render": { "kind": "segment", "on": "#ff3b3b", "off": "rgba(255,59,59,0.07)", "glow": true, "panel": { "bg": "#120606", "border": "#3b0d0d" } },
       "unlock": { "type": "level", "value": 12 }
     },
     {
@@ -91,14 +82,7 @@
       "name": "AMBER DOT MATRIX",
       "desc": "Round amber LEDs on a 5×7 grid, like a railway departure board.",
       "family": "PIXEL",
-      "render": {
-        "kind": "dotmatrix",
-        "shape": "round",
-        "on": "#fbbf24",
-        "off": "rgba(251,191,36,0.10)",
-        "glow": true,
-        "panel": { "bg": "#0d0a04", "border": "#3a2a08" }
-      },
+      "render": { "kind": "dotmatrix", "shape": "round", "on": "#fbbf24", "off": "rgba(251,191,36,0.10)", "glow": true, "panel": { "bg": "#0d0a04", "border": "#3a2a08" } },
       "unlock": { "type": "level", "value": 15 }
     },
     {
@@ -206,14 +190,7 @@
       "name": "VFD CYAN DISPLAY",
       "desc": "Vacuum fluorescent display segments in that unmistakable hi-fi teal.",
       "family": "DEVICE",
-      "render": {
-        "kind": "segment",
-        "on": "#5eead4",
-        "off": "rgba(94,234,212,0.08)",
-        "glow": true,
-        "slant": true,
-        "panel": { "bg": "#03110f", "border": "#0f3b35" }
-      },
+      "render": { "kind": "segment", "on": "#5eead4", "off": "rgba(94,234,212,0.08)", "glow": true, "slant": true, "panel": { "bg": "#03110f", "border": "#0f3b35" } },
       "unlock": { "type": "level", "value": 140 }
     },
     {
@@ -222,13 +199,7 @@
       "name": "KANJI NUMERALS",
       "desc": "Japanese kanji reading of the hour: 二十二時四十四分.",
       "family": "CLASSIC",
-      "render": {
-        "kind": "text",
-        "numeral": "cjk",
-        "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] },
-        "font": { "family": "Noto Serif JP", "weight": 500, "google": true },
-        "scale": 0.62
-      },
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "font": { "family": "Noto Serif JP", "weight": 500, "google": true }, "scale": 0.62 },
       "unlock": { "type": "level", "value": 160 }
     },
     {
@@ -354,15 +325,7 @@
       "name": "DAIJI LEDGER",
       "desc": "Tamper-proof formal numerals from Japanese contracts: 弐拾弐時.",
       "family": "CLASSIC",
-      "render": {
-        "kind": "text",
-        "numeral": "cjk",
-        "cjk": { "digits": ["零", "壱", "弐", "参", "肆", "伍", "陸", "漆", "捌", "玖"], "ten": "拾", "units": ["時", "分", "秒"] },
-        "font": { "family": "Noto Serif JP", "weight": 500, "google": true },
-        "scale": 0.62,
-        "color": "#dc2626",
-        "colorLight": "#b91c1c"
-      },
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["零", "壱", "弐", "参", "肆", "伍", "陸", "漆", "捌", "玖"], "ten": "拾", "units": ["時", "分", "秒"] }, "font": { "family": "Noto Serif JP", "weight": 500, "google": true }, "scale": 0.62, "color": "#dc2626", "colorLight": "#b91c1c" },
       "unlock": { "type": "level", "value": 900 }
     },
     {
@@ -425,13 +388,7 @@
       "name": "HANGUL SINO-KOREAN",
       "desc": "Sino-Korean number words in Hangul: 이십이:사십사.",
       "family": "SCRIPT",
-      "render": {
-        "kind": "text",
-        "numeral": "cjk",
-        "cjk": { "digits": ["영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"], "ten": "십" },
-        "font": { "family": "Noto Sans KR", "weight": 300, "google": true },
-        "scale": 0.62
-      },
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"], "ten": "십" }, "font": { "family": "Noto Sans KR", "weight": 300, "google": true }, "scale": 0.62 },
       "unlock": { "type": "level", "value": 1900 }
     },
     {
@@ -530,14 +487,7 @@
       "name": "STADIUM SCOREBOARD",
       "desc": "Big incandescent bulb grid from a ballpark scoreboard — 100-day streak.",
       "family": "PIXEL",
-      "render": {
-        "kind": "dotmatrix",
-        "shape": "round",
-        "on": "#fde047",
-        "off": "rgba(253,224,71,0.08)",
-        "glow": true,
-        "panel": { "bg": "#07130a", "border": "#14532d" }
-      },
+      "render": { "kind": "dotmatrix", "shape": "round", "on": "#fde047", "off": "rgba(253,224,71,0.08)", "glow": true, "panel": { "bg": "#07130a", "border": "#14532d" } },
       "unlock": { "type": "streak", "value": 100 }
     },
     {
@@ -566,6 +516,510 @@
       "family": "PRESTIGE",
       "render": { "kind": "text", "font": { "family": "Orbitron", "weight": 700, "google": true }, "fx": "quantum", "scale": 0.9 },
       "unlock": { "type": "ascension", "value": 3 }
+    },
+    {
+      "id": "swiss-railway",
+      "code": "CHR-057",
+      "name": "SWISS RAILWAY",
+      "desc": "The station clock: bar hands and the red lollipop seconds hand.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "swiss" },
+      "unlock": { "type": "default" }
+    },
+    {
+      "id": "minimal-dial",
+      "code": "CHR-058",
+      "name": "MINIMAL DIAL",
+      "desc": "Twelve quiet dots and two thin hands; the seconds ride the rim.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "minimal" },
+      "unlock": { "type": "level", "value": 3 }
+    },
+    {
+      "id": "activity-rings",
+      "code": "CHR-059",
+      "name": "ACTIVITY RINGS",
+      "desc": "Day, hour and minute closing as three concentric rings — 25 lifetime hours.",
+      "family": "DIAL",
+      "render": { "kind": "rings" },
+      "unlock": { "type": "hours", "value": 25 }
+    },
+    {
+      "id": "bauhaus-dial",
+      "code": "CHR-060",
+      "name": "BAUHAUS DIAL",
+      "desc": "Primary-color hands on a strict geometric dial.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "bauhaus" },
+      "unlock": { "type": "level", "value": 58 }
+    },
+    {
+      "id": "telemetry-gauges",
+      "code": "CHR-061",
+      "name": "TELEMETRY GAUGES",
+      "desc": "H / M / S as filling instrument bars — 100 lifetime hours.",
+      "family": "DIAL",
+      "render": { "kind": "gauges" },
+      "unlock": { "type": "hours", "value": 100 }
+    },
+    {
+      "id": "radar-dial",
+      "code": "CHR-062",
+      "name": "RADAR SCOPE",
+      "desc": "A sweeping radar beam; hour and minute show up as contacts.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "radar", "on": "#4ade80" },
+      "unlock": { "type": "level", "value": 860 }
+    },
+    {
+      "id": "word-clock",
+      "code": "CHR-063",
+      "name": "WORD CLOCK",
+      "desc": "IT IS TWENTY PAST TEN — the time spelled on a lit letter grid.",
+      "family": "DIAL",
+      "render": { "kind": "wordgrid" },
+      "unlock": { "type": "level", "value": 2050 }
+    },
+    {
+      "id": "soroban",
+      "code": "CHR-064",
+      "name": "SOROBAN ABACUS",
+      "desc": "One rod per digit: heaven bead for five, earth beads for ones.",
+      "family": "CLASSIC",
+      "render": { "kind": "soroban" },
+      "unlock": { "type": "level", "value": 820 }
+    },
+    {
+      "id": "counting-rods",
+      "code": "CHR-065",
+      "name": "COUNTING RODS",
+      "desc": "Rod numerals alternating vertical and horizontal by place value.",
+      "family": "CLASSIC",
+      "render": { "kind": "rods" },
+      "unlock": { "type": "level", "value": 1150 }
+    },
+    {
+      "id": "punch-tape",
+      "code": "CHR-066",
+      "name": "PAPER PUNCH TAPE",
+      "desc": "Each digit punched as a frame of data, parity and sprocket holes — 100 logs.",
+      "family": "CODE",
+      "render": { "kind": "tape" },
+      "unlock": { "type": "sessions", "value": 100 }
+    },
+    {
+      "id": "pip-count",
+      "code": "CHR-067",
+      "name": "PIP COUNT",
+      "desc": "Dice-style pip grids, extended to zero and nine — 25 logs.",
+      "family": "SIGNAL",
+      "render": { "kind": "pips" },
+      "unlock": { "type": "sessions", "value": 25 }
+    },
+    {
+      "id": "egyptian",
+      "code": "CHR-068",
+      "name": "EGYPTIAN HIEROGLYPHS",
+      "desc": "Heel-bone tens and stroke units; zero is nfr, the scribes' balance mark.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "egyptian", "font": { "family": "Noto Sans Egyptian Hieroglyphs", "google": true }, "scale": 0.9, "sep": " : " },
+      "unlock": { "type": "level", "value": 1050 }
+    },
+    {
+      "id": "babylonian",
+      "code": "CHR-069",
+      "name": "BABYLONIAN SEXAGESIMAL",
+      "desc": "Base-60 cuneiform wedges — the system that gave us 60 minutes.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "cuneiform", "font": { "family": "Noto Sans Cuneiform", "google": true }, "scale": 0.45, "sep": " ⁞ " },
+      "unlock": { "type": "level", "value": 1450 }
+    },
+    {
+      "id": "shichen",
+      "code": "CHR-070",
+      "name": "TWELVE BRANCHES",
+      "desc": "The traditional double-hours: 亥正二刻 instead of 22:44.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "shichen", "font": { "family": "Noto Serif JP", "google": true, "weight": 500 }, "scale": 0.62 },
+      "unlock": { "type": "level", "value": 2650 }
+    },
+    {
+      "id": "decimal-time",
+      "code": "CHR-071",
+      "name": "REVOLUTIONARY DECIMAL",
+      "desc": "French Republican time: ten hours a day, a hundred minutes an hour — 1,000 hours.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "decimal", "font": { "family": "Playfair Display", "google": true, "weight": 500 } },
+      "unlock": { "type": "hours", "value": 1000 }
+    },
+    {
+      "id": "swatch-beat",
+      "code": "CHR-072",
+      "name": "INTERNET BEAT TIME",
+      "desc": "@947 — a thousand .beats per day, one time for the whole planet — 250 hours.",
+      "family": "CYBER",
+      "render": { "kind": "text", "numeral": "swatch", "font": { "family": "Chakra Petch", "google": true, "weight": 500 }, "fx": "neon", "color": "#f472b6", "colorLight": "#be185d", "scale": 0.95 },
+      "unlock": { "type": "hours", "value": 250 }
+    },
+    {
+      "id": "day-percent",
+      "code": "CHR-073",
+      "name": "DAY PROGRESS",
+      "desc": "How much of today has already gone, to two decimals.",
+      "family": "CORE",
+      "render": { "kind": "text", "numeral": "daypct", "font": { "family": "Space Mono", "google": true }, "scale": 0.82 },
+      "unlock": { "type": "level", "value": 160 }
+    },
+    {
+      "id": "unix-epoch",
+      "code": "CHR-074",
+      "name": "UNIX EPOCH",
+      "desc": "Seconds since 1970-01-01, ticking live — 500 logs.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "unix", "font": { "family": "JetBrains Mono", "google": true }, "scale": 0.55, "color": "#60a5fa", "colorLight": "#1d4ed8" },
+      "unlock": { "type": "sessions", "value": 500 }
+    },
+    {
+      "id": "icao-phonetic",
+      "code": "CHR-075",
+      "name": "ICAO PHONETIC",
+      "desc": "Digits as air-traffic radio says them: TOO TOO · FOW-ER FOW-ER — 500 hours.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "icao", "font": { "family": "Oxanium", "google": true, "weight": 600 }, "scale": 0.4, "sep": " · " },
+      "unlock": { "type": "hours", "value": 500 }
+    },
+    {
+      "id": "dozenal",
+      "code": "CHR-076",
+      "name": "DOZENAL",
+      "desc": "Base-12 with X for ten and Ɛ for eleven (transdecimal digits). 22:44 → 1X:38.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 12, "pad": 2, "digits": "0123456789XƐ" }, "font": { "family": "Space Mono", "google": true } },
+      "unlock": { "type": "level", "value": 1600 }
+    },
+    {
+      "id": "dna-codon",
+      "code": "CHR-077",
+      "name": "DNA CODONS",
+      "desc": "Base-4 written in nucleotides: 22 → CCG, 44 → GTA.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 4, "pad": 3, "digits": "ACGT" }, "font": { "family": "Space Mono", "google": true }, "scale": 0.85, "color": "#34d399", "colorLight": "#047857" },
+      "unlock": { "type": "level", "value": 1750 }
+    },
+    {
+      "id": "ternary",
+      "code": "CHR-078",
+      "name": "TERNARY SETUN",
+      "desc": "Base-3, in honor of the Soviet Setun ternary computer.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 3, "pad": 4 }, "font": { "family": "IBM Plex Mono", "google": true }, "scale": 0.7 },
+      "unlock": { "type": "level", "value": 1950 }
+    },
+    {
+      "id": "sumi-brush",
+      "code": "CHR-079",
+      "name": "SUMI BRUSH",
+      "desc": "Kanji numerals in loose ink-brush strokes — 21-day streak.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "font": { "family": "Yuji Syuku", "google": true }, "scale": 0.62, "fx": "ink" },
+      "unlock": { "type": "streak", "value": 21 }
+    },
+    {
+      "id": "notebook-script",
+      "code": "CHR-080",
+      "name": "NOTEBOOK SCRIPT",
+      "desc": "Hand-written margin numbers in a study notebook — 5-day streak.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Caveat", "google": true, "weight": 600 }, "scale": 1.15 },
+      "unlock": { "type": "streak", "value": 5 }
+    },
+    {
+      "id": "marker-scrawl",
+      "code": "CHR-081",
+      "name": "MARKER SCRAWL",
+      "desc": "Fat felt-tip marker on a whiteboard — 10-day streak.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Permanent Marker", "google": true } },
+      "unlock": { "type": "streak", "value": 10 }
+    },
+    {
+      "id": "graffiti-tag",
+      "code": "CHR-082",
+      "name": "GRAFFITI TAG",
+      "desc": "Spray-painted tag with a soft overspray halo.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Sedgwick Ave Display", "google": true }, "fx": "spray", "color": "#fb7185", "colorLight": "#be123c", "scale": 1.1 },
+      "unlock": { "type": "level", "value": 225 }
+    },
+    {
+      "id": "wet-paint",
+      "code": "CHR-083",
+      "name": "WET PAINT",
+      "desc": "Still-dripping numerals — 45-day streak.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Rubik Wet Paint", "google": true }, "color": "#38bdf8", "colorLight": "#0369a1", "scale": 0.9 },
+      "unlock": { "type": "streak", "value": 45 }
+    },
+    {
+      "id": "kablammo",
+      "code": "CHR-084",
+      "name": "KABLAMMO",
+      "desc": "Wobbly comic-burst numerals — 75-day streak.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Kablammo", "google": true }, "color": "#facc15", "colorLight": "#a16207", "scale": 0.95 },
+      "unlock": { "type": "streak", "value": 75 }
+    },
+    {
+      "id": "doto-matrix",
+      "code": "CHR-085",
+      "name": "DOTO MATRIX",
+      "desc": "A dot-matrix display face drawn entirely from round dots.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Doto", "google": true, "weight": 700 } },
+      "unlock": { "type": "level", "value": 2 }
+    },
+    {
+      "id": "starfield-dots",
+      "code": "CHR-086",
+      "name": "STARFIELD DOTS",
+      "desc": "Numerals traced in tiny stars.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Codystar", "google": true }, "color": "#fde68a", "colorLight": "#a16207" },
+      "unlock": { "type": "level", "value": 8 }
+    },
+    {
+      "id": "jacquard-stitch",
+      "code": "CHR-087",
+      "name": "JACQUARD STITCH",
+      "desc": "Woven pixel embroidery from a jacquard loom.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Jacquard 12", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 130 }
+    },
+    {
+      "id": "sixtyfour-crt",
+      "code": "CHR-088",
+      "name": "SIXTYFOUR CRT",
+      "desc": "Home-computer raster type with visible scanlines.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Sixtyfour", "google": true }, "fx": "crt", "color": "#93c5fd", "colorLight": "#1d4ed8", "scale": 0.7 },
+      "unlock": { "type": "level", "value": 155 }
+    },
+    {
+      "id": "tiny5",
+      "code": "CHR-089",
+      "name": "TINY5 HANDHELD",
+      "desc": "A five-pixel handheld-console font.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Tiny5", "google": true }, "scale": 1.05 },
+      "unlock": { "type": "level", "value": 175 }
+    },
+    {
+      "id": "handjet-led",
+      "code": "CHR-090",
+      "name": "HANDJET LED",
+      "desc": "Wide dot-built display lettering — a single 180-minute session.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Handjet", "google": true, "weight": 500 }, "fx": "flicker", "color": "#f97316", "colorLight": "#c2410c", "scale": 1.1 },
+      "unlock": { "type": "session", "value": 180 }
+    },
+    {
+      "id": "workbench-scan",
+      "code": "CHR-091",
+      "name": "WORKBENCH SCAN",
+      "desc": "Interlaced scanline type from a retro workstation — a 240-minute session.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Workbench", "google": true }, "color": "#a78bfa", "colorLight": "#6d28d9" },
+      "unlock": { "type": "session", "value": 240 }
+    },
+    {
+      "id": "major-mono",
+      "code": "CHR-092",
+      "name": "MAJOR MONO",
+      "desc": "Geometric monospace with lowercase-sized curiosity.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Major Mono Display", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "level", "value": 5 }
+    },
+    {
+      "id": "ide-ligature",
+      "code": "CHR-093",
+      "name": "IDE MONO",
+      "desc": "The calm developer face you code in all day.",
+      "family": "CODE",
+      "render": { "kind": "text", "font": { "family": "JetBrains Mono", "google": true, "weight": 300 } },
+      "unlock": { "type": "level", "value": 12 }
+    },
+    {
+      "id": "barcode-39",
+      "code": "CHR-094",
+      "name": "BARCODE 39",
+      "desc": "Every digit printed as a scannable Code 39 barcode.",
+      "family": "CODE",
+      "render": { "kind": "text", "font": { "family": "Libre Barcode 39 Text", "google": true }, "scale": 1.3 },
+      "unlock": { "type": "level", "value": 18 }
+    },
+    {
+      "id": "mecha-hud",
+      "code": "CHR-095",
+      "name": "MECHA HUD",
+      "desc": "Angular cockpit numerals glowing amber.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Chakra Petch", "google": true, "weight": 600 }, "fx": "neon", "color": "#fbbf24", "colorLight": "#b45309" },
+      "unlock": { "type": "level", "value": 38 }
+    },
+    {
+      "id": "zen-dots",
+      "code": "CHR-096",
+      "name": "ZEN DOTS",
+      "desc": "Rounded futurist display face with dotted terminals.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Zen Dots", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 48 }
+    },
+    {
+      "id": "turret-road",
+      "code": "CHR-097",
+      "name": "TURRET ROAD",
+      "desc": "Hairline sci-fi numerals with long sweeping curves.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Turret Road", "google": true, "weight": 300 } },
+      "unlock": { "type": "level", "value": 66 }
+    },
+    {
+      "id": "iceland-outpost",
+      "code": "CHR-098",
+      "name": "ICELAND OUTPOST",
+      "desc": "Frosted angular numerals from a polar research base.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Iceland", "google": true }, "fx": "ice", "scale": 1.15 },
+      "unlock": { "type": "level", "value": 78 }
+    },
+    {
+      "id": "speed-lines",
+      "code": "CHR-099",
+      "name": "SPEED LINES",
+      "desc": "Numerals blurring past at speed — a single 90-minute session.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Faster One", "google": true }, "color": "#ef4444", "colorLight": "#b91c1c", "scale": 0.85 },
+      "unlock": { "type": "session", "value": 90 }
+    },
+    {
+      "id": "rampart-outline",
+      "code": "CHR-100",
+      "name": "RAMPART OUTLINE",
+      "desc": "Double-line Japanese display face, like neon tubing.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Rampart One", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 285 }
+    },
+    {
+      "id": "microbe-culture",
+      "code": "CHR-101",
+      "name": "MICROBE CULTURE",
+      "desc": "Numerals colonized under the microscope.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Rubik Microbe", "google": true }, "color": "#a3e635", "colorLight": "#4d7c0f", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 500 }
+    },
+    {
+      "id": "chrome-liquid",
+      "code": "CHR-102",
+      "name": "LIQUID CHROME",
+      "desc": "Polished chrome bevels on a heavy display face.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Dela Gothic One", "google": true }, "fx": "chrome", "scale": 0.85 },
+      "unlock": { "type": "level", "value": 310 }
+    },
+    {
+      "id": "molten-core",
+      "code": "CHR-103",
+      "name": "MOLTEN CORE",
+      "desc": "Glowing numerals pouring out of a forge.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bebas Neue", "google": true }, "fx": "fire", "scale": 1.05 },
+      "unlock": { "type": "level", "value": 390 }
+    },
+    {
+      "id": "extrude-3d",
+      "code": "CHR-104",
+      "name": "EXTRUDED 3D",
+      "desc": "Chunky block numerals with a long stacked extrusion.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bungee", "google": true }, "fx": "extrude", "scale": 0.8 },
+      "unlock": { "type": "level", "value": 720 }
+    },
+    {
+      "id": "cargo-stencil",
+      "code": "CHR-105",
+      "name": "CARGO STENCIL",
+      "desc": "Shipping-container stencil numerals.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Saira Stencil One", "google": true }, "color": "#f59e0b", "colorLight": "#b45309" },
+      "unlock": { "type": "level", "value": 470 }
+    },
+    {
+      "id": "spice-signage",
+      "code": "CHR-106",
+      "name": "SPICE SIGNAGE",
+      "desc": "A color font with hot-sauce gradient signage letters.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bungee Spice", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 330 }
+    },
+    {
+      "id": "didone-editorial",
+      "code": "CHR-107",
+      "name": "DIDONE EDITORIAL",
+      "desc": "High-contrast magazine serif numerals.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Playfair Display", "google": true, "weight": 500 } },
+      "unlock": { "type": "level", "value": 340 }
+    },
+    {
+      "id": "fatface-poster",
+      "code": "CHR-108",
+      "name": "FATFACE POSTER",
+      "desc": "Victorian fat-face poster numerals.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Abril Fatface", "google": true } },
+      "unlock": { "type": "level", "value": 370 }
+    },
+    {
+      "id": "wanted-poster",
+      "code": "CHR-109",
+      "name": "WANTED POSTER",
+      "desc": "Frontier wood-type from a wild-west wanted poster.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Rye", "google": true }, "fx": "emboss", "scale": 0.85 },
+      "unlock": { "type": "level", "value": 410 }
+    },
+    {
+      "id": "pirate-ledger",
+      "code": "CHR-110",
+      "name": "PIRATE LEDGER",
+      "desc": "Blackletter numerals inked into a ship's ledger.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Pirata One", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 440 }
+    },
+    {
+      "id": "isometric-candy",
+      "code": "CHR-111",
+      "name": "ISOMETRIC CANDY",
+      "desc": "Full-color isometric 3D numerals for operators who have Ascended four times.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Nabla", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "ascension", "value": 4 }
+    },
+    {
+      "id": "honk-balloon",
+      "code": "CHR-112",
+      "name": "HONK BALLOON",
+      "desc": "Inflated full-color 3D numerals for operators past five Ascensions.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Honk", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "ascension", "value": 5 }
     }
   ]
 }

@@ -173,6 +173,351 @@ const BcdNumber: React.FC<{ n: number; r: ChronoRender }> = ({ n, r }) => {
   );
 };
 
+// Soroban: one rod per decimal digit — the heaven bead (5) drops to the
+// beam when active, earth beads (1 each) rise to it.
+const SorobanDigit: React.FC<{ d: number; r: ChronoRender }> = ({ d, r }) => {
+  const on = r.on ?? 'currentColor';
+  const earthActive = d % 5;
+  const beads: React.ReactNode[] = [];
+  for (let i = 0; i < 4; i++) {
+    const active = i < earthActive;
+    const y = active ? 28.5 + i * 9.5 : 59.5 - (3 - i) * 9.5;
+    beads.push(<ellipse key={i} cx={11} cy={y} rx={9} ry={4.3} fill={on} opacity={active ? 1 : 0.22} />);
+  }
+  return (
+    <svg viewBox="0 0 22 66" style={{ height: '1.35em', width: '0.45em', overflow: 'visible' }} aria-hidden>
+      <line x1={11} y1={0} x2={11} y2={66} stroke={on} strokeWidth={1.2} opacity={0.4} />
+      <rect x={0} y={21} width={22} height={2.4} fill={on} opacity={0.6} />
+      <ellipse cx={11} cy={d >= 5 ? 15.5 : 6} rx={9} ry={4.3} fill={on} opacity={d >= 5 ? 1 : 0.22} />
+      {beads}
+    </svg>
+  );
+};
+
+// Counting rods: units drawn vertical, tens horizontal (the alternation that
+// let Chinese and Japanese calculators read place value without a zero).
+const RodDigit: React.FC<{ d: number; tens: boolean; r: ChronoRender }> = ({ d, tens, r }) => {
+  const on = r.on ?? 'currentColor';
+  const lines: React.ReactNode[] = [];
+  const five = d >= 6 ? 1 : 0;
+  const ones = d >= 6 ? d - 5 : d;
+  if (d === 0) {
+    lines.push(<circle key="z" cx={11} cy={16} r={5} fill="none" stroke={on} strokeWidth={1.4} opacity={0.35} />);
+  } else if (tens) {
+    for (let i = 0; i < ones; i++) {
+      const y = 16 + (i - (ones - 1) / 2) * 5;
+      lines.push(<line key={i} x1={3} y1={y} x2={19} y2={y} stroke={on} strokeWidth={2.2} strokeLinecap="round" />);
+    }
+    if (five) lines.push(<line key="f" x1={11} y1={2} x2={11} y2={8} stroke={on} strokeWidth={2.2} strokeLinecap="round" />);
+  } else {
+    for (let i = 0; i < ones; i++) {
+      const x = 11 + (i - (ones - 1) / 2) * 4.5;
+      lines.push(<line key={i} x1={x} y1={five ? 10 : 4} x2={x} y2={28} stroke={on} strokeWidth={2.2} strokeLinecap="round" />);
+    }
+    if (five) lines.push(<line key="f" x1={3} y1={5} x2={19} y2={5} stroke={on} strokeWidth={2.2} strokeLinecap="round" />);
+  }
+  return (
+    <svg viewBox="0 0 22 32" style={{ height: '1em', width: '0.68em', overflow: 'visible' }} aria-hidden>
+      {lines}
+    </svg>
+  );
+};
+
+// Punched paper tape: each digit is one frame of 4 data holes (1-2-4-8),
+// an odd-parity hole and the small sprocket feed hole.
+const TapeDigit: React.FC<{ d: number; r: ChronoRender }> = ({ d, r }) => {
+  const on = r.on ?? 'currentColor';
+  const bits = [1, 2, 4, 8].map((b) => (d & b) !== 0);
+  const parity = bits.filter(Boolean).length % 2 === 0;
+  const rows = [bits[0], bits[1], null, bits[2], bits[3], parity];
+  return (
+    <svg viewBox="0 0 12 66" style={{ height: '1.35em', width: '0.25em', overflow: 'visible' }} aria-hidden>
+      <rect x={0} y={0} width={12} height={66} fill={on} opacity={0.08} />
+      {rows.map((bit, i) =>
+        bit === null ? (
+          <circle key={i} cx={6} cy={6 + i * 10.8} r={1.6} fill={on} opacity={0.5} />
+        ) : (
+          <circle key={i} cx={6} cy={6 + i * 10.8} r={3.6} fill={on} opacity={bit ? 1 : 0.12} />
+        )
+      )}
+    </svg>
+  );
+};
+
+// Pips: dice-style 3×3 pip layouts, extended to 0 and 7–9.
+const PIP_LAYOUTS = ['', '4', '08', '048', '0268', '02468', '023568', '0234568', '01235678', '012345678'];
+const PipDigit: React.FC<{ d: number; r: ChronoRender }> = ({ d, r }) => {
+  const on = r.on ?? 'currentColor';
+  return (
+    <svg viewBox="0 0 30 30" style={{ height: '0.9em', width: '0.9em', overflow: 'visible', marginRight: '0.06em' }} aria-hidden>
+      <rect x={1} y={1} width={28} height={28} rx={6} fill="none" stroke={on} strokeWidth={1.4} opacity={0.4} />
+      {PIP_LAYOUTS[d].split('').map((k) => {
+        const i = Number(k);
+        return <circle key={k} cx={7.5 + (i % 3) * 7.5} cy={7.5 + Math.floor(i / 3) * 7.5} r={2.6} fill={on} />;
+      })}
+    </svg>
+  );
+};
+
+// ==========================================
+// Instrument faces (analog dial, rings, gauges, word clock): one widget for
+// the whole time, shown with a small digital readout beside it.
+// ==========================================
+
+const SECOND_RED = '#e11d48';
+
+const hand = (deg: number, from: number, to: number, width: number, color: string, cap: 'round' | 'butt' = 'round') => {
+  const rad = ((deg - 90) * Math.PI) / 180;
+  return (
+    <line
+      x1={50 + Math.cos(rad) * from}
+      y1={50 + Math.sin(rad) * from}
+      x2={50 + Math.cos(rad) * to}
+      y2={50 + Math.sin(rad) * to}
+      stroke={color}
+      strokeWidth={width}
+      strokeLinecap={cap}
+    />
+  );
+};
+
+const AnalogDial: React.FC<{ hh: number; mm: number; ss: number; r: ChronoRender; px: number; color: string }> = ({
+  hh,
+  mm,
+  ss,
+  r,
+  px,
+  color,
+}) => {
+  const hDeg = ((hh % 12) + mm / 60) * 30;
+  const mDeg = (mm + ss / 60) * 6;
+  const sDeg = ss * 6;
+  const accent = r.on && r.on !== 'currentColor' ? r.on : '#10b981';
+  let body: React.ReactNode;
+  switch (r.dial) {
+    case 'swiss':
+      body = (
+        <>
+          {Array.from({ length: 60 }, (_, i) => {
+            const major = i % 5 === 0;
+            return <g key={i}>{hand(i * 6, major ? 34 : 41, 46, major ? 3.4 : 1.2, color, 'butt')}</g>;
+          })}
+          {hand(hDeg, -10, 28, 6, color, 'butt')}
+          {hand(mDeg, -12, 42, 4.4, color, 'butt')}
+          {hand(sDeg, -14, 31, 1.4, SECOND_RED)}
+          <circle cx={50 + Math.cos(((sDeg - 90) * Math.PI) / 180) * 31} cy={50 + Math.sin(((sDeg - 90) * Math.PI) / 180) * 31} r={4.6} fill={SECOND_RED} />
+          <circle cx={50} cy={50} r={1.6} fill={SECOND_RED} />
+        </>
+      );
+      break;
+    case 'bauhaus':
+      body = (
+        <>
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={3} />
+          {[0, 90, 180, 270].map((deg) => {
+            const rad = ((deg - 90) * Math.PI) / 180;
+            return <rect key={deg} x={50 + Math.cos(rad) * 37 - 3} y={50 + Math.sin(rad) * 37 - 3} width={6} height={6} fill={color} />;
+          })}
+          {hand(hDeg, 0, 24, 7, '#ef4444', 'butt')}
+          {hand(mDeg, 0, 38, 4.5, '#3b82f6', 'butt')}
+          <circle cx={50 + Math.cos(((sDeg - 90) * Math.PI) / 180) * 30} cy={50 + Math.sin(((sDeg - 90) * Math.PI) / 180) * 30} r={4.2} fill="#facc15" />
+          <circle cx={50} cy={50} r={4} fill={color} />
+        </>
+      );
+      break;
+    case 'radar': {
+      const sweep = (sDeg - 90) * (Math.PI / 180);
+      const wedge = (span: number) => {
+        const a0 = sweep - span;
+        return `M50 50L${50 + Math.cos(a0) * 46} ${50 + Math.sin(a0) * 46}A46 46 0 0 1 ${50 + Math.cos(sweep) * 46} ${50 + Math.sin(sweep) * 46}Z`;
+      };
+      const blip = (deg: number, radius: number, size: number) => {
+        const rad = ((deg - 90) * Math.PI) / 180;
+        return <circle cx={50 + Math.cos(rad) * radius} cy={50 + Math.sin(rad) * radius} r={size} fill={accent} />;
+      };
+      body = (
+        <>
+          {[15, 30, 46].map((rr) => (
+            <circle key={rr} cx={50} cy={50} r={rr} fill="none" stroke={accent} strokeWidth={0.8} opacity={0.45} />
+          ))}
+          <path d="M50 4V96M4 50H96" stroke={accent} strokeWidth={0.6} opacity={0.35} />
+          <path d={wedge(0.9)} fill={accent} opacity={0.12} />
+          <path d={wedge(0.35)} fill={accent} opacity={0.22} />
+          {hand(sDeg, 0, 46, 1.2, accent)}
+          {blip(hDeg, 22, 3.6)}
+          {blip(mDeg, 38, 2.8)}
+        </>
+      );
+      break;
+    }
+    default:
+      body = (
+        <>
+          {Array.from({ length: 12 }, (_, i) => {
+            const rad = ((i * 30 - 90) * Math.PI) / 180;
+            return <circle key={i} cx={50 + Math.cos(rad) * 44} cy={50 + Math.sin(rad) * 44} r={i % 3 === 0 ? 2.2 : 1.3} fill={color} opacity={0.7} />;
+          })}
+          {hand(hDeg, 0, 24, 3.2, color)}
+          {hand(mDeg, 0, 37, 2, color)}
+          <circle cx={50 + Math.cos(((sDeg - 90) * Math.PI) / 180) * 44} cy={50 + Math.sin(((sDeg - 90) * Math.PI) / 180) * 44} r={3} fill={accent} />
+          <circle cx={50} cy={50} r={2.4} fill={color} />
+        </>
+      );
+  }
+  return (
+    <svg viewBox="0 0 100 100" width={px} height={px} style={{ overflow: 'visible', flexShrink: 0 }} aria-hidden>
+      {body}
+    </svg>
+  );
+};
+
+const RING_COLORS = ['#f43f5e', '#a3e635', '#22d3ee'];
+
+const ActivityRings: React.FC<{ hh: number; mm: number; ss: number; px: number }> = ({ hh, mm, ss, px }) => {
+  const fracs = [(hh + mm / 60) / 24, (mm + ss / 60) / 60, ss / 60];
+  return (
+    <svg viewBox="0 0 100 100" width={px} height={px} style={{ flexShrink: 0 }} aria-hidden>
+      {[44, 33, 22].map((rr, i) => {
+        const c = 2 * Math.PI * rr;
+        return (
+          <g key={rr} transform="rotate(-90 50 50)">
+            <circle cx={50} cy={50} r={rr} fill="none" stroke={RING_COLORS[i]} strokeWidth={8.5} opacity={0.16} />
+            <circle
+              cx={50}
+              cy={50}
+              r={rr}
+              fill="none"
+              stroke={RING_COLORS[i]}
+              strokeWidth={8.5}
+              strokeLinecap="round"
+              strokeDasharray={`${Math.max(0.001, fracs[i]) * c} ${c}`}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+const Gauges: React.FC<{ hh: number; mm: number; ss: number; compact: boolean }> = ({ hh, mm, ss, compact }) => {
+  const rows: Array<[string, number, number, string]> = [
+    ['H', hh, 24, '#f59e0b'],
+    ['M', mm, 60, '#10b981'],
+    ['S', ss, 60, '#22d3ee'],
+  ];
+  return (
+    <span className="inline-flex flex-col gap-[3px]" style={{ fontSize: compact ? 8 : 10, lineHeight: 1 }} aria-hidden>
+      {rows.slice(0, compact ? 2 : 3).map(([label, v, max, col]) => (
+        <span key={label} className="inline-flex items-center gap-1.5">
+          <span className="w-2 opacity-60">{label}</span>
+          <span className="relative inline-block overflow-hidden" style={{ width: compact ? 70 : 120, height: compact ? 4 : 6, background: 'rgba(127,127,127,0.18)' }}>
+            <span className="absolute inset-y-0 left-0" style={{ width: `${(v / max) * 100}%`, background: col }} />
+          </span>
+          <span className="tabular-nums w-5 text-right">{pad2(v)}</span>
+        </span>
+      ))}
+    </span>
+  );
+};
+
+// English word clock (11×10 grid, 5-minute resolution + minute dots).
+const WORD_GRID = [
+  'ITLISASAMPM',
+  'ACQUARTERDC',
+  'TWENTYFIVEX',
+  'HALFSTENFTO',
+  'PASTERUNINE',
+  'ONESIXTHREE',
+  'FOURFIVETWO',
+  'EIGHTELEVEN',
+  'SEVENTWELVE',
+  'TENSEOCLOCK',
+];
+type WordPos = [row: number, col: number, len: number];
+const W: Record<string, WordPos> = {
+  IT: [0, 0, 2],
+  IS: [0, 3, 2],
+  A: [1, 0, 1],
+  QUARTER: [1, 2, 7],
+  TWENTY: [2, 0, 6],
+  FIVE_M: [2, 6, 4],
+  HALF: [3, 0, 4],
+  TEN_M: [3, 5, 3],
+  TO: [3, 9, 2],
+  PAST: [4, 0, 4],
+  OCLOCK: [9, 5, 6],
+};
+const HOUR_WORDS: WordPos[] = [
+  [8, 5, 6], // TWELVE
+  [5, 0, 3],
+  [6, 8, 3],
+  [5, 6, 5],
+  [6, 0, 4],
+  [6, 4, 4],
+  [5, 3, 3],
+  [8, 0, 5],
+  [7, 0, 5],
+  [4, 7, 4],
+  [9, 0, 3],
+  [7, 5, 6], // ELEVEN
+];
+
+function wordClockWords(hh: number, mm: number): WordPos[] {
+  const m5 = Math.floor(mm / 5) * 5;
+  const hour = (hh + (m5 > 30 ? 1 : 0)) % 12;
+  const words: WordPos[] = [W.IT, W.IS];
+  const minuteWords: Record<number, WordPos[]> = {
+    0: [W.OCLOCK],
+    5: [W.FIVE_M, W.PAST],
+    10: [W.TEN_M, W.PAST],
+    15: [W.A, W.QUARTER, W.PAST],
+    20: [W.TWENTY, W.PAST],
+    25: [W.TWENTY, W.FIVE_M, W.PAST],
+    30: [W.HALF, W.PAST],
+    35: [W.TWENTY, W.FIVE_M, W.TO],
+    40: [W.TWENTY, W.TO],
+    45: [W.A, W.QUARTER, W.TO],
+    50: [W.TEN_M, W.TO],
+    55: [W.FIVE_M, W.TO],
+  };
+  return [...words, ...minuteWords[m5], HOUR_WORDS[hour]];
+}
+
+const WordClock: React.FC<{ hh: number; mm: number; compact: boolean }> = ({ hh, mm, compact }) => {
+  const lit = new Set<string>();
+  wordClockWords(hh, mm).forEach(([row, col, len]) => {
+    for (let i = 0; i < len; i++) lit.add(`${row}-${col + i}`);
+  });
+  if (compact) {
+    // Tiles are too short for the grid: show the lit phrase instead.
+    const phrase = wordClockWords(hh, mm)
+      .map(([row, col, len]) => WORD_GRID[row].slice(col, col + len))
+      .join(' ')
+      .replace('OCLOCK', "O'CLOCK");
+    return <span style={{ fontSize: 9, letterSpacing: '0.12em' }}>{phrase}</span>;
+  }
+  return (
+    <span className="inline-flex flex-col" style={{ fontSize: 9, lineHeight: 1.25, letterSpacing: '0.42em' }} aria-hidden>
+      {WORD_GRID.map((row, y) => (
+        <span key={y}>
+          {row.split('').map((ch, x) => (
+            <span key={x} style={{ opacity: lit.has(`${y}-${x}`) ? 1 : 0.14, fontWeight: lit.has(`${y}-${x}`) ? 700 : 400 }}>
+              {ch}
+            </span>
+          ))}
+        </span>
+      ))}
+      <span className="mt-1 flex gap-1" style={{ letterSpacing: 0 }}>
+        {[1, 2, 3, 4].map((i) => (
+          <span key={i} className="inline-block rounded-full" style={{ width: 4, height: 4, background: 'currentColor', opacity: i <= mm % 5 ? 1 : 0.14 }} />
+        ))}
+      </span>
+    </span>
+  );
+};
+
+const INSTRUMENT_KINDS = new Set(['analog', 'rings', 'gauges', 'wordgrid']);
+
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 function renderGraphic(r: ChronoRender, values: number[], withLeadingColon: boolean): React.ReactNode {
@@ -191,6 +536,17 @@ function renderGraphic(r: ChronoRender, values: number[], withLeadingColon: bool
     if (i > 0 || withLeadingColon) nodes.push(colon(`c${i}`));
     if (r.kind === 'mayan') nodes.push(<MayanNumber key={`n${i}`} n={n} r={r} />);
     else if (r.kind === 'bcd') nodes.push(<BcdNumber key={`n${i}`} n={n} r={r} />);
+    else if (r.kind === 'soroban' || r.kind === 'rods' || r.kind === 'tape' || r.kind === 'pips')
+      pad2(n)
+        .split('')
+        .map(Number)
+        .forEach((d, j) => {
+          const key = `n${i}-${j}`;
+          if (r.kind === 'soroban') nodes.push(<SorobanDigit key={key} d={d} r={r} />);
+          else if (r.kind === 'rods') nodes.push(<RodDigit key={key} d={d} tens={j === 0} r={r} />);
+          else if (r.kind === 'tape') nodes.push(<TapeDigit key={key} d={d} r={r} />);
+          else nodes.push(<PipDigit key={key} d={d} r={r} />);
+        });
     else
       pad2(n)
         .split('')
@@ -269,6 +625,34 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 
   const fontFamily = chronoFontStack(r.font);
   const fxClass = r.fx ? `chrono-fx chrono-fx-${r.fx}` : '';
+
+  if (INSTRUMENT_KINDS.has(r.kind)) {
+    const ink = themeColor ?? 'currentColor';
+    const px = isMain ? 64 : 34;
+    let instrument: React.ReactNode;
+    if (r.kind === 'analog') instrument = <AnalogDial hh={hh} mm={mm} ss={ss} r={r} px={px} color={ink} />;
+    else if (r.kind === 'rings') instrument = <ActivityRings hh={hh} mm={mm} ss={ss} px={px} />;
+    else if (r.kind === 'gauges') instrument = <Gauges hh={hh} mm={mm} ss={ss} compact={!isMain} />;
+    else instrument = <WordClock hh={hh} mm={mm} compact={!isMain} />;
+    return (
+      <div
+        className={`font-mono min-w-0 flex items-center gap-3 ${isMain ? '' : 'pointer-events-none'}`}
+        style={{ color: themeColor }}
+        role="img"
+        aria-label={label}
+      >
+        {instrument}
+        {isMain && (
+          <span className="flex flex-col leading-none tabular-nums">
+            <span className="text-xl sm:text-2xl font-light">
+              {pad2(hh)}:{pad2(mm)}
+            </span>
+            <span className="text-xs text-emerald-500 mt-1">:{pad2(ss)}</span>
+          </span>
+        )}
+      </div>
+    );
+  }
   const textStyle: React.CSSProperties = {
     fontFamily,
     fontWeight: r.font?.weight,
@@ -367,6 +751,10 @@ export const ChronometerThemePicker: React.FC<ChronometerThemePickerProps> = ({
         return tf(t.chronoReqSessions, { n: u.value });
       case 'ascension':
         return tf(t.chronoReqAscension, { n: u.value });
+      case 'hours':
+        return tf(t.chronoReqHours, { n: u.value });
+      case 'session':
+        return tf(t.chronoReqSession, { n: u.value });
       default:
         return '';
     }
@@ -385,6 +773,10 @@ export const ChronometerThemePicker: React.FC<ChronometerThemePickerProps> = ({
         return tf(t.chronoLockedSessions, { n: u.value, cur: progress.sessionCount, name: th.name });
       case 'ascension':
         return tf(t.chronoLockedAscension, { n: u.value, name: th.name });
+      case 'hours':
+        return tf(t.chronoLockedHours, { n: u.value, cur: Math.floor(progress.totalHours), name: th.name });
+      case 'session':
+        return tf(t.chronoLockedSession, { n: u.value, cur: progress.longestSessionMinutes, name: th.name });
       default:
         return '';
     }

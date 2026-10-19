@@ -9,10 +9,49 @@ export type ChronoUnlock =
   | { type: 'level'; value: number }
   | { type: 'streak'; value: number }
   | { type: 'sessions'; value: number }
-  | { type: 'ascension'; value: number };
+  | { type: 'ascension'; value: number }
+  /** Lifetime study hours. */
+  | { type: 'hours'; value: number }
+  /** Longest single logged session, in minutes. */
+  | { type: 'session'; value: number };
 
-export type ChronoNumeral = 'arabic' | 'digits' | 'roman' | 'cjk' | 'radix' | 'greek' | 'morse' | 'words';
-export type ChronoFx = 'neon' | 'matrix' | 'crt' | 'outline' | 'glitch' | 'nixie' | 'sunset' | 'holo' | 'gold' | 'quantum';
+export type ChronoNumeral =
+  | 'arabic'
+  | 'digits'
+  | 'roman'
+  | 'cjk'
+  | 'radix'
+  | 'greek'
+  | 'morse'
+  | 'words'
+  | 'egyptian'
+  | 'cuneiform'
+  | 'icao'
+  // Whole-time systems: computed from the full time of day, not per field.
+  | 'decimal'
+  | 'swatch'
+  | 'daypct'
+  | 'unix'
+  | 'shichen';
+export type ChronoFx =
+  | 'neon'
+  | 'matrix'
+  | 'crt'
+  | 'outline'
+  | 'glitch'
+  | 'nixie'
+  | 'sunset'
+  | 'holo'
+  | 'gold'
+  | 'quantum'
+  | 'chrome'
+  | 'fire'
+  | 'ice'
+  | 'emboss'
+  | 'extrude'
+  | 'spray'
+  | 'flicker'
+  | 'ink';
 
 export interface ChronoFont {
   family?: string;
@@ -27,12 +66,29 @@ export interface ChronoPanel {
 }
 
 export interface ChronoRender {
-  kind: 'text' | 'segment' | 'dotmatrix' | 'mayan' | 'bcd';
+  kind:
+    | 'text'
+    | 'segment'
+    | 'dotmatrix'
+    | 'mayan'
+    | 'bcd'
+    // Instrument faces (ChronometerFace.tsx)
+    | 'analog'
+    | 'rings'
+    | 'gauges'
+    | 'soroban'
+    | 'rods'
+    | 'tape'
+    | 'pips'
+    | 'wordgrid';
+  /** Dial style for kind 'analog'. */
+  dial?: 'swiss' | 'minimal' | 'bauhaus' | 'radar';
   numeral?: ChronoNumeral;
   digits?: string[];
   numberPrefix?: string;
   cjk?: { digits: string[]; ten: string; units?: [string, string, string] };
-  radix?: { base: number; pad: number; prefix?: string };
+  /** `digits` replaces 0-9A-Z (e.g. dozenal ↊↋, DNA bases ACGT). */
+  radix?: { base: number; pad: number; prefix?: string; digits?: string };
   font?: ChronoFont;
   fx?: ChronoFx;
   cells?: 'nixie' | 'flap';
@@ -72,6 +128,8 @@ export interface ChronoProgress {
   totalAscensions: number;
   longestStreak: number;
   sessionCount: number;
+  totalHours: number;
+  longestSessionMinutes: number;
 }
 
 export const CHRONO_THEMES = catalog.themes as ChronoTheme[];
@@ -98,6 +156,10 @@ export function isChronoThemeUnlocked(theme: ChronoTheme, p: ChronoProgress): bo
       return p.sessionCount >= u.value;
     case 'ascension':
       return p.totalAscensions >= u.value;
+    case 'hours':
+      return p.totalHours >= u.value;
+    case 'session':
+      return p.longestSessionMinutes >= u.value;
   }
 }
 
@@ -116,6 +178,10 @@ export function chronoUnlockRank(theme: ChronoTheme): number {
       return u.value * 4;
     case 'ascension':
       return 3000 + u.value;
+    case 'hours':
+      return u.value * 3;
+    case 'session':
+      return u.value * 4;
   }
 }
 
@@ -181,6 +247,23 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 const mapDigits = (s: string, digits: string[]) => s.replace(/[0-9]/g, (d) => digits[Number(d)]);
 
+// Egyptian: single-sign tens (heel bones) and units (strokes); zero is
+// 𓄤 (nfr), which scribes used for a zero balance in bookkeeping.
+const EGYPT_TENS = ['', '𓎆', '𓎇', '𓎈', '𓎉', '𓎊'];
+const EGYPT_UNITS = ['', '𓏺', '𓏻', '𓏼', '𓏽', '𓏾', '𓏿', '𓐀', '𓐁', '𓐂'];
+export const toEgyptian = (n: number): string => (n === 0 ? '𓄤' : `${EGYPT_TENS[Math.floor(n / 10)]}${EGYPT_UNITS[n % 10]}`);
+
+// Babylonian sexagesimal: one base-60 "digit" per field, written as tens
+// wedges (𒌋) followed by unit wedges (𒁹). Empty places were left blank.
+export const toCuneiform = (n: number): string =>
+  n === 0 ? '·' : `${'𒌋'.repeat(Math.floor(n / 10))}${'𒁹'.repeat(n % 10)}`;
+
+const ICAO = ['ZE-RO', 'WUN', 'TOO', 'TREE', 'FOW-ER', 'FIFE', 'SIX', 'SEV-EN', 'AIT', 'NIN-ER'];
+
+const BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+const KE = ['初刻', '一刻', '二刻', '三刻'];
+const KANJI_DIGITS = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+
 export type ChronoPart = 'hour' | 'minute' | 'second';
 
 /** One clock field (0-59) rendered in a text theme's numeral system. */
@@ -195,9 +278,20 @@ export function formatChronoNumber(r: ChronoRender, n: number, part: ChronoPart)
     case 'cjk':
       return r.cjk ? toCjk(n, r.cjk.digits, r.cjk.ten) : pad2(n);
     case 'radix': {
-      const { base, pad, prefix = '' } = r.radix ?? { base: 10, pad: 2 };
-      return `${prefix}${n.toString(base).toUpperCase().padStart(pad, '0')}`;
+      const { base, pad, prefix = '', digits } = r.radix ?? { base: 10, pad: 2 };
+      const raw = n.toString(base).toUpperCase().padStart(pad, '0');
+      const mapped = digits ? Array.from(raw, (ch) => Array.from(digits)[parseInt(ch, 36)] ?? ch).join('') : raw;
+      return `${prefix}${mapped}`;
     }
+    case 'egyptian':
+      return toEgyptian(n);
+    case 'cuneiform':
+      return toCuneiform(n);
+    case 'icao':
+      return pad2(n)
+        .split('')
+        .map((d) => ICAO[Number(d)])
+        .join(' ');
     case 'morse':
       return pad2(n)
         .split('')
@@ -214,6 +308,36 @@ export function formatChronoNumber(r: ChronoRender, n: number, part: ChronoPart)
 
 /** The "HH:MM" and ":SS" strings for a text theme. */
 export function formatChronoText(r: ChronoRender, hh: number, mm: number, ss: number): { main: string; sec: string } {
+  const daySeconds = hh * 3600 + mm * 60 + ss;
+  switch (r.numeral) {
+    case 'decimal': {
+      // French Republican time: 10 hours × 100 minutes × 100 seconds per day.
+      const d = Math.floor((daySeconds / 86400) * 100000);
+      return { main: `${Math.floor(d / 10000)}:${pad2(Math.floor(d / 100) % 100)}`, sec: `:${pad2(d % 100)}` };
+    }
+    case 'swatch': {
+      // Internet Time: 1,000 .beats per day on Biel Mean Time (UTC+1).
+      const now = new Date();
+      const bmt = (now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds() + 3600) % 86400;
+      const beats = bmt / 86.4;
+      return { main: `@${String(Math.floor(beats)).padStart(3, '0')}`, sec: `.${pad2(Math.floor((beats % 1) * 100))}` };
+    }
+    case 'daypct': {
+      const pct = (daySeconds / 86400) * 100;
+      return { main: `${pct.toFixed(2).padStart(5, '0')}%`, sec: ` ${pad2(ss)}` };
+    }
+    case 'unix': {
+      const epoch = Math.floor(Date.now() / 1000);
+      return { main: String(Math.floor(epoch / 100)), sec: pad2(epoch % 100) };
+    }
+    case 'shichen': {
+      // Twelve double-hours: 子 starts at 23:00 (子初) with its "proper"
+      // hour (子正) at 00:00; each half is split into four 15-minute 刻.
+      const branch = BRANCHES[Math.floor(((hh + 1) % 24) / 2)];
+      const half = hh % 2 === 1 ? '初' : '正';
+      return { main: `${branch}${half}${KE[Math.floor(mm / 15)]}`, sec: `${toCjk(ss, KANJI_DIGITS, '十')}秒` };
+    }
+  }
   const h = formatChronoNumber(r, hh, 'hour');
   const m = formatChronoNumber(r, mm, 'minute');
   const s = formatChronoNumber(r, ss, 'second');
