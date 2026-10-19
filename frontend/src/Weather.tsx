@@ -1,7 +1,26 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { tf, useI18n } from './i18n';
 import type { Dict } from './i18n';
+import {
+  ASCII,
+  CYBER_CODE,
+  DEFAULT_WEATHER_THEME,
+  EMOJI,
+  GLYPH,
+  KANJI,
+  LED_COLOR,
+  METAR_CODE,
+  PIXEL_COLORS,
+  SHORT_WORD,
+  WEATHER_THEMES,
+  isWeatherThemeId,
+  pixelSprite,
+  thermoReading,
+  weatherKind,
+  type WeatherKind,
+  type WeatherThemeId,
+} from './weatherThemes';
 
 // Weather badge for the SYSTEM CHRONOMETER header.
 //
@@ -10,6 +29,10 @@ import type { Dict } from './i18n';
 //   1. precise coordinates the user explicitly opted into (rounded to ~1 km),
 //   2. a representative city for the account time zone (no prompt at all).
 // Results are cached per location for 20 minutes in localStorage.
+//
+// Theme, unit and show/hide are account-synced (UserProfile.weather_*), like
+// the Surface Theme; App owns the PATCH queue. Precise coordinates are never
+// synced — they describe this device, not the account.
 
 const PREFS_KEY = 'typbox_weather_prefs';
 const CACHE_KEY = 'typbox_weather_cache';
@@ -21,6 +44,7 @@ interface WeatherPrefs {
   hidden?: boolean;
   unit?: Unit;
   precise?: { lat: number; lon: number };
+  theme?: WeatherThemeId;
 }
 
 interface WeatherReading {
@@ -114,22 +138,6 @@ const FAHRENHEIT_ZONES = new Set([
   'America/Anchorage',
   'Pacific/Honolulu',
 ]);
-
-export type WeatherKind = 'clear' | 'mostly-clear' | 'partly' | 'overcast' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'thunder';
-
-// WMO weather interpretation codes -> icon/condition.
-function weatherKind(code: number): WeatherKind {
-  if (code === 0) return 'clear';
-  if (code === 1) return 'mostly-clear';
-  if (code === 2) return 'partly';
-  if (code === 3) return 'overcast';
-  if (code === 45 || code === 48) return 'fog';
-  if (code >= 51 && code <= 57) return 'drizzle';
-  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return 'rain';
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
-  if (code >= 95) return 'thunder';
-  return 'overcast';
-}
 
 const KIND_LABEL_KEY: Record<WeatherKind, keyof Dict> = {
   clear: 'wxClear',
@@ -304,9 +312,30 @@ export const WeatherIcon: React.FC<{ kind: WeatherKind; isDay: boolean; size?: n
 // Hook: location resolution, fetching, caching, prefs
 // ==========================================
 
+/** The account-synced subset of the weather prefs, in API field names. */
+export interface SyncedWeatherPrefs {
+  weather_theme?: string;
+  weather_unit?: string;
+  weather_hidden?: boolean | null;
+}
+
+const writePrefs = (next: WeatherPrefs) => {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+  } catch {
+    // Storage can be unavailable (private mode); prefs then last for this tab only.
+  }
+};
+
 // eslint-disable-next-line react-refresh/only-export-components
-export function useWeather(timeZone: string) {
+export function useWeather(timeZone: string, onSyncChange?: (patch: SyncedWeatherPrefs) => void) {
   const [prefs, setPrefs] = useState<WeatherPrefs>(() => readJson<WeatherPrefs>(PREFS_KEY) ?? {});
+  const prefsRef = useRef(prefs);
+  const onSyncRef = useRef(onSyncChange);
+  useEffect(() => {
+    prefsRef.current = prefs;
+    onSyncRef.current = onSyncChange;
+  });
   const [reading, setReading] = useState<WeatherReading | null>(() => readJson<WeatherReading>(CACHE_KEY));
   const [error, setError] = useState<'denied' | 'unavailable' | null>(null);
 
@@ -322,13 +351,40 @@ export function useWeather(timeZone: string) {
   const updatePrefs = useCallback((patch: Partial<WeatherPrefs>) => {
     setPrefs((prev) => {
       const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(PREFS_KEY, JSON.stringify(next));
-      } catch {
-        // Storage can be unavailable (private mode); prefs then last for this tab only.
-      }
+      writePrefs(next);
       return next;
     });
+    const sync: SyncedWeatherPrefs = {};
+    if ('theme' in patch) sync.weather_theme = patch.theme ?? '';
+    if ('unit' in patch) sync.weather_unit = patch.unit ?? '';
+    if ('hidden' in patch) sync.weather_hidden = Boolean(patch.hidden);
+    if (Object.keys(sync).length > 0) onSyncRef.current?.(sync);
+  }, []);
+
+  // Applies the account's values. Returns this device's values instead when
+  // the account has never stored any (first sync), so the caller can push
+  // them up rather than resetting the user's current look.
+  const applyServerPrefs = useCallback((server: SyncedWeatherPrefs): SyncedWeatherPrefs | null => {
+    if (server.weather_theme === undefined) return null; // backend without weather sync
+    if (!server.weather_theme && server.weather_hidden == null) {
+      const local = prefsRef.current;
+      return {
+        weather_theme: local.theme ?? DEFAULT_WEATHER_THEME,
+        weather_unit: local.unit ?? '',
+        weather_hidden: Boolean(local.hidden),
+      };
+    }
+    setPrefs((prev) => {
+      const next: WeatherPrefs = {
+        ...prev,
+        theme: isWeatherThemeId(server.weather_theme) ? server.weather_theme : prev.theme,
+        unit: server.weather_unit === 'c' || server.weather_unit === 'f' ? server.weather_unit : undefined,
+        hidden: Boolean(server.weather_hidden),
+      };
+      writePrefs(next);
+      return next;
+    });
+    return null;
   }, []);
 
   useEffect(() => {
@@ -395,13 +451,232 @@ export function useWeather(timeZone: string) {
   }, [updatePrefs]);
 
   const current = reading && reading.key === key ? reading : null;
-  return { prefs, updatePrefs, coords, reading: current, error, unit, requestPrecise };
+  const theme: WeatherThemeId = isWeatherThemeId(prefs.theme) ? prefs.theme : DEFAULT_WEATHER_THEME;
+  return { prefs, updatePrefs, applyServerPrefs, coords, reading: current, error, unit, requestPrecise, theme };
 }
 
 export type WeatherState = ReturnType<typeof useWeather>;
 
 const formatTemp = (tempC: number, unit: Unit) =>
   unit === 'f' ? `${Math.round((tempC * 9) / 5 + 32)}°F` : `${Math.round(tempC)}°C`;
+
+// METAR writes temperatures as whole °C with M for minus (e.g. M03).
+const metarTemp = (tempC: number) => {
+  const r = Math.round(tempC);
+  return r < 0 ? `M${String(-r).padStart(2, '0')}` : String(r).padStart(2, '0');
+};
+
+// ==========================================
+// WeatherFace: one reading drawn in a weather theme, at three sizes
+// ('badge' = chronometer header, 'large' = panel, 'tile' = theme picker).
+// ==========================================
+
+type FaceSize = 'badge' | 'large' | 'tile';
+
+interface FaceProps {
+  theme: WeatherThemeId;
+  kind: WeatherKind;
+  isDay: boolean;
+  tempC: number;
+  windKmh: number;
+  unit: Unit;
+  size: FaceSize;
+}
+
+const PixelSprite: React.FC<{ kind: WeatherKind; isDay: boolean; px: number }> = ({ kind, isDay, px }) => {
+  const rows = pixelSprite(kind, isDay);
+  return (
+    <svg viewBox="0 0 11 11" width={px} height={px} shapeRendering="crispEdges" style={{ flexShrink: 0 }} aria-hidden>
+      {rows.flatMap((row, y) =>
+        row.split('').map((ch, x) =>
+          ch === '.' ? null : <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={PIXEL_COLORS[ch]} />
+        )
+      )}
+    </svg>
+  );
+};
+
+// Glyph-subset web fonts for the pixel and kanji faces (loaded once, on demand).
+const WEATHER_FONTS: Partial<Record<WeatherThemeId, string>> = {
+  pixel: `https://fonts.googleapis.com/css2?family=Press+Start+2P&text=${encodeURIComponent('0123456789°CF-')}&display=swap`,
+  kanji: `https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@700&text=${encodeURIComponent('晴曇霧雨雪雷月')}&display=swap`,
+};
+const loadedWeatherFonts = new Set<string>();
+
+const WeatherFace: React.FC<FaceProps> = ({ theme, kind, isDay, tempC, windKmh, unit, size }) => {
+  const { t, lang } = useI18n();
+  useEffect(() => {
+    const href = WEATHER_FONTS[theme];
+    if (!href || loadedWeatherFonts.has(href)) return;
+    loadedWeatherFonts.add(href);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }, [theme]);
+  const temp = formatTemp(tempC, unit);
+  const big = size === 'large';
+  const iconPx = big ? 44 : size === 'tile' ? 22 : 16;
+  const word = SHORT_WORD[lang === 'ja' ? 'ja' : 'en'][kind];
+  const label = t[KIND_LABEL_KEY[kind]];
+  const tempCls = big ? 'text-2xl font-light' : 'font-semibold';
+  const sub = big ? <div className="text-[10px] uppercase tracking-wider opacity-70 mt-1">{label} · {tf(t.wxWind, { v: Math.round(windKmh) })}</div> : null;
+
+  switch (theme) {
+    case 'minimal':
+      return (
+        <span className={`inline-flex items-baseline gap-1.5 ${big ? 'flex-col items-start gap-0' : ''}`}>
+          <span className={`tabular-nums ${big ? 'text-4xl font-extralight' : 'font-light'}`}>{temp.replace(/[CF]$/, '')}</span>
+          <span className={`tracking-widest ${big ? 'text-[11px] mt-1' : 'text-[9px]'} opacity-75`}>{big ? label : word}</span>
+        </span>
+      );
+    case 'pixel':
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <PixelSprite kind={kind} isDay={isDay} px={iconPx} />
+          <span>
+            <span className={`tabular-nums ${tempCls}`} style={{ fontFamily: "'Press Start 2P', ui-monospace, monospace", fontSize: big ? 18 : 8 }}>
+              {temp}
+            </span>
+            {sub}
+          </span>
+        </span>
+      );
+    case 'ascii': {
+      const [art, line] = ASCII[kind][isDay ? 'day' : 'night'];
+      return big ? (
+        <span className="inline-flex items-center gap-4">
+          <pre className="text-[11px] leading-[1.15] m-0 text-emerald-400">{art.join('\n')}</pre>
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {sub}
+          </span>
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 whitespace-pre">
+          <span className="text-emerald-400">{line}</span>
+          <span className="tabular-nums font-semibold">{temp}</span>
+        </span>
+      );
+    }
+    case 'emoji':
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <span style={{ fontSize: big ? 40 : size === 'tile' ? 18 : 13, lineHeight: 1 }}>{EMOJI[kind][isDay ? 0 : 1]}</span>
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {sub}
+          </span>
+        </span>
+      );
+    case 'cyber': {
+      const sign = tempC >= 0 ? '+' : '−';
+      const value = unit === 'f' ? (tempC * 9) / 5 + 32 : tempC;
+      return (
+        <span
+          className={`inline-flex flex-col ${big ? 'gap-1' : ''}`}
+          style={{ color: '#22d3ee', textShadow: '0 0 6px rgba(34,211,238,0.65)' }}
+        >
+          <span className={`tabular-nums tracking-wider ${big ? 'text-xl' : 'font-semibold'}`}>
+            {big ? '[ ' : ''}WX::{CYBER_CODE[kind]} {sign}
+            {Math.abs(value).toFixed(1)}°{unit === 'f' ? 'F' : 'C'}
+            {big ? ' ]' : ''}
+          </span>
+          {big && <span className="text-[10px] opacity-70 tracking-widest">WIND {Math.round(windKmh)}KM/H // {isDay ? 'DAY' : 'NIGHT'} CYCLE</span>}
+        </span>
+      );
+    }
+    case 'metar': {
+      const kt = String(Math.round(windKmh / 1.852)).padStart(2, '0');
+      return (
+        <span className={`inline-flex flex-col tabular-nums ${big ? 'gap-1' : ''}`} style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+          <span className={big ? 'text-xl tracking-wider' : 'font-semibold'}>
+            {METAR_CODE[kind]} {metarTemp(tempC)} {kt}KT
+          </span>
+          {big && <span className="text-[10px] opacity-70 tracking-widest">{label.toUpperCase()} · {temp}</span>}
+        </span>
+      );
+    }
+    case 'kanji':
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <span
+            className="inline-flex items-center justify-center font-bold"
+            style={{
+              width: big ? 44 : size === 'tile' ? 22 : 16,
+              height: big ? 44 : size === 'tile' ? 22 : 16,
+              fontSize: big ? 26 : size === 'tile' ? 13 : 10,
+              color: '#ef4444',
+              border: `${big ? 2 : 1.2}px solid #ef4444`,
+              borderRadius: big ? 6 : 3,
+              fontFamily: "'Noto Serif JP', serif",
+            }}
+          >
+            {isDay || kind !== 'clear' ? KANJI[kind] : '月'}
+          </span>
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp.replace('°C', '℃')}</span>
+            {sub}
+          </span>
+        </span>
+      );
+    case 'glyph':
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <span style={{ fontSize: big ? 40 : size === 'tile' ? 18 : 14, lineHeight: 1 }}>{GLYPH[kind][isDay ? 0 : 1]}</span>
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {sub}
+          </span>
+        </span>
+      );
+    case 'thermo': {
+      const { fill, color } = thermoReading(tempC);
+      const h = big ? 44 : size === 'tile' ? 22 : 16;
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <svg viewBox="0 0 10 24" width={h * 0.42} height={h} style={{ flexShrink: 0 }} aria-hidden>
+            <rect x={3} y={1} width={4} height={17} rx={2} fill="none" stroke="currentColor" strokeWidth={0.9} opacity={0.6} />
+            <rect x={4} y={2 + 15 * (1 - fill)} width={2} height={15 * fill + 2} fill={color} />
+            <circle cx={5} cy={20} r={3.2} fill={color} />
+          </svg>
+          <span>
+            <span className={`tabular-nums ${tempCls}`} style={{ color }}>
+              {temp}
+            </span>
+            {sub}
+          </span>
+        </span>
+      );
+    }
+    case 'led': {
+      const color = LED_COLOR[kind];
+      const dot = big ? 14 : 7;
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1.5'}`}>
+          <span
+            className="wx-led rounded-full shrink-0"
+            style={{ width: dot, height: dot, backgroundColor: color, boxShadow: `0 0 ${big ? 10 : 5}px ${color}` }}
+          />
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {big ? sub : <span className="ml-1 text-[9px] tracking-widest opacity-70">{word}</span>}
+          </span>
+        </span>
+      );
+    }
+    default:
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <WeatherIcon kind={kind} isDay={isDay} size={iconPx} />
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {sub}
+          </span>
+        </span>
+      );
+  }
+};
 
 // ==========================================
 // Badge (header) + panel (expands inside the chronometer card)
@@ -414,7 +689,7 @@ export const WeatherBadge: React.FC<{ wx: WeatherState; open: boolean; onToggle:
   textMuted,
 }) => {
   const { t } = useI18n();
-  const { reading, prefs, unit, coords } = wx;
+  const { reading, prefs, unit, coords, theme } = wx;
   const kind = reading ? weatherKind(reading.code) : null;
   const where = coords?.label ?? t.wxHere;
   const title = reading && kind ? `${where} · ${t[KIND_LABEL_KEY[kind]]} · ${formatTemp(reading.tempC, unit)}` : t.wxOpen;
@@ -425,7 +700,7 @@ export const WeatherBadge: React.FC<{ wx: WeatherState; open: boolean; onToggle:
       aria-expanded={open}
       aria-label={title}
       title={title}
-      className={`wx-badge flex items-center gap-1 px-1 py-0.5 -my-0.5 cursor-pointer transition-opacity ${
+      className={`wx-badge shrink-0 flex items-center px-1 py-0.5 -my-0.5 normal-case tracking-normal cursor-pointer transition-opacity ${
         prefs.hidden ? 'opacity-40 hover:opacity-80' : 'hover:opacity-80'
       } ${open ? 'text-emerald-400' : ''}`}
     >
@@ -434,10 +709,7 @@ export const WeatherBadge: React.FC<{ wx: WeatherState; open: boolean; onToggle:
           <WeatherIcon kind="partly" isDay size={15} />
         </span>
       ) : (
-        <>
-          <WeatherIcon kind={kind} isDay={reading.isDay} size={16} />
-          <span className="tabular-nums normal-case tracking-normal font-semibold">{formatTemp(reading.tempC, unit)}</span>
-        </>
+        <WeatherFace theme={theme} kind={kind} isDay={reading.isDay} tempC={reading.tempC} windKmh={reading.windKmh} unit={unit} size="badge" />
       )}
     </button>
   );
@@ -450,13 +722,15 @@ export const WeatherPanel: React.FC<{ wx: WeatherState; isDark: boolean; borderC
   textMuted,
 }) => {
   const { t } = useI18n();
-  const { reading, prefs, updatePrefs, coords, unit, error, requestPrecise } = wx;
+  const { reading, prefs, updatePrefs, coords, unit, error, requestPrecise, theme } = wx;
   const kind = reading ? weatherKind(reading.code) : null;
   const chip = `px-2 py-1 border ${borderCol} text-[10px] cursor-pointer hover:text-emerald-400 hover:border-emerald-500/50`;
+  // Theme previews use the live reading, or a sample when nothing is loaded.
+  const sample = reading && kind ? { kind, isDay: reading.isDay, tempC: reading.tempC, windKmh: reading.windKmh } : { kind: 'partly' as WeatherKind, isDay: true, tempC: 18, windKmh: 6 };
 
   return (
     <div className={`mt-4 pt-3.5 border-t ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'} space-y-3 font-mono`}>
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] uppercase tracking-widest">
         <span className="font-semibold">{tf(t.wxTitle, { place: coords?.label ?? (coords ? t.wxHere : '—') })}</span>
         <span className={textMuted}>{coords?.precise ? t.wxSourcePrecise : coords ? t.wxSourceZone : ''}</span>
       </div>
@@ -464,22 +738,12 @@ export const WeatherPanel: React.FC<{ wx: WeatherState; isDark: boolean; borderC
       {prefs.hidden ? (
         <p className={`text-[11px] ${textMuted}`}>{t.wxHiddenNote}</p>
       ) : reading && kind ? (
-        <div className="flex items-center gap-4">
-          <WeatherIcon kind={kind} isDay={reading.isDay} size={44} />
-          <div className="space-y-1">
-            <div className="text-2xl font-light tabular-nums">{formatTemp(reading.tempC, unit)}</div>
-            <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>
-              {t[KIND_LABEL_KEY[kind]]} · {tf(t.wxWind, { v: Math.round(reading.windKmh) })}
-            </div>
-          </div>
-        </div>
+        <WeatherFace theme={theme} kind={kind} isDay={reading.isDay} tempC={reading.tempC} windKmh={reading.windKmh} unit={unit} size="large" />
       ) : (
         <p className={`text-[11px] ${textMuted}`}>{coords ? t.wxLoading : t.wxNoZoneCity}</p>
       )}
 
-      {error && (
-        <p className="text-[10px] text-amber-400">{error === 'denied' ? t.wxDenied : t.wxUnavailable}</p>
-      )}
+      {error && <p className="text-[10px] text-amber-400">{error === 'denied' ? t.wxDenied : t.wxUnavailable}</p>}
 
       <div className="flex flex-wrap gap-1.5">
         {!prefs.hidden && (
@@ -502,6 +766,41 @@ export const WeatherPanel: React.FC<{ wx: WeatherState; isDark: boolean; borderC
           {prefs.hidden ? t.wxShow : t.wxHide}
         </button>
       </div>
+
+      {!prefs.hidden && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+            <span className="font-semibold">{tf(t.wxThemesTitle, { n: WEATHER_THEMES.length })}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {WEATHER_THEMES.map((wt) => {
+              const active = wt.id === theme;
+              return (
+                <button
+                  key={wt.id}
+                  type="button"
+                  onClick={() => updatePrefs({ theme: wt.id })}
+                  aria-pressed={active}
+                  title={wt.desc}
+                  className={`p-2 border text-left cursor-pointer transition-colors flex flex-col gap-1.5 min-w-0 ${
+                    active ? 'border-emerald-500/70 bg-emerald-500/10' : `${borderCol} hover:border-zinc-500`
+                  }`}
+                >
+                  <span className="h-6 flex items-center overflow-hidden text-[11px] pointer-events-none">
+                    <WeatherFace theme={wt.id} {...sample} unit={unit} size="tile" />
+                  </span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[9px] px-1 border shrink-0 ${active ? 'border-emerald-500 text-emerald-400 font-bold' : `${borderCol} ${textMuted}`}`}>
+                      {wt.code}
+                    </span>
+                    <span className={`text-[10px] font-bold truncate ${active ? 'text-emerald-400' : ''}`}>{wt.name}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <p className={`text-[9px] font-sans leading-relaxed ${textMuted}`}>
         {t.wxPrivacy}{' '}

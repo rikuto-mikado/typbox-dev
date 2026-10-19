@@ -151,32 +151,11 @@ export interface AuthUserResponse {
   week_start?: string;
   chrono_theme?: string;
   user_statuses?: string[];
-  /** Opt-in public profile at /u/<username>. */
-  is_public?: boolean;
-}
-
-export interface PublicProfileResponse {
-  username: string;
-  joined: string;
-  avatar_color: string;
-  avatar_preset: string;
-  avatar_image: string;
-  user_statuses: string[];
-  surface_theme: string;
-  chrono_theme: string;
-  week_start: 'mon' | 'sun';
-  today: string;
-  stats: {
-    total_minutes: number;
-    week_minutes: number;
-    month_minutes: number;
-    log_count: number;
-    active_days: number;
-    current_streak: number;
-    longest_streak: number;
-  };
-  categories: Array<{ code: string; name: string; color: string; is_active: boolean; minutes: number }>;
-  cadence: { start: string; days: Record<string, number> };
+  /** Weather widget + motion FX prefs (blank / null = never synced). */
+  weather_theme?: string;
+  weather_unit?: string;
+  weather_hidden?: boolean | null;
+  surface_fx?: boolean | null;
 }
 
 export const api = {
@@ -213,7 +192,10 @@ export const api = {
         week_start: string;
         chrono_theme: string;
         user_statuses: string[];
-        is_public: boolean;
+        weather_theme: string;
+        weather_unit: string;
+        weather_hidden: boolean | null;
+        surface_fx: boolean | null;
       }>
     ) => {
       return apiFetch<AuthUserResponse>('/auth/me/', {
@@ -290,11 +272,6 @@ export const api = {
       return apiFetch(`/categories/${id}/`, {
         method: 'DELETE',
       });
-    },
-  },
-  public: {
-    profile: async (username: string) => {
-      return apiFetch<PublicProfileResponse>(`/public/u/${encodeURIComponent(username)}/`, { requiresAuth: false });
     },
   },
   logs: {

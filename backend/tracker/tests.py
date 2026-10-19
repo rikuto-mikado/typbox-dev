@@ -442,3 +442,52 @@ class ChronoThemeSyncTests(APITestCase):
         res = self.client.patch('/api/auth/me/', {'chrono_theme': '<b>'}, format='json')
         self.assertEqual(res.status_code, 400)
         self.assertEqual(UserProfile.objects.get(user=self.user).chrono_theme, 'nixie-tube')
+
+
+class UiPrefsSyncTests(APITestCase):
+    """Weather widget + motion FX preferences follow the account like the Surface Theme."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_defaults_mean_never_synced(self):
+        data = self.client.get('/api/auth/me/').data
+        self.assertEqual(data['weather_theme'], '')
+        self.assertEqual(data['weather_unit'], '')
+        self.assertIsNone(data['weather_hidden'])
+        self.assertIsNone(data['surface_fx'])
+
+    def test_patch_persists_and_other_fields_untouched(self):
+        self.client.patch('/api/auth/me/', {'surface_theme': 'code-rain'}, format='json')
+        res = self.client.patch(
+            '/api/auth/me/',
+            {'weather_theme': ' Pixel ', 'weather_unit': 'F', 'weather_hidden': True, 'surface_fx': False},
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            (res.data['weather_theme'], res.data['weather_unit'], res.data['weather_hidden'], res.data['surface_fx']),
+            ('pixel', 'f', True, False),
+        )
+        profile = UserProfile.objects.get(user=self.user)
+        self.assertEqual(profile.surface_theme, 'code-rain')
+        # A second "device" sees the same values.
+        self.assertEqual(self.client.get('/api/auth/me/').data['weather_theme'], 'pixel')
+
+    def test_false_and_blank_values_are_saved(self):
+        self.client.patch('/api/auth/me/', {'weather_hidden': True, 'weather_unit': 'f'}, format='json')
+        res = self.client.patch('/api/auth/me/', {'weather_hidden': False, 'weather_unit': ''}, format='json')
+        self.assertEqual((res.data['weather_hidden'], res.data['weather_unit']), (False, ''))
+
+    def test_validation(self):
+        for payload in ({'weather_theme': '<b>'}, {'weather_unit': 'k'}, {'weather_theme': 'x' * 33}):
+            res = self.client.patch('/api/auth/me/', payload, format='json')
+            self.assertEqual(res.status_code, 400, payload)
+
+    def test_precise_location_is_not_accepted(self):
+        res = self.client.patch('/api/auth/me/', {'weather_precise': {'lat': 35.6, 'lon': 139.7}}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn('weather_precise', res.data)

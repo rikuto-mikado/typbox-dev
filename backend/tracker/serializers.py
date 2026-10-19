@@ -39,6 +39,10 @@ SUPPORTED_LANGUAGES = {'en', 'ja'}
 
 SUPPORTED_WEEK_STARTS = {'mon', 'sun'}
 
+# Weather widget theme ids are slugs from frontend/src/weatherThemes.ts.
+WEATHER_THEME_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
+SUPPORTED_WEATHER_UNITS = {'', 'c', 'f'}
+
 # Chronometer Theme ids follow the same slug shape as Surface Themes; the
 # catalog (and its unlock rules) lives in the frontend.
 CHRONO_THEME_ID_RE = SURFACE_THEME_ID_RE
@@ -174,6 +178,10 @@ class UserSerializer(serializers.ModelSerializer):
     user_statuses = serializers.ListField(
         child=serializers.CharField(max_length=40), required=False, allow_empty=True
     )
+    weather_theme = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    weather_unit = serializers.CharField(required=False, allow_blank=True, max_length=1)
+    weather_hidden = serializers.BooleanField(required=False, allow_null=True)
+    surface_fx = serializers.BooleanField(required=False, allow_null=True)
 
     class Meta:
         model = User
@@ -190,6 +198,10 @@ class UserSerializer(serializers.ModelSerializer):
             'week_start',
             'chrono_theme',
             'user_statuses',
+            'weather_theme',
+            'weather_unit',
+            'weather_hidden',
+            'surface_fx',
         )
         read_only_fields = ('id',)
 
@@ -205,6 +217,10 @@ class UserSerializer(serializers.ModelSerializer):
         data['week_start'] = profile.week_start or UserProfile.WEEK_START_MONDAY
         data['chrono_theme'] = profile.chrono_theme
         data['user_statuses'] = [s for s in (profile.user_statuses or []) if s in USER_STATUS_IDS]
+        data['weather_theme'] = profile.weather_theme
+        data['weather_unit'] = profile.weather_unit
+        data['weather_hidden'] = profile.weather_hidden
+        data['surface_fx'] = profile.surface_fx
         return data
 
     def validate_username(self, value):
@@ -299,6 +315,18 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f'Select at most {MAX_USER_STATUSES} statuses.')
         return cleaned
 
+    def validate_weather_theme(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and not WEATHER_THEME_ID_RE.match(cleaned):
+            raise serializers.ValidationError('Invalid weather theme id.')
+        return cleaned
+
+    def validate_weather_unit(self, value):
+        cleaned = value.strip().lower()
+        if cleaned not in SUPPORTED_WEATHER_UNITS:
+            raise serializers.ValidationError('Weather unit must be "c", "f" or blank.')
+        return cleaned
+
     def update(self, instance, validated_data):
         avatar_color = validated_data.pop('avatar_color', None)
         avatar_preset = validated_data.pop('avatar_preset', None)
@@ -309,6 +337,12 @@ class UserSerializer(serializers.ModelSerializer):
         week_start = validated_data.pop('week_start', None)
         chrono_theme = validated_data.pop('chrono_theme', None)
         user_statuses = validated_data.pop('user_statuses', None)
+        # Nullable booleans: "key present" matters, not just the value.
+        ui_prefs = {
+            key: validated_data.pop(key)
+            for key in ('weather_theme', 'weather_unit', 'weather_hidden', 'surface_fx')
+            if key in validated_data
+        }
 
         if 'username' in validated_data or 'email' in validated_data:
             if 'username' in validated_data:
@@ -345,6 +379,9 @@ class UserSerializer(serializers.ModelSerializer):
             profile_updated = True
         if user_statuses is not None:
             profile.user_statuses = user_statuses
+            profile_updated = True
+        for key, value in ui_prefs.items():
+            setattr(profile, key, value)
             profile_updated = True
         if profile_updated:
             profile.save()

@@ -759,8 +759,15 @@ canvas {
   0%, 100% { opacity: 0.2; }
   50% { opacity: 1; }
 }
+.wx-led {
+  animation: wx-led 2.4s ease-in-out infinite;
+}
+@keyframes wx-led {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .wx-spin, .wx-drift, .wx-rain, .wx-drizzle, .wx-snow, .wx-fog, .wx-bolt, .wx-twinkle {
+  .wx-spin, .wx-drift, .wx-rain, .wx-drizzle, .wx-snow, .wx-fog, .wx-bolt, .wx-twinkle, .wx-led {
     animation: none;
   }
 }

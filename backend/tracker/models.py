@@ -45,6 +45,14 @@ class UserProfile(models.Model):
     chrono_theme = models.CharField(max_length=64, blank=True, default='')
     # Up to 5 status ids (e.g. ['student_cs', 'startup_founder']), ordered as picked.
     user_statuses = models.JSONField(default=list, blank=True)
+    # Chronometer weather widget, synced like the Surface Theme. Blank theme
+    # = never synced from any device yet; blank unit = pick from time zone.
+    # (Precise location coordinates are deliberately NOT stored here.)
+    weather_theme = models.CharField(max_length=32, blank=True, default='')
+    weather_unit = models.CharField(max_length=1, blank=True, default='')
+    # null = never chosen on any device (first sync adopts the device's value).
+    weather_hidden = models.BooleanField(null=True, blank=True, default=None)
+    surface_fx = models.BooleanField(null=True, blank=True, default=None)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

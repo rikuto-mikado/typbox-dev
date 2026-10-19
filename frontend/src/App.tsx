@@ -120,7 +120,7 @@ import {
 } from './chronometerThemes';
 import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
 import { SurfaceFxLayer } from './SurfaceFx';
-import { WeatherBadge, WeatherPanel, useWeather } from './Weather';
+import { WeatherBadge, WeatherPanel, useWeather, type SyncedWeatherPrefs } from './Weather';
 
 // ==========================================
 // Types & Interfaces
@@ -164,8 +164,14 @@ export interface AuthUser {
   week_start?: string;
   chrono_theme?: string;
   user_statuses?: string[];
-  is_public?: boolean;
+  weather_theme?: string;
+  weather_unit?: string;
+  weather_hidden?: boolean | null;
+  surface_fx?: boolean | null;
 }
+
+/** Account-synced UI prefs that go through the debounced PATCH queue. */
+type UiPrefsPatch = SyncedWeatherPrefs & { surface_fx?: boolean };
 
 type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
@@ -562,7 +568,7 @@ const compressAvatarFile = (file: File, t: Dict): Promise<string> => {
   });
 };
 
-export const AvatarBadge = ({
+const AvatarBadge = ({
   username,
   color = '#10b981',
   preset = 'initial',
@@ -681,7 +687,37 @@ export default function App() {
   const [chronoThemeId, setChronoThemeId] = useState<string>(getInitialChronoTheme);
   const [showChronoPicker, setShowChronoPicker] = useState<boolean>(false);
   const [showWeatherPanel, setShowWeatherPanel] = useState<boolean>(false);
-  const weather = useWeather(timeZone);
+  // Debounced account sync for small UI prefs (weather widget, motion FX):
+  // clicking through options sends one PATCH. Pending local changes always
+  // win over a server value pulled in the meantime (see applyServerSurfaceTheme).
+  const pendingUiPrefsRef = React.useRef<UiPrefsPatch>({});
+  const uiPrefsTimerRef = React.useRef<number | null>(null);
+
+  const flushUiPrefsSave = useCallback((keepalive = false) => {
+    if (uiPrefsTimerRef.current !== null) {
+      window.clearTimeout(uiPrefsTimerRef.current);
+      uiPrefsTimerRef.current = null;
+    }
+    const body = pendingUiPrefsRef.current;
+    if (Object.keys(body).length === 0) return;
+    pendingUiPrefsRef.current = {};
+    apiFetch('/auth/me/', { method: 'PATCH', body: JSON.stringify(body), keepalive }).catch((err: unknown) => {
+      console.warn('TYPBOX: failed to sync UI preferences to account', err);
+    });
+  }, []);
+
+  const queueUiPrefsSave = useCallback(
+    (patch: UiPrefsPatch) => {
+      if (!getAccessToken()) return; // signed out: device-local only
+      pendingUiPrefsRef.current = { ...pendingUiPrefsRef.current, ...patch };
+      if (uiPrefsTimerRef.current !== null) window.clearTimeout(uiPrefsTimerRef.current);
+      uiPrefsTimerRef.current = window.setTimeout(() => flushUiPrefsSave(), 600);
+    },
+    [flushUiPrefsSave]
+  );
+
+  const weather = useWeather(timeZone, queueUiPrefsSave);
+  const applyServerWeatherPrefs = weather.applyServerPrefs;
 
   useEffect(() => {
     localStorage.setItem(CHRONO_THEME_STORAGE_KEY, chronoThemeId);
@@ -890,8 +926,6 @@ export default function App() {
   const [profileSaving, setProfileSaving] = useState<boolean>(false);
   const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [regionStatus, setRegionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [publicSaving, setPublicSaving] = useState<boolean>(false);
-  const [publicStatus, setPublicStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
@@ -944,7 +978,6 @@ export default function App() {
       setStatusQuery('');
       setProfileStatus(null);
       setRegionStatus(null);
-      setPublicStatus(null);
       setPasswordStatus(null);
       setDataStatus(null);
       setCurrentPassword('');
@@ -1243,6 +1276,26 @@ export default function App() {
     }
     if (isWeekStart(me.week_start)) setWeekStart(me.week_start);
 
+    // Weather widget + motion FX: same rules — account wins, unless this
+    // device has an unsent change, or the account has never stored a value
+    // (then this device's value is pushed up instead of being reset).
+    const pendingUi = pendingUiPrefsRef.current;
+    const firstUiSync: UiPrefsPatch = {};
+    if (!('weather_theme' in pendingUi || 'weather_unit' in pendingUi || 'weather_hidden' in pendingUi)) {
+      const push = applyServerWeatherPrefs(me);
+      if (push) Object.assign(firstUiSync, push);
+    }
+    if (!('surface_fx' in pendingUi) && me.surface_fx !== undefined) {
+      if (me.surface_fx === null) {
+        firstUiSync.surface_fx = localStorage.getItem(SURFACE_FX_STORAGE_KEY) !== 'off';
+      } else {
+        setSurfaceFxEnabled(me.surface_fx);
+      }
+    }
+    if (Object.keys(firstUiSync).length > 0) {
+      api.auth.updateProfile(firstUiSync).catch(() => {});
+    }
+
     if (pendingChronoThemeRef.current === null) {
       if (me.chrono_theme) {
         setChronoThemeId(getChronoThemeById(me.chrono_theme).id);
@@ -1265,7 +1318,7 @@ export default function App() {
     if (local) {
       api.auth.updateProfile({ surface_theme: local }).catch(() => {});
     }
-  }, []);
+  }, [applyServerWeatherPrefs]);
 
   const flushSurfaceThemeSave = useCallback((keepalive = false) => {
     if (surfaceThemeSaveTimerRef.current !== null) {
@@ -1348,6 +1401,7 @@ export default function App() {
       if (document.visibilityState === 'hidden') {
         flushSurfaceThemeSave(true);
         flushChronoThemeSave(true);
+        flushUiPrefsSave(true);
         return;
       }
       if (Date.now() - lastSurfaceThemePullRef.current < 30_000) return;
@@ -1359,6 +1413,7 @@ export default function App() {
     const handlePageHide = () => {
       flushSurfaceThemeSave(true);
       flushChronoThemeSave(true);
+      flushUiPrefsSave(true);
     };
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('pagehide', handlePageHide);
@@ -1366,7 +1421,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [user, applyServerSurfaceTheme, flushSurfaceThemeSave, flushChronoThemeSave]);
+  }, [user, applyServerSurfaceTheme, flushSurfaceThemeSave, flushChronoThemeSave, flushUiPrefsSave]);
 
   // Initial Auth Check and Splash Loader on site access
   useEffect(() => {
@@ -1528,36 +1583,6 @@ export default function App() {
     }
   };
 
-  // Public profile is opt-in and applies instantly (no SAVE PROFILE needed).
-  const handleTogglePublicProfile = async () => {
-    if (!user) return;
-    setPublicSaving(true);
-    setPublicStatus(null);
-    try {
-      const updated = await api.auth.updateProfile({ is_public: !user.is_public });
-      setUser(updated);
-      setPublicStatus({ type: 'success', text: updated.is_public ? t.publicNowOn : t.publicNowOff });
-    } catch (err: unknown) {
-      const error = err as Error;
-      setPublicStatus({ type: 'error', text: error.message || t.errPublicToggle });
-    } finally {
-      setPublicSaving(false);
-    }
-  };
-
-  const publicProfileUrl = user
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/u/${encodeURIComponent(user.username)}`
-    : '';
-
-  const handleCopyPublicUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(publicProfileUrl);
-      setPublicStatus({ type: 'success', text: t.publicCopied });
-    } catch {
-      setPublicStatus({ type: 'error', text: publicProfileUrl });
-    }
-  };
-
   // ~400 IANA zones; only built while the profile tab is actually open.
   const timeZoneOptions = useMemo(() => {
     if (!showSettingsModal || settingsTab !== 'profile') return [];
@@ -1705,6 +1730,7 @@ export default function App() {
     // Send any debounced theme change while the access token still exists.
     flushSurfaceThemeSave(true);
     flushChronoThemeSave(true);
+    flushUiPrefsSave(true);
     api.auth.logout();
     setUser(null);
     setCategories([]);
@@ -3358,18 +3384,22 @@ export default function App() {
           <div className="contents lg:block lg:col-span-5 lg:space-y-8">
             {/* SYSTEM CHRONOMETER (DIGITAL CLOCK PANEL) */}
             <div className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
+              {/* Wraps instead of overflowing on narrow phones: weather badges
+                  can be wide (e.g. the CYBER HUD theme), so the right-hand
+                  controls drop to a second line when they don't fit. From sm
+                  up it stays one line and the SYNC label truncates instead. */}
               <div
-                className={`flex items-center justify-between pb-3 mb-3.5 border-b ${
+                className={`flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-3 gap-y-2 pb-3 mb-3.5 border-b ${
                   isDark ? 'border-zinc-800/60' : 'border-zinc-200'
                 } font-mono text-[10px] tracking-widest uppercase`}
               >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <span
-                    className={`w-2 h-2 rounded-full ${
+                    className={`w-2 h-2 rounded-full shrink-0 ${
                       isRunning ? 'bg-amber-400 animate-ping' : 'bg-emerald-500 animate-pulse'
                     }`}
                   />
-                  <span className="font-semibold">{t.chronometer}</span>
+                  <span className="font-semibold whitespace-nowrap">{t.chronometer}</span>
                   <WeatherBadge
                     wx={weather}
                     open={showWeatherPanel}
@@ -3380,13 +3410,14 @@ export default function App() {
                     textMuted={textMuted}
                   />
                 </div>
-                <div className="flex items-center space-x-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 ml-auto">
                   {isRunning ? (
-                    <span className="px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold">
+                    <span className="px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold whitespace-nowrap">
                       {t.recActive}
                     </span>
                   ) : (
-                    <span className={`${textMuted} truncate`}>SYNC // {clockReadout.tzLabel}</span>
+                    // The date block below already shows the zone, so phones skip this.
+                    <span className={`${textMuted} truncate hidden sm:inline`}>SYNC // {clockReadout.tzLabel}</span>
                   )}
                   <button
                     type="button"
@@ -5752,7 +5783,11 @@ export default function App() {
                   borderCol={borderCol}
                   textMuted={textMuted}
                   fxEnabled={surfaceFxEnabled}
-                  onToggleFx={() => setSurfaceFxEnabled((prev) => !prev)}
+                  onToggleFx={() => {
+                    const next = !surfaceFxEnabled;
+                    setSurfaceFxEnabled(next);
+                    queueUiPrefsSave({ surface_fx: next });
+                  }}
                 />
               )}
 
@@ -5881,66 +5916,6 @@ export default function App() {
                   </div>
 
                   <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.timezoneHint}</p>
-                </div>
-
-                {/* Public Profile (/u/<username>): opt-in, applied instantly */}
-                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
-                      <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{t.publicTitle}</span>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={Boolean(user.is_public)}
-                      disabled={publicSaving}
-                      onClick={handleTogglePublicProfile}
-                      className={`min-h-[30px] px-3 py-1 border text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-50 ${
-                        user.is_public
-                          ? 'bg-emerald-500 border-emerald-500 text-zinc-950'
-                          : `${borderCol} ${textMuted} hover:text-emerald-400`
-                      }`}
-                    >
-                      {user.is_public ? t.publicOn : t.publicOff}
-                    </button>
-                  </div>
-
-                  {publicStatus && (
-                    <div
-                      className={`p-2 border text-[11px] ${
-                        publicStatus.type === 'success'
-                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                          : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                      }`}
-                    >
-                      {publicStatus.text}
-                    </div>
-                  )}
-
-                  <div className={`flex flex-wrap items-center gap-2 ${user.is_public ? '' : 'opacity-50'}`}>
-                    <code className={`flex-1 min-w-0 truncate px-2.5 py-1.5 border ${borderCol} text-[11px]`}>{publicProfileUrl}</code>
-                    <button
-                      type="button"
-                      onClick={handleCopyPublicUrl}
-                      disabled={!user.is_public}
-                      className={`px-2.5 py-1.5 border ${borderCol} text-[10px] cursor-pointer hover:text-emerald-400 disabled:cursor-not-allowed`}
-                    >
-                      {t.publicCopy}
-                    </button>
-                    {user.is_public && (
-                      <a
-                        href={publicProfileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={`px-2.5 py-1.5 border ${borderCol} text-[10px] hover:text-emerald-400`}
-                      >
-                        {t.publicOpen}
-                      </a>
-                    )}
-                  </div>
-
-                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.publicHint}</p>
                 </div>
 
                 <form onSubmit={handleSaveProfile} className="space-y-5">
