@@ -583,8 +583,9 @@ class HubTelemetryView(APIView):
 class PortfolioFeedView(generics.ListAPIView):
     """
     GET /api/portfolio/feed/
-    Public read-only feed pulled by rikutomikado.tech. Returns logs with
-    is_public_to_portfolio=True (the default; opt out from Django Admin).
+    Public read-only feed pulled by rikutomikado.tech. Returns
+    settings.PORTFOLIO_USERNAME's logs from the last PORTFOLIO_FEED_DAYS days
+    with is_public_to_portfolio=True (the default; opt out from Django Admin).
     """
     serializer_class = PortfolioFeedLogSerializer
     permission_classes = (permissions.AllowAny,)
@@ -592,4 +593,10 @@ class PortfolioFeedView(generics.ListAPIView):
     authentication_classes = ()
 
     def get_queryset(self):
-        return StudyLog.objects.filter(is_public_to_portfolio=True).select_related('category')
+        user = User.objects.filter(username=settings.PORTFOLIO_USERNAME).first()
+        if not user:
+            return StudyLog.objects.none()
+        since = user_localdate(user) - timedelta(days=settings.PORTFOLIO_FEED_DAYS - 1)
+        return StudyLog.objects.filter(
+            user=user, is_public_to_portfolio=True, date__gte=since,
+        ).select_related('category')

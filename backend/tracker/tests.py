@@ -1,7 +1,9 @@
-from datetime import date, datetime, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import Category, StudyLog, UserProfile, monthly_to_weekly_hours
@@ -527,10 +529,12 @@ class FontAndAmbientPrefsSyncTests(APITestCase):
             self.assertEqual(res.status_code, 400, payload)
 
 
+@override_settings(PORTFOLIO_USERNAME='operator', PORTFOLIO_FEED_DAYS=30)
 class PortfolioFeedTests(APITestCase):
     """
     GET /api/portfolio/feed/ is a public, read-only feed for rikutomikado.tech
-    excluding logs opted out via is_public_to_portfolio.
+    limited to PORTFOLIO_USERNAME's last 30 days, excluding logs opted out via
+    is_public_to_portfolio.
     """
 
     def setUp(self):
@@ -572,3 +576,30 @@ class PortfolioFeedTests(APITestCase):
         self.assertTrue(self.private_log.is_public_to_hub)
         res = self.client.get('/api/portfolio/feed/')
         self.assertNotIn(self.private_log.id, [log['id'] for log in res.data])
+
+    def test_feed_excludes_other_users_logs(self):
+        other = User.objects.create_user(username='someone', email='someone@example.com', password='s3cure-pass-123')
+        other_cat = Category.objects.create(user=other, name='Other', code='OTHR', color='#000000')
+        other_log = StudyLog.objects.create(user=other, category=other_cat, duration_minutes=60, topic='not mine')
+        res = self.client.get('/api/portfolio/feed/')
+        self.assertNotIn(other_log.id, [log['id'] for log in res.data])
+
+    def test_feed_covers_only_last_30_days(self):
+        today = timezone.localdate()
+        edge_log = StudyLog.objects.create(
+            user=self.user, category=self.category, duration_minutes=45,
+            topic='29 days ago', date=today - timedelta(days=29),
+        )
+        old_log = StudyLog.objects.create(
+            user=self.user, category=self.category, duration_minutes=45,
+            topic='30 days ago', date=today - timedelta(days=30),
+        )
+        ids = [log['id'] for log in self.client.get('/api/portfolio/feed/').data]
+        self.assertIn(edge_log.id, ids)
+        self.assertNotIn(old_log.id, ids)
+
+    @override_settings(PORTFOLIO_USERNAME='missing-user')
+    def test_feed_is_empty_when_portfolio_user_missing(self):
+        res = self.client.get('/api/portfolio/feed/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data, [])

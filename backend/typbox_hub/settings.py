@@ -272,6 +272,11 @@ FRONTEND_URL = os.getenv(
     'http://localhost:5173' if DEBUG else 'https://typbox.me'
 ).rstrip('/')
 
+# Only this user's logs appear in /api/portfolio/feed/ (rikutomikado.tech).
+PORTFOLIO_USERNAME = os.getenv('PORTFOLIO_USERNAME', 'rikuto_dev').strip()
+# The feed covers the last N days including today, in that user's timezone.
+PORTFOLIO_FEED_DAYS = int(os.getenv('PORTFOLIO_FEED_DAYS', '30'))
+
 # Password reset token validity in seconds (default: 1 hour)
 PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
 
