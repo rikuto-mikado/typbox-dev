@@ -26,6 +26,9 @@ import { useI18n, tf } from './i18n';
 import { drawStatusCard, STATUS_CARD_LAYOUTS, type StatusCardLayout } from './statusCard';
 import { isNeoPattern, neoPatternLayer, type NeoPattern } from './surfacePatterns';
 import { NEO_PRESTIGE_THEME_PAIRS, NEO_SURFACE_THEME_PAIRS } from './surfaceNeo';
+import { SCENE_SURFACE_THEME_PAIRS } from './surfaceScenes';
+import type { SceneSpec } from './surfaceSceneArt';
+import { getExploreMapNameById } from './exploreMaps';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -3239,22 +3242,32 @@ export interface SurfaceThemePair {
   // Ascension count instead — a reward track that only grows for players
   // who keep cycling past LV.3000, independent of in-cycle rank.
   requiredAscensions?: number;
-  /** 'neo' = NEO SIGNAL wave (surfaceThemesNeo.json); absent = original archive. */
-  series?: 'neo';
+  // EXPLORE MAP reward themes ignore clearanceHintLv/requiredAscensions
+  // entirely and gate on a specific map being fully cleared instead — see
+  // isThemeUnlocked. Holds a map id from exploreMaps.ts.
+  requiredMapClear?: string;
+  /** Illustrated day/night scene (EXPLORE MAP rewards only); rendered by SceneLayer.tsx via surfaceSceneArt.tsx. */
+  scene?: SceneSpec;
+  /** 'neo' = NEO SIGNAL wave (surfaceThemesNeo.json); 'scene' = EXPLORE MAP reward; absent = original archive. */
+  series?: 'neo' | 'scene';
   fx?: SurfaceFx;
 }
 
-// Centralized unlock check for a Surface Theme: prestige-exclusive themes
-// gate on lifetime Ascension count, everything else gates on
+// Centralized unlock check for a Surface Theme: EXPLORE MAP reward themes
+// gate on a specific map being cleared, prestige-exclusive themes gate on
+// lifetime Ascension count, everything else gates on
 // UserClearanceStatus.rewardUnlockLevel (which stays maxed forever once the
 // first Ascension is claimed, since completing a cycle requires passing
 // every normal reward threshold at least once).
 // eslint-disable-next-line react-refresh/only-export-components
 export function isThemeUnlocked(
   pair: SurfaceThemePair,
-  status: { rewardUnlockLevel: number; totalAscensions: number }
+  status: { rewardUnlockLevel: number; totalAscensions: number; clearedMapIds?: Set<string> }
 ): boolean {
   if (IS_DEMO_MODE) return true;
+  if (pair.requiredMapClear) {
+    return Boolean(status.clearedMapIds?.has(pair.requiredMapClear));
+  }
   if (pair.requiredAscensions && pair.requiredAscensions > 0) {
     return status.totalAscensions >= pair.requiredAscensions;
   }
@@ -5430,6 +5443,10 @@ export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   ...rebalanceThemeClearanceLevels(RAW_SURFACE_THEME_PAIRS),
   ...PRESTIGE_THEME_PAIRS,
   ...NEO_PRESTIGE_THEME_PAIRS,
+  // EXPLORE MAP reward themes — gated by requiredMapClear, not
+  // clearanceHintLv, so (like the prestige themes above) they bypass
+  // rebalanceThemeClearanceLevels() entirely.
+  ...SCENE_SURFACE_THEME_PAIRS,
 ];
 
 // Fast lookup of theme reward by Clearance Level
@@ -5670,6 +5687,8 @@ interface SurfaceThemeSelectorPanelProps {
   userClearanceLevel: number;
   userTotalAscensions: number;
   userTotalHours: number;
+  /** EXPLORE MAP ids the user has fully cleared — gates 'scene' series themes. */
+  clearedMapIds: Set<string>;
   borderCol: string;
   textMuted: string;
   /** Motion FX layer for NEO themes (device-local preference). */
@@ -5677,7 +5696,7 @@ interface SurfaceThemeSelectorPanelProps {
   onToggleFx: () => void;
 }
 
-type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx';
+type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx' | 'scene';
 
 export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps> = ({
   activeThemeId,
@@ -5687,6 +5706,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   userClearanceLevel,
   userTotalAscensions,
   userTotalHours,
+  clearedMapIds,
   borderCol,
   textMuted,
   fxEnabled,
@@ -5703,8 +5723,12 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
 
   const checkUnlocked = useCallback(
     (item: SurfaceThemePair) =>
-      isThemeUnlocked(item, { rewardUnlockLevel: userClearanceLevel, totalAscensions: userTotalAscensions }),
-    [userClearanceLevel, userTotalAscensions]
+      isThemeUnlocked(item, {
+        rewardUnlockLevel: userClearanceLevel,
+        totalAscensions: userTotalAscensions,
+        clearedMapIds,
+      }),
+    [userClearanceLevel, userTotalAscensions, clearedMapIds]
   );
 
   const unlockedCount = useMemo(
@@ -5719,9 +5743,10 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       if (unlockFilter === 'unlocked' && !isUnlocked) return false;
       if (unlockFilter === 'locked' && isUnlocked) return false;
       if (selectedDiv !== 'ALL' && item.divisionCode !== selectedDiv) return false;
-      if (seriesFilter === 'archive' && item.series === 'neo') return false;
+      if (seriesFilter === 'archive' && (item.series === 'neo' || item.series === 'scene')) return false;
       if (seriesFilter === 'neo' && item.series !== 'neo') return false;
       if (seriesFilter === 'fx' && !item.fx) return false;
+      if (seriesFilter === 'scene' && item.series !== 'scene') return false;
       if (q) {
         return (
           item.name.toLowerCase().includes(q) ||
@@ -5740,9 +5765,10 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   const seriesCounts = useMemo(
     () => ({
       all: SURFACE_THEME_PAIRS.length,
-      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo').length,
+      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo' && p.series !== 'scene').length,
       neo: SURFACE_THEME_PAIRS.filter((p) => p.series === 'neo').length,
       fx: SURFACE_THEME_PAIRS.filter((p) => p.fx).length,
+      scene: SURFACE_THEME_PAIRS.filter((p) => p.series === 'scene').length,
     }),
     []
   );
@@ -5944,6 +5970,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               ['archive', t.seriesArchive],
               ['neo', t.seriesNeo],
               ['fx', t.seriesFx],
+              ['scene', t.seriesScene],
             ] as const
           ).map(([key, label], idx) => (
             <button
@@ -5962,7 +5989,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         {/* Division Filter Strip — horizontally scrollable on mobile so 11
             buttons never spend multiple lines of the limited viewport height. */}
         <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
-          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE'].map(
+          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE', 'EXPLORE'].map(
             (divCode) => (
               <button
                 key={divCode}
@@ -5986,6 +6013,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         {filteredThemes.map((item) => {
           const isSelected = item.id === activeThemeId;
           const isUnlocked = checkUnlocked(item);
+          const isMapExclusive = Boolean(item.requiredMapClear);
           const isPrestigeExclusive = Boolean(item.requiredAscensions && item.requiredAscensions > 0);
           const reqHours = getReqHoursForLevel(item.clearanceHintLv);
           const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
@@ -5998,6 +6026,14 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 if (isUnlocked) {
                   setLockedNotice(null);
                   onSelectThemeId(item.id);
+                } else if (isMapExclusive) {
+                  setLockedNotice(
+                    tf(t.themeMapClearNotice, {
+                      code: item.code,
+                      name: item.name,
+                      mapName: getExploreMapNameById(item.requiredMapClear ?? ''),
+                    })
+                  );
                 } else if (isPrestigeExclusive) {
                   setLockedNotice(
                     tf(t.themePrestigeNotice, {
@@ -6046,6 +6082,14 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                     <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
                       {t.filterUnlocked}
                     </span>
+                  ) : isMapExclusive ? (
+                    <span
+                      className={`text-[9px] px-1.5 py-0.2 border border-cyan-400/60 text-cyan-300 flex items-center space-x-1 shrink-0`}
+                      title={tf(t.requiresMapClear, { name: getExploreMapNameById(item.requiredMapClear ?? '') })}
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                      <span className="truncate max-w-28">{tf(t.requiresMapClear, { name: getExploreMapNameById(item.requiredMapClear ?? '') })}</span>
+                    </span>
                   ) : isPrestigeExclusive ? (
                     <span
                       className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
@@ -6072,6 +6116,9 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   <span className="flex items-center gap-1 shrink-0 ml-1">
                     {item.series === 'neo' && (
                       <span className="uppercase px-1 border border-cyan-500/40 text-cyan-400">NEO</span>
+                    )}
+                    {item.series === 'scene' && (
+                      <span className="uppercase px-1 border border-cyan-500/40 text-cyan-400">{t.seriesScene}</span>
                     )}
                     {item.fx && (
                       <span className="uppercase px-1 border border-fuchsia-500/40 text-fuchsia-400" title={t.surfaceFxHint}>

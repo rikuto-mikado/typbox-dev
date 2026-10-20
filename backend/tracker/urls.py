@@ -6,12 +6,15 @@ from .views import (
     CategoryViewSet,
     ChangePasswordView,
     CurrentUserView,
+    ExploreMapListView,
     HubTelemetryView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
     RegisterView,
     StudyLogViewSet,
     ThrottledTokenObtainPairView,
+    UnlockMapCellView,
+    WalletView,
 )
 
 router = DefaultRouter()
@@ -30,6 +33,11 @@ urlpatterns = [
 
     # Portfolio / Hub Aggregator Telemetry
     path('hub/telemetry/', HubTelemetryView.as_view(), name='hub_telemetry'),
+
+    # DATA CREDITS wallet & EXPLORE MAP
+    path('wallet/', WalletView.as_view(), name='wallet'),
+    path('explore-maps/', ExploreMapListView.as_view(), name='explore_maps_list'),
+    path('explore-maps/<str:map_id>/unlock-cell/', UnlockMapCellView.as_view(), name='explore_map_unlock_cell'),
 
     # CRUD Router for categories and logs
     path('', include(router.urls)),

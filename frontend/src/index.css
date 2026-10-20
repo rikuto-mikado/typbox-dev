@@ -538,6 +538,82 @@ canvas {
   }
 }
 
+/* ==========================================
+   EXPLORE MAP reward scene illustration (SceneLayer.tsx)
+   Same fixed/behind-everything composition as .surface-fx above, but
+   horizon-anchored and height-capped so it reads as distant scenery under
+   the normal gradient background rather than a full wallpaper.
+========================================== */
+.scene-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-layer-art {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42vh;
+  min-height: 220px;
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 28%);
+  mask-image: linear-gradient(to bottom, transparent, black 28%);
+  transition: opacity 0.4s ease;
+}
+
+/* ==========================================
+   EXPLORE MAP fog-of-war tiles (ExploreMap.tsx)
+   Unlocked cells render no fog div at all (the scratch-off effect is a
+   literal conditional unmount, not an image crop) — these classes only
+   style the remaining locked tiles.
+========================================== */
+.fog-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--tb-bg-card);
+  border: 1px solid var(--tb-border);
+  opacity: 0.94;
+  cursor: default;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+  color: var(--tb-text-muted);
+}
+
+.fog-cell-frontier {
+  cursor: pointer;
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
+}
+
+.fog-cell-frontier:hover {
+  opacity: 0.75;
+  border-color: rgba(16, 185, 129, 0.9);
+}
+
+.fog-cell-frontier-poor {
+  cursor: not-allowed;
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.fog-cell-deep {
+  cursor: not-allowed;
+}
+
+@keyframes cell-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .surface-fx-p {
   position: absolute;
   display: block;

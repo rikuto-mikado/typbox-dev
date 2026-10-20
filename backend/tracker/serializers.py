@@ -221,6 +221,12 @@ class UserSerializer(serializers.ModelSerializer):
         data['weather_unit'] = profile.weather_unit
         data['weather_hidden'] = profile.weather_hidden
         data['surface_fx'] = profile.surface_fx
+        # Read-only: granted server-side only when an EXPLORE MAP is fully
+        # cleared (see UnlockMapCellView). Deliberately not a writable field
+        # (no entry in Meta.fields, no validate_ method) — unlike the other
+        # synced prefs above, this has an attached economy and must never be
+        # client-settable.
+        data['unlocked_map_theme_ids'] = list(profile.unlocked_map_theme_ids or [])
         return data
 
     def validate_username(self, value):

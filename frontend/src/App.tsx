@@ -46,8 +46,10 @@ import {
   Palette,
   Briefcase,
 } from 'lucide-react';
-import { api, apiFetch, getAccessToken } from './api';
+import { api, apiFetch, getAccessToken, type ExploreMapProgressResponse } from './api';
 import { TypboxLogo } from './TypboxLogo';
+import { ExploreMap } from './ExploreMap';
+import { SceneLayer } from './SceneLayer';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
 import {
@@ -830,6 +832,19 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // DATA CREDITS wallet + EXPLORE MAP progress (server-authoritative; see api.wallet / api.exploreMaps).
+  // creditsForMinutes mirrors economy.award_credits_for_log's floor-division
+  // rule purely so a freshly logged session bumps the on-screen balance
+  // immediately, without waiting for a full reload — the server-computed
+  // balance from the next loadUserData() always wins over this estimate.
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [mapProgress, setMapProgress] = useState<ExploreMapProgressResponse[]>([]);
+  const creditsForMinutes = useCallback((minutes: number) => Math.floor((minutes * 1000) / 60), []);
+  const clearedMapIds = useMemo(
+    () => new Set(mapProgress.filter((p) => p.is_cleared).map((p) => p.map_id)),
+    [mapProgress]
+  );
+
   // Timeline Navigation State for Analytics Module
   const [weeklyOffset, setWeeklyOffset] = useState<number>(0); // weeks ago (0 = current week)
   const [monthlyOffset, setMonthlyOffset] = useState<number>(0); // months ago (0 = current month)
@@ -1192,9 +1207,11 @@ export default function App() {
     setDataLoading(true);
     setApiError(null);
     try {
-      const [fetchedCats, fetchedLogs] = await Promise.all([
+      const [fetchedCats, fetchedLogs, fetchedWallet, fetchedMapProgress] = await Promise.all([
         api.categories.list(),
         api.logs.list(),
+        api.wallet.get(),
+        api.exploreMaps.list(),
       ]);
 
       const formattedCats: Category[] = fetchedCats.map((c) => ({
@@ -1226,6 +1243,8 @@ export default function App() {
 
       setCategories(formattedCats);
       setLogs(formattedLogs);
+      setWalletBalance(fetchedWallet.balance);
+      setMapProgress(fetchedMapProgress);
       if (formattedCats.length > 0 && !selectedCatId) {
         setSelectedCatId((formattedCats.find((c) => c.isActive) ?? formattedCats[0]).id);
       }
@@ -1236,6 +1255,41 @@ export default function App() {
       setDataLoading(false);
     }
   }, [selectedCatId]);
+
+  // EXPLORE MAP cell unlock: the server is the sole authority on cost/
+  // adjacency/balance (see UnlockMapCellView); this just applies the
+  // response locally and celebrates a fresh map clear.
+  const handleUnlockCell = useCallback(
+    async (mapId: string, x: number, y: number) => {
+      try {
+        const res = await api.exploreMaps.unlockCell(mapId, x, y);
+        setWalletBalance(res.wallet_balance);
+        setMapProgress((prev) => [
+          ...prev.filter((p) => p.map_id !== mapId),
+          {
+            map_id: res.map_id,
+            grid_size: res.grid_size,
+            unlocked_cells: res.unlocked_cells,
+            unlocked_count: res.unlocked_count,
+            total_cells: res.total_cells,
+            is_cleared: res.is_cleared,
+            cleared_at: res.cleared_at,
+          },
+        ]);
+        if (res.just_cleared) {
+          pushToast(
+            'success',
+            t.exploreMapClearBadge,
+            tf(t.exploreMapClearedToast, { bonus: res.clear_bonus_credits, count: res.granted_theme_ids.length })
+          );
+        }
+      } catch (err: unknown) {
+        const error = err as Error;
+        pushToast('error', error.message || t.exploreMapUnlockFailedAdjacent);
+      }
+    },
+    [pushToast, t]
+  );
 
   // ==========================================
   // Account-Synced Surface Theme
@@ -1809,6 +1863,7 @@ export default function App() {
       };
 
       setLogs((prev) => [newLogItem, ...prev]);
+      setWalletBalance((prev) => prev + creditsForMinutes(Number(finalMinutes)));
       if (inputMode === 'timer') {
         setIsRunning(false);
         setElapsedSeconds(0);
@@ -1856,13 +1911,14 @@ export default function App() {
         };
 
         setLogs((prev) => [newLogItem, ...prev]);
+        setWalletBalance((prev) => prev + creditsForMinutes(Number(minutes)));
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
       } catch (err: unknown) {
         const error = err as Error;
         pushToast('error', t.toastQuickLogFailed, error.message || t.errSaveLog);
       }
     },
-    [user, categories, announceLogCommitted, pushToast, t, timeZone]
+    [user, categories, announceLogCommitted, pushToast, t, timeZone, creditsForMinutes]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -2840,6 +2896,11 @@ export default function App() {
           accentHex={activeSurfacePair.accentHex}
           isDark={isDark}
         />
+      )}
+
+      {/* EXPLORE MAP reward scene illustration (behind everything; see SceneLayer.tsx) */}
+      {activeSurfacePair.scene && (
+        <SceneLayer key={`${activeSurfacePair.id}-scene-${isDark ? 'd' : 'l'}`} scene={activeSurfacePair.scene} isDark={isDark} />
       )}
 
       {/* Ambient Mode: dimmed overlay + drifting sensor dust while the
@@ -4239,6 +4300,29 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* ==========================================
+                EXPLORE MAP — its own standalone panel (not nested inside
+                Insights & Vault), aligned to the same left-column width on
+                desktop; ordered above the Chronological Log Stream (order-8)
+                on mobile.
+            ========================================== */}
+            <div className={`border ${borderCol} ${bgCard} p-6 relative order-7 lg:order-none`}>
+              {!user && (
+                <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
+                  <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                  <p className="font-mono text-xs uppercase tracking-wider font-semibold">{t.exploreMapAuthGate}</p>
+                </div>
+              )}
+              <ExploreMap
+                walletBalance={walletBalance}
+                mapProgress={mapProgress}
+                onUnlockCell={handleUnlockCell}
+                isDark={isDark}
+                borderCol={borderCol}
+                textMuted={textMuted}
+              />
+            </div>
           </div>
 
           {/* RIGHT COLUMN: Analytics & Chronological Stream */}
@@ -5108,7 +5192,7 @@ export default function App() {
             </div>
 
             {/* CHRONOLOGICAL LOG STREAM */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-7 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 order-8 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className="w-4 h-4" />
@@ -5780,6 +5864,7 @@ export default function App() {
                   userClearanceLevel={clearanceStatus.rewardUnlockLevel}
                   userTotalAscensions={clearanceStatus.totalAscensions}
                   userTotalHours={clearanceStatus.totalHours}
+                  clearedMapIds={clearedMapIds}
                   borderCol={borderCol}
                   textMuted={textMuted}
                   fxEnabled={surfaceFxEnabled}

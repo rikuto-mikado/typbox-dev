@@ -156,6 +156,30 @@ export interface AuthUserResponse {
   weather_unit?: string;
   weather_hidden?: boolean | null;
   surface_fx?: boolean | null;
+  /** Read-only: Surface Theme ids granted by EXPLORE MAP clears. */
+  unlocked_map_theme_ids?: string[];
+}
+
+export interface WalletResponse {
+  balance: number;
+  lifetime_earned: number;
+}
+
+export interface ExploreMapProgressResponse {
+  map_id: string;
+  grid_size: number;
+  unlocked_cells: [number, number][];
+  unlocked_count: number;
+  total_cells: number;
+  is_cleared: boolean;
+  cleared_at: string | null;
+}
+
+export interface UnlockCellResponse extends ExploreMapProgressResponse {
+  wallet_balance: number;
+  just_cleared: boolean;
+  clear_bonus_credits: number;
+  granted_theme_ids: string[];
 }
 
 export const api = {
@@ -335,6 +359,22 @@ export const api = {
       return apiFetch<{ imported_logs: number; skipped_logs?: number; created_categories: number }>('/logs/import-backup/', {
         method: 'POST',
         body: JSON.stringify(payload),
+      });
+    },
+  },
+  wallet: {
+    get: async () => {
+      return apiFetch<WalletResponse>('/wallet/');
+    },
+  },
+  exploreMaps: {
+    list: async () => {
+      return apiFetch<ExploreMapProgressResponse[]>('/explore-maps/');
+    },
+    unlockCell: async (mapId: string, x: number, y: number) => {
+      return apiFetch<UnlockCellResponse>(`/explore-maps/${mapId}/unlock-cell/`, {
+        method: 'POST',
+        body: JSON.stringify({ x, y }),
       });
     },
   },

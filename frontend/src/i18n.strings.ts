@@ -542,6 +542,27 @@ export const EN = {
   window12m: "12M HORIZON (1 BAR = 1 MONTH):",
   window12w: "12W HORIZON (1 BAR = 1 WEEK):",
   windowDay: "WINDOW (1 BAR = 1 DAY):",
+
+  // ===== DATA CREDITS & EXPLORE MAP =====
+  seriesScene: "EXPLORE",
+  requiresMapClear: "Clear {name} to unlock",
+  themeMapClearNotice: "[{code} // {name}] is an EXPLORE MAP reward — clear {mapName} to unlock it.",
+  dataCreditsLabel: "DATA CREDITS",
+  exploreMapTitle: "EXPLORE MAP",
+  exploreMapSubtitle: "Spend DATA CREDITS to chart unknown territory and uncover what's hidden beneath the fog.",
+  exploreMapSelectPrompt: "SELECT A MAP",
+  exploreMapClearBadge: "CLEAR",
+  exploreMapProgress: "{unlocked} / {total} TILES",
+  exploreMapBackToSelect: "ALL MAPS",
+  exploreMapCellCost: "COST: {cost} CR",
+  exploreMapInsufficientCredits: "Not enough DATA CREDITS ({have} / {need} CR)",
+  exploreMapUnlockFailedAdjacent: "Select a tile adjacent to unlocked territory.",
+  exploreMapClearedToast: "MAP CLEARED! +{bonus} CR bonus, {count} Surface Theme(s) unlocked.",
+  exploreMapCastleLabel: "KINGDOM",
+  exploreMapLoading: "LOADING MAP...",
+  exploreMapUnlockCell: "UNLOCK TILE",
+  exploreMapAuthGate: "Sign in to start exploring.",
+  exploreMapChangeButton: "CHANGE MAP",
 };
 
 export type Dict = { [K in keyof typeof EN]: string };
@@ -1087,4 +1108,25 @@ export const JA: Dict = {
   window12m: "12ヶ月（1本 = 1ヶ月）：",
   window12w: "12週間（1本 = 1週間）：",
   windowDay: "表示期間（1本 = 1日）：",
+
+  // ===== DATA CREDITS & EXPLORE MAP =====
+  seriesScene: "EXPLORE",
+  requiresMapClear: "{name}をクリアして解放",
+  themeMapClearNotice: "[{code} // {name}] はエクスプローアマップの報酬です — {mapName}をクリアすると解放されます。",
+  dataCreditsLabel: "DATAクレジット",
+  exploreMapTitle: "EXPLORE MAP",
+  exploreMapSubtitle: "DATAクレジットを使って未知の領域を切り拓き、霧の下に隠された景色を暴こう。",
+  exploreMapSelectPrompt: "マップを選択",
+  exploreMapClearBadge: "クリア済み",
+  exploreMapProgress: "{unlocked} / {total} マス",
+  exploreMapBackToSelect: "マップ一覧",
+  exploreMapCellCost: "コスト：{cost} CR",
+  exploreMapInsufficientCredits: "DATAクレジットが不足しています（{have} / {need} CR）",
+  exploreMapUnlockFailedAdjacent: "解放済みのマスに隣接するマスを選んでください。",
+  exploreMapClearedToast: "マップクリア！ +{bonus} CR ボーナス、サーフェステーマ{count}種を解放しました。",
+  exploreMapCastleLabel: "王国",
+  exploreMapLoading: "マップを読み込み中...",
+  exploreMapUnlockCell: "マスを解放",
+  exploreMapAuthGate: "探索を始めるにはサインインしてください。",
+  exploreMapChangeButton: "マップを変更する",
 };

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, StudyLog, UserProfile
+from .models import Category, CreditWallet, MapProgress, StudyLog, UserProfile
 
 
 @admin.register(UserProfile)
@@ -21,4 +21,20 @@ class StudyLogAdmin(admin.ModelAdmin):
     list_filter = ('is_public_to_hub', 'date', 'user', 'category')
     search_fields = ('topic', 'user__username', 'category__name')
     date_hierarchy = 'date'
+
+
+@admin.register(CreditWallet)
+class CreditWalletAdmin(admin.ModelAdmin):
+    list_display = ('user', 'balance', 'lifetime_earned', 'lifetime_spent', 'updated_at')
+    search_fields = ('user__username', 'user__email')
+
+
+@admin.register(MapProgress)
+class MapProgressAdmin(admin.ModelAdmin):
+    list_display = ('user', 'map_id', 'unlocked_count', 'is_cleared', 'cleared_at', 'updated_at')
+    list_filter = ('map_id', 'is_cleared')
+    search_fields = ('user__username', 'map_id')
+
+    def unlocked_count(self, obj):
+        return len(obj.unlocked_cells)
 
