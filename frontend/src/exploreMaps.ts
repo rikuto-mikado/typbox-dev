@@ -44,80 +44,151 @@ interface RegionSpec {
   code: string;
   name: string;
   desc: string;
-  silhouettes: SceneSilhouette[];
+  /** One archetype per region (not a blended pool) — maximizes the visual
+   * gap between adjacent maps in the switcher, per the "too similar" feedback
+   * that drove this restructure from 8 blended regions to 16 single-archetype
+   * ones. */
+  silhouette: SceneSilhouette;
   hueBase: number;
   nameWords: string[];
 }
 
-// 8 regions x 8 maps = 64. Each region cycles through a small pool of
-// silhouette archetypes (surfaceSceneArt.tsx) so every map still looks
-// distinct while staying implementable without 64 bespoke illustrations —
-// the same parameter-table-through-a-shared-builder strategy
-// telemetryFeatures.tsx already uses for its 240 generated theme pairs.
+// 16 regions x 4 maps = 64. Each region is pinned to exactly one of
+// surfaceSceneArt.tsx's archetypes (not a shared pool), so every region reads
+// as a clearly distinct biome/theme (cyberpunk alley vs medieval fortress vs
+// deep sea vs wasteland, etc.) rather than near-duplicate compositions with
+// slightly different hues. This still follows the same
+// parameter-table-through-a-shared-builder strategy telemetryFeatures.tsx
+// uses for its 240 generated theme pairs — only the grouping granularity
+// changed.
 const REGIONS: RegionSpec[] = [
   {
     code: 'NEON-FRONTIER',
     name: 'NEON FRONTIER',
-    desc: 'A pixel-art cyberlight sprawl, rebuilt one city block at a time.',
-    silhouettes: ['pixel-village', 'cityscape'],
-    hueBase: 285,
-    nameWords: ['GRID WARD', 'NEON ALLEY', 'CIRCUIT BLOCK', 'CHROME DISTRICT', 'SIGNAL PLAZA', 'PIXEL QUARTER', 'DATA SPIRE', 'ARCADE ROW'],
+    desc: 'A rain-slick cyberpunk back-alley, strung with flickering neon signage.',
+    silhouette: 'cyberpunk-alley',
+    hueBase: 280,
+    nameWords: ['GRID WARD', 'NEON ALLEY', 'CIRCUIT BLOCK', 'CHROME DISTRICT'],
   },
   {
     code: 'MEDIEVAL-REACHES',
     name: 'MEDIEVAL REACHES',
-    desc: 'Stone keeps and timber villages, hidden beneath centuries of fog.',
-    silhouettes: ['medieval-castle', 'pixel-village'],
-    hueBase: 28,
-    nameWords: ['KEEP', 'BARROW', 'HOLLOW', 'WARDEN’S REST', 'RAMPART', 'HEARTH VALE', 'STONEGATE', 'OLD MARCH'],
+    desc: 'A stone keep and its flanking towers, hidden beneath centuries of fog.',
+    silhouette: 'medieval-castle',
+    hueBase: 30,
+    nameWords: ['KEEP', 'BARROW', 'HOLLOW', 'RAMPART'],
   },
   {
-    code: 'SUNRISE-COAST',
-    name: 'SUNRISE COAST',
-    desc: 'Harbor towns waking up to the first light over calm water.',
-    silhouettes: ['seaside-pier', 'harbor-cranes', 'lighthouse-coast'],
-    hueBase: 24,
-    nameWords: ['TIDE PIER', 'AMBER HARBOR', 'DAYBREAK COVE', 'GULL POINT', 'SALT ROW', 'LANTERN QUAY', 'DOCKSIDE', 'FAR SHORE'],
+    code: 'FROSTLINE-SUMMIT',
+    name: 'FROSTLINE SUMMIT',
+    desc: 'Wind-scoured snow peaks where the drifts never fully melt.',
+    silhouette: 'snowy-peaks',
+    hueBase: 200,
+    nameWords: ['HIGH PASS', 'GLACIER STEP', 'ICEFIELD', 'PEAK’S EDGE'],
   },
   {
-    code: 'DEEP-FOREST',
-    name: 'DEEP FOREST',
-    desc: 'Quiet treelines and still water, charted step by careful step.',
-    silhouettes: ['forest-treeline', 'lake-reflection'],
-    hueBase: 142,
-    nameWords: ['MOSSHOLLOW', 'STILLWATER', 'FERN REACH', 'GLASS LAKE', 'DEEP CANOPY', 'QUIET GROVE', 'SILVERWOOD', 'ECHO GLEN'],
-  },
-  {
-    code: 'DESERT-EXPANSE',
-    name: 'DESERT EXPANSE',
-    desc: 'Dunes and buried monuments, half-swallowed by drifting sand.',
-    silhouettes: ['desert-dunes-pyramid'],
-    hueBase: 38,
-    nameWords: ['DUNE CROSS', 'SUN-BAKED FLAT', 'GOLDEN WASTE', 'MIRAGE RIDGE', 'BURIED SPIRE', 'ASH PLAIN', 'FAR DUNES', 'SANDFALL'],
-  },
-  {
-    code: 'ALPINE-PEAKS',
-    name: 'ALPINE PEAKS',
-    desc: 'Switchback trails toward summits that vanish into cloud.',
-    silhouettes: ['mountain-range', 'snowy-peaks'],
-    hueBase: 205,
-    nameWords: ['HIGH PASS', 'FROSTLINE', 'SUMMIT WARD', 'GLACIER STEP', 'CLOUD RIDGE', 'STONE CREST', 'ICEFIELD', 'PEAK’S EDGE'],
-  },
-  {
-    code: 'ANCIENT-TEMPLES',
-    name: 'ANCIENT TEMPLES',
-    desc: 'Terraced shrines and forgotten pagodas, step by overgrown step.',
-    silhouettes: ['temple-pagoda', 'terraced-farmland'],
-    hueBase: 352,
-    nameWords: ['SHRINE TERRACE', 'LANTERN STEPS', 'SACRED PADDY', 'JADE COURT', 'OLD PAGODA', 'MONASTERY ROW', 'INCENSE GATE', 'STONE SHRINE'],
+    code: 'ABYSSAL-TRENCH',
+    name: 'ABYSSAL TRENCH',
+    desc: 'A sunken ruin far below the surface, lit only by bioluminescent drift.',
+    silhouette: 'deep-sea',
+    hueBase: 192,
+    nameWords: ['DROWNED SPIRE', 'DEEP VENT', 'SILT BASIN', 'LANTERNFISH REACH'],
   },
   {
     code: 'ORBITAL-FRONTIER',
     name: 'ORBITAL FRONTIER',
-    desc: 'A half-built orbital dock, assembled one truss at a time.',
-    silhouettes: ['space-dock'],
-    hueBase: 258,
-    nameWords: ['DOCK ALPHA', 'TRUSS BAY', 'HANGAR RING', 'RELAY NODE', 'BERTH SEVEN', 'MODULE ROW', 'OUTER BERTH', 'STATION EDGE'],
+    desc: 'A half-built orbital dock, assembled one truss segment at a time.',
+    silhouette: 'space-dock',
+    hueBase: 250,
+    nameWords: ['DOCK ALPHA', 'TRUSS BAY', 'HANGAR RING', 'OUTER BERTH'],
+  },
+  {
+    code: 'ASHEN-WASTES',
+    name: 'ASHEN WASTES',
+    desc: 'Cracked earth and dead timber under a permanent haze.',
+    silhouette: 'wasteland',
+    hueBase: 35,
+    nameWords: ['ASH FLAT', 'SCRAP ROW', 'DEAD TIMBER', 'CINDER REACH'],
+  },
+  {
+    code: 'STEEL-SKYLINE',
+    name: 'STEEL SKYLINE',
+    desc: 'A dense downtown skyline, counted one rooftop light at a time.',
+    silhouette: 'cityscape',
+    hueBase: 212,
+    nameWords: ['DOWNTOWN CORE', 'FINANCIAL ROW', 'MIDTOWN BLOCK', 'SKYLINE EDGE'],
+  },
+  {
+    code: 'HARVEST-HAMLET',
+    name: 'HARVEST HAMLET',
+    desc: 'Thatched cottages and chimney smoke along a quiet country lane.',
+    silhouette: 'pixel-village',
+    hueBase: 95,
+    nameWords: ['MILL ROW', 'ORCHARD LANE', 'COTTAGE ROAD', 'HEARTH VALE'],
+  },
+  {
+    code: 'SUNRISE-COAST',
+    name: 'SUNRISE COAST',
+    desc: 'A quiet pier catching the very first light over calm water.',
+    silhouette: 'seaside-pier',
+    hueBase: 24,
+    nameWords: ['TIDE PIER', 'AMBER HARBOR', 'DAYBREAK COVE', 'GULL POINT'],
+  },
+  {
+    code: 'IRON-HARBOR',
+    name: 'IRON HARBOR',
+    desc: 'Gantry cranes and stacked containers along a working waterfront.',
+    silhouette: 'harbor-cranes',
+    hueBase: 205,
+    nameWords: ['DRYDOCK', 'CONTAINER ROW', 'GANTRY WHARF', 'FREIGHT BASIN'],
+  },
+  {
+    code: 'SILVERWOOD-REACH',
+    name: 'SILVERWOOD REACH',
+    desc: 'Layered treelines fading into quiet, undisturbed depth.',
+    silhouette: 'forest-treeline',
+    hueBase: 140,
+    nameWords: ['MOSSHOLLOW', 'FERN REACH', 'DEEP CANOPY', 'QUIET GROVE'],
+  },
+  {
+    code: 'SUNBAKED-DUNES',
+    name: 'SUNBAKED DUNES',
+    desc: 'Buried monuments half-swallowed by drifting sand.',
+    silhouette: 'desert-dunes-pyramid',
+    hueBase: 42,
+    nameWords: ['DUNE CROSS', 'GOLDEN WASTE', 'BURIED SPIRE', 'FAR DUNES'],
+  },
+  {
+    code: 'STONECREST-RANGE',
+    name: 'STONECREST RANGE',
+    desc: 'Layered granite ridgelines rising above a quiet treeline.',
+    silhouette: 'mountain-range',
+    hueBase: 165,
+    nameWords: ['SUMMIT WARD', 'CLOUD RIDGE', 'STONE CREST', 'HIGH TRAVERSE'],
+  },
+  {
+    code: 'INCENSE-TERRACE',
+    name: 'INCENSE TERRACE',
+    desc: 'A tiered pagoda and its stone steps, wrapped in drifting incense smoke.',
+    silhouette: 'temple-pagoda',
+    hueBase: 355,
+    nameWords: ['SHRINE TERRACE', 'LANTERN STEPS', 'OLD PAGODA', 'MONASTERY ROW'],
+  },
+  {
+    code: 'FOGBOUND-COAST',
+    name: 'FOGBOUND COAST',
+    desc: 'A striped lighthouse sweeping its beam through coastal fog.',
+    silhouette: 'lighthouse-coast',
+    hueBase: 198,
+    nameWords: ['FOG POINT', 'SIGNAL CLIFF', 'TIDEWATCH', 'LANTERN HEAD'],
+  },
+  {
+    code: 'EMBER-CALDERA',
+    name: 'EMBER CALDERA',
+    desc: 'A smoking volcanic cone, its slopes veined with glowing rock.',
+    silhouette: 'volcano',
+    hueBase: 8,
+    nameWords: ['CINDER RIM', 'MAGMA VENT', 'ASHFALL RIDGE', 'CALDERA EDGE'],
   },
 ];
 
@@ -127,13 +198,12 @@ function buildExploreMaps(): ExploreMapDef[] {
   let mapIndex = 0;
 
   REGIONS.forEach((region) => {
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 4; i++) {
       mapIndex += 1;
       const id = `map-${String(mapIndex).padStart(2, '0')}`;
       const code = `MAP-${String(mapIndex).padStart(2, '0')}`;
-      const silhouette = region.silhouettes[i % region.silhouettes.length];
       const seed = mapIndex * 97 + i * 13;
-      const hueDay = region.hueBase + (((i * 11) % 30) - 15);
+      const hueDay = region.hueBase + (((i * 11) % 24) - 12);
       const hueNight = 222 + (seed % 36);
       const themeCount = mapIndex <= MAPS_WITH_TWO_THEMES ? 2 : 1;
       const rewardThemeIds = Array.from({ length: themeCount }, (_, k) => `scene-${String(sceneCursor + k).padStart(3, '0')}`);
@@ -146,7 +216,7 @@ function buildExploreMaps(): ExploreMapDef[] {
         desc: region.desc,
         regionCode: region.code,
         regionName: region.name,
-        silhouette,
+        silhouette: region.silhouette,
         seed,
         hueDay,
         hueNight,

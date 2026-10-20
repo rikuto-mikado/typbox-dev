@@ -29,6 +29,7 @@ import { NEO_PRESTIGE_THEME_PAIRS, NEO_SURFACE_THEME_PAIRS } from './surfaceNeo'
 import { SCENE_SURFACE_THEME_PAIRS } from './surfaceScenes';
 import type { SceneSpec } from './surfaceSceneArt';
 import { getExploreMapNameById } from './exploreMaps';
+import { PIXEL_ART_THEME_PAIRS } from './pixelArtThemes';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -3246,10 +3247,10 @@ export interface SurfaceThemePair {
   // entirely and gate on a specific map being fully cleared instead — see
   // isThemeUnlocked. Holds a map id from exploreMaps.ts.
   requiredMapClear?: string;
-  /** Illustrated day/night scene (EXPLORE MAP rewards only); rendered by SceneLayer.tsx via surfaceSceneArt.tsx. */
+  /** Illustrated day/night scene (EXPLORE MAP rewards + pixel-art themes); rendered by SceneLayer.tsx via surfaceSceneArt.tsx. */
   scene?: SceneSpec;
-  /** 'neo' = NEO SIGNAL wave (surfaceThemesNeo.json); 'scene' = EXPLORE MAP reward; absent = original archive. */
-  series?: 'neo' | 'scene';
+  /** 'neo' = NEO SIGNAL wave; 'scene' = EXPLORE MAP reward; 'pixelart' = the 200 clearance-gated pixel-art themes; absent = original archive. */
+  series?: 'neo' | 'scene' | 'pixelart';
   fx?: SurfaceFx;
 }
 
@@ -5296,6 +5297,14 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   // lower an existing pair's level, never lock one a user already has.
   // ==========================================
   ...NEO_SURFACE_THEME_PAIRS,
+
+  // ==========================================
+  // PIXEL ART WAVE — 200 pairs (20 per division, pixelArtThemes.ts).
+  // Appended AFTER the NEO wave for the same reason: within each division,
+  // every earlier pair keeps (or gets an easier) level once rebalancing
+  // accounts for this longer list.
+  // ==========================================
+  ...PIXEL_ART_THEME_PAIRS,
 ];
 
 // Rebalances every pair's clearanceHintLv with even spacing across its own
@@ -5696,7 +5705,7 @@ interface SurfaceThemeSelectorPanelProps {
   onToggleFx: () => void;
 }
 
-type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx' | 'scene';
+type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx' | 'scene' | 'pixelart';
 
 export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps> = ({
   activeThemeId,
@@ -5743,10 +5752,11 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       if (unlockFilter === 'unlocked' && !isUnlocked) return false;
       if (unlockFilter === 'locked' && isUnlocked) return false;
       if (selectedDiv !== 'ALL' && item.divisionCode !== selectedDiv) return false;
-      if (seriesFilter === 'archive' && (item.series === 'neo' || item.series === 'scene')) return false;
+      if (seriesFilter === 'archive' && (item.series === 'neo' || item.series === 'scene' || item.series === 'pixelart')) return false;
       if (seriesFilter === 'neo' && item.series !== 'neo') return false;
       if (seriesFilter === 'fx' && !item.fx) return false;
       if (seriesFilter === 'scene' && item.series !== 'scene') return false;
+      if (seriesFilter === 'pixelart' && item.series !== 'pixelart') return false;
       if (q) {
         return (
           item.name.toLowerCase().includes(q) ||
@@ -5765,10 +5775,11 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   const seriesCounts = useMemo(
     () => ({
       all: SURFACE_THEME_PAIRS.length,
-      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo' && p.series !== 'scene').length,
+      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo' && p.series !== 'scene' && p.series !== 'pixelart').length,
       neo: SURFACE_THEME_PAIRS.filter((p) => p.series === 'neo').length,
       fx: SURFACE_THEME_PAIRS.filter((p) => p.fx).length,
       scene: SURFACE_THEME_PAIRS.filter((p) => p.series === 'scene').length,
+      pixelart: SURFACE_THEME_PAIRS.filter((p) => p.series === 'pixelart').length,
     }),
     []
   );
@@ -5971,6 +5982,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               ['neo', t.seriesNeo],
               ['fx', t.seriesFx],
               ['scene', t.seriesScene],
+              ['pixelart', t.seriesPixelArt],
             ] as const
           ).map(([key, label], idx) => (
             <button
@@ -6119,6 +6131,9 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                     )}
                     {item.series === 'scene' && (
                       <span className="uppercase px-1 border border-cyan-500/40 text-cyan-400">{t.seriesScene}</span>
+                    )}
+                    {item.series === 'pixelart' && (
+                      <span className="uppercase px-1 border border-lime-500/40 text-lime-400">{t.seriesPixelArt}</span>
                     )}
                     {item.fx && (
                       <span className="uppercase px-1 border border-fuchsia-500/40 text-fuchsia-400" title={t.surfaceFxHint}>

@@ -543,6 +543,13 @@ canvas {
    Same fixed/behind-everything composition as .surface-fx above, but
    horizon-anchored and height-capped so it reads as distant scenery under
    the normal gradient background rather than a full wallpaper.
+
+   Now used by ~300 Surface Themes (100 map-clear rewards + 200 pixel-art
+   themes, not just rare map-clear drops), so the readability margin below
+   is deliberately generous: every content panel already sits on its own
+   fully opaque bgCard, so this art is only ever visible through page
+   gutters/translucent chrome — never directly behind text — but the
+   ::after scrim keeps even that gutter art from reading as visually noisy.
 ========================================== */
 .scene-layer {
   position: fixed;
@@ -559,10 +566,23 @@ canvas {
   bottom: 0;
   height: 42vh;
   min-height: 220px;
-  opacity: 0.9;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 28%);
-  mask-image: linear-gradient(to bottom, transparent, black 28%);
+  opacity: 0.78;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 38%);
+  mask-image: linear-gradient(to bottom, transparent, black 38%);
   transition: opacity 0.4s ease;
+}
+
+/* Dampens contrast on the densest part of the art (bottom third, where
+   lit windows/stars/lanterns concentrate) without hiding it outright. */
+.scene-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.1) 55%, transparent 85%);
+}
+
+.scene-layer.scene-layer-light::after {
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15) 55%, transparent 85%);
 }
 
 /* ==========================================

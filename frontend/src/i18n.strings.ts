@@ -545,6 +545,7 @@ export const EN = {
 
   // ===== DATA CREDITS & EXPLORE MAP =====
   seriesScene: "EXPLORE",
+  seriesPixelArt: "PIXEL ART",
   requiresMapClear: "Clear {name} to unlock",
   themeMapClearNotice: "[{code} // {name}] is an EXPLORE MAP reward — clear {mapName} to unlock it.",
   dataCreditsLabel: "DATA CREDITS",
@@ -1111,6 +1112,7 @@ export const JA: Dict = {
 
   // ===== DATA CREDITS & EXPLORE MAP =====
   seriesScene: "EXPLORE",
+  seriesPixelArt: "ピクセルアート",
   requiresMapClear: "{name}をクリアして解放",
   themeMapClearNotice: "[{code} // {name}] はエクスプローアマップの報酬です — {mapName}をクリアすると解放されます。",
   dataCreditsLabel: "DATAクレジット",

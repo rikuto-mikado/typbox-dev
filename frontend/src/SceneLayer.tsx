@@ -18,7 +18,7 @@ interface SceneLayerProps {
 
 export const SceneLayer: React.FC<SceneLayerProps> = ({ scene, isDark }) => {
   return (
-    <div className="scene-layer" aria-hidden>
+    <div className={`scene-layer${isDark ? '' : ' scene-layer-light'}`} aria-hidden>
       <div className="scene-layer-art">{renderScene(scene, isDark)}</div>
     </div>
   );
