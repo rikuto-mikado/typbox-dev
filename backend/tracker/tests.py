@@ -530,7 +530,7 @@ class FontAndAmbientPrefsSyncTests(APITestCase):
 class PortfolioFeedTests(APITestCase):
     """
     GET /api/portfolio/feed/ is a public, read-only feed for rikutomikado.tech
-    containing only logs opted in via is_public_to_portfolio.
+    excluding logs opted out via is_public_to_portfolio.
     """
 
     def setUp(self):
@@ -539,15 +539,15 @@ class PortfolioFeedTests(APITestCase):
         )
         self.category = Category.objects.create(user=self.user, name='Backend', code='BACK', color='#10b981')
         self.public_log = StudyLog.objects.create(
-            user=self.user, category=self.category, duration_minutes=90,
-            topic='DRF feed', is_public_to_portfolio=True,
+            user=self.user, category=self.category, duration_minutes=90, topic='DRF feed',
         )
         self.private_log = StudyLog.objects.create(
-            user=self.user, category=self.category, duration_minutes=30, topic='secret',
+            user=self.user, category=self.category, duration_minutes=30,
+            topic='secret', is_public_to_portfolio=False,
         )
 
-    def test_new_logs_are_not_public_to_portfolio_by_default(self):
-        self.assertFalse(self.private_log.is_public_to_portfolio)
+    def test_new_logs_are_public_to_portfolio_by_default(self):
+        self.assertTrue(self.public_log.is_public_to_portfolio)
 
     def test_feed_is_anonymous_and_returns_only_flagged_logs(self):
         res = self.client.get('/api/portfolio/feed/')

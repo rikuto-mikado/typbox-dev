@@ -583,8 +583,8 @@ class HubTelemetryView(APIView):
 class PortfolioFeedView(generics.ListAPIView):
     """
     GET /api/portfolio/feed/
-    Public read-only feed pulled by rikutomikado.tech. Returns only logs
-    flagged is_public_to_portfolio=True (toggled from Django Admin).
+    Public read-only feed pulled by rikutomikado.tech. Returns logs with
+    is_public_to_portfolio=True (the default; opt out from Django Admin).
     """
     serializer_class = PortfolioFeedLogSerializer
     permission_classes = (permissions.AllowAny,)
