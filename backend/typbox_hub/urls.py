@@ -12,6 +12,7 @@ def api_root(request):
             "categories": "/api/categories/",
             "logs": "/api/logs/",
             "telemetry": "/api/hub/telemetry/",
+            "portfolio_feed": "/api/portfolio/feed/",
         }
     })
 

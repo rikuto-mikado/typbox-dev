@@ -131,6 +131,12 @@ class StudyLog(models.Model):
         default=True,
         help_text='Flag to indicate if this log is public to the portfolio/hub aggregator'
     )
+    # Opt-in (admin-only) flag for the rikutomikado.tech feed at
+    # /api/portfolio/feed/. Independent from is_public_to_hub.
+    is_public_to_portfolio = models.BooleanField(
+        default=False,
+        help_text='Flag to include this log in the rikutomikado.tech portfolio feed'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -9,6 +9,7 @@ from .views import (
     HubTelemetryView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
+    PortfolioFeedView,
     RegisterView,
     StudyLogViewSet,
     ThrottledTokenObtainPairView,
@@ -30,6 +31,9 @@ urlpatterns = [
 
     # Portfolio / Hub Aggregator Telemetry
     path('hub/telemetry/', HubTelemetryView.as_view(), name='hub_telemetry'),
+
+    # rikutomikado.tech read-only portfolio feed
+    path('portfolio/feed/', PortfolioFeedView.as_view(), name='portfolio_feed'),
 
     # CRUD Router for categories and logs
     path('', include(router.urls)),

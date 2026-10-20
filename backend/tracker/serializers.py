@@ -647,3 +647,36 @@ class StudyLogSerializer(serializers.ModelSerializer):
         if category and category.user != user:
             raise serializers.ValidationError('Selected category does not belong to you.')
         return category
+
+
+# ==========================================
+# Portfolio Feed Serializer (read-only)
+# ==========================================
+
+class PortfolioFeedCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ('code', 'name', 'color')
+        read_only_fields = fields
+
+
+class PortfolioFeedLogSerializer(serializers.ModelSerializer):
+    """
+    Public, read-only shape for GET /api/portfolio/feed/.
+    Deliberately omits user / account fields.
+    """
+    category = PortfolioFeedCategorySerializer(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True, default_timezone=dt_timezone.utc)
+
+    class Meta:
+        model = StudyLog
+        fields = (
+            'id',
+            'date',
+            'duration_minutes',
+            'duration_hours',
+            'topic',
+            'category',
+            'created_at',
+        )
+        read_only_fields = fields

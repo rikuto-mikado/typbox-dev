@@ -525,3 +525,50 @@ class FontAndAmbientPrefsSyncTests(APITestCase):
         for payload in ({'ui_font': '<b>'}, {'ambient_theme': 'x' * 33}, {'ui_font': 'a b'}):
             res = self.client.patch('/api/auth/me/', payload, format='json')
             self.assertEqual(res.status_code, 400, payload)
+
+
+class PortfolioFeedTests(APITestCase):
+    """
+    GET /api/portfolio/feed/ is a public, read-only feed for rikutomikado.tech
+    containing only logs opted in via is_public_to_portfolio.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.category = Category.objects.create(user=self.user, name='Backend', code='BACK', color='#10b981')
+        self.public_log = StudyLog.objects.create(
+            user=self.user, category=self.category, duration_minutes=90,
+            topic='DRF feed', is_public_to_portfolio=True,
+        )
+        self.private_log = StudyLog.objects.create(
+            user=self.user, category=self.category, duration_minutes=30, topic='secret',
+        )
+
+    def test_new_logs_are_not_public_to_portfolio_by_default(self):
+        self.assertFalse(self.private_log.is_public_to_portfolio)
+
+    def test_feed_is_anonymous_and_returns_only_flagged_logs(self):
+        res = self.client.get('/api/portfolio/feed/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([log['id'] for log in res.data], [self.public_log.id])
+        self.assertEqual(res.data[0]['category'], {'code': 'BACK', 'name': 'Backend', 'color': '#10b981'})
+        self.assertNotIn('user', res.data[0])
+
+    def test_feed_ignores_invalid_bearer_token(self):
+        res = self.client.get('/api/portfolio/feed/', HTTP_AUTHORIZATION='Bearer not-a-token')
+        self.assertEqual(res.status_code, 200)
+
+    def test_feed_is_read_only(self):
+        res = self.client.post('/api/portfolio/feed/', {}, format='json')
+        self.assertEqual(res.status_code, 405)
+
+    def test_feed_allows_portfolio_origin(self):
+        res = self.client.get('/api/portfolio/feed/', HTTP_ORIGIN='https://rikutomikado.tech')
+        self.assertEqual(res['Access-Control-Allow-Origin'], 'https://rikutomikado.tech')
+
+    def test_hub_flag_does_not_leak_into_portfolio_feed(self):
+        self.assertTrue(self.private_log.is_public_to_hub)
+        res = self.client.get('/api/portfolio/feed/')
+        self.assertNotIn(self.private_log.id, [log['id'] for log in res.data])

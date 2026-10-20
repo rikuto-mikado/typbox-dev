@@ -203,10 +203,11 @@ SIMPLE_JWT = {
 
 cors_raw = os.getenv(
     'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://127.0.0.1:5173,https://typbox.me,https://www.typbox.me'
+    'http://localhost:5173,http://127.0.0.1:5173,https://typbox.me,https://www.typbox.me,https://rikutomikado.tech'
 )
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_raw.split(',') if origin.strip()]
-for default_origin in ('https://typbox.me', 'https://www.typbox.me'):
+# rikutomikado.tech pulls the read-only /api/portfolio/feed/.
+for default_origin in ('https://typbox.me', 'https://www.typbox.me', 'https://rikutomikado.tech'):
     if default_origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(default_origin)
 

@@ -17,8 +17,9 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(StudyLog)
 class StudyLogAdmin(admin.ModelAdmin):
-    list_display = ('date', 'category', 'user', 'duration_minutes', 'is_public_to_hub', 'topic', 'created_at')
-    list_filter = ('is_public_to_hub', 'date', 'user', 'category')
+    list_display = ('date', 'category', 'user', 'duration_minutes', 'is_public_to_hub', 'is_public_to_portfolio', 'topic', 'created_at')
+    list_editable = ('is_public_to_portfolio',)
+    list_filter = ('is_public_to_hub', 'is_public_to_portfolio', 'date', 'user', 'category')
     search_fields = ('topic', 'user__username', 'category__name')
     date_hierarchy = 'date'
 

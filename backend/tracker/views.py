@@ -25,6 +25,7 @@ from .serializers import (
     ChangePasswordSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
+    PortfolioFeedLogSerializer,
     RegisterSerializer,
     StudyLogSerializer,
     UserSerializer,
@@ -577,3 +578,18 @@ class HubTelemetryView(APIView):
             'recent_public_logs': recent_logs_data,
         }
         return Response(payload)
+
+
+class PortfolioFeedView(generics.ListAPIView):
+    """
+    GET /api/portfolio/feed/
+    Public read-only feed pulled by rikutomikado.tech. Returns only logs
+    flagged is_public_to_portfolio=True (toggled from Django Admin).
+    """
+    serializer_class = PortfolioFeedLogSerializer
+    permission_classes = (permissions.AllowAny,)
+    # No auth: a stale/invalid Bearer token must not turn this into a 401.
+    authentication_classes = ()
+
+    def get_queryset(self):
+        return StudyLog.objects.filter(is_public_to_portfolio=True).select_related('category')
