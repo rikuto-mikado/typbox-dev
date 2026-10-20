@@ -143,8 +143,8 @@ export function getChronoThemeById(id: string | null | undefined): ChronoTheme {
   return (id && THEME_BY_ID.get(id)) || THEME_BY_ID.get(DEFAULT_CHRONO_THEME_ID) || CHRONO_THEMES[0];
 }
 
-export function isChronoThemeUnlocked(theme: ChronoTheme, p: ChronoProgress): boolean {
-  const u = theme.unlock;
+/** Whether progress satisfies one unlock rule (shared with weather themes). */
+export function isUnlockRuleMet(u: ChronoUnlock, p: ChronoProgress): boolean {
   switch (u.type) {
     case 'default':
       return true;
@@ -163,10 +163,13 @@ export function isChronoThemeUnlocked(theme: ChronoTheme, p: ChronoProgress): bo
   }
 }
 
-// Sort key that places every theme on one rough "effort" ladder so the
+export function isChronoThemeUnlocked(theme: ChronoTheme, p: ChronoProgress): boolean {
+  return isUnlockRuleMet(theme.unlock, p);
+}
+
+// Sort key that places every unlock rule on one rough "effort" ladder so a
 // picker reads from easiest to hardest regardless of unlock type.
-export function chronoUnlockRank(theme: ChronoTheme): number {
-  const u = theme.unlock;
+export function unlockRuleRank(u: ChronoUnlock): number {
   switch (u.type) {
     case 'default':
       return 0;
@@ -183,6 +186,10 @@ export function chronoUnlockRank(theme: ChronoTheme): number {
     case 'session':
       return u.value * 4;
   }
+}
+
+export function chronoUnlockRank(theme: ChronoTheme): number {
+  return unlockRuleRank(theme.unlock);
 }
 
 // ==========================================

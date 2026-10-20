@@ -46,24 +46,20 @@ import {
   Palette,
   Briefcase,
 } from 'lucide-react';
-import { api, apiFetch, getAccessToken, type ExploreMapProgressResponse } from './api';
+import { api, apiFetch, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
-import { ExploreMap } from './ExploreMap';
 import { SceneLayer } from './SceneLayer';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
 import {
   I18nContext,
-  LANG_OPTIONS,
-  LANG_STORAGE_KEY,
-  STRINGS,
+  LEGACY_LANG_STORAGE_KEY,
   TZ_STORAGE_KEY,
   buildI18nValue,
   formatUtcOffset,
   getDeviceTimeZone,
   getZoneOffsetMinutes,
   getZonedParts,
-  isLang,
   isValidTimeZone,
   listTimeZones,
   nowInZone,
@@ -71,7 +67,6 @@ import {
   tf,
   useI18n,
   type Dict,
-  type Lang,
 } from './i18n';
 import {
   getClearanceStatus,
@@ -122,7 +117,24 @@ import {
 } from './chronometerThemes';
 import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
 import { SurfaceFxLayer } from './SurfaceFx';
-import { WeatherBadge, WeatherPanel, useWeather, type SyncedWeatherPrefs } from './Weather';
+import { WeatherBadge, WeatherPanel, isWeatherThemeUnlocked, useWeather, type SyncedWeatherPrefs } from './Weather';
+import { DEFAULT_WEATHER_THEME, WEATHER_THEMES, type WeatherThemeId } from './weatherThemes';
+import { AmbientOverlay, AmbientSettingsPanel, isAmbientThemeUnlocked } from './AmbientOverlay';
+import {
+  AMBIENT_CLOCK_STORAGE_KEY,
+  AMBIENT_DIM_LEVELS,
+  AMBIENT_DIM_STORAGE_KEY,
+  AMBIENT_THEME_STORAGE_KEY,
+  DEFAULT_AMBIENT_DIM,
+  DEFAULT_AMBIENT_THEME_ID,
+  getAmbientThemeById,
+  isAmbientDim,
+  isAmbientThemeId,
+  type AmbientDim,
+} from './ambientThemes';
+import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
+import { DEFAULT_UI_FONT_ID, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
+import { useKeepAwake } from './keepAwake';
 
 // ==========================================
 // Types & Interfaces
@@ -170,15 +182,18 @@ export interface AuthUser {
   weather_unit?: string;
   weather_hidden?: boolean | null;
   surface_fx?: boolean | null;
+  ui_font?: string;
+  ambient_theme?: string;
+  ambient_clock?: boolean | null;
 }
 
 /** Account-synced UI prefs that go through the debounced PATCH queue. */
-type UiPrefsPatch = SyncedWeatherPrefs & { surface_fx?: boolean };
+type UiPrefsPatch = SyncedWeatherPrefs & { surface_fx?: boolean; ui_font?: string; ambient_theme?: string; ambient_clock?: boolean };
 
 type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
-type SettingsTab = 'profile' | 'themes' | 'clearance' | 'security' | 'data';
+type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'clearance' | 'security' | 'data';
 
 const AVATAR_PRESET_OPTIONS = [
   { id: 'initial', label: 'Initial' },
@@ -347,46 +362,6 @@ const PrestigeChip: React.FC<{ totalAscensions: number; className?: string }> = 
   );
 };
 
-// Deterministic particle field generated once at module load (not per
-// render) so the "sensor dust" drift stays stable across Ambient Mode
-// entries instead of jumping to new random positions every time.
-const AMBIENT_PARTICLES = Array.from({ length: 26 }, (_, i) => ({
-  id: i,
-  left: Math.random() * 100,
-  top: Math.random() * 100,
-  size: 1 + Math.random() * 1.8,
-  duration: 16 + Math.random() * 20,
-  delay: Math.random() * 20,
-  dx: (Math.random() - 0.5) * 140,
-  dy: -(50 + Math.random() * 120),
-  opacity: 0.15 + Math.random() * 0.3,
-}));
-
-const AmbientOverlay: React.FC = () => (
-  <div className="fixed inset-0 z-30 pointer-events-none transition-opacity duration-1000">
-    <div className="absolute inset-0 bg-black/35" />
-    {AMBIENT_PARTICLES.map((p) => (
-      <span
-        key={p.id}
-        className="ambient-dust"
-        style={
-          {
-            left: `${p.left}%`,
-            top: `${p.top}%`,
-            width: `${p.size}px`,
-            height: `${p.size}px`,
-            animationDuration: `${p.duration}s`,
-            animationDelay: `${p.delay}s`,
-            '--dust-dx': `${p.dx}px`,
-            '--dust-dy': `${p.dy}px`,
-            '--dust-opacity': p.opacity,
-          } as React.CSSProperties
-        }
-      />
-    ))}
-  </div>
-);
-
 // ==========================================
 // Toast Notifications
 // ==========================================
@@ -478,14 +453,6 @@ const getInitialTheme = (): Theme => {
   return 'dark';
 };
 
-const getInitialLang = (): Lang => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(LANG_STORAGE_KEY);
-    if (isLang(saved)) return saved;
-  }
-  return 'en';
-};
-
 const getInitialTimeZone = (): string => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(TZ_STORAGE_KEY);
@@ -507,6 +474,26 @@ const getInitialChronoTheme = (): string => {
     return getChronoThemeById(localStorage.getItem(CHRONO_THEME_STORAGE_KEY)).id;
   }
   return DEFAULT_CHRONO_THEME_ID;
+};
+
+const readLocal = (key: string): string | null => {
+  try {
+    return typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+};
+const getInitialUiFont = (): string => {
+  const saved = readLocal(UI_FONT_STORAGE_KEY);
+  return isUiFontId(saved) ? saved : DEFAULT_UI_FONT_ID;
+};
+const getInitialAmbientTheme = (): string => {
+  const saved = readLocal(AMBIENT_THEME_STORAGE_KEY);
+  return isAmbientThemeId(saved) ? saved : DEFAULT_AMBIENT_THEME_ID;
+};
+const getInitialAmbientDim = (): AmbientDim => {
+  const saved = readLocal(AMBIENT_DIM_STORAGE_KEY);
+  return isAmbientDim(saved) ? saved : DEFAULT_AMBIENT_DIM;
 };
 
 const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
@@ -663,14 +650,13 @@ export default function App() {
   }, [surfaceFxEnabled]);
   const [periodView, setPeriodView] = useState<PeriodView>('weekly');
 
-  // UI language & time zone: account-synced (UserProfile.language/timezone),
-  // cached in localStorage for first paint and signed-out visits.
-  const [lang, setLang] = useState<Lang>(getInitialLang);
+  // Time zone: account-synced (UserProfile.timezone), cached in
+  // localStorage for first paint and signed-out visits.
   const [timeZone, setTimeZone] = useState<string>(getInitialTimeZone);
   // Idempotent module sync so date helpers used during this render already
   // see the selected zone.
   setActiveTimeZone(timeZone);
-  const i18n = useMemo(() => buildI18nValue(lang, timeZone), [lang, timeZone]);
+  const i18n = useMemo(() => buildI18nValue(timeZone), [timeZone]);
   const { t, formatDateTime, locale } = i18n;
   const deviceTimeZone = useMemo(() => getDeviceTimeZone(), []);
 
@@ -689,6 +675,13 @@ export default function App() {
   const [chronoThemeId, setChronoThemeId] = useState<string>(getInitialChronoTheme);
   const [showChronoPicker, setShowChronoPicker] = useState<boolean>(false);
   const [showWeatherPanel, setShowWeatherPanel] = useState<boolean>(false);
+  // UI font + Ambient overlay: account-synced through the UI prefs queue
+  // (dim level is a per-device comfort setting and stays local).
+  const [uiFontId, setUiFontId] = useState<string>(getInitialUiFont);
+  const [ambientThemeId, setAmbientThemeId] = useState<string>(getInitialAmbientTheme);
+  const [ambientClock, setAmbientClock] = useState<boolean>(() => readLocal(AMBIENT_CLOCK_STORAGE_KEY) !== 'off');
+  const [ambientDim, setAmbientDim] = useState<AmbientDim>(getInitialAmbientDim);
+  const [ambientPreviewId, setAmbientPreviewId] = useState<string | null>(null);
   // Debounced account sync for small UI prefs (weather widget, motion FX):
   // clicking through options sends one PATCH. Pending local changes always
   // win over a server value pulled in the meantime (see applyServerSurfaceTheme).
@@ -726,9 +719,24 @@ export default function App() {
   }, [chronoThemeId]);
 
   useEffect(() => {
-    localStorage.setItem(LANG_STORAGE_KEY, lang);
-    document.documentElement.lang = lang;
-  }, [lang]);
+    try {
+      localStorage.setItem(UI_FONT_STORAGE_KEY, uiFontId);
+      localStorage.setItem(AMBIENT_THEME_STORAGE_KEY, ambientThemeId);
+      localStorage.setItem(AMBIENT_CLOCK_STORAGE_KEY, ambientClock ? 'on' : 'off');
+      localStorage.setItem(AMBIENT_DIM_STORAGE_KEY, ambientDim);
+    } catch {
+      // Storage unavailable (private mode): prefs last for this tab only.
+    }
+  }, [uiFontId, ambientThemeId, ambientClock, ambientDim]);
+
+  useEffect(() => {
+    // English-only now: drop the retired language setting from this device.
+    try {
+      localStorage.removeItem(LEGACY_LANG_STORAGE_KEY);
+    } catch {
+      // Storage unavailable — nothing to clean up.
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(TZ_STORAGE_KEY, timeZone);
@@ -831,19 +839,6 @@ export default function App() {
   const [visibleLogCount, setVisibleLogCount] = useState<number>(INITIAL_VISIBLE_LOGS);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
-
-  // DATA CREDITS wallet + EXPLORE MAP progress (server-authoritative; see api.wallet / api.exploreMaps).
-  // creditsForMinutes mirrors economy.award_credits_for_log's floor-division
-  // rule purely so a freshly logged session bumps the on-screen balance
-  // immediately, without waiting for a full reload — the server-computed
-  // balance from the next loadUserData() always wins over this estimate.
-  const [walletBalance, setWalletBalance] = useState<number>(0);
-  const [mapProgress, setMapProgress] = useState<ExploreMapProgressResponse[]>([]);
-  const creditsForMinutes = useCallback((minutes: number) => Math.floor((minutes * 1000) / 60), []);
-  const clearedMapIds = useMemo(
-    () => new Set(mapProgress.filter((p) => p.is_cleared).map((p) => p.map_id)),
-    [mapProgress]
-  );
 
   // Timeline Navigation State for Analytics Module
   const [weeklyOffset, setWeeklyOffset] = useState<number>(0); // weeks ago (0 = current week)
@@ -1101,54 +1096,10 @@ export default function App() {
     };
   }, [isRunning]);
 
-  // Wake Lock: keep the screen on for as long as the stopwatch is running.
-  // The Wake Lock API auto-releases when the tab is backgrounded, so it's
-  // re-acquired on visibilitychange if the timer is still active.
-  const wakeLockRef = React.useRef<WakeLockSentinel | null>(null);
-  useEffect(() => {
-    if (!('wakeLock' in navigator)) return;
-    let cancelled = false;
-
-    const releaseLock = () => {
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release().catch(() => {});
-        wakeLockRef.current = null;
-      }
-    };
-
-    const acquireLock = async () => {
-      try {
-        const sentinel = await navigator.wakeLock.request('screen');
-        if (cancelled) {
-          sentinel.release().catch(() => {});
-          return;
-        }
-        wakeLockRef.current = sentinel;
-      } catch {
-        // Permission denied, unsupported context, or page not visible — fine
-        // to silently skip; the timer still works without the wake lock.
-      }
-    };
-
-    if (isRunning) {
-      acquireLock();
-    } else {
-      releaseLock();
-    }
-
-    const handleVisibilityChange = () => {
-      if (isRunning && document.visibilityState === 'visible' && !wakeLockRef.current) {
-        acquireLock();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      releaseLock();
-    };
-  }, [isRunning]);
+  // Keep the display awake while the stopwatch runs (and during an Ambient
+  // preview) so Ambient Mode stays visible instead of the OS dimming and
+  // sleeping the screen; see keepAwake.ts for the Wake Lock / video fallback.
+  const keepAwakeMode = useKeepAwake(isRunning || ambientPreviewId !== null);
 
   // Ambient Mode: after a stretch of no user interaction while the stopwatch
   // is running, dim the UI and switch to a low-key decorative "still
@@ -1207,11 +1158,9 @@ export default function App() {
     setDataLoading(true);
     setApiError(null);
     try {
-      const [fetchedCats, fetchedLogs, fetchedWallet, fetchedMapProgress] = await Promise.all([
+      const [fetchedCats, fetchedLogs] = await Promise.all([
         api.categories.list(),
         api.logs.list(),
-        api.wallet.get(),
-        api.exploreMaps.list(),
       ]);
 
       const formattedCats: Category[] = fetchedCats.map((c) => ({
@@ -1243,8 +1192,6 @@ export default function App() {
 
       setCategories(formattedCats);
       setLogs(formattedLogs);
-      setWalletBalance(fetchedWallet.balance);
-      setMapProgress(fetchedMapProgress);
       if (formattedCats.length > 0 && !selectedCatId) {
         setSelectedCatId((formattedCats.find((c) => c.isActive) ?? formattedCats[0]).id);
       }
@@ -1255,41 +1202,6 @@ export default function App() {
       setDataLoading(false);
     }
   }, [selectedCatId]);
-
-  // EXPLORE MAP cell unlock: the server is the sole authority on cost/
-  // adjacency/balance (see UnlockMapCellView); this just applies the
-  // response locally and celebrates a fresh map clear.
-  const handleUnlockCell = useCallback(
-    async (mapId: string, x: number, y: number) => {
-      try {
-        const res = await api.exploreMaps.unlockCell(mapId, x, y);
-        setWalletBalance(res.wallet_balance);
-        setMapProgress((prev) => [
-          ...prev.filter((p) => p.map_id !== mapId),
-          {
-            map_id: res.map_id,
-            grid_size: res.grid_size,
-            unlocked_cells: res.unlocked_cells,
-            unlocked_count: res.unlocked_count,
-            total_cells: res.total_cells,
-            is_cleared: res.is_cleared,
-            cleared_at: res.cleared_at,
-          },
-        ]);
-        if (res.just_cleared) {
-          pushToast(
-            'success',
-            t.exploreMapClearBadge,
-            tf(t.exploreMapClearedToast, { bonus: res.clear_bonus_credits, count: res.granted_theme_ids.length })
-          );
-        }
-      } catch (err: unknown) {
-        const error = err as Error;
-        pushToast('error', error.message || t.exploreMapUnlockFailedAdjacent);
-      }
-    },
-    [pushToast, t]
-  );
 
   // ==========================================
   // Account-Synced Surface Theme
@@ -1308,24 +1220,17 @@ export default function App() {
   const applyServerSurfaceTheme = useCallback((me: AuthUser) => {
     lastSurfaceThemePullRef.current = Date.now();
 
-    // Language & time zone ride along with the same account sync. A blank
-    // server value means this account never chose one: adopt what this
-    // device uses (an explicitly picked language, or the device zone) so
-    // the backend has the user's zone from the first sign-in onward.
-    const firstSync: { language?: string; timezone?: string } = {};
-    if (isLang(me.language)) {
-      setLang(me.language);
-    } else {
-      const localLang = localStorage.getItem(LANG_STORAGE_KEY);
-      if (isLang(localLang)) firstSync.language = localLang;
-    }
+    // Time zone rides along with the same account sync. A blank server value
+    // means this account never chose one: adopt the device zone so the
+    // backend has the user's zone from the first sign-in onward.
+    const firstSync: { timezone?: string } = {};
     if (isValidTimeZone(me.timezone)) {
       setTimeZone(me.timezone);
     } else {
       const localTz = localStorage.getItem(TZ_STORAGE_KEY);
       firstSync.timezone = isValidTimeZone(localTz) ? localTz : getDeviceTimeZone();
     }
-    if (firstSync.language || firstSync.timezone) {
+    if (firstSync.timezone) {
       api.auth.updateProfile(firstSync).catch(() => {});
     }
     if (isWeekStart(me.week_start)) setWeekStart(me.week_start);
@@ -1345,6 +1250,20 @@ export default function App() {
       } else {
         setSurfaceFxEnabled(me.surface_fx);
       }
+    }
+    // UI font / Ambient overlay: blank (or null) on the account = never
+    // synced, so push this device's pick up instead of resetting it.
+    if (!('ui_font' in pendingUi) && me.ui_font !== undefined) {
+      if (isUiFontId(me.ui_font)) setUiFontId(me.ui_font);
+      else if (!me.ui_font) firstUiSync.ui_font = readLocal(UI_FONT_STORAGE_KEY) ?? DEFAULT_UI_FONT_ID;
+    }
+    if (!('ambient_theme' in pendingUi) && me.ambient_theme !== undefined) {
+      if (isAmbientThemeId(me.ambient_theme)) setAmbientThemeId(me.ambient_theme);
+      else if (!me.ambient_theme) firstUiSync.ambient_theme = readLocal(AMBIENT_THEME_STORAGE_KEY) ?? DEFAULT_AMBIENT_THEME_ID;
+    }
+    if (!('ambient_clock' in pendingUi) && me.ambient_clock !== undefined) {
+      if (me.ambient_clock === null) firstUiSync.ambient_clock = readLocal(AMBIENT_CLOCK_STORAGE_KEY) !== 'off';
+      else setAmbientClock(me.ambient_clock);
     }
     if (Object.keys(firstUiSync).length > 0) {
       api.auth.updateProfile(firstUiSync).catch(() => {});
@@ -1524,7 +1443,7 @@ export default function App() {
       setAuthSubmitting(true);
       try {
         const res = await api.auth.requestPasswordReset(authEmail.trim());
-        setAuthSuccessMsg(lang === 'ja' ? t.msgResetLinkSent : res.detail || t.msgResetLinkSent);
+        setAuthSuccessMsg(res.detail || t.msgResetLinkSent);
         if (res.debug_reset_url) {
           setDebugResetUrl(res.debug_reset_url);
         }
@@ -1552,7 +1471,7 @@ export default function App() {
         setAuthMode('login');
         setAuthPassword('');
         setAuthConfirmPassword('');
-        setAuthSuccessMsg(lang === 'ja' ? t.msgResetComplete : res.detail || t.msgResetComplete);
+        setAuthSuccessMsg(res.detail || t.msgResetComplete);
       } catch (err: unknown) {
         const error = err as Error;
         setAuthError(error.message || t.errResetLink);
@@ -1615,25 +1534,23 @@ export default function App() {
     }
   };
 
-  // Language / time zone apply instantly and are PATCHed to the account so
+  // Time zone / week start apply instantly and are PATCHed to the account so
   // they follow the user to every device and the next sign-in.
-  const handleUpdateRegion = async (patch: { language?: Lang; timezone?: string; week_start?: WeekStart }) => {
-    if (patch.language) setLang(patch.language);
+  const handleUpdateRegion = async (patch: { timezone?: string; week_start?: WeekStart }) => {
     if (patch.week_start) setWeekStart(patch.week_start);
     if (patch.timezone) {
       if (!isValidTimeZone(patch.timezone)) return;
       setTimeZone(patch.timezone);
     }
     if (!user) return;
-    const dict = STRINGS[patch.language ?? lang];
     setRegionStatus(null);
     try {
       const updated = await api.auth.updateProfile(patch);
       setUser(updated);
-      setRegionStatus({ type: 'success', text: dict.msgRegionSaved });
+      setRegionStatus({ type: 'success', text: t.msgRegionSaved });
     } catch (err: unknown) {
       const error = err as Error;
-      setRegionStatus({ type: 'error', text: error.message || dict.errRegionSave });
+      setRegionStatus({ type: 'error', text: error.message || t.errRegionSave });
     }
   };
 
@@ -1863,7 +1780,6 @@ export default function App() {
       };
 
       setLogs((prev) => [newLogItem, ...prev]);
-      setWalletBalance((prev) => prev + creditsForMinutes(Number(finalMinutes)));
       if (inputMode === 'timer') {
         setIsRunning(false);
         setElapsedSeconds(0);
@@ -1911,14 +1827,13 @@ export default function App() {
         };
 
         setLogs((prev) => [newLogItem, ...prev]);
-        setWalletBalance((prev) => prev + creditsForMinutes(Number(minutes)));
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
       } catch (err: unknown) {
         const error = err as Error;
         pushToast('error', t.toastQuickLogFailed, error.message || t.errSaveLog);
       }
     },
-    [user, categories, announceLogCommitted, pushToast, t, timeZone, creditsForMinutes]
+    [user, categories, announceLogCommitted, pushToast, t, timeZone]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -2752,6 +2667,64 @@ export default function App() {
     return candidate;
   }, [chronoThemeId, authLoading, dataLoading, chronoProgress]);
 
+  // Weather themes share the Chronometer unlock rules; a locked pick shows
+  // the default face without overwriting the saved (account-synced) choice.
+  const activeWeatherTheme = useMemo<WeatherThemeId>(() => {
+    const candidate = WEATHER_THEMES.find((wt) => wt.id === weather.theme);
+    if (!candidate) return DEFAULT_WEATHER_THEME;
+    if (!authLoading && !dataLoading && !isWeatherThemeUnlocked(candidate, chronoProgress)) return DEFAULT_WEATHER_THEME;
+    return candidate.id;
+  }, [weather.theme, authLoading, dataLoading, chronoProgress]);
+
+  const formatTimer = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // UI font + Ambient overlay follow the same rule: a locked pick shows the
+  // default without forgetting the saved choice.
+  const activeUiFont = useMemo(() => {
+    const candidate = getUiFontById(uiFontId);
+    if (!authLoading && !dataLoading && !isUiFontUnlocked(candidate, chronoProgress)) return getUiFontById(DEFAULT_UI_FONT_ID);
+    return candidate;
+  }, [uiFontId, authLoading, dataLoading, chronoProgress]);
+  useEffect(() => {
+    applyUiFont(activeUiFont);
+  }, [activeUiFont]);
+
+  const activeAmbientTheme = useMemo(() => {
+    const candidate = getAmbientThemeById(ambientThemeId);
+    if (!authLoading && !dataLoading && !isAmbientThemeUnlocked(candidate, chronoProgress)) {
+      return getAmbientThemeById(DEFAULT_AMBIENT_THEME_ID);
+    }
+    return candidate;
+  }, [ambientThemeId, authLoading, dataLoading, chronoProgress]);
+  const ambientDimAlpha = AMBIENT_DIM_LEVELS.find((d) => d.id === ambientDim)?.alpha ?? 0;
+  const ambientClockReadout = ambientClock
+    ? {
+        main: formatTimer(elapsedSeconds),
+        sub: categories.find((c) => c.id === selectedCatId)?.code,
+      }
+    : null;
+
+  const handleSelectUiFont = useCallback(
+    (id: string) => {
+      setUiFontId(id);
+      queueUiPrefsSave({ ui_font: id });
+    },
+    [queueUiPrefsSave]
+  );
+  const handleSelectAmbientTheme = useCallback(
+    (id: string) => {
+      setAmbientThemeId(id);
+      queueUiPrefsSave({ ambient_theme: id });
+    },
+    [queueUiPrefsSave]
+  );
+  const exitAmbientPreview = useCallback(() => setAmbientPreviewId(null), []);
+
   const handleExportCSV = () => {
     if (logs.length === 0) {
       alert(t.errNoLogsExport);
@@ -2811,13 +2784,6 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const formatTimer = (sec: number) => {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = sec % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
   // Timeline Navigation Derived State & Handlers
@@ -2898,14 +2864,26 @@ export default function App() {
         />
       )}
 
-      {/* EXPLORE MAP reward scene illustration (behind everything; see SceneLayer.tsx) */}
+      {/* Pixel-art Surface Theme scene illustration (behind everything; see SceneLayer.tsx) */}
       {activeSurfacePair.scene && (
         <SceneLayer key={`${activeSurfacePair.id}-scene-${isDark ? 'd' : 'l'}`} scene={activeSurfacePair.scene} isDark={isDark} />
       )}
 
-      {/* Ambient Mode: dimmed overlay + drifting sensor dust while the
-          stopwatch runs unattended (see the Wake Lock effect above). */}
-      {isAmbientMode && <AmbientOverlay />}
+      {/* Ambient Mode: the chosen overlay while the stopwatch runs
+          unattended (screen kept awake by useKeepAwake above), or a
+          preview launched from Settings > Ambient. */}
+      {isAmbientMode && ambientPreviewId === null && (
+        <AmbientOverlay themeId={activeAmbientTheme.id} dimAlpha={ambientDimAlpha} clock={ambientClockReadout} />
+      )}
+      {ambientPreviewId !== null && (
+        <AmbientOverlay
+          themeId={ambientPreviewId}
+          dimAlpha={ambientDimAlpha}
+          clock={ambientClock ? { main: formatTimer(elapsedSeconds), sub: 'PREVIEW' } : null}
+          preview
+          onExit={exitAmbientPreview}
+        />
+      )}
 
       {/* ==========================================
           FULL-SCREEN SITE ACCESS SPLASH LOADER
@@ -3463,6 +3441,7 @@ export default function App() {
                   <span className="font-semibold whitespace-nowrap">{t.chronometer}</span>
                   <WeatherBadge
                     wx={weather}
+                    theme={activeWeatherTheme}
                     open={showWeatherPanel}
                     onToggle={() => {
                       setShowWeatherPanel((prev) => !prev);
@@ -3521,7 +3500,14 @@ export default function App() {
               </div>
 
               {showWeatherPanel && (
-                <WeatherPanel wx={weather} isDark={isDark} borderCol={borderCol} textMuted={textMuted} />
+                <WeatherPanel
+                  wx={weather}
+                  theme={activeWeatherTheme}
+                  progress={chronoProgress}
+                  isDark={isDark}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                />
               )}
 
               {showChronoPicker && (
@@ -4299,29 +4285,6 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* ==========================================
-                EXPLORE MAP — its own standalone panel (not nested inside
-                Insights & Vault), aligned to the same left-column width on
-                desktop; ordered above the Chronological Log Stream (order-8)
-                on mobile.
-            ========================================== */}
-            <div className={`border ${borderCol} ${bgCard} p-6 relative order-7 lg:order-none`}>
-              {!user && (
-                <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
-                  <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <p className="font-mono text-xs uppercase tracking-wider font-semibold">{t.exploreMapAuthGate}</p>
-                </div>
-              )}
-              <ExploreMap
-                walletBalance={walletBalance}
-                mapProgress={mapProgress}
-                onUnlockCell={handleUnlockCell}
-                isDark={isDark}
-                borderCol={borderCol}
-                textMuted={textMuted}
-              />
             </div>
           </div>
 
@@ -5192,7 +5155,7 @@ export default function App() {
             </div>
 
             {/* CHRONOLOGICAL LOG STREAM */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-8 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 order-7 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className="w-4 h-4" />
@@ -5783,73 +5746,34 @@ export default function App() {
               </button>
             </div>
 
-            {/* Settings Navigation Tabs (5 Tabs: Profile, Themes, Clearance, Password, Data) */}
-            <div className={`grid grid-cols-2 sm:grid-cols-5 border ${borderCol} text-[10px] sm:text-[11px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
-              <button
-                type="button"
-                onClick={() => setSettingsTab('profile')}
-                className={`py-2 text-center transition-colors cursor-pointer ${
-                  settingsTab === 'profile'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                {t.tabProfile}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSettingsTab('themes')}
-                className={`py-2 text-center border-l ${borderCol} transition-colors cursor-pointer ${
-                  settingsTab === 'themes'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                {tf(t.tabThemes, { n: SURFACE_THEME_PAIRS.length })}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSettingsTab('clearance')}
-                className={`py-2 text-center border-t sm:border-t-0 sm:border-l ${borderCol} transition-colors cursor-pointer ${
-                  settingsTab === 'clearance'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                {t.tabClearance}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSettingsTab('security')}
-                className={`py-2 text-center border-t sm:border-t-0 border-l ${borderCol} transition-colors cursor-pointer ${
-                  settingsTab === 'security'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                {t.tabPassword}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSettingsTab('data')}
-                className={`col-span-2 sm:col-span-1 py-2 text-center border-t sm:border-t-0 sm:border-l ${borderCol} transition-colors cursor-pointer ${
-                  settingsTab === 'data'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                {t.tabData}
-              </button>
+            {/* Settings Navigation Tabs */}
+            <div className={`flex flex-wrap border-l border-t ${borderCol} text-[10px] sm:text-[11px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
+              {(
+                [
+                  ['profile', t.tabProfile],
+                  ['themes', tf(t.tabThemes, { n: SURFACE_THEME_PAIRS.length })],
+                  ['fonts', t.tabFonts],
+                  ['ambient', t.tabAmbient],
+                  ['clearance', t.tabClearance],
+                  ['security', t.tabPassword],
+                  ['data', t.tabData],
+                ] as Array<[SettingsTab, string]>
+              ).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setSettingsTab(tab)}
+                  className={`grow basis-1/4 sm:basis-0 px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
+                    settingsTab === tab
+                      ? isDark
+                        ? 'bg-zinc-100 text-zinc-950 font-bold'
+                        : 'bg-zinc-900 text-white font-bold'
+                      : textMuted
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
@@ -5864,7 +5788,6 @@ export default function App() {
                   userClearanceLevel={clearanceStatus.rewardUnlockLevel}
                   userTotalAscensions={clearanceStatus.totalAscensions}
                   userTotalHours={clearanceStatus.totalHours}
-                  clearedMapIds={clearedMapIds}
                   borderCol={borderCol}
                   textMuted={textMuted}
                   fxEnabled={surfaceFxEnabled}
@@ -5873,6 +5796,36 @@ export default function App() {
                     setSurfaceFxEnabled(next);
                     queueUiPrefsSave({ surface_fx: next });
                   }}
+                />
+              )}
+
+              {settingsTab === 'fonts' && (
+                <UiFontPicker
+                  activeFontId={activeUiFont.id}
+                  onSelect={handleSelectUiFont}
+                  progress={chronoProgress}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                />
+              )}
+
+              {settingsTab === 'ambient' && (
+                <AmbientSettingsPanel
+                  activeThemeId={activeAmbientTheme.id}
+                  onSelect={handleSelectAmbientTheme}
+                  onPreview={setAmbientPreviewId}
+                  progress={chronoProgress}
+                  showClock={ambientClock}
+                  onToggleClock={() => {
+                    const next = !ambientClock;
+                    setAmbientClock(next);
+                    queueUiPrefsSave({ ambient_clock: next });
+                  }}
+                  dim={ambientDim}
+                  onChangeDim={setAmbientDim}
+                  keepAwakeMode={keepAwakeMode}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
                 />
               )}
 
@@ -5918,30 +5871,6 @@ export default function App() {
                   )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <span className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>{t.languageLabel}</span>
-                      <div className={`grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.languageLabel}>
-                        {LANG_OPTIONS.map((opt, idx) => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={lang === opt.id}
-                            onClick={() => handleUpdateRegion({ language: opt.id })}
-                            className={`min-h-[38px] px-3 py-2 transition-colors cursor-pointer ${
-                              idx > 0 ? `border-l ${borderCol}` : ''
-                            } ${
-                              lang === opt.id
-                                ? 'bg-emerald-500 text-zinc-950 font-bold'
-                                : `${textMuted} hover:text-emerald-400`
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
                     <div>
                       <label htmlFor="settings-timezone" className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
                         {t.timezoneLabel}
@@ -6181,7 +6110,7 @@ export default function App() {
                             onClick={() => toggleProfileStatus(id)}
                             className="px-2 py-1 border border-emerald-500 bg-emerald-500/15 text-emerald-400 text-[10px] font-bold flex items-center space-x-1.5 cursor-pointer hover:bg-emerald-500/25"
                           >
-                            <span>{getUserStatusOption(id)?.label[lang] ?? id}</span>
+                            <span>{getUserStatusOption(id)?.label ?? id}</span>
                             <span aria-hidden>×</span>
                           </button>
                         ))}
@@ -6282,7 +6211,6 @@ export default function App() {
                                       type="button"
                                       aria-pressed={selected}
                                       onClick={() => toggleProfileStatus(opt.id)}
-                                      title={lang === 'ja' ? opt.label.en : opt.label.ja}
                                       className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
                                         selected
                                           ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
@@ -6292,7 +6220,7 @@ export default function App() {
                                       }`}
                                     >
                                       {selected ? '✓ ' : ''}
-                                      {opt.label[lang]}
+                                      {opt.label}
                                     </button>
                                   );
                                 })}

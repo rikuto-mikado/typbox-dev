@@ -43,6 +43,11 @@ SUPPORTED_WEEK_STARTS = {'mon', 'sun'}
 WEATHER_THEME_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
 SUPPORTED_WEATHER_UNITS = {'', 'c', 'f'}
 
+# UI font / Ambient overlay ids are slugs from frontend/src/uiFonts.ts and
+# frontend/src/ambientThemes.ts.
+UI_FONT_ID_RE = WEATHER_THEME_ID_RE
+AMBIENT_THEME_ID_RE = WEATHER_THEME_ID_RE
+
 # Chronometer Theme ids follow the same slug shape as Surface Themes; the
 # catalog (and its unlock rules) lives in the frontend.
 CHRONO_THEME_ID_RE = SURFACE_THEME_ID_RE
@@ -182,6 +187,9 @@ class UserSerializer(serializers.ModelSerializer):
     weather_unit = serializers.CharField(required=False, allow_blank=True, max_length=1)
     weather_hidden = serializers.BooleanField(required=False, allow_null=True)
     surface_fx = serializers.BooleanField(required=False, allow_null=True)
+    ui_font = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    ambient_theme = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    ambient_clock = serializers.BooleanField(required=False, allow_null=True)
 
     class Meta:
         model = User
@@ -202,6 +210,9 @@ class UserSerializer(serializers.ModelSerializer):
             'weather_unit',
             'weather_hidden',
             'surface_fx',
+            'ui_font',
+            'ambient_theme',
+            'ambient_clock',
         )
         read_only_fields = ('id',)
 
@@ -221,12 +232,9 @@ class UserSerializer(serializers.ModelSerializer):
         data['weather_unit'] = profile.weather_unit
         data['weather_hidden'] = profile.weather_hidden
         data['surface_fx'] = profile.surface_fx
-        # Read-only: granted server-side only when an EXPLORE MAP is fully
-        # cleared (see UnlockMapCellView). Deliberately not a writable field
-        # (no entry in Meta.fields, no validate_ method) — unlike the other
-        # synced prefs above, this has an attached economy and must never be
-        # client-settable.
-        data['unlocked_map_theme_ids'] = list(profile.unlocked_map_theme_ids or [])
+        data['ui_font'] = profile.ui_font
+        data['ambient_theme'] = profile.ambient_theme
+        data['ambient_clock'] = profile.ambient_clock
         return data
 
     def validate_username(self, value):
@@ -327,6 +335,18 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Invalid weather theme id.')
         return cleaned
 
+    def validate_ui_font(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and not UI_FONT_ID_RE.match(cleaned):
+            raise serializers.ValidationError('Invalid UI font id.')
+        return cleaned
+
+    def validate_ambient_theme(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and not AMBIENT_THEME_ID_RE.match(cleaned):
+            raise serializers.ValidationError('Invalid ambient theme id.')
+        return cleaned
+
     def validate_weather_unit(self, value):
         cleaned = value.strip().lower()
         if cleaned not in SUPPORTED_WEATHER_UNITS:
@@ -346,7 +366,10 @@ class UserSerializer(serializers.ModelSerializer):
         # Nullable booleans: "key present" matters, not just the value.
         ui_prefs = {
             key: validated_data.pop(key)
-            for key in ('weather_theme', 'weather_unit', 'weather_hidden', 'surface_fx')
+            for key in (
+                'weather_theme', 'weather_unit', 'weather_hidden', 'surface_fx',
+                'ui_font', 'ambient_theme', 'ambient_clock',
+            )
             if key in validated_data
         }
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Lock } from 'lucide-react';
-import { tf, useI18n } from './i18n';
+import { tf, useI18n, type Dict } from './i18n';
 import { CLEARANCE_LEVELS } from './telemetryFeatures';
 import {
   CHRONO_FAMILIES,
@@ -12,6 +12,7 @@ import {
   isChronoThemeUnlocked,
   type ChronoProgress,
   type ChronoRender,
+  type ChronoUnlock,
   type ChronoTheme,
 } from './chronometerThemes';
 
@@ -704,6 +705,50 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 // Picker panel (opened from the chronometer header)
 // ==========================================
 
+// Lock badge text / locked-pick notice for an unlock rule. Shared with the
+// weather theme picker (Weather.tsx), which uses the same rule set.
+// eslint-disable-next-line react-refresh/only-export-components
+export function unlockRequirementLabel(u: ChronoUnlock, t: Dict): string {
+  switch (u.type) {
+    case 'level':
+      return `LV.${String(u.value).padStart(4, '0')}`;
+    case 'streak':
+      return tf(t.chronoReqStreak, { n: u.value });
+    case 'sessions':
+      return tf(t.chronoReqSessions, { n: u.value });
+    case 'ascension':
+      return tf(t.chronoReqAscension, { n: u.value });
+    case 'hours':
+      return tf(t.chronoReqHours, { n: u.value });
+    case 'session':
+      return tf(t.chronoReqSession, { n: u.value });
+    default:
+      return '';
+  }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function unlockLockedMessage(u: ChronoUnlock, name: string, progress: ChronoProgress, t: Dict): string {
+  switch (u.type) {
+    case 'level': {
+      const hours = CLEARANCE_LEVELS[u.value - 1]?.requiredHours ?? 0;
+      return tf(t.chronoLockedLevel, { lv: String(u.value).padStart(4, '0'), h: hours, name });
+    }
+    case 'streak':
+      return tf(t.chronoLockedStreak, { n: u.value, cur: progress.longestStreak, name });
+    case 'sessions':
+      return tf(t.chronoLockedSessions, { n: u.value, cur: progress.sessionCount, name });
+    case 'ascension':
+      return tf(t.chronoLockedAscension, { n: u.value, name });
+    case 'hours':
+      return tf(t.chronoLockedHours, { n: u.value, cur: Math.floor(progress.totalHours), name });
+    case 'session':
+      return tf(t.chronoLockedSession, { n: u.value, cur: progress.longestSessionMinutes, name });
+    default:
+      return '';
+  }
+}
+
 interface ChronometerThemePickerProps {
   activeThemeId: string;
   onSelect: (id: string) => void;
@@ -740,51 +785,9 @@ export const ChronometerThemePicker: React.FC<ChronometerThemePickerProps> = ({
     [familyFilter]
   );
 
-  const requirementLabel = (th: ChronoTheme): string => {
-    const u = th.unlock;
-    switch (u.type) {
-      case 'level':
-        return `LV.${String(u.value).padStart(4, '0')}`;
-      case 'streak':
-        return tf(t.chronoReqStreak, { n: u.value });
-      case 'sessions':
-        return tf(t.chronoReqSessions, { n: u.value });
-      case 'ascension':
-        return tf(t.chronoReqAscension, { n: u.value });
-      case 'hours':
-        return tf(t.chronoReqHours, { n: u.value });
-      case 'session':
-        return tf(t.chronoReqSession, { n: u.value });
-      default:
-        return '';
-    }
-  };
-
-  const lockedMessage = (th: ChronoTheme): string => {
-    const u = th.unlock;
-    switch (u.type) {
-      case 'level': {
-        const hours = CLEARANCE_LEVELS[u.value - 1]?.requiredHours ?? 0;
-        return tf(t.chronoLockedLevel, { lv: String(u.value).padStart(4, '0'), h: hours, name: th.name });
-      }
-      case 'streak':
-        return tf(t.chronoLockedStreak, { n: u.value, cur: progress.longestStreak, name: th.name });
-      case 'sessions':
-        return tf(t.chronoLockedSessions, { n: u.value, cur: progress.sessionCount, name: th.name });
-      case 'ascension':
-        return tf(t.chronoLockedAscension, { n: u.value, name: th.name });
-      case 'hours':
-        return tf(t.chronoLockedHours, { n: u.value, cur: Math.floor(progress.totalHours), name: th.name });
-      case 'session':
-        return tf(t.chronoLockedSession, { n: u.value, cur: progress.longestSessionMinutes, name: th.name });
-      default:
-        return '';
-    }
-  };
-
   const handlePick = (th: ChronoTheme) => {
     if (!isChronoThemeUnlocked(th, progress)) {
-      setNotice(lockedMessage(th));
+      setNotice(unlockLockedMessage(th.unlock, th.name, progress, t));
       return;
     }
     setNotice(null);
@@ -864,7 +867,7 @@ export const ChronometerThemePicker: React.FC<ChronometerThemePickerProps> = ({
                 {!unlocked && (
                   <span className={`ml-auto text-[9px] px-1 border ${borderCol} text-amber-400 flex items-center space-x-1 shrink-0`}>
                     <Lock className="w-2.5 h-2.5" />
-                    <span>{requirementLabel(th)}</span>
+                    <span>{unlockRequirementLabel(th.unlock, t)}</span>
                   </span>
                 )}
               </div>

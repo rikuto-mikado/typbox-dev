@@ -1,26 +1,43 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { MapPin } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Lock, MapPin } from 'lucide-react';
 import { tf, useI18n } from './i18n';
 import type { Dict } from './i18n';
 import {
   ASCII,
+  AURA,
+  BAROMETER_ANGLE,
+  BEAUFORT_NAME,
   CYBER_CODE,
   DEFAULT_WEATHER_THEME,
+  DOT_FONT,
   EMOJI,
   GLYPH,
+  HAIKU,
   KANJI,
   LED_COLOR,
   METAR_CODE,
+  OKTAS,
   PIXEL_COLORS,
+  PRESENT_WX,
+  RADAR_ECHO,
   SHORT_WORD,
+  STICKER_BG,
   WEATHER_THEMES,
+  barcodeBars,
+  barometerWord,
+  beaufortForce,
   isWeatherThemeId,
   pixelSprite,
   thermoReading,
+  toBraille,
+  toMorse,
   weatherKind,
   type WeatherKind,
+  type WeatherTheme,
   type WeatherThemeId,
 } from './weatherThemes';
+import { isUnlockRuleMet, unlockRuleRank, type ChronoProgress } from './chronometerThemes';
+import { unlockLockedMessage, unlockRequirementLabel } from './ChronometerFace';
 
 // Weather badge for the SYSTEM CHRONOMETER header.
 //
@@ -496,15 +513,191 @@ const PixelSprite: React.FC<{ kind: WeatherKind; isDay: boolean; px: number }> =
   );
 };
 
-// Glyph-subset web fonts for the pixel and kanji faces (loaded once, on demand).
+// Glyph-subset web fonts for faces that need one (loaded once, on demand).
+const ASCII_TEXT = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)).join('') + '°▋';
+const gf = (family: string, text: string) =>
+  `https://fonts.googleapis.com/css2?family=${family}&text=${encodeURIComponent(text)}&display=swap`;
 const WEATHER_FONTS: Partial<Record<WeatherThemeId, string>> = {
-  pixel: `https://fonts.googleapis.com/css2?family=Press+Start+2P&text=${encodeURIComponent('0123456789°CF-')}&display=swap`,
-  kanji: `https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@700&text=${encodeURIComponent('晴曇霧雨雪雷月')}&display=swap`,
+  pixel: gf('Press+Start+2P', '0123456789°CF-'),
+  kanji: gf('Noto+Serif+JP:wght@700', '晴曇霧雨雪雷月'),
+  neon: gf('Tilt+Neon', ASCII_TEXT),
+  terminal: gf('VT323', ASCII_TEXT),
+  lcd: gf('Share+Tech+Mono', ASCII_TEXT),
+  nixie: gf('Nixie+One', '0123456789-CF'),
+};
+
+// ==========================================
+// SVG pieces for WX-12..33
+// ==========================================
+
+// JMA weather-map symbols: 快晴 ○, 晴 ⦶, 曇 ◎, 雨 ●; fog / snow / thunder
+// marks inside the ring are stylized.
+const JmaSymbol: React.FC<{ kind: WeatherKind; px: number }> = ({ kind, px }) => {
+  const ink = 'currentColor';
+  const filled = kind === 'rain' || kind === 'drizzle';
+  let inner: React.ReactNode = null;
+  if (kind === 'mostly-clear' || kind === 'partly') inner = <line x1={12} y1={3} x2={12} y2={21} stroke={ink} strokeWidth={1.6} />;
+  if (kind === 'overcast') inner = <circle cx={12} cy={12} r={4.5} fill="none" stroke={ink} strokeWidth={1.6} />;
+  if (kind === 'drizzle') inner = <circle cx={12} cy={12} r={2.2} fill="var(--tb-bg-card)" />;
+  if (kind === 'fog') inner = [9, 12, 15].map((y) => <line key={y} x1={7} y1={y} x2={17} y2={y} stroke={ink} strokeWidth={1.3} />);
+  if (kind === 'snow')
+    inner = [0, 60, 120].map((a) => (
+      <line key={a} x1={12} y1={7} x2={12} y2={17} stroke={ink} strokeWidth={1.3} transform={`rotate(${a} 12 12)`} />
+    ));
+  if (kind === 'thunder') inner = <path d="M13.5 6l-4 6.5h3l-1.5 5.5 4.5-7h-3l1.8-5Z" fill={ink} />;
+  return (
+    <svg viewBox="0 0 24 24" width={px} height={px} style={{ flexShrink: 0 }} aria-hidden>
+      <circle cx={12} cy={12} r={9} fill={filled ? ink : 'none'} stroke={ink} strokeWidth={1.6} />
+      {inner}
+    </svg>
+  );
+};
+
+const Windsock: React.FC<{ windKmh: number; px: number }> = ({ windKmh, px }) => {
+  // Limp at calm, fully horizontal from ~30 km/h.
+  const fill = Math.max(0, Math.min(1, windKmh / 30));
+  const droop = (1 - fill) * 65;
+  const segs = 5;
+  const len = 18;
+  return (
+    <svg viewBox="0 0 26 24" width={(px * 26) / 24} height={px} style={{ overflow: 'visible', flexShrink: 0 }} aria-hidden>
+      <line x1={3} y1={3} x2={3} y2={23} stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" />
+      <g transform={`rotate(${droop} 3 5)`}>
+        <g className="wx-sway" style={{ transformOrigin: '3px 5px' }}>
+          {Array.from({ length: segs }, (_, i) => {
+            const x0 = 3 + (i * len) / segs;
+            const x1 = 3 + ((i + 1) * len) / segs;
+            const h0 = 3.2 - i * 0.35;
+            const h1 = 3.2 - (i + 1) * 0.35;
+            return (
+              <polygon
+                key={i}
+                points={`${x0},${5 - h0} ${x1},${5 - h1} ${x1},${5 + h1} ${x0},${5 + h0}`}
+                fill={i % 2 === 0 ? '#f97316' : '#fafafa'}
+                stroke="#f97316"
+                strokeWidth={0.4}
+              />
+            );
+          })}
+        </g>
+      </g>
+    </svg>
+  );
+};
+
+const Barometer: React.FC<{ kind: WeatherKind; px: number }> = ({ kind, px }) => (
+  <svg viewBox="0 0 32 32" width={px} height={px} style={{ flexShrink: 0 }} aria-hidden>
+    <circle cx={16} cy={16} r={15} fill="#fef3c7" stroke="#b45309" strokeWidth={2} />
+    {Array.from({ length: 11 }, (_, i) => {
+      const a = ((-120 + i * 24) * Math.PI) / 180;
+      return (
+        <line key={i} x1={16 + Math.sin(a) * 11.5} y1={16 - Math.cos(a) * 11.5} x2={16 + Math.sin(a) * 13.5} y2={16 - Math.cos(a) * 13.5} stroke="#78350f" strokeWidth={0.6} />
+      );
+    })}
+    <g transform={`rotate(${BAROMETER_ANGLE[kind]} 16 16)`}>
+      <line x1={16} y1={19} x2={16} y2={4.5} stroke="#18181b" strokeWidth={1} strokeLinecap="round" />
+    </g>
+    <circle cx={16} cy={16} r={1.4} fill="#b45309" />
+  </svg>
+);
+
+// Station model: sky-cover circle (oktas), present-weather mark, wind barb.
+const StationPlot: React.FC<{ kind: WeatherKind; windKmh: number; px: number }> = ({ kind, windKmh, px }) => {
+  const cx = 14;
+  const cy = 14;
+  const r = 4.5;
+  const oktas = OKTAS[kind];
+  const frac = oktas === 9 ? 0 : oktas / 8;
+  let cover: React.ReactNode = null;
+  if (oktas === 9) {
+    cover = (
+      <g stroke="currentColor" strokeWidth={1}>
+        <line x1={cx - 3} y1={cy - 3} x2={cx + 3} y2={cy + 3} />
+        <line x1={cx + 3} y1={cy - 3} x2={cx - 3} y2={cy + 3} />
+      </g>
+    );
+  } else if (frac >= 1) {
+    cover = <circle cx={cx} cy={cy} r={r} fill="currentColor" />;
+  } else if (frac > 0) {
+    const a = frac * 2 * Math.PI;
+    cover = <path d={`M${cx} ${cy}L${cx} ${cy - r}A${r} ${r} 0 ${frac > 0.5 ? 1 : 0} 1 ${cx + r * Math.sin(a)} ${cy - r * Math.cos(a)}Z`} fill="currentColor" />;
+  }
+  const kt = Math.round(windKmh / 1.852);
+  const ux = Math.SQRT1_2;
+  const uy = -Math.SQRT1_2;
+  const end = { x: cx + ux * (r + 10), y: cy + uy * (r + 10) };
+  const barbs: React.ReactNode[] = [];
+  let rest = kt;
+  let at = 0;
+  const along = (d: number) => ({ x: end.x - ux * d, y: end.y - uy * d });
+  while (rest >= 50) {
+    const a = along(at);
+    const b = along(at + 2);
+    barbs.push(<polygon key={`p${at}`} points={`${a.x},${a.y} ${a.x + 3},${a.y + 3} ${b.x},${b.y}`} fill="currentColor" />);
+    rest -= 50;
+    at += 2.6;
+  }
+  while (rest >= 10) {
+    const a = along(at);
+    barbs.push(<line key={`f${at}`} x1={a.x} y1={a.y} x2={a.x + 3} y2={a.y + 3} stroke="currentColor" strokeWidth={0.9} />);
+    rest -= 10;
+    at += 1.6;
+  }
+  if (rest >= 5) {
+    const a = along(at === 0 ? 1.6 : at);
+    barbs.push(<line key="h" x1={a.x} y1={a.y} x2={a.x + 1.6} y2={a.y + 1.6} stroke="currentColor" strokeWidth={0.9} />);
+  }
+  return (
+    <svg viewBox="0 0 30 24" width={(px * 30) / 24} height={px} style={{ overflow: 'visible', flexShrink: 0 }} aria-hidden>
+      {kt < 3 ? (
+        <circle cx={cx} cy={cy} r={r + 2} fill="none" stroke="currentColor" strokeWidth={0.7} />
+      ) : (
+        <>
+          <line x1={cx + ux * r} y1={cy + uy * r} x2={end.x} y2={end.y} stroke="currentColor" strokeWidth={0.9} />
+          {barbs}
+        </>
+      )}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={1} />
+      {cover}
+      {PRESENT_WX[kind] && (
+        <text x={4.5} y={cy + 2.2} fontSize={6.5} textAnchor="middle" fill="currentColor" fontWeight={700}>
+          {PRESENT_WX[kind]}
+        </text>
+      )}
+    </svg>
+  );
+};
+
+const Radar: React.FC<{ kind: WeatherKind; px: number }> = ({ kind, px }) => {
+  const [count, color] = RADAR_ECHO[kind];
+  // Fixed pseudo-random echo positions so the scope doesn't jump per render.
+  const echoes = Array.from({ length: count }, (_, i) => {
+    const a = (i * 137.5 * Math.PI) / 180;
+    const d = 3 + ((i * 53) % 6);
+    return { x: 12 + Math.cos(a) * d, y: 12 + Math.sin(a) * d, r: 0.9 + ((i * 7) % 4) * 0.25 };
+  });
+  return (
+    <svg viewBox="0 0 24 24" width={px} height={px} style={{ flexShrink: 0 }} aria-hidden>
+      <circle cx={12} cy={12} r={11} fill="#052e16" stroke="#16a34a" strokeWidth={0.8} />
+      {[3.7, 7.4].map((rr) => (
+        <circle key={rr} cx={12} cy={12} r={rr} fill="none" stroke="#16a34a" strokeWidth={0.35} opacity={0.7} />
+      ))}
+      <line x1={1} y1={12} x2={23} y2={12} stroke="#16a34a" strokeWidth={0.3} opacity={0.6} />
+      <line x1={12} y1={1} x2={12} y2={23} stroke="#16a34a" strokeWidth={0.3} opacity={0.6} />
+      {echoes.map((e, i) => (
+        <circle key={i} cx={e.x} cy={e.y} r={e.r} fill={color} opacity={0.85} />
+      ))}
+      <g className="wx-sweep" style={{ transformOrigin: '12px 12px' }}>
+        <path d="M12 12L12 1A11 11 0 0 1 21.5 6.5Z" fill="#4ade80" opacity={0.28} />
+        <line x1={12} y1={12} x2={12} y2={1} stroke="#4ade80" strokeWidth={0.6} />
+      </g>
+    </svg>
+  );
 };
 const loadedWeatherFonts = new Set<string>();
 
 const WeatherFace: React.FC<FaceProps> = ({ theme, kind, isDay, tempC, windKmh, unit, size }) => {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   useEffect(() => {
     const href = WEATHER_FONTS[theme];
     if (!href || loadedWeatherFonts.has(href)) return;
@@ -517,10 +710,25 @@ const WeatherFace: React.FC<FaceProps> = ({ theme, kind, isDay, tempC, windKmh, 
   const temp = formatTemp(tempC, unit);
   const big = size === 'large';
   const iconPx = big ? 44 : size === 'tile' ? 22 : 16;
-  const word = SHORT_WORD[lang === 'ja' ? 'ja' : 'en'][kind];
+  const word = SHORT_WORD[kind];
   const label = t[KIND_LABEL_KEY[kind]];
   const tempCls = big ? 'text-2xl font-light' : 'font-semibold';
   const sub = big ? <div className="text-[10px] uppercase tracking-wider opacity-70 mt-1">{label} · {tf(t.wxWind, { v: Math.round(windKmh) })}</div> : null;
+  const tile = size === 'tile';
+  const unitChar = unit === 'f' ? 'F' : 'C';
+  const whole = Math.round(unit === 'f' ? (tempC * 9) / 5 + 32 : tempC);
+  // Self-backed faces (neon, LCD, ...) carry their own plate so they read
+  // the same on light and dark surfaces.
+  const plate = big ? 'px-3 py-2 rounded' : tile ? 'px-1.5 py-0.5 rounded-sm' : 'px-1 rounded-sm';
+  const withTemp = (icon: React.ReactNode) => (
+    <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+      {icon}
+      <span>
+        <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+        {sub}
+      </span>
+    </span>
+  );
 
   switch (theme) {
     case 'minimal':
@@ -665,6 +873,367 @@ const WeatherFace: React.FC<FaceProps> = ({ theme, kind, isDay, tempC, windKmh, 
         </span>
       );
     }
+    case 'neon': {
+      const color = LED_COLOR[kind];
+      return (
+        <span
+          className={`wx-flicker inline-flex ${big ? 'flex-col gap-1' : 'items-baseline gap-1.5'} ${plate}`}
+          style={{ background: '#0b0b12', color: '#fff', fontFamily: "'Tilt Neon', ui-sans-serif, sans-serif", textShadow: `0 0 2px #fff, 0 0 ${big ? 8 : 4}px ${color}, 0 0 ${big ? 18 : 8}px ${color}` }}
+        >
+          <span className={`tabular-nums ${big ? 'text-3xl' : ''}`}>{temp}</span>
+          <span className={big ? 'text-[11px] tracking-[0.3em]' : 'text-[9px] tracking-widest'} style={{ color, textShadow: `0 0 4px ${color}` }}>
+            {big ? label.toUpperCase() : word}
+          </span>
+        </span>
+      );
+    }
+    case 'sticker':
+      return withTemp(
+        <span
+          className="inline-flex items-center justify-center rounded-full shrink-0"
+          style={{
+            width: iconPx + (big ? 14 : 2),
+            height: iconPx + (big ? 14 : 2),
+            background: STICKER_BG[kind],
+            border: `${big ? 3 : 1.5}px solid #fff`,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+            transform: 'rotate(-8deg)',
+            fontSize: big ? 30 : tile ? 13 : 10,
+            lineHeight: 1,
+          }}
+        >
+          {EMOJI[kind][isDay ? 0 : 1]}
+        </span>
+      );
+    case 'terminal':
+      return (
+        <span
+          className={`inline-flex flex-col ${plate}`}
+          style={{ background: '#0c0c0c', color: '#4ade80', fontFamily: "'VT323', ui-monospace, monospace", fontSize: big ? 20 : tile ? 14 : 13, lineHeight: 1.1 }}
+        >
+          {big && <span style={{ color: '#a1a1aa' }}>$ wx --now</span>}
+          <span className="whitespace-pre">
+            {big ? '> ' : '$ '}
+            {CYBER_CODE[kind]} {temp}
+            <span className="wx-blink">▋</span>
+          </span>
+          {big && <span style={{ color: '#a1a1aa', fontSize: 15 }}>{`wind=${Math.round(windKmh)}km/h cycle=${isDay ? 'day' : 'night'}`}</span>}
+        </span>
+      );
+    case 'lcd': {
+      const digits = String(whole);
+      return (
+        <span
+          className={`inline-flex items-center gap-1.5 ${plate}`}
+          style={{ background: '#9fae88', color: '#1c2617', fontFamily: "'Share Tech Mono', ui-monospace, monospace", boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.35)' }}
+        >
+          <span className="relative tabular-nums" style={{ fontSize: big ? 34 : tile ? 15 : 12, lineHeight: 1 }}>
+            <span className="absolute inset-0" style={{ opacity: 0.13 }}>
+              {digits.replace(/./g, '8')}
+            </span>
+            <span className="relative">{digits}</span>
+          </span>
+          <span className="flex flex-col leading-none" style={{ fontSize: big ? 11 : 7 }}>
+            <span>°{unitChar}</span>
+            <span>{CYBER_CODE[kind]}</span>
+          </span>
+        </span>
+      );
+    }
+    case 'calendar': {
+      const w = big ? 64 : tile ? 26 : 20;
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <span
+            className="inline-flex flex-col overflow-hidden shrink-0"
+            style={{ width: w, borderRadius: big ? 4 : 2, background: '#fafafa', color: '#18181b', boxShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+          >
+            <span className="text-center font-bold text-white truncate" style={{ background: '#dc2626', fontSize: big ? 10 : 5, lineHeight: big ? '16px' : '4px', minHeight: big ? 16 : 4 }}>
+              {big || tile ? word : ''}
+            </span>
+            <span className="text-center font-bold tabular-nums" style={{ fontSize: big ? 24 : tile ? 11 : 9, lineHeight: big ? '34px' : tile ? '14px' : '11px' }}>
+              {whole}°
+            </span>
+          </span>
+          {big && sub}
+        </span>
+      );
+    }
+    case 'flap': {
+      const chars = (big ? `${word} ${temp}` : temp).split('');
+      const h = big ? 30 : tile ? 18 : 14;
+      const w = big ? 20 : tile ? 11 : 9;
+      return (
+        <span className="inline-flex flex-col">
+          <span className="inline-flex gap-px">
+            {chars.map((ch, i) => (
+              <span
+                key={i}
+                className="relative inline-flex items-center justify-center font-bold"
+                style={{ width: ch === ' ' ? w / 2 : w, height: h, background: ch === ' ' ? 'transparent' : '#18181b', color: '#fafafa', borderRadius: 2, fontSize: h * 0.62, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+              >
+                {ch}
+                {ch !== ' ' && <span className="absolute left-0 right-0 top-1/2 h-px" style={{ background: 'rgba(0,0,0,0.75)' }} />}
+              </span>
+            ))}
+          </span>
+          {sub}
+        </span>
+      );
+    }
+    case 'dotmatrix': {
+      const str = `${whole}°${unitChar}`;
+      const pitch = big ? 4 : tile ? 2.4 : 2;
+      const cols = str.length * 4 - 1;
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <span className={`inline-flex ${plate}`} style={{ background: '#0a0a0a' }}>
+            <svg width={cols * pitch} height={5 * pitch} viewBox={`0 0 ${cols} 5`} aria-hidden>
+              {str.split('').flatMap((ch, ci) =>
+                (DOT_FONT[ch] ?? DOT_FONT['-']).flatMap((row, y) =>
+                  row.split('').map((c, x) => (
+                    <circle key={`${ci}-${x}-${y}`} cx={ci * 4 + x + 0.5} cy={y + 0.5} r={0.38} fill={c === '#' ? '#fbbf24' : 'rgba(251,191,36,0.12)'} />
+                  ))
+                )
+              )}
+            </svg>
+          </span>
+          {big && sub}
+        </span>
+      );
+    }
+    case 'scale': {
+      const pct = Math.max(0, Math.min(1, (tempC + 10) / 50));
+      const w = big ? 160 : tile ? 40 : 30;
+      const barH = big ? 8 : 4;
+      const ticks = unit === 'f' ? ['14°', '59°', '104°'] : ['-10°', '15°', '40°'];
+      return (
+        <span className={`inline-flex ${big ? 'flex-col items-start gap-1' : 'items-center gap-1.5'}`}>
+          <span className="relative shrink-0" style={{ width: w, height: barH + (big ? 6 : 3) }}>
+            <span className="absolute left-0 right-0 bottom-0 rounded-full" style={{ height: barH, background: 'linear-gradient(90deg,#93c5fd,#38bdf8,#34d399,#fbbf24,#ef4444)' }} />
+            <span className="absolute bottom-0" style={{ left: `calc(${pct * 100}% - ${big ? 1.5 : 1}px)`, width: big ? 3 : 2, height: barH + (big ? 6 : 3), background: 'currentColor', borderRadius: 1 }} />
+          </span>
+          {big && (
+            <span className="flex justify-between text-[9px] opacity-60 tabular-nums" style={{ width: w }}>
+              {ticks.map((tk) => (
+                <span key={tk}>{tk}</span>
+              ))}
+            </span>
+          )}
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {sub}
+          </span>
+        </span>
+      );
+    }
+    case 'beaufort': {
+      const f = beaufortForce(windKmh);
+      const color = `hsl(${140 - f * 11} 75% 50%)`;
+      return (
+        <span className={`inline-flex ${big ? 'flex-col gap-1.5' : 'items-center gap-1'}`}>
+          <span className={`font-semibold tabular-nums ${big ? 'text-2xl' : ''}`} style={{ color }}>
+            B{f}
+          </span>
+          {!(size === 'badge') && (
+            <span className="inline-flex items-end gap-px">
+              {Array.from({ length: 12 }, (_, i) => (
+                <span key={i} style={{ width: big ? 4 : 1.5, height: (big ? 4 : 2) + i * (big ? 1.6 : 0.6), background: i < f ? color : 'currentColor', opacity: i < f ? 1 : 0.18 }} />
+              ))}
+            </span>
+          )}
+          {big ? (
+            <span className="text-[10px] uppercase tracking-wider opacity-70">
+              {BEAUFORT_NAME[f]} · {Math.round(windKmh)} KM/H · {temp}
+            </span>
+          ) : (
+            <span className="tabular-nums font-semibold">{temp}</span>
+          )}
+        </span>
+      );
+    }
+    case 'jma':
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <JmaSymbol kind={kind} px={iconPx} />
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {big && <div className="text-[10px] uppercase tracking-wider opacity-70 mt-1">{label}</div>}
+          </span>
+        </span>
+      );
+    case 'haiku': {
+      const line = HAIKU[kind][isDay ? 0 : 1];
+      const verse: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif", fontStyle: 'italic' };
+      return big ? (
+        <span className="inline-flex flex-col gap-1.5">
+          <span style={{ ...verse, fontSize: 18 }}>{line}</span>
+          <span className="text-[10px] uppercase tracking-wider opacity-70">
+            — {label} · {temp}
+          </span>
+        </span>
+      ) : (
+        <span className="inline-flex items-baseline gap-1.5 min-w-0">
+          <span className={`truncate opacity-80 ${tile ? 'max-w-32' : 'hidden sm:inline max-w-24'}`} style={verse}>
+            {line}
+          </span>
+          <span className="tabular-nums font-semibold">{temp}</span>
+        </span>
+      );
+    }
+    case 'windsock':
+      return withTemp(<Windsock windKmh={windKmh} px={iconPx} />);
+    case 'barometer':
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <Barometer kind={kind} px={big ? 56 : iconPx} />
+          <span>
+            <span className={`tabular-nums ${tempCls}`}>{temp}</span>
+            {big && (
+              <div className="text-[10px] uppercase tracking-wider opacity-70 mt-1">
+                ▸ {barometerWord(kind)} · {label}
+              </div>
+            )}
+          </span>
+        </span>
+      );
+    case 'morse': {
+      const code = toMorse(SHORT_WORD[kind]).replace(/\./g, '·').replace(/-/g, '−');
+      return big ? (
+        <span className="inline-flex flex-col gap-1">
+          <span className="text-lg tracking-[0.2em] leading-tight">{code}</span>
+          <span className="text-[10px] uppercase tracking-wider opacity-70">
+            {SHORT_WORD[kind]} · {temp} · {tf(t.wxWind, { v: Math.round(windKmh) })}
+          </span>
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 min-w-0">
+          <span className={`truncate opacity-80 tracking-wider ${tile ? 'max-w-20' : 'max-w-16'}`}>{code}</span>
+          <span className="tabular-nums font-semibold">{temp}</span>
+        </span>
+      );
+    }
+    case 'broadcast':
+      return (
+        <span
+          className={`inline-flex items-center ${big ? 'gap-3' : 'gap-1'} ${plate}`}
+          style={{ background: 'linear-gradient(180deg,#1e3a8a,#1d4ed8 60%,#1e40af)', color: '#fff', fontFamily: "'Arial Black', 'Helvetica Neue', Arial, sans-serif", textShadow: '1px 1px 0 #0b1a4a' }}
+        >
+          <span style={{ fontSize: big ? 32 : tile ? 13 : 11, lineHeight: 1 }}>{EMOJI[kind][isDay ? 0 : 1]}</span>
+          <span className="inline-flex flex-col leading-none">
+            {big && <span className="text-[9px] tracking-widest mb-1" style={{ color: '#bfdbfe' }}>{label.toUpperCase()}</span>}
+            <span className={`tabular-nums ${big ? 'text-3xl' : ''}`} style={{ color: '#fde047' }}>
+              {temp}
+            </span>
+            {big && <span className="text-[9px] tracking-widest mt-1">{tf(t.wxWind, { v: Math.round(windKmh) })}</span>}
+          </span>
+        </span>
+      );
+    case 'nixie': {
+      const h = big ? 44 : tile ? 20 : 15;
+      const w = h * 0.62;
+      return (
+        <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
+          <span className="inline-flex gap-[2px]">
+            {[...String(whole).split(''), unitChar].map((ch, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center justify-center"
+                style={{
+                  width: w,
+                  height: h,
+                  borderRadius: `${w / 2}px ${w / 2}px 3px 3px`,
+                  background: 'radial-gradient(ellipse at 50% 40%, rgba(255,140,40,0.18), rgba(20,10,5,0.95) 70%)',
+                  border: '1px solid rgba(255,200,150,0.25)',
+                  color: '#ff9a3c',
+                  textShadow: '0 0 4px #ff7a00, 0 0 10px #ff5500',
+                  fontFamily: "'Nixie One', ui-monospace, monospace",
+                  fontSize: h * 0.7,
+                  lineHeight: 1,
+                }}
+              >
+                {ch}
+              </span>
+            ))}
+          </span>
+          {big && sub}
+        </span>
+      );
+    }
+    case 'station':
+      return withTemp(<StationPlot kind={kind} windKmh={windKmh} px={iconPx} />);
+    case 'radar':
+      return withTemp(<Radar kind={kind} px={iconPx} />);
+    case 'binary': {
+      const bits = Math.min(255, Math.abs(whole)).toString(2).padStart(8, '0');
+      const dot = big ? 10 : tile ? 4 : 3.5;
+      return (
+        <span className={`inline-flex ${big ? 'flex-col gap-1.5' : 'items-center gap-1'}`}>
+          <span className="inline-flex items-center" style={{ gap: big ? 4 : 1.5 }}>
+            <span className="tabular-nums" style={{ fontSize: big ? 14 : 9 }}>
+              {whole < 0 ? '−' : '+'}
+            </span>
+            {bits.split('').map((b, i) => (
+              <span
+                key={i}
+                className="rounded-full shrink-0"
+                style={{ width: dot, height: dot, background: b === '1' ? '#22d3ee' : 'transparent', border: `1px solid ${b === '1' ? '#22d3ee' : 'currentColor'}`, opacity: b === '1' ? 1 : 0.3, boxShadow: b === '1' ? `0 0 ${big ? 6 : 2}px #22d3ee` : undefined }}
+              />
+            ))}
+          </span>
+          {big && (
+            <span className="text-[10px] uppercase tracking-widest opacity-70 tabular-nums">
+              0b{bits} = {whole}°{unitChar} · {label}
+            </span>
+          )}
+        </span>
+      );
+    }
+    case 'braille': {
+      const n = `${whole}`;
+      return (
+        <span className={`inline-flex ${big ? 'flex-col gap-1' : 'items-center gap-1'}`}>
+          <span style={{ fontSize: big ? 30 : tile ? 16 : 14, lineHeight: 1 }}>{toBraille(big ? `${SHORT_WORD[kind]} ${n}` : n)}</span>
+          {big ? (
+            <span className="text-[10px] uppercase tracking-wider opacity-70">
+              {label} · {temp}
+            </span>
+          ) : (
+            <span className="tabular-nums font-semibold">{temp}</span>
+          )}
+        </span>
+      );
+    }
+    case 'barcode': {
+      const bars = barcodeBars(`${kind}${Math.round(tempC)}`, big ? 28 : tile ? 16 : 12);
+      const h = big ? 34 : tile ? 16 : 12;
+      const unitW = big ? 1.5 : 0.75;
+      let x = 0;
+      const rects: React.ReactNode[] = [];
+      bars.forEach((bw, i) => {
+        if (i % 2 === 0) rects.push(<rect key={i} x={x} y={0} width={bw * unitW} height={h} fill="#09090b" />);
+        x += bw * unitW;
+      });
+      return withTemp(
+        <span className="inline-flex flex-col items-center shrink-0" style={{ background: '#fafafa', padding: big ? '4px 6px 2px' : '1px 2px', borderRadius: 2 }}>
+          <svg width={x} height={h} aria-hidden>
+            {rects}
+          </svg>
+          {big && (
+            <span style={{ color: '#09090b', fontSize: 9, letterSpacing: '0.2em', fontFamily: 'ui-monospace, monospace' }}>
+              {CYBER_CODE[kind]}-{metarTemp(tempC)}
+            </span>
+          )}
+        </span>
+      );
+    }
+    case 'aura': {
+      const [a, b] = AURA[kind][isDay ? 0 : 1];
+      const d = big ? 48 : tile ? 20 : 14;
+      return withTemp(
+        <span className="wx-breathe rounded-full shrink-0" style={{ width: d, height: d, background: `radial-gradient(circle at 35% 35%, ${a}, ${b} 75%)`, boxShadow: `0 0 ${big ? 18 : 6}px ${a}` }} />
+      );
+    }
     default:
       return (
         <span className={`inline-flex items-center ${big ? 'gap-4' : 'gap-1'}`}>
@@ -682,14 +1251,17 @@ const WeatherFace: React.FC<FaceProps> = ({ theme, kind, isDay, tempC, windKmh, 
 // Badge (header) + panel (expands inside the chronometer card)
 // ==========================================
 
-export const WeatherBadge: React.FC<{ wx: WeatherState; open: boolean; onToggle: () => void; textMuted: string }> = ({
+// `theme` is the face actually shown: the saved pick, or the default while
+// that pick is locked (App resolves this, like the Chronometer Theme).
+export const WeatherBadge: React.FC<{ wx: WeatherState; theme: WeatherThemeId; open: boolean; onToggle: () => void; textMuted: string }> = ({
   wx,
+  theme,
   open,
   onToggle,
   textMuted,
 }) => {
   const { t } = useI18n();
-  const { reading, prefs, unit, coords, theme } = wx;
+  const { reading, prefs, unit, coords } = wx;
   const kind = reading ? weatherKind(reading.code) : null;
   const where = coords?.label ?? t.wxHere;
   const title = reading && kind ? `${where} · ${t[KIND_LABEL_KEY[kind]]} · ${formatTemp(reading.tempC, unit)}` : t.wxOpen;
@@ -715,14 +1287,24 @@ export const WeatherBadge: React.FC<{ wx: WeatherState; open: boolean; onToggle:
   );
 };
 
-export const WeatherPanel: React.FC<{ wx: WeatherState; isDark: boolean; borderCol: string; textMuted: string }> = ({
-  wx,
-  isDark,
-  borderCol,
-  textMuted,
-}) => {
+// Easiest unlock first, matching the Chronometer Theme picker.
+const SORTED_WEATHER_THEMES = [...WEATHER_THEMES].sort((a, b) => unlockRuleRank(a.unlock) - unlockRuleRank(b.unlock));
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const isWeatherThemeUnlocked = (wt: WeatherTheme, progress: ChronoProgress) => isUnlockRuleMet(wt.unlock, progress);
+
+export const WeatherPanel: React.FC<{
+  wx: WeatherState;
+  theme: WeatherThemeId;
+  progress: ChronoProgress;
+  isDark: boolean;
+  borderCol: string;
+  textMuted: string;
+}> = ({ wx, theme, progress, isDark, borderCol, textMuted }) => {
   const { t } = useI18n();
-  const { reading, prefs, updatePrefs, coords, unit, error, requestPrecise, theme } = wx;
+  const { reading, prefs, updatePrefs, coords, unit, error, requestPrecise } = wx;
+  const [notice, setNotice] = useState<string | null>(null);
+  const unlockedCount = useMemo(() => WEATHER_THEMES.filter((wt) => isWeatherThemeUnlocked(wt, progress)).length, [progress]);
   const kind = reading ? weatherKind(reading.code) : null;
   const chip = `px-2 py-1 border ${borderCol} text-[10px] cursor-pointer hover:text-emerald-400 hover:border-emerald-500/50`;
   // Theme previews use the live reading, or a sample when nothing is loaded.
@@ -771,22 +1353,42 @@ export const WeatherPanel: React.FC<{ wx: WeatherState; isDark: boolean; borderC
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
             <span className="font-semibold">{tf(t.wxThemesTitle, { n: WEATHER_THEMES.length })}</span>
+            <span className="text-emerald-400 tabular-nums">{tf(t.chronoUnlocked, { a: unlockedCount, b: WEATHER_THEMES.length })}</span>
           </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {WEATHER_THEMES.map((wt) => {
+          {notice && (
+            <div className="p-2 border border-amber-500/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center justify-between">
+              <span className="flex items-center space-x-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>{notice}</span>
+              </span>
+              <button type="button" onClick={() => setNotice(null)} className="text-[9px] underline ml-2 cursor-pointer">
+                {t.dismiss}
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-1.5 max-h-72 overflow-y-auto pr-1">
+            {SORTED_WEATHER_THEMES.map((wt) => {
               const active = wt.id === theme;
+              const unlocked = isWeatherThemeUnlocked(wt, progress);
               return (
                 <button
                   key={wt.id}
                   type="button"
-                  onClick={() => updatePrefs({ theme: wt.id })}
+                  onClick={() => {
+                    if (!unlocked) {
+                      setNotice(unlockLockedMessage(wt.unlock, wt.name, progress, t));
+                      return;
+                    }
+                    setNotice(null);
+                    updatePrefs({ theme: wt.id });
+                  }}
                   aria-pressed={active}
                   title={wt.desc}
                   className={`p-2 border text-left cursor-pointer transition-colors flex flex-col gap-1.5 min-w-0 ${
-                    active ? 'border-emerald-500/70 bg-emerald-500/10' : `${borderCol} hover:border-zinc-500`
+                    active ? 'border-emerald-500/70 bg-emerald-500/10' : unlocked ? `${borderCol} hover:border-zinc-500` : `${borderCol} hover:opacity-90`
                   }`}
                 >
-                  <span className="h-6 flex items-center overflow-hidden text-[11px] pointer-events-none">
+                  <span className={`h-6 flex items-center overflow-hidden text-[11px] pointer-events-none ${unlocked ? '' : 'opacity-30 blur-[1.5px]'}`}>
                     <WeatherFace theme={wt.id} {...sample} unit={unit} size="tile" />
                   </span>
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -794,7 +1396,14 @@ export const WeatherPanel: React.FC<{ wx: WeatherState; isDark: boolean; borderC
                       {wt.code}
                     </span>
                     <span className={`text-[10px] font-bold truncate ${active ? 'text-emerald-400' : ''}`}>{wt.name}</span>
+                    {active && <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />}
                   </span>
+                  {!unlocked && (
+                    <span className={`self-start text-[9px] px-1 border ${borderCol} text-amber-400 flex items-center space-x-1`}>
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>{unlockRequirementLabel(wt.unlock, t)}</span>
+                    </span>
+                  )}
                 </button>
               );
             })}

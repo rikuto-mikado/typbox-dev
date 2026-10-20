@@ -4,9 +4,7 @@ from unittest import mock
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from .economy import backfill_wallet_totals
-from .maps_catalog import CENTER, GRID_SIZE, MAP_CATALOG, cell_cost
-from .models import Category, CreditWallet, MapProgress, StudyLog, UserProfile, monthly_to_weekly_hours
+from .models import Category, StudyLog, UserProfile, monthly_to_weekly_hours
 
 User = get_user_model()
 
@@ -492,201 +490,38 @@ class UiPrefsSyncTests(APITestCase):
     def test_precise_location_is_not_accepted(self):
         res = self.client.patch('/api/auth/me/', {'weather_precise': {'lat': 35.6, 'lon': 139.7}}, format='json')
         self.assertEqual(res.status_code, 200)
+        self.assertNotIn('weather_precise', res.data)
 
 
-# ==========================================
-# DATA CREDITS & EXPLORE MAP Tests
-# ==========================================
+class FontAndAmbientPrefsSyncTests(APITestCase):
+    """UI font + Ambient overlay prefs ride the same account sync as the weather widget."""
 
-FIRST_MAP_ID = next(iter(MAP_CATALOG))
-
-
-class CreditAwardOnLogCreateTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username='operator', email='operator@example.com', password='s3cure-pass-123'
         )
         self.client.force_authenticate(user=self.user)
 
-    def test_creating_a_log_awards_credits(self):
-        res = self.client.post('/api/logs/', {'duration_minutes': 90}, format='json')
-        self.assertEqual(res.status_code, 201)
-        wallet = CreditWallet.objects.get(user=self.user)
-        self.assertEqual(wallet.balance, 1500)  # 90 * 1000 // 60
-        self.assertEqual(wallet.lifetime_earned, 1500)
+    def test_defaults_mean_never_synced(self):
+        data = self.client.get('/api/auth/me/').data
+        self.assertEqual((data['ui_font'], data['ambient_theme']), ('', ''))
+        self.assertIsNone(data['ambient_clock'])
 
-    def test_credits_accumulate_across_logs(self):
-        self.client.post('/api/logs/', {'duration_minutes': 60}, format='json')
-        self.client.post('/api/logs/', {'duration_minutes': 30}, format='json')
-        wallet = CreditWallet.objects.get(user=self.user)
-        self.assertEqual(wallet.balance, 1500)
-
-    def test_editing_a_log_does_not_change_balance(self):
-        res = self.client.post('/api/logs/', {'duration_minutes': 60}, format='json')
-        log_id = res.data['id']
-        self.client.patch(f'/api/logs/{log_id}/', {'duration_minutes': 120}, format='json')
-        wallet = CreditWallet.objects.get(user=self.user)
-        self.assertEqual(wallet.balance, 1000)
-
-    def test_deleting_a_log_does_not_refund_balance(self):
-        res = self.client.post('/api/logs/', {'duration_minutes': 60}, format='json')
-        log_id = res.data['id']
-        self.client.delete(f'/api/logs/{log_id}/')
-        wallet = CreditWallet.objects.get(user=self.user)
-        self.assertEqual(wallet.balance, 1000)
-
-
-class CreditBackfillHelperTests(APITestCase):
-    """
-    Exercises the pure aggregation helper the 0010 data migration calls,
-    without needing Django's migration-testing machinery.
-    """
-
-    def test_backfill_totals_floor_to_nearest_credit(self):
-        result = backfill_wallet_totals({1: 90, 2: 0, 3: 61})
-        self.assertEqual(result, {1: 1500, 3: 1016})  # user 2 excluded (0 minutes)
-
-
-class MapProgressLazyCreateTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            username='operator', email='operator@example.com', password='s3cure-pass-123'
-        )
-        self.client.force_authenticate(user=self.user)
-
-    def test_list_lazily_creates_all_64_maps_with_center_unlocked(self):
-        res = self.client.get('/api/explore-maps/')
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.data), len(MAP_CATALOG))
-        for entry in res.data:
-            self.assertEqual(entry['unlocked_cells'], [[CENTER[0], CENTER[1]]])
-            self.assertFalse(entry['is_cleared'])
-            self.assertEqual(entry['total_cells'], GRID_SIZE * GRID_SIZE)
-
-
-class UnlockCellValidationTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            username='operator', email='operator@example.com', password='s3cure-pass-123'
-        )
-        self.client.force_authenticate(user=self.user)
-        CreditWallet.objects.create(user=self.user, balance=100_000, lifetime_earned=100_000)
-
-    def _unlock(self, x, y):
-        return self.client.post(f'/api/explore-maps/{FIRST_MAP_ID}/unlock-cell/', {'x': x, 'y': y}, format='json')
-
-    def test_unlock_adjacent_to_center_succeeds(self):
-        res = self._unlock(CENTER[0] + 1, CENTER[1])
-        self.assertEqual(res.status_code, 200)
-        self.assertIn([CENTER[0] + 1, CENTER[1]], res.data['unlocked_cells'])
-
-    def test_unlock_non_adjacent_cell_is_rejected(self):
-        res = self._unlock(0, 0)
-        self.assertEqual(res.status_code, 400)
-
-    def test_unlock_out_of_bounds_is_rejected(self):
-        res = self._unlock(-1, 5)
-        self.assertEqual(res.status_code, 400)
-
-    def test_unlock_already_unlocked_center_is_rejected(self):
-        res = self._unlock(CENTER[0], CENTER[1])
-        self.assertEqual(res.status_code, 400)
-
-    def test_unknown_map_is_404(self):
-        res = self.client.post('/api/explore-maps/not-a-real-map/unlock-cell/', {'x': 0, 'y': 0}, format='json')
-        self.assertEqual(res.status_code, 404)
-
-    def test_insufficient_balance_is_rejected_and_balance_unchanged(self):
-        CreditWallet.objects.filter(user=self.user).update(balance=10)
-        res = self._unlock(CENTER[0] + 1, CENTER[1])
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data['balance'], 10)
-        self.assertEqual(CreditWallet.objects.get(user=self.user).balance, 10)
-
-    def test_unlock_deducts_exact_cell_cost(self):
-        wallet_before = CreditWallet.objects.get(user=self.user).balance
-        x, y = CENTER[0] + 1, CENTER[1]
-        expected_cost = cell_cost(x, y)
-        self._unlock(x, y)
-        wallet = CreditWallet.objects.get(user=self.user)
-        self.assertEqual(wallet.balance, wallet_before - expected_cost)
-        self.assertEqual(wallet.lifetime_spent, expected_cost)
-
-
-class MapClearBonusAndThemeGrantTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            username='operator', email='operator@example.com', password='s3cure-pass-123'
-        )
-        self.client.force_authenticate(user=self.user)
-        self.final_cell = (0, 0)
-        all_cells = [
-            [x, y]
-            for x in range(GRID_SIZE)
-            for y in range(GRID_SIZE)
-            if (x, y) != self.final_cell
-        ]
-        self.cost = cell_cost(*self.final_cell)
-        CreditWallet.objects.create(user=self.user, balance=self.cost, lifetime_earned=self.cost)
-        self.progress = MapProgress.objects.create(user=self.user, map_id=FIRST_MAP_ID, unlocked_cells=all_cells)
-
-    def test_unlocking_final_cell_clears_map_and_grants_rewards(self):
-        res = self.client.post(
-            f'/api/explore-maps/{FIRST_MAP_ID}/unlock-cell/',
-            {'x': self.final_cell[0], 'y': self.final_cell[1]},
+    def test_patch_persists_normalized(self):
+        res = self.client.patch(
+            '/api/auth/me/',
+            {'ui_font': ' JetBrains-Mono ', 'ambient_theme': 'Rain', 'ambient_clock': False},
             format='json',
         )
         self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.data['is_cleared'])
-        self.assertTrue(res.data['just_cleared'])
-
-        reward = MAP_CATALOG[FIRST_MAP_ID]
-        self.assertEqual(res.data['granted_theme_ids'], reward['reward_theme_ids'])
-        self.assertEqual(res.data['wallet_balance'], reward['clear_bonus_credits'])
-
+        self.assertEqual(
+            (res.data['ui_font'], res.data['ambient_theme'], res.data['ambient_clock']),
+            ('jetbrains-mono', 'rain', False),
+        )
         profile = UserProfile.objects.get(user=self.user)
-        for theme_id in reward['reward_theme_ids']:
-            self.assertIn(theme_id, profile.unlocked_map_theme_ids)
+        self.assertEqual((profile.ui_font, profile.ambient_theme), ('jetbrains-mono', 'rain'))
 
-        self.progress.refresh_from_db()
-        self.assertTrue(self.progress.is_cleared)
-        self.assertIsNotNone(self.progress.cleared_at)
-
-    def test_replaying_a_cleared_map_is_rejected(self):
-        self.progress.unlocked_cells = self.progress.unlocked_cells + [list(self.final_cell)]
-        self.progress.is_cleared = True
-        self.progress.save(update_fields=['unlocked_cells', 'is_cleared'])
-        res = self.client.post(
-            f'/api/explore-maps/{FIRST_MAP_ID}/unlock-cell/', {'x': 1, 'y': 1}, format='json'
-        )
-        self.assertEqual(res.status_code, 400)
-
-
-class WalletEndpointAndProfileSerializationTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            username='operator', email='operator@example.com', password='s3cure-pass-123'
-        )
-        self.client.force_authenticate(user=self.user)
-
-    def test_wallet_endpoint_returns_zero_balance_for_new_user(self):
-        res = self.client.get('/api/wallet/')
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data, {'balance': 0, 'lifetime_earned': 0})
-
-    def test_me_includes_read_only_unlocked_map_theme_ids(self):
-        profile, _ = UserProfile.objects.get_or_create(user=self.user)
-        profile.unlocked_map_theme_ids = ['scene-001', 'scene-002']
-        profile.save(update_fields=['unlocked_map_theme_ids'])
-
-        res = self.client.get('/api/auth/me/')
-        self.assertEqual(res.data['unlocked_map_theme_ids'], ['scene-001', 'scene-002'])
-
-    def test_unlocked_map_theme_ids_is_not_client_writable(self):
-        res = self.client.patch(
-            '/api/auth/me/', {'unlocked_map_theme_ids': ['scene-099']}, format='json'
-        )
-        self.assertEqual(res.status_code, 200)
-        profile = UserProfile.objects.get(user=self.user)
-        self.assertEqual(profile.unlocked_map_theme_ids, [])
-        self.assertNotIn('weather_precise', res.data)
+    def test_validation(self):
+        for payload in ({'ui_font': '<b>'}, {'ambient_theme': 'x' * 33}, {'ui_font': 'a b'}):
+            res = self.client.patch('/api/auth/me/', payload, format='json')
+            self.assertEqual(res.status_code, 400, payload)

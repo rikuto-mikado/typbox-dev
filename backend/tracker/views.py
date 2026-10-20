@@ -19,9 +19,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .economy import award_credits_for_log, get_or_create_wallet
-from .maps_catalog import CENTER, GRID_SIZE, MAP_CATALOG, cell_cost, is_in_bounds
-from .models import Category, CreditWallet, MapProgress, StudyLog, UserProfile
+from .models import Category, StudyLog
 from .serializers import (
     CategorySerializer,
     ChangePasswordSerializer,
@@ -301,8 +299,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             # No explicit study date: use "today" in the user's own zone
             # rather than the server's UTC date.
             extra['date'] = user_localdate(self.request.user)
-        log = serializer.save(user=self.request.user, **extra)
-        award_credits_for_log(self.request.user, log.duration_minutes)
+        serializer.save(user=self.request.user, **extra)
 
     @action(detail=False, methods=['delete'], url_path='clear-all')
     def clear_all(self, request):
@@ -462,151 +459,6 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
-
-# ==========================================
-# DATA CREDITS Wallet & EXPLORE MAP Views
-# ==========================================
-
-class WalletView(APIView):
-    """
-    GET /api/wallet/
-    Returns the authenticated user's DATA CREDITS balance.
-    """
-    permission_classes = (permissions.IsAuthenticated,)
-
-    def get(self, request):
-        wallet, _ = get_or_create_wallet(request.user)
-        return Response({'balance': wallet.balance, 'lifetime_earned': wallet.lifetime_earned})
-
-
-def _serialize_map_progress(mp):
-    return {
-        'map_id': mp.map_id,
-        'grid_size': GRID_SIZE,
-        'unlocked_cells': mp.unlocked_cells,
-        'unlocked_count': len(mp.unlocked_cells),
-        'total_cells': GRID_SIZE * GRID_SIZE,
-        'is_cleared': mp.is_cleared,
-        'cleared_at': mp.cleared_at,
-    }
-
-
-class ExploreMapListView(APIView):
-    """
-    GET /api/explore-maps/
-    Returns progress for all 64 EXPLORE MAPs, lazily creating any missing
-    rows for the authenticated user (each starts with only the center cell
-    pre-unlocked).
-    """
-    permission_classes = (permissions.IsAuthenticated,)
-
-    def get(self, request):
-        existing = {mp.map_id: mp for mp in MapProgress.objects.filter(user=request.user)}
-        missing_ids = [map_id for map_id in MAP_CATALOG if map_id not in existing]
-        if missing_ids:
-            MapProgress.objects.bulk_create(
-                [
-                    MapProgress(user=request.user, map_id=map_id, unlocked_cells=[list(CENTER)])
-                    for map_id in missing_ids
-                ],
-                ignore_conflicts=True,
-            )
-            existing = {mp.map_id: mp for mp in MapProgress.objects.filter(user=request.user)}
-
-        results = [existing[map_id] for map_id in MAP_CATALOG if map_id in existing]
-        return Response([_serialize_map_progress(mp) for mp in results])
-
-
-class UnlockMapCellView(APIView):
-    """
-    POST /api/explore-maps/<map_id>/unlock-cell/
-    Body: {"x": int, "y": int}
-
-    Spends DATA CREDITS to unlock a cell orthogonally adjacent to an already
-    unlocked cell on the given map. Fully validated and committed inside one
-    atomic transaction with row locks on both the wallet and the map's
-    progress row, so concurrent/duplicate requests can't double-spend.
-    """
-    permission_classes = (permissions.IsAuthenticated,)
-
-    def post(self, request, map_id):
-        if map_id not in MAP_CATALOG:
-            return Response({'detail': 'Unknown map.'}, status=status.HTTP_404_NOT_FOUND)
-
-        try:
-            x = int(request.data.get('x'))
-            y = int(request.data.get('y'))
-        except (TypeError, ValueError):
-            return Response({'detail': 'x and y must be integers.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not is_in_bounds(x, y):
-            return Response({'detail': 'Cell is out of bounds.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        with transaction.atomic():
-            wallet, _ = CreditWallet.objects.select_for_update().get_or_create(user=request.user)
-            mp, _ = MapProgress.objects.select_for_update().get_or_create(
-                user=request.user,
-                map_id=map_id,
-                defaults={'unlocked_cells': [list(CENTER)]},
-            )
-
-            if mp.is_cleared:
-                return Response({'detail': 'This map is already cleared.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            unlocked_set = {tuple(cell) for cell in mp.unlocked_cells}
-            if (x, y) in unlocked_set:
-                return Response({'detail': 'Cell is already unlocked.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            neighbors = {(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)}
-            if not (neighbors & unlocked_set):
-                return Response(
-                    {'detail': 'Cell is not adjacent to any unlocked cell.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            cost = cell_cost(x, y)
-            if wallet.balance < cost:
-                return Response(
-                    {'detail': 'Insufficient DATA CREDITS.', 'required': cost, 'balance': wallet.balance},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            wallet.balance -= cost
-            wallet.lifetime_spent += cost
-            unlocked_set.add((x, y))
-            mp.unlocked_cells = sorted([list(cell) for cell in unlocked_set])
-
-            just_cleared = False
-            granted_theme_ids = []
-            bonus = 0
-            if len(unlocked_set) == GRID_SIZE * GRID_SIZE and not mp.is_cleared:
-                mp.is_cleared = True
-                mp.cleared_at = timezone.now()
-                just_cleared = True
-                reward = MAP_CATALOG[map_id]
-                bonus = reward['clear_bonus_credits']
-                granted_theme_ids = reward['reward_theme_ids']
-                wallet.balance += bonus
-                wallet.lifetime_earned += bonus
-
-                profile, _ = UserProfile.objects.select_for_update().get_or_create(user=request.user)
-                already = set(profile.unlocked_map_theme_ids)
-                newly = [t for t in granted_theme_ids if t not in already]
-                if newly:
-                    profile.unlocked_map_theme_ids = profile.unlocked_map_theme_ids + newly
-                    profile.save(update_fields=['unlocked_map_theme_ids'])
-
-            wallet.save(update_fields=['balance', 'lifetime_spent', 'lifetime_earned', 'updated_at'])
-            mp.save(update_fields=['unlocked_cells', 'is_cleared', 'cleared_at', 'updated_at'])
-
-        payload = _serialize_map_progress(mp)
-        payload.update({
-            'wallet_balance': wallet.balance,
-            'just_cleared': just_cleared,
-            'clear_bonus_credits': bonus,
-            'granted_theme_ids': granted_theme_ids,
-        })
-        return Response(payload, status=status.HTTP_200_OK)
 
 
 # ==========================================

@@ -1,6 +1,7 @@
 import React from 'react';
 
-// Parametric PIXEL ART scenes for the 100 EXPLORE MAP reward Surface Themes.
+// Parametric PIXEL ART scenes for the 300 pixel-art Surface Themes
+// (pixelArtThemes.ts).
 // Everything is drawn on a fixed logical pixel grid (COLS x ROWS) and
 // rendered as crisp, non-anti-aliased <rect> blocks — the "chunky" retro
 // dot-art look — rather than smooth SVG paths/gradients. The day/night
@@ -31,7 +32,7 @@ export type SceneSilhouette =
   | 'lake-reflection'
   | 'lighthouse-coast'
   | 'terraced-farmland'
-  // 12 archetypes added for stronger per-map/per-theme distinctiveness.
+  // 12 archetypes added for stronger per-theme distinctiveness.
   | 'cyberpunk-alley'
   | 'deep-sea'
   | 'wasteland'

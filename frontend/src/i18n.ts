@@ -1,20 +1,13 @@
 import { createContext, useContext } from 'react';
-import { EN, JA, type Dict } from './i18n.strings';
+import { EN, type Dict } from './i18n.strings';
 
 export type { Dict };
-export type Lang = 'en' | 'ja';
+// English is the only UI language (the Japanese edition was retired).
+export type Lang = 'en';
 
-export const LANG_OPTIONS: Array<{ id: Lang; label: string }> = [
-  { id: 'en', label: 'English' },
-  { id: 'ja', label: '日本語' },
-];
-
-export const STRINGS: Record<Lang, Dict> = { en: EN, ja: JA };
-
-export const LANG_STORAGE_KEY = 'typbox_lang';
+/** Pre-retirement device setting; only read once to clear it. */
+export const LEGACY_LANG_STORAGE_KEY = 'typbox_lang';
 export const TZ_STORAGE_KEY = 'typbox_timezone';
-
-export const isLang = (value: unknown): value is Lang => value === 'en' || value === 'ja';
 
 /** Fills `{name}` placeholders in a dictionary template. */
 export function tf(template: string, vars: Record<string, string | number>): string {
@@ -237,11 +230,11 @@ export interface I18nValue {
   tzAbbr: (at?: Date) => string;
 }
 
-export function buildI18nValue(lang: Lang, timeZone: string): I18nValue {
+export function buildI18nValue(timeZone: string): I18nValue {
   return {
-    lang,
-    t: STRINGS[lang],
-    locale: lang === 'ja' ? 'ja-JP' : 'en-US',
+    lang: 'en',
+    t: EN,
+    locale: 'en-US',
     timeZone,
     formatDateTime: (value) => {
       const date = value instanceof Date ? value : new Date(value);
@@ -253,6 +246,6 @@ export function buildI18nValue(lang: Lang, timeZone: string): I18nValue {
   };
 }
 
-export const I18nContext = createContext<I18nValue>(buildI18nValue('en', getDeviceTimeZone()));
+export const I18nContext = createContext<I18nValue>(buildI18nValue(getDeviceTimeZone()));
 
 export const useI18n = (): I18nValue => useContext(I18nContext);

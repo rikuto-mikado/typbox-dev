@@ -26,10 +26,8 @@ import { useI18n, tf } from './i18n';
 import { drawStatusCard, STATUS_CARD_LAYOUTS, type StatusCardLayout } from './statusCard';
 import { isNeoPattern, neoPatternLayer, type NeoPattern } from './surfacePatterns';
 import { NEO_PRESTIGE_THEME_PAIRS, NEO_SURFACE_THEME_PAIRS } from './surfaceNeo';
-import { SCENE_SURFACE_THEME_PAIRS } from './surfaceScenes';
 import type { SceneSpec } from './surfaceSceneArt';
-import { getExploreMapNameById } from './exploreMaps';
-import { PIXEL_ART_THEME_PAIRS } from './pixelArtThemes';
+import { PIXEL_ART_THEME_PAIRS, SCENE_REGION_THEME_PAIRS } from './pixelArtThemes';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -3243,32 +3241,24 @@ export interface SurfaceThemePair {
   // Ascension count instead — a reward track that only grows for players
   // who keep cycling past LV.3000, independent of in-cycle rank.
   requiredAscensions?: number;
-  // EXPLORE MAP reward themes ignore clearanceHintLv/requiredAscensions
-  // entirely and gate on a specific map being fully cleared instead — see
-  // isThemeUnlocked. Holds a map id from exploreMaps.ts.
-  requiredMapClear?: string;
-  /** Illustrated day/night scene (EXPLORE MAP rewards + pixel-art themes); rendered by SceneLayer.tsx via surfaceSceneArt.tsx. */
+  /** Illustrated day/night scene (pixel-art themes); rendered by SceneLayer.tsx via surfaceSceneArt.tsx. */
   scene?: SceneSpec;
-  /** 'neo' = NEO SIGNAL wave; 'scene' = EXPLORE MAP reward; 'pixelart' = the 200 clearance-gated pixel-art themes; absent = original archive. */
-  series?: 'neo' | 'scene' | 'pixelart';
+  /** 'neo' = NEO SIGNAL wave; 'pixelart' = the 300 clearance-gated pixel-art themes; absent = original archive. */
+  series?: 'neo' | 'pixelart';
   fx?: SurfaceFx;
 }
 
-// Centralized unlock check for a Surface Theme: EXPLORE MAP reward themes
-// gate on a specific map being cleared, prestige-exclusive themes gate on
-// lifetime Ascension count, everything else gates on
+// Centralized unlock check for a Surface Theme: prestige-exclusive themes
+// gate on lifetime Ascension count, everything else gates on
 // UserClearanceStatus.rewardUnlockLevel (which stays maxed forever once the
 // first Ascension is claimed, since completing a cycle requires passing
 // every normal reward threshold at least once).
 // eslint-disable-next-line react-refresh/only-export-components
 export function isThemeUnlocked(
   pair: SurfaceThemePair,
-  status: { rewardUnlockLevel: number; totalAscensions: number; clearedMapIds?: Set<string> }
+  status: { rewardUnlockLevel: number; totalAscensions: number }
 ): boolean {
   if (IS_DEMO_MODE) return true;
-  if (pair.requiredMapClear) {
-    return Boolean(status.clearedMapIds?.has(pair.requiredMapClear));
-  }
   if (pair.requiredAscensions && pair.requiredAscensions > 0) {
     return status.totalAscensions >= pair.requiredAscensions;
   }
@@ -5307,11 +5297,44 @@ const RAW_SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
   ...PIXEL_ART_THEME_PAIRS,
 ];
 
+// Spreads `extra` evenly through each division's existing reward track
+// instead of appending it to the end (which would bunch every new theme
+// into the top ~10% of each division's level range). Within a division of
+// n base pairs gaining m extras, at most floor(m*(i+1)/(n+1)) extras are
+// placed before base pair i — exactly the bound that keeps that pair's
+// rebalanced position fraction (and so its level) from ever rising, so no
+// theme a user has already unlocked can become locked again.
+function interleaveWithinDivisions(base: SurfaceThemePair[], extra: SurfaceThemePair[]): SurfaceThemePair[] {
+  const baseCount = new Map<string, number>();
+  base.forEach((p) => baseCount.set(p.divisionCode, (baseCount.get(p.divisionCode) ?? 0) + 1));
+  const extraByDiv = new Map<string, SurfaceThemePair[]>();
+  extra.forEach((p) => extraByDiv.set(p.divisionCode, [...(extraByDiv.get(p.divisionCode) ?? []), p]));
+
+  const seen = new Map<string, number>();
+  const placed = new Map<string, number>();
+  const result: SurfaceThemePair[] = [];
+  base.forEach((pair) => {
+    const div = pair.divisionCode;
+    const i = seen.get(div) ?? 0;
+    seen.set(div, i + 1);
+    const pending = extraByDiv.get(div) ?? [];
+    const allowed = Math.floor((pending.length * (i + 1)) / ((baseCount.get(div) ?? 0) + 1));
+    let k = placed.get(div) ?? 0;
+    while (k < allowed) result.push(pending[k++]);
+    placed.set(div, k);
+    result.push(pair);
+  });
+  // Leftovers go after their division's last base pair; rebalancing only
+  // looks at within-division order, so appending them here is equivalent.
+  extraByDiv.forEach((list, div) => result.push(...list.slice(placed.get(div) ?? 0)));
+  return result;
+}
+
 // Rebalances every pair's clearanceHintLv with even spacing across its own
 // division's level range (CLEARANCE_DIVISIONS[].minLevel..maxLevel), rather
-// than the ad-hoc numbers assigned while authoring each batch. With 588
+// than the ad-hoc numbers assigned while authoring each batch. With ~890
 // pairs spread over 3,000 ranks a new Surface Theme now unlocks roughly
-// every ~5 ranks (and interleaved with the 60 Noise profiles below, a
+// every ~3-4 ranks (and interleaved with the 60 Noise profiles below, a
 // visual or audio reward lands every few dozen ranks instead of droughts
 // stretching across whole divisions). 'monolith' stays pinned to LV.1 since
 // it's the universal unlock-gate fallback theme used for locked selections.
@@ -5449,13 +5472,12 @@ const PRESTIGE_THEME_PAIRS: SurfaceThemePair[] = (() => {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
-  ...rebalanceThemeClearanceLevels(RAW_SURFACE_THEME_PAIRS),
+  // The 100 region pixel-art themes (formerly EXPLORE MAP clear rewards)
+  // are woven into each division's track — 10 per division — rather than
+  // appended, so they unlock steadily from DIV-01 through DIV-10.
+  ...rebalanceThemeClearanceLevels(interleaveWithinDivisions(RAW_SURFACE_THEME_PAIRS, SCENE_REGION_THEME_PAIRS)),
   ...PRESTIGE_THEME_PAIRS,
   ...NEO_PRESTIGE_THEME_PAIRS,
-  // EXPLORE MAP reward themes — gated by requiredMapClear, not
-  // clearanceHintLv, so (like the prestige themes above) they bypass
-  // rebalanceThemeClearanceLevels() entirely.
-  ...SCENE_SURFACE_THEME_PAIRS,
 ];
 
 // Fast lookup of theme reward by Clearance Level
@@ -5696,8 +5718,6 @@ interface SurfaceThemeSelectorPanelProps {
   userClearanceLevel: number;
   userTotalAscensions: number;
   userTotalHours: number;
-  /** EXPLORE MAP ids the user has fully cleared — gates 'scene' series themes. */
-  clearedMapIds: Set<string>;
   borderCol: string;
   textMuted: string;
   /** Motion FX layer for NEO themes (device-local preference). */
@@ -5705,7 +5725,7 @@ interface SurfaceThemeSelectorPanelProps {
   onToggleFx: () => void;
 }
 
-type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx' | 'scene' | 'pixelart';
+type SurfaceSeriesFilter = 'all' | 'archive' | 'neo' | 'fx' | 'pixelart';
 
 export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps> = ({
   activeThemeId,
@@ -5715,7 +5735,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   userClearanceLevel,
   userTotalAscensions,
   userTotalHours,
-  clearedMapIds,
   borderCol,
   textMuted,
   fxEnabled,
@@ -5735,9 +5754,8 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       isThemeUnlocked(item, {
         rewardUnlockLevel: userClearanceLevel,
         totalAscensions: userTotalAscensions,
-        clearedMapIds,
       }),
-    [userClearanceLevel, userTotalAscensions, clearedMapIds]
+    [userClearanceLevel, userTotalAscensions]
   );
 
   const unlockedCount = useMemo(
@@ -5752,10 +5770,9 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
       if (unlockFilter === 'unlocked' && !isUnlocked) return false;
       if (unlockFilter === 'locked' && isUnlocked) return false;
       if (selectedDiv !== 'ALL' && item.divisionCode !== selectedDiv) return false;
-      if (seriesFilter === 'archive' && (item.series === 'neo' || item.series === 'scene' || item.series === 'pixelart')) return false;
+      if (seriesFilter === 'archive' && (item.series === 'neo' || item.series === 'pixelart')) return false;
       if (seriesFilter === 'neo' && item.series !== 'neo') return false;
       if (seriesFilter === 'fx' && !item.fx) return false;
-      if (seriesFilter === 'scene' && item.series !== 'scene') return false;
       if (seriesFilter === 'pixelart' && item.series !== 'pixelart') return false;
       if (q) {
         return (
@@ -5775,10 +5792,9 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   const seriesCounts = useMemo(
     () => ({
       all: SURFACE_THEME_PAIRS.length,
-      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo' && p.series !== 'scene' && p.series !== 'pixelart').length,
+      archive: SURFACE_THEME_PAIRS.filter((p) => p.series !== 'neo' && p.series !== 'pixelart').length,
       neo: SURFACE_THEME_PAIRS.filter((p) => p.series === 'neo').length,
       fx: SURFACE_THEME_PAIRS.filter((p) => p.fx).length,
-      scene: SURFACE_THEME_PAIRS.filter((p) => p.series === 'scene').length,
       pixelart: SURFACE_THEME_PAIRS.filter((p) => p.series === 'pixelart').length,
     }),
     []
@@ -5981,7 +5997,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               ['archive', t.seriesArchive],
               ['neo', t.seriesNeo],
               ['fx', t.seriesFx],
-              ['scene', t.seriesScene],
               ['pixelart', t.seriesPixelArt],
             ] as const
           ).map(([key, label], idx) => (
@@ -6001,7 +6016,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         {/* Division Filter Strip — horizontally scrollable on mobile so 11
             buttons never spend multiple lines of the limited viewport height. */}
         <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
-          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE', 'EXPLORE'].map(
+          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE'].map(
             (divCode) => (
               <button
                 key={divCode}
@@ -6025,7 +6040,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         {filteredThemes.map((item) => {
           const isSelected = item.id === activeThemeId;
           const isUnlocked = checkUnlocked(item);
-          const isMapExclusive = Boolean(item.requiredMapClear);
           const isPrestigeExclusive = Boolean(item.requiredAscensions && item.requiredAscensions > 0);
           const reqHours = getReqHoursForLevel(item.clearanceHintLv);
           const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
@@ -6038,14 +6052,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 if (isUnlocked) {
                   setLockedNotice(null);
                   onSelectThemeId(item.id);
-                } else if (isMapExclusive) {
-                  setLockedNotice(
-                    tf(t.themeMapClearNotice, {
-                      code: item.code,
-                      name: item.name,
-                      mapName: getExploreMapNameById(item.requiredMapClear ?? ''),
-                    })
-                  );
                 } else if (isPrestigeExclusive) {
                   setLockedNotice(
                     tf(t.themePrestigeNotice, {
@@ -6094,14 +6100,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                     <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
                       {t.filterUnlocked}
                     </span>
-                  ) : isMapExclusive ? (
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 border border-cyan-400/60 text-cyan-300 flex items-center space-x-1 shrink-0`}
-                      title={tf(t.requiresMapClear, { name: getExploreMapNameById(item.requiredMapClear ?? '') })}
-                    >
-                      <Lock className="w-2.5 h-2.5" />
-                      <span className="truncate max-w-28">{tf(t.requiresMapClear, { name: getExploreMapNameById(item.requiredMapClear ?? '') })}</span>
-                    </span>
                   ) : isPrestigeExclusive ? (
                     <span
                       className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
@@ -6128,9 +6126,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   <span className="flex items-center gap-1 shrink-0 ml-1">
                     {item.series === 'neo' && (
                       <span className="uppercase px-1 border border-cyan-500/40 text-cyan-400">NEO</span>
-                    )}
-                    {item.series === 'scene' && (
-                      <span className="uppercase px-1 border border-cyan-500/40 text-cyan-400">{t.seriesScene}</span>
                     )}
                     {item.series === 'pixelart' && (
                       <span className="uppercase px-1 border border-lime-500/40 text-lime-400">{t.seriesPixelArt}</span>

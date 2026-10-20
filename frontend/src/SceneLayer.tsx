@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderScene, type SceneSpec } from './surfaceSceneArt';
 
-// Illustrated day/night scene for EXPLORE MAP reward Surface Themes — a
+// Illustrated day/night scene for pixel-art Surface Themes — a
 // fixed, horizon-anchored overlay, structurally identical to
 // SurfaceFx.tsx's SurfaceFxLayer (same `position: fixed; inset: 0; z-index:
 // -1` composition so it layers under the UI exactly like the existing

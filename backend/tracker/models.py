@@ -53,11 +53,12 @@ class UserProfile(models.Model):
     # null = never chosen on any device (first sync adopts the device's value).
     weather_hidden = models.BooleanField(null=True, blank=True, default=None)
     surface_fx = models.BooleanField(null=True, blank=True, default=None)
-    # Surface Theme ids granted as EXPLORE MAP clear rewards. Unlike
-    # user_statuses, this is NOT client-writable: it has an attached economy
-    # (earned by spending DATA CREDITS to fully unlock a map), so it is only
-    # ever set server-side inside the unlock-cell transaction.
-    unlocked_map_theme_ids = models.JSONField(default=list, blank=True)
+    # UI font theme and Ambient Mode overlay ids (frontend catalogs, unlocks
+    # decided client-side like chrono_theme). Blank = never synced yet.
+    ui_font = models.CharField(max_length=32, blank=True, default='')
+    ambient_theme = models.CharField(max_length=32, blank=True, default='')
+    # Elapsed-time readout on the Ambient overlay. null = never chosen.
+    ambient_clock = models.BooleanField(null=True, blank=True, default=None)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -66,67 +67,6 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"Profile ({self.user.username})"
-
-
-class CreditWallet(models.Model):
-    """
-    DATA CREDITS balance for a user. Kept as its own row (rather than fields
-    on UserProfile) so a credit spend can `select_for_update()` this table
-    without lock-contending with unrelated profile preference PATCHes.
-
-    `balance` is spendable now; `lifetime_earned` / `lifetime_spent` only
-    ever increase and should satisfy `balance == lifetime_earned -
-    lifetime_spent` at all times (an auditable integrity invariant, not
-    enforced at the DB level).
-    """
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='credit_wallet'
-    )
-    balance = models.BigIntegerField(default=0)
-    lifetime_earned = models.BigIntegerField(default=0)
-    lifetime_spent = models.BigIntegerField(default=0)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = 'Credit Wallet'
-        verbose_name_plural = 'Credit Wallets'
-
-    def __str__(self):
-        return f"Wallet ({self.user.username}): {self.balance}"
-
-
-class MapProgress(models.Model):
-    """
-    Per-user progress on one EXPLORE MAP (see tracker/maps_catalog.py for the
-    grid size, cost formula and per-map clear rewards). `unlocked_cells` is a
-    JSON list of [x, y] pairs (0-indexed), always including the pre-unlocked
-    center cell. Lazily created per user+map on first access rather than
-    pre-populated for every user.
-    """
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='map_progress'
-    )
-    map_id = models.CharField(max_length=32)
-    unlocked_cells = models.JSONField(default=list, blank=True)
-    is_cleared = models.BooleanField(default=False)
-    cleared_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = 'Map Progress'
-        verbose_name_plural = 'Map Progress'
-        constraints = [
-            models.UniqueConstraint(fields=['user', 'map_id'], name='unique_user_map_progress')
-        ]
-        indexes = [models.Index(fields=['user', 'map_id'])]
-
-    def __str__(self):
-        return f"{self.map_id} ({self.user.username}): {len(self.unlocked_cells)} cells"
 
 
 class Category(models.Model):

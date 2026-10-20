@@ -1,19 +1,22 @@
-// 200 new pixel-art Surface Themes, gated by the normal Clearance Level
-// system (clearanceHintLv / divisionCode) rather than EXPLORE MAP clears —
-// distinct from surfaceScenes.ts's 100 map-clear reward themes, which stay
-// `requiredMapClear`-gated. Two batches, built from the same renderer
-// (surfaceSceneArt.tsx) via the same "parameter table through a shared
-// builder" strategy telemetryFeatures.tsx uses for its 240 generated pairs:
+// 300 pixel-art Surface Themes, all gated by the normal Clearance Level
+// system (clearanceHintLv / divisionCode). Three batches, built from the
+// same renderer (surfaceSceneArt.tsx) via the same "parameter table through
+// a shared builder" strategy telemetryFeatures.tsx uses for its 240
+// generated pairs:
 //
-//   A) 100 themes inspired by the 16 EXPLORE MAP archetypes (cyberpunk
-//      alley, medieval fortress, snowy summit, deep sea, space dock,
-//      wasteland, etc.) — same visual family as the maps, new palette/seed
-//      combinations, freely unlockable via clearance level.
-//   B) 100 completely original themes built from 10 archetypes EXPLORE MAP
-//      never uses (lake reflection, terraced farmland, floating islands,
-//      crystal cave, windmill farm, carnival pier, subway station,
-//      botanical dome, tundra outpost, shrine garden), so this batch reads
-//      as genuinely new rather than "the same maps again".
+//   A) 100 themes across the 16 "landmark" archetypes (cyberpunk alley,
+//      medieval fortress, snowy summit, deep sea, space dock, wasteland,
+//      etc.).
+//   B) 100 themes built from 10 further archetypes (lake reflection,
+//      terraced farmland, floating islands, crystal cave, windmill farm,
+//      carnival pier, subway station, botanical dome, tundra outpost,
+//      shrine garden).
+//   C) 100 "region" themes (ids scene-001..scene-100) — originally the
+//      retired EXPLORE MAP's clear rewards. Their art parameters are
+//      reproduced exactly from the old map catalog (see SCENE_REGIONS) and
+//      the ids are kept stable so any user who already had one equipped
+//      keeps it; telemetryFeatures.tsx interleaves them into each
+//      division's reward track rather than appending them at the end.
 import type { SceneSilhouette, SceneSpec } from './surfaceSceneArt';
 import type { SurfaceThemePair } from './telemetryFeatures';
 
@@ -28,10 +31,9 @@ function hsl(h: number, s: number, l: number): string {
   return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
 }
 
-// Same split-hue-by-polarity approach as surfaceScenes.ts's buildScenePalette
-// (dark surfaces tinted by the night hue, light surfaces by the day hue) —
-// duplicated locally rather than imported/exported to avoid coupling this
-// file's palette tuning to the map-reward themes' tuning.
+// Split hue by polarity: dark surfaces are tinted by the night hue, light
+// surfaces by the day hue, so a theme's two polarities read as two
+// different times of day.
 function buildPixelPalette(hueDay: number, hueNight: number) {
   return {
     dark: {
@@ -281,3 +283,120 @@ const MAP_INSPIRED_PIXEL_THEMES = buildBatch(MAP_ARCHETYPES, 100, 0, 50000);
 const ORIGINAL_PIXEL_THEMES = buildBatch(ORIGINAL_ARCHETYPES, 100, 100, 70000);
 
 export const PIXEL_ART_THEME_PAIRS: SurfaceThemePair[] = [...MAP_INSPIRED_PIXEL_THEMES, ...ORIGINAL_PIXEL_THEMES];
+
+// ==========================================
+// Batch C — 100 region themes (scene-001..scene-100)
+// ==========================================
+
+// Slightly brighter tuning than buildPixelPalette — kept exactly as the
+// region themes originally shipped so their look doesn't shift.
+function buildScenePalette(hueDay: number, hueNight: number) {
+  return {
+    dark: {
+      bgMain: hsl(hueNight, 30, 11),
+      bgCard: hsl(hueNight, 28, 15.5),
+      bgInput: hsl(hueNight, 30, 8),
+      border: hsl(hueNight, 32, 24),
+      textMain: hsl(hueNight, 14, 95),
+      textMuted: hsl(hueNight, 14, 64),
+      patternTint: `hsla(${hueNight}, 70%, 70%, 0.06)`,
+      glowTint: `hsla(${hueNight}, 70%, 60%, 0.12)`,
+    },
+    light: {
+      bgMain: hsl(hueDay, 38, 96.5),
+      bgCard: '#ffffff',
+      bgInput: hsl(hueDay, 32, 92.5),
+      border: hsl(hueDay, 30, 83),
+      textMain: hsl(hueDay, 28, 11),
+      textMuted: hsl(hueDay, 14, 43),
+      patternTint: `hsla(${hueDay}, 60%, 30%, 0.05)`,
+      glowTint: `hsla(${hueDay}, 70%, 55%, 0.08)`,
+    },
+  };
+}
+
+interface SceneRegion {
+  name: string;
+  desc: string;
+  silhouette: SceneSilhouette;
+  hueBase: number;
+  /** Exactly 4 locations per region. */
+  places: string[];
+}
+
+// 16 regions x 4 locations = 64 locations; the first 36 locations also get
+// an "// ECLIPSE CUT" variant, for 100 themes in total. Order matters: the
+// location index drives each theme's seed/hue, so reordering this table
+// changes the art of every theme after the edit.
+const SCENE_REGIONS: SceneRegion[] = [
+  { name: 'NEON FRONTIER', desc: 'A rain-slick cyberpunk back-alley, strung with flickering neon signage.', silhouette: 'cyberpunk-alley', hueBase: 280, places: ['GRID WARD', 'NEON ALLEY', 'CIRCUIT BLOCK', 'CHROME DISTRICT'] },
+  { name: 'MEDIEVAL REACHES', desc: 'A stone keep and its flanking towers, hidden beneath centuries of fog.', silhouette: 'medieval-castle', hueBase: 30, places: ['KEEP', 'BARROW', 'HOLLOW', 'RAMPART'] },
+  { name: 'FROSTLINE SUMMIT', desc: 'Wind-scoured snow peaks where the drifts never fully melt.', silhouette: 'snowy-peaks', hueBase: 200, places: ['HIGH PASS', 'GLACIER STEP', 'ICEFIELD', 'PEAK’S EDGE'] },
+  { name: 'ABYSSAL TRENCH', desc: 'A sunken ruin far below the surface, lit only by bioluminescent drift.', silhouette: 'deep-sea', hueBase: 192, places: ['DROWNED SPIRE', 'DEEP VENT', 'SILT BASIN', 'LANTERNFISH REACH'] },
+  { name: 'ORBITAL FRONTIER', desc: 'A half-built orbital dock, assembled one truss segment at a time.', silhouette: 'space-dock', hueBase: 250, places: ['DOCK ALPHA', 'TRUSS BAY', 'HANGAR RING', 'OUTER BERTH'] },
+  { name: 'ASHEN WASTES', desc: 'Cracked earth and dead timber under a permanent haze.', silhouette: 'wasteland', hueBase: 35, places: ['ASH FLAT', 'SCRAP ROW', 'DEAD TIMBER', 'CINDER REACH'] },
+  { name: 'STEEL SKYLINE', desc: 'A dense downtown skyline, counted one rooftop light at a time.', silhouette: 'cityscape', hueBase: 212, places: ['DOWNTOWN CORE', 'FINANCIAL ROW', 'MIDTOWN BLOCK', 'SKYLINE EDGE'] },
+  { name: 'HARVEST HAMLET', desc: 'Thatched cottages and chimney smoke along a quiet country lane.', silhouette: 'pixel-village', hueBase: 95, places: ['MILL ROW', 'ORCHARD LANE', 'COTTAGE ROAD', 'HEARTH VALE'] },
+  { name: 'SUNRISE COAST', desc: 'A quiet pier catching the very first light over calm water.', silhouette: 'seaside-pier', hueBase: 24, places: ['TIDE PIER', 'AMBER HARBOR', 'DAYBREAK COVE', 'GULL POINT'] },
+  { name: 'IRON HARBOR', desc: 'Gantry cranes and stacked containers along a working waterfront.', silhouette: 'harbor-cranes', hueBase: 205, places: ['DRYDOCK', 'CONTAINER ROW', 'GANTRY WHARF', 'FREIGHT BASIN'] },
+  { name: 'SILVERWOOD REACH', desc: 'Layered treelines fading into quiet, undisturbed depth.', silhouette: 'forest-treeline', hueBase: 140, places: ['MOSSHOLLOW', 'FERN REACH', 'DEEP CANOPY', 'QUIET GROVE'] },
+  { name: 'SUNBAKED DUNES', desc: 'Buried monuments half-swallowed by drifting sand.', silhouette: 'desert-dunes-pyramid', hueBase: 42, places: ['DUNE CROSS', 'GOLDEN WASTE', 'BURIED SPIRE', 'FAR DUNES'] },
+  { name: 'STONECREST RANGE', desc: 'Layered granite ridgelines rising above a quiet treeline.', silhouette: 'mountain-range', hueBase: 165, places: ['SUMMIT WARD', 'CLOUD RIDGE', 'STONE CREST', 'HIGH TRAVERSE'] },
+  { name: 'INCENSE TERRACE', desc: 'A tiered pagoda and its stone steps, wrapped in drifting incense smoke.', silhouette: 'temple-pagoda', hueBase: 355, places: ['SHRINE TERRACE', 'LANTERN STEPS', 'OLD PAGODA', 'MONASTERY ROW'] },
+  { name: 'FOGBOUND COAST', desc: 'A striped lighthouse sweeping its beam through coastal fog.', silhouette: 'lighthouse-coast', hueBase: 198, places: ['FOG POINT', 'SIGNAL CLIFF', 'TIDEWATCH', 'LANTERN HEAD'] },
+  { name: 'EMBER CALDERA', desc: 'A smoking volcanic cone, its slopes veined with glowing rock.', silhouette: 'volcano', hueBase: 8, places: ['CINDER RIM', 'MAGMA VENT', 'ASHFALL RIDGE', 'CALDERA EDGE'] },
+];
+
+const LOCATIONS_WITH_ECLIPSE_CUT = 36;
+const VARIANT_SUFFIX = [null, '// ECLIPSE CUT'] as const;
+const VARIANT_HUE_SHIFT = [0, 34];
+const VARIANT_SEED_SHIFT = [0, 500];
+
+function buildSceneRegionThemes(): SurfaceThemePair[] {
+  const pairs: SurfaceThemePair[] = [];
+  let location = 0;
+
+  SCENE_REGIONS.forEach((region) => {
+    region.places.forEach((place, i) => {
+      location += 1;
+      const baseSeed = location * 97 + i * 13;
+      const baseHueDay = region.hueBase + (((i * 11) % 24) - 12);
+      const hueNight = 222 + (baseSeed % 36);
+      const variants = location <= LOCATIONS_WITH_ECLIPSE_CUT ? 2 : 1;
+
+      for (let v = 0; v < variants; v++) {
+        const num = pairs.length + 1;
+        const hueDay = baseHueDay + VARIANT_HUE_SHIFT[v];
+        const seed = baseSeed + VARIANT_SEED_SHIFT[v];
+        const scene: SceneSpec = { silhouette: region.silhouette, seed, hueDay, hueNight };
+        const pal = buildScenePalette(hueDay, hueNight);
+        const suffix = VARIANT_SUFFIX[v];
+        const baseName = `${region.name} — ${place}`;
+
+        pairs.push({
+          id: `scene-${String(num).padStart(3, '0')}`,
+          code: `SCN-${String(num).padStart(3, '0')}`,
+          name: suffix ? `${baseName} ${suffix}` : baseName,
+          pairLabel: `${region.name} NIGHT ⇄ ${region.name} DAY`,
+          description: region.desc,
+          pattern: 'none',
+          accentHex: hsl(hueDay, 70, 55),
+          // Round-robin so every division gets 10 themes drawn from across
+          // all 16 regions, instead of whole regions clumping into one
+          // division.
+          divisionCode: `DIV-${String(((num - 1) % 10) + 1).padStart(2, '0')}`,
+          // Placeholder — rebalanceThemeClearanceLevels() assigns the real level.
+          clearanceHintLv: 0,
+          series: 'pixelart',
+          scene,
+          dark: { label: `${region.name} NIGHT`, ...pal.dark },
+          light: { label: `${region.name} DAY`, ...pal.light },
+        });
+      }
+    });
+  });
+
+  return pairs;
+}
+
+export const SCENE_REGION_THEME_PAIRS: SurfaceThemePair[] = buildSceneRegionThemes();
