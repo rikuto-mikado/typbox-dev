@@ -603,3 +603,30 @@ class PortfolioFeedTests(APITestCase):
         res = self.client.get('/api/portfolio/feed/')
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data, [])
+
+
+class RegistrationGateTests(APITestCase):
+    """POST /api/auth/register/ is closed unless ALLOW_REGISTRATION is on."""
+
+    payload = {'username': 'newcomer', 'email': 'newcomer@example.com', 'password': 's3cure-pass-123'}
+
+    @override_settings(ALLOW_REGISTRATION=False)
+    def test_register_is_rejected_when_closed(self):
+        res = self.client.post('/api/auth/register/', self.payload, format='json')
+        self.assertEqual(res.status_code, 403)
+        self.assertFalse(User.objects.filter(username='newcomer').exists())
+
+    @override_settings(ALLOW_REGISTRATION=True)
+    def test_register_works_when_open(self):
+        res = self.client.post('/api/auth/register/', self.payload, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertTrue(User.objects.filter(username='newcomer').exists())
+
+    @override_settings(ALLOW_REGISTRATION=False)
+    def test_existing_user_can_still_log_in_when_closed(self):
+        User.objects.create_user(username='operator', email='operator@example.com', password='s3cure-pass-123')
+        res = self.client.post(
+            '/api/auth/login/', {'username': 'operator', 'password': 's3cure-pass-123'}, format='json'
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('access', res.data)

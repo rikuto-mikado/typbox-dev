@@ -77,12 +77,21 @@ class RegisterView(generics.CreateAPIView):
     """
     POST /api/auth/register/
     Register a new user and initialize default categories.
+    Closed (403) unless settings.ALLOW_REGISTRATION is enabled.
     """
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = (permissions.AllowAny,)
     throttle_classes = (RegisterThrottle,)
     throttle_scope = 'register'
+
+    def create(self, request, *args, **kwargs):
+        if not settings.ALLOW_REGISTRATION:
+            return Response(
+                {'detail': 'Registration is currently closed.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().create(request, *args, **kwargs)
 
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):

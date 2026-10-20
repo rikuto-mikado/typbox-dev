@@ -193,6 +193,8 @@ type UiPrefsPatch = SyncedWeatherPrefs & { surface_fx?: boolean; ui_font?: strin
 type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
+// Sign-ups are closed unless the build opts in (mirrors the backend's ALLOW_REGISTRATION).
+const REGISTRATION_OPEN = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
 type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'clearance' | 'security' | 'data';
 
 const AVATAR_PRESET_OPTIONS = [
@@ -801,7 +803,7 @@ export default function App() {
 
   // Authentication Modal Controls with fresh input state reset
   const openAuthModal = useCallback((mode: AuthModalMode = 'login') => {
-    setAuthMode(mode);
+    setAuthMode(mode === 'register' && !REGISTRATION_OPEN ? 'login' : mode);
     setAuthError(null);
     setAuthSuccessMsg(null);
     setDebugResetUrl(null);
@@ -3204,12 +3206,14 @@ export default function App() {
                   <LogIn className="w-4 h-4" />
                   <span>{t.guestSignIn}</span>
                 </button>
-                <button
-                  onClick={() => openAuthModal('register')}
-                  className={`px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider border ${borderCol} hover:border-emerald-500/60 transition-colors cursor-pointer`}
-                >
-                  <span>{t.createAccount}</span>
-                </button>
+                {REGISTRATION_OPEN && (
+                  <button
+                    onClick={() => openAuthModal('register')}
+                    className={`px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider border ${borderCol} hover:border-emerald-500/60 transition-colors cursor-pointer`}
+                  >
+                    <span>{t.createAccount}</span>
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -5490,8 +5494,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Mode Switcher Tabs (Shown for Login / Register) */}
-            {(authMode === 'login' || authMode === 'register') && (
+            {/* Mode Switcher Tabs (Shown for Login / Register while sign-ups are open) */}
+            {REGISTRATION_OPEN && (authMode === 'login' || authMode === 'register') && (
               <div className={`flex border ${borderCol} text-xs font-mono`}>
                 <button
                   type="button"

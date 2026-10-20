@@ -272,10 +272,13 @@ FRONTEND_URL = os.getenv(
     'http://localhost:5173' if DEBUG else 'https://typbox.me'
 ).rstrip('/')
 
+# New sign-ups via /api/auth/register/ are closed unless explicitly enabled.
+ALLOW_REGISTRATION = os.getenv('ALLOW_REGISTRATION', 'False').lower() in ('true', '1', 'yes')
+
 # Only this user's logs appear in /api/portfolio/feed/ (rikutomikado.tech).
-PORTFOLIO_USERNAME = os.getenv('PORTFOLIO_USERNAME', 'rikuto_dev').strip()
+PORTFOLIO_USERNAME = os.getenv('PORTFOLIO_USERNAME', '').strip() or 'rikuto_dev'
 # The feed covers the last N days including today, in that user's timezone.
-PORTFOLIO_FEED_DAYS = int(os.getenv('PORTFOLIO_FEED_DAYS', '30'))
+PORTFOLIO_FEED_DAYS = int(os.getenv('PORTFOLIO_FEED_DAYS', '').strip() or '30')
 
 # Password reset token validity in seconds (default: 1 hour)
 PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '3600'))
