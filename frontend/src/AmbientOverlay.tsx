@@ -133,13 +133,17 @@ export const AmbientOverlay: React.FC<AmbientOverlayProps> = ({ themeId, dimAlph
     <div className={`fixed inset-0 ${preview ? 'z-[80] bg-zinc-950' : 'z-30 pointer-events-none'} transition-opacity duration-1000`} aria-hidden={!preview}>
       <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${dimAlpha})` }} />
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      {/* Screen sleep is already held off by the Wake Lock API (see
+          useKeepAwake); this readout drifting to a new spot each minute is
+          purely OLED burn-in hygiene, so it's kept almost invisible rather
+          than a bright, eye-catching overlay. */}
       {clock && (
         <div
           className="absolute -translate-x-1/2 -translate-y-1/2 text-center font-mono text-white pointer-events-none"
-          style={{ left: `${spot.x}%`, top: `${spot.y}%`, transition: 'left 4s ease-in-out, top 4s ease-in-out', textShadow: '0 0 18px rgba(0,0,0,0.6)' }}
+          style={{ left: `${spot.x}%`, top: `${spot.y}%`, transition: 'left 4s ease-in-out, top 4s ease-in-out' }}
         >
-          <div className="text-4xl sm:text-6xl font-light tabular-nums tracking-wider opacity-70">{clock.main}</div>
-          {clock.sub && <div className="mt-1 text-[10px] sm:text-xs uppercase tracking-[0.35em] opacity-50">{clock.sub}</div>}
+          <div className="text-2xl sm:text-3xl font-light tabular-nums tracking-wider opacity-[0.07]">{clock.main}</div>
+          {clock.sub && <div className="mt-1 text-[9px] uppercase tracking-[0.35em] opacity-[0.05]">{clock.sub}</div>}
         </div>
       )}
       {preview && (

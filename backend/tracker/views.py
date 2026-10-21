@@ -1,9 +1,15 @@
+import random
 import re
+import urllib.parse
+import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import date as date_cls, timedelta, timezone as dt_timezone
+
+import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q, Sum
@@ -609,3 +615,162 @@ class PortfolioFeedView(generics.ListAPIView):
         return StudyLog.objects.filter(
             user=user, is_public_to_portfolio=True, date__gte=since,
         ).select_related('category')
+
+
+# ==========================================
+# Research Discovery (arXiv proxy)
+# ==========================================
+# arXiv's API has no CORS headers (confirmed: no Access-Control-Allow-Origin
+# on https://export.arxiv.org responses), so it can't be called directly
+# from the browser the way the Wikipedia/Open-Meteo widgets are — this
+# proxies it server-side instead. Paper metadata (title/authors/abstract)
+# from arXiv is CC0 1.0 (public domain) per
+# https://info.arxiv.org/help/api/tou.html, so no attribution is legally
+# required, though the frontend still links back to each paper's arXiv
+# page as a courtesy.
+
+ARXIV_ATOM_NS = '{http://www.w3.org/2005/Atom}'
+ARXIV_EXT_NS = '{http://arxiv.org/schemas/atom}'
+
+# A hand-picked spread across fields so "discover a paper" doesn't always
+# land in the same corner of arXiv. cs.AI/cs.LG dominate recent submission
+# volume, so they're deliberately not over-weighted here.
+ARXIV_CATEGORIES = {
+    'cs.AI': 'Artificial Intelligence',
+    'cs.LG': 'Machine Learning',
+    'cs.CL': 'Computation & Language',
+    'cs.CV': 'Computer Vision',
+    'physics.optics': 'Optics',
+    'astro-ph.GA': 'Astrophysics — Galaxies',
+    'math.NT': 'Number Theory',
+    'math.CO': 'Combinatorics',
+    'q-bio.NC': 'Neurons & Cognition',
+    'econ.GN': 'General Economics',
+    'stat.ML': 'Statistics — Machine Learning',
+    'cond-mat.mtrl-sci': 'Materials Science',
+}
+
+# arXiv's terms of use cap *all* machines under an operator's control to
+# one request every 3 seconds, combined — every visitor hitting this
+# endpoint must not translate into a 1:1 hit on arXiv, so results are
+# shared across all users for a few hours rather than fetched per-request.
+ARXIV_CACHE_TTL_SECONDS = 6 * 60 * 60
+ARXIV_REQUEST_TIMEOUT_SECONDS = 8
+ARXIV_RESULTS_PER_CATEGORY = 8
+
+
+def _clean_text(value):
+    """Collapses the line-wrapped whitespace Atom feeds use for long fields."""
+    return re.sub(r'\s+', ' ', value or '').strip()
+
+
+def _parse_arxiv_feed(xml_bytes):
+    root = ET.fromstring(xml_bytes)
+    papers = []
+    for entry in root.findall(f'{ARXIV_ATOM_NS}entry'):
+        title_el = entry.find(f'{ARXIV_ATOM_NS}title')
+        summary_el = entry.find(f'{ARXIV_ATOM_NS}summary')
+        published_el = entry.find(f'{ARXIV_ATOM_NS}published')
+        id_el = entry.find(f'{ARXIV_ATOM_NS}id')
+        if title_el is None or summary_el is None or id_el is None:
+            continue
+
+        html_url = None
+        for link_el in entry.findall(f'{ARXIV_ATOM_NS}link'):
+            if link_el.get('rel') == 'alternate' or link_el.get('type') == 'text/html':
+                html_url = link_el.get('href')
+                break
+        if not html_url:
+            continue
+        # Defense in depth: only ever hand the frontend a genuine arxiv.org
+        # URL, regardless of what the upstream feed happened to return.
+        # (`endswith` alone would also accept a lookalike host like
+        # "evil-arxiv.org" — the explicit equality/subdomain check avoids that.)
+        parsed_url = urllib.parse.urlparse(html_url)
+        hostname = parsed_url.hostname or ''
+        is_arxiv_host = hostname == 'arxiv.org' or hostname.endswith('.arxiv.org')
+        if parsed_url.scheme != 'https' or not is_arxiv_host:
+            continue
+
+        primary_category_el = entry.find(f'{ARXIV_EXT_NS}primary_category')
+        primary_category = primary_category_el.get('term') if primary_category_el is not None else None
+        if not primary_category:
+            first_category_el = entry.find(f'{ARXIV_ATOM_NS}category')
+            primary_category = first_category_el.get('term') if first_category_el is not None else ''
+
+        authors = [
+            _clean_text(name_el.text)
+            for author_el in entry.findall(f'{ARXIV_ATOM_NS}author')
+            for name_el in [author_el.find(f'{ARXIV_ATOM_NS}name')]
+            if name_el is not None and name_el.text
+        ]
+
+        arxiv_id_match = re.search(r'abs/([^v]+)', id_el.text or '')
+        papers.append({
+            'id': arxiv_id_match.group(1) if arxiv_id_match else _clean_text(id_el.text),
+            'title': _clean_text(title_el.text),
+            'summary': _clean_text(summary_el.text),
+            'authors': authors,
+            'published': (published_el.text or '')[:10] if published_el is not None else '',
+            'url': html_url,
+            'primaryCategory': primary_category,
+        })
+    return papers
+
+
+class ArxivDiscoveryView(APIView):
+    """
+    GET /api/research/discover/?category=cs.AI&exclude=cs.LG
+    Public, keyless "paper discovery" feed for the frontend's Research
+    panel. See the module comment above for why this proxies arXiv
+    server-side instead of being fetched directly from the browser.
+
+    `exclude` lets the frontend's SHUFFLE button ask for a *different*
+    category than the one it's currently showing — otherwise the random
+    fallback has a 1-in-len(ARXIV_CATEGORIES) chance of re-picking the same
+    category, which (being cache-warm) would return the identical batch of
+    papers and make SHUFFLE look like it did nothing.
+    """
+    permission_classes = (permissions.AllowAny,)
+    authentication_classes = ()
+
+    def get(self, request):
+        requested = request.query_params.get('category', '')
+        if requested in ARXIV_CATEGORIES:
+            category = requested
+        else:
+            excluded = request.query_params.get('exclude', '')
+            choices = [c for c in ARXIV_CATEGORIES if c != excluded] or list(ARXIV_CATEGORIES)
+            category = random.choice(choices)
+
+        cache_key = f'arxiv_discover_{category}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        params = {
+            'search_query': f'cat:{category}',
+            'sortBy': 'submittedDate',
+            'sortOrder': 'descending',
+            'start': 0,
+            'max_results': ARXIV_RESULTS_PER_CATEGORY,
+        }
+        try:
+            upstream = requests.get(
+                'https://export.arxiv.org/api/query',
+                params=params,
+                headers={'User-Agent': 'TypboxResearchPanel/1.0 (+https://typbox.me)'},
+                timeout=ARXIV_REQUEST_TIMEOUT_SECONDS,
+            )
+            upstream.raise_for_status()
+            papers = _parse_arxiv_feed(upstream.content)
+        except (requests.RequestException, ET.ParseError):
+            return Response({'detail': 'arXiv feed unavailable'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        payload = {
+            'category': category,
+            'categoryLabel': ARXIV_CATEGORIES[category],
+            'papers': papers,
+        }
+        cache.set(cache_key, payload, ARXIV_CACHE_TTL_SECONDS)
+        return Response(payload)

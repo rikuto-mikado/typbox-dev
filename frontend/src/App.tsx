@@ -49,6 +49,7 @@ import { api, apiFetch, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
 import { SceneLayer } from './SceneLayer';
 import { CategoryTrendTable } from './CategoryTrendTable';
+import { CategorySelect } from './CategorySelect';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
 import {
   I18nContext,
@@ -135,6 +136,8 @@ import {
 import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
 import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
 import { useKeepAwake } from './keepAwake';
+import { ResearchDiscoveryPanel } from './ResearchDiscovery';
+import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 
 // ==========================================
 // Types & Interfaces
@@ -2259,23 +2262,6 @@ export default function App() {
     [weeklyBreakdown, hiddenCategories]
   );
 
-  // Category <select> options: active first, inactive (parked) ones grouped
-  // at the bottom so past logs can still be filed under them.
-  const renderCategoryOptions = () => {
-    const toOption = (c: Category) => (
-      <option key={c.id} value={c.id}>
-        [{c.code}] {c.name}
-      </option>
-    );
-    const inactive = categories.filter((c) => !c.isActive);
-    return (
-      <>
-        {categories.filter((c) => c.isActive).map(toOption)}
-        {inactive.length > 0 && <optgroup label={`— ${t.inactive} —`}>{inactive.map(toOption)}</optgroup>}
-      </>
-    );
-  };
-
   // 12-Week Aggregation Data (1 Bar = 1 Calendar Week Bucket, ending at weeklyOffset)
   const weeklyAggBuckets = useMemo(() => {
     const buckets = Array.from({ length: 12 }, (_, idx) => {
@@ -3473,14 +3459,8 @@ export default function App() {
                   />
                 </div>
                 <div className="flex items-center gap-2 min-w-0 ml-auto">
-                  {isRunning ? (
-                    <span className="px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold whitespace-nowrap">
-                      {t.recActive}
-                    </span>
-                  ) : (
-                    // The date block below already shows the zone, so phones skip this.
-                    <span className={`${textMuted} truncate hidden sm:inline`}>SYNC // {clockReadout.tzLabel}</span>
-                  )}
+                  {/* The date block below already shows the zone, so phones skip this. */}
+                  <span className={`${textMuted} truncate hidden sm:inline`}>SYNC // {clockReadout.tzLabel}</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -3668,13 +3648,14 @@ export default function App() {
                       {t.noCategoriesYet}
                     </div>
                   ) : (
-                    <select
+                    <CategorySelect
+                      categories={categories}
                       value={selectedCatId}
-                      onChange={(e) => setSelectedCatId(e.target.value)}
-                      className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
-                    >
-                      {renderCategoryOptions()}
-                    </select>
+                      onChange={setSelectedCatId}
+                      borderCol={borderCol}
+                      inputBg={inputBg}
+                      textMuted={textMuted}
+                    />
                   )}
                 </div>
 
@@ -4316,6 +4297,16 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* RESEARCH DISCOVERY PANEL */}
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-7 lg:order-none`}>
+              <ResearchDiscoveryPanel borderCol={borderCol} textMuted={textMuted} isDark={isDark} />
+            </div>
+
+            {/* LUNAR CALENDAR PANEL */}
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-8 lg:order-none`}>
+              <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
             </div>
           </div>
 
@@ -5186,7 +5177,7 @@ export default function App() {
             </div>
 
             {/* CHRONOLOGICAL LOG STREAM */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-7 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 order-9 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className="w-4 h-4" />
@@ -5306,13 +5297,14 @@ export default function App() {
                                   <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
                                     {t.category}
                                   </label>
-                                  <select
+                                  <CategorySelect
+                                    categories={categories}
                                     value={editLogCatId}
-                                    onChange={(e) => setEditLogCatId(e.target.value)}
-                                    className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
-                                  >
-                                    {renderCategoryOptions()}
-                                  </select>
+                                    onChange={setEditLogCatId}
+                                    borderCol={borderCol}
+                                    inputBg={inputBg}
+                                    textMuted={textMuted}
+                                  />
                                 </div>
 
                                 <div>

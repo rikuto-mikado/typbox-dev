@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
+    ArxivDiscoveryView,
     CategoryViewSet,
     ChangePasswordView,
     CurrentUserView,
@@ -34,6 +35,9 @@ urlpatterns = [
 
     # rikutomikado.tech read-only portfolio feed
     path('portfolio/feed/', PortfolioFeedView.as_view(), name='portfolio_feed'),
+
+    # Research Discovery panel: server-side arXiv proxy (arXiv has no CORS)
+    path('research/discover/', ArxivDiscoveryView.as_view(), name='research_discover'),
 
     # CRUD Router for categories and logs
     path('', include(router.urls)),
