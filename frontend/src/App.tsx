@@ -25,7 +25,6 @@ import {
   ChevronRight,
   RotateCcw,
   Flame,
-  TrendingUp,
   Activity,
   Download,
   Pencil,
@@ -125,6 +124,7 @@ import {
   AMBIENT_DIM_LEVELS,
   AMBIENT_DIM_STORAGE_KEY,
   AMBIENT_THEME_STORAGE_KEY,
+  AMBIENT_THEMES,
   DEFAULT_AMBIENT_DIM,
   DEFAULT_AMBIENT_THEME_ID,
   getAmbientThemeById,
@@ -133,7 +133,7 @@ import {
   type AmbientDim,
 } from './ambientThemes';
 import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
-import { DEFAULT_UI_FONT_ID, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
+import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
 import { useKeepAwake } from './keepAwake';
 
 // ==========================================
@@ -196,6 +196,9 @@ type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
 // Sign-ups are closed unless the build opts in (mirrors the backend's ALLOW_REGISTRATION).
 const REGISTRATION_OPEN = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
 type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'clearance' | 'security' | 'data';
+// Surface themes, UI fonts and ambient overlays share the single 02 / APPEARANCE tab.
+const APPEARANCE_TABS: SettingsTab[] = ['themes', 'fonts', 'ambient'];
+const CATEGORY_PREVIEW_COUNT = 5;
 
 const AVATAR_PRESET_OPTIONS = [
   { id: 'initial', label: 'Initial' },
@@ -1146,6 +1149,7 @@ export default function App() {
 
   // Category Edit State
   const [editingCatId, setEditingCatId] = useState<string | number | null>(null);
+  const [showAllCategories, setShowAllCategories] = useState<boolean>(false);
   const [editCatName, setEditCatName] = useState<string>('');
   const [editCatCode, setEditCatCode] = useState<string>('');
   const [editCatColor, setEditCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
@@ -2240,6 +2244,20 @@ export default function App() {
   }, [logs, categories, currentWeekDates]);
 
   const activeCategoryCount = useMemo(() => categories.filter((c) => c.isActive).length, [categories]);
+
+  // The registry lists the first CATEGORY_PREVIEW_COUNT rows; the rest fold
+  // behind SHOW MORE. A row being edited always stays visible.
+  const hiddenCategories = useMemo(
+    () =>
+      showAllCategories
+        ? []
+        : weeklyBreakdown.slice(CATEGORY_PREVIEW_COUNT).filter((c) => String(c.id) !== String(editingCatId)),
+    [weeklyBreakdown, showAllCategories, editingCatId]
+  );
+  const visibleCategories = useMemo(
+    () => weeklyBreakdown.filter((c) => !hiddenCategories.includes(c)),
+    [weeklyBreakdown, hiddenCategories]
+  );
 
   // Category <select> options: active first, inactive (parked) ones grouped
   // at the bottom so past logs can still be filed under them.
@@ -3900,7 +3918,7 @@ export default function App() {
                     {t.noCategoriesConfigured}
                   </div>
                 ) : (
-                  weeklyBreakdown.map((cat) => {
+                  visibleCategories.map((cat) => {
                     const isEditing = String(editingCatId) === String(cat.id);
                     return (
                       <div
@@ -4147,11 +4165,48 @@ export default function App() {
                     );
                   })
                 )}
+
+                {weeklyBreakdown.length > CATEGORY_PREVIEW_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCategories((v) => !v)}
+                    aria-expanded={showAllCategories}
+                    className={`group w-full min-h-[38px] lg:min-h-0 flex items-center justify-between gap-3 px-2.5 py-2 border ${borderCol} font-mono text-[10px] uppercase tracking-wider ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 transition-colors cursor-pointer`}
+                  >
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllCategories ? 'rotate-180' : ''}`} />
+                      {showAllCategories
+                        ? t.showLessCategories
+                        : tf(t.showMoreCategories, { n: hiddenCategories.length })}
+                    </span>
+                    {showAllCategories ? (
+                      <span className="tabular-nums">
+                        {weeklyBreakdown.length} / {weeklyBreakdown.length}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="flex items-center gap-1 min-w-0 overflow-hidden">
+                          {hiddenCategories.map((cat) => (
+                            <span
+                              key={cat.id}
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={swatchStyle(cat.color, cat.isActive)}
+                              title={`[${cat.code}] ${cat.name}`}
+                            />
+                          ))}
+                        </span>
+                        <span className="tabular-nums normal-case shrink-0">
+                          {+(hiddenCategories.reduce((acc, c) => acc + c.minutes, 0) / 60).toFixed(1)}h
+                        </span>
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 
             {/* STUDY INSIGHTS & TELEMETRY VAULT PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-6 space-y-5 relative order-5 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 space-y-3 relative order-5 lg:order-none`}>
               {!user && (
                 <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
                   <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -4162,7 +4217,7 @@ export default function App() {
               )}
 
               {/* Panel Header */}
-              <div className={`flex items-center justify-between pb-3.5 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
+              <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
@@ -4175,116 +4230,88 @@ export default function App() {
                 </span>
               </div>
 
-              {/* Section 1: Streak & Consistency */}
-              <div className="space-y-2.5">
-                <div className={`font-mono text-[10px] uppercase tracking-wider ${textMuted} flex items-center space-x-1.5`}>
-                  <Flame className={`w-3.5 h-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
-                  <span>{t.streakTitle}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.currentStreak}</span>
-                    <div className="mt-1 flex items-baseline space-x-1.5">
-                      <span className={`font-mono text-2xl font-bold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
-                        {streakStats.currentStreak}
-                      </span>
-                      <span className={`font-mono text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>{t.unitDays}</span>
-                    </div>
-                  </div>
-                  <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.allTimeRecord}</span>
-                    <div className="mt-1 flex items-baseline space-x-1.5">
-                      <span className={`font-mono text-2xl font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                        {streakStats.longestStreak}
-                      </span>
-                      <span className={`font-mono text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>{t.unitDays}</span>
-                    </div>
-                  </div>
+              {/* Section 1: Streak & Consistency (stat strip + 30-day cell strip) */}
+              <div className="space-y-2.5 font-mono">
+                <div className={`flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider ${textMuted}`}>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <Flame className={`w-3.5 h-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+                    <span>{t.streakTitle}</span>
+                  </span>
+                  <span className="tabular-nums">
+                    {tf(t.activeDaysOf30, { n: streakStats.activeDaysInLast30, pct: streakStats.activeDayRatio })}
+                  </span>
                 </div>
 
-                {/* Consistency Bar */}
-                <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-1.5 font-mono text-xs`}>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className={textMuted}>{t.activeRatio30}</span>
-                    <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
-                      {tf(t.activeDaysOf30, { n: streakStats.activeDaysInLast30, pct: streakStats.activeDayRatio })}
-                    </span>
-                  </div>
-                  <div className={`w-full h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'} overflow-hidden`}>
-                    <div
-                      className="h-full bg-emerald-500 transition-all duration-500"
-                      style={{ width: `${streakStats.activeDayRatio}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Habit Patterns & Focus Velocity */}
-              <div className={`space-y-2.5 pt-2 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
-                <div className={`font-mono text-[10px] uppercase tracking-wider ${textMuted} flex items-center space-x-1.5`}>
-                  <TrendingUp className={`w-3.5 h-3.5 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <span>{t.habitPatterns}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.peakDay}</span>
-                    <div className={`mt-1 font-mono text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                      {habitInsights.peakDayName}
-                    </div>
-                  </div>
-                  <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/40' : 'bg-zinc-50'}`}>
-                    <span className={`block font-mono text-[10px] ${textMuted}`}>{t.avgSession}</span>
-                    <div className="mt-1 flex items-baseline space-x-1 font-mono">
-                      <span className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                        {habitInsights.avgSessionMin}
+                <div className={`grid grid-cols-2 sm:grid-cols-4 border-t border-l ${borderCol}`}>
+                  {(
+                    [
+                      [t.currentStreak, streakStats.currentStreak, t.unitDaysShort, isDark ? 'text-amber-400' : 'text-amber-600'],
+                      [t.allTimeRecord, streakStats.longestStreak, t.unitDaysShort, isDark ? 'text-emerald-400' : 'text-emerald-600'],
+                      [t.peakDay, logs.length ? habitInsights.peakDayName.slice(0, 3) : '—', '', ''],
+                      [t.avgSession, habitInsights.avgSessionMin, t.unitMin, ''],
+                    ] as Array<[string, string | number, string, string]>
+                  ).map(([label, value, unit, tone]) => (
+                    <div key={label} className={`px-2.5 py-2 border-r border-b ${borderCol} min-w-0`}>
+                      <span className={`block text-[9px] uppercase tracking-wider truncate ${textMuted}`}>{label}</span>
+                      <span className="mt-0.5 flex items-baseline gap-1">
+                        <span className={`text-lg leading-tight font-light tabular-nums ${tone}`}>{value}</span>
+                        {unit && <span className={`text-[9px] ${textMuted}`}>{unit}</span>}
                       </span>
-                      <span className={`text-[10px] ${textMuted}`}>{t.unitMin}</span>
                     </div>
-                  </div>
+                  ))}
                 </div>
 
-                {habitInsights.topCategory && (
-                  <div className={`p-3 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} flex items-center justify-between font-mono text-xs`}>
-                    <div className="flex items-center space-x-2">
+                <div>
+                  {/* 30 segments filling left -> right: one per active day in the last 30. */}
+                  <div
+                    className="flex gap-[2px] h-3.5"
+                    role="progressbar"
+                    aria-label={t.streakTitle}
+                    aria-valuemin={0}
+                    aria-valuemax={30}
+                    aria-valuenow={streakStats.activeDaysInLast30}
+                  >
+                    {Array.from({ length: 30 }, (_, idx) => (
                       <span
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: habitInsights.topCategory.color }}
+                        key={idx}
+                        className={`flex-1 transition-colors duration-500 ${
+                          idx < streakStats.activeDaysInLast30 ? 'bg-emerald-500' : isDark ? 'bg-zinc-800/70' : 'bg-zinc-200'
+                        }`}
                       />
-                      <span className={textMuted}>{t.primaryFocus}</span>
-                      <span className={`font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                        [{habitInsights.topCategory.code}] {habitInsights.topCategory.name}
-                      </span>
-                    </div>
-                    <span className={`font-semibold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{habitInsights.topCatPct}%</span>
+                    ))}
                   </div>
-                )}
+                  <div className={`mt-0.5 flex justify-between text-[9px] uppercase tracking-wider ${textMuted}`}>
+                    <span>0</span>
+                    <span>{t.strip30d}</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Section 3: Data Vault & Export Actions */}
-              <div className={`space-y-2.5 pt-2 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
-                <div className={`font-mono text-[10px] uppercase tracking-wider ${textMuted} flex items-center space-x-1.5`}>
-                  <Download className={`w-3.5 h-3.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`} />
+              {/* Section 2: Data Vault & Export Actions */}
+              <div className={`flex flex-wrap items-center justify-between gap-2 pt-3 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'} font-mono`}>
+                <span className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${textMuted}`}>
+                  <Download className="w-3.5 h-3.5" />
                   <span>{t.dataVault}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2.5 font-mono text-xs">
+                </span>
+                <div className={`grid grid-cols-2 border ${borderCol} text-[10px] uppercase tracking-wider`}>
                   <button
                     type="button"
                     onClick={handleExportCSV}
                     disabled={logs.length === 0}
-                    className={`min-h-[42px] lg:min-h-0 p-3 lg:p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
                     title={t.exportCsvTitle}
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <Download className="w-3 h-3" />
                     <span>{t.exportCsv}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleExportJSON}
                     disabled={logs.length === 0}
-                    className={`min-h-[42px] lg:min-h-0 p-3 lg:p-2.5 border ${borderCol} ${isDark ? 'hover:bg-zinc-800/40 text-zinc-200' : 'hover:bg-zinc-100 text-zinc-800'} transition-colors flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 border-l ${borderCol} flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
                     title={t.exportJsonTitle}
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <Download className="w-3 h-3" />
                     <span>{t.exportJson}</span>
                   </button>
                 </div>
@@ -5755,82 +5782,122 @@ export default function App() {
               {(
                 [
                   ['profile', t.tabProfile],
-                  ['themes', tf(t.tabThemes, { n: SURFACE_THEME_PAIRS.length })],
-                  ['fonts', t.tabFonts],
-                  ['ambient', t.tabAmbient],
+                  ['themes', t.tabAppearance],
                   ['clearance', t.tabClearance],
                   ['security', t.tabPassword],
                   ['data', t.tabData],
                 ] as Array<[SettingsTab, string]>
-              ).map(([tab, label]) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setSettingsTab(tab)}
-                  className={`grow basis-1/4 sm:basis-0 px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
-                    settingsTab === tab
-                      ? isDark
-                        ? 'bg-zinc-100 text-zinc-950 font-bold'
-                        : 'bg-zinc-900 text-white font-bold'
-                      : textMuted
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+              ).map(([tab, label]) => {
+                const active = tab === 'themes' ? APPEARANCE_TABS.includes(settingsTab) : settingsTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => !active && setSettingsTab(tab)}
+                    className={`grow basis-1/3 sm:basis-0 px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
+                      active
+                        ? isDark
+                          ? 'bg-zinc-100 text-zinc-950 font-bold'
+                          : 'bg-zinc-900 text-white font-bold'
+                        : textMuted
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
             <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1">
-              {/* TAB 2: DUAL-POLARITY SURFACE THEMES (600 PAIRS = 1,200 SURFACES) */}
-              {settingsTab === 'themes' && (
-                <SurfaceThemeSelectorPanel
-                  activeThemeId={surfaceThemeId}
-                  onSelectThemeId={handleSelectSurfaceTheme}
-                  isDark={isDark}
-                  onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-                  userClearanceLevel={clearanceStatus.rewardUnlockLevel}
-                  userTotalAscensions={clearanceStatus.totalAscensions}
-                  userTotalHours={clearanceStatus.totalHours}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                  fxEnabled={surfaceFxEnabled}
-                  onToggleFx={() => {
-                    const next = !surfaceFxEnabled;
-                    setSurfaceFxEnabled(next);
-                    queueUiPrefsSave({ surface_fx: next });
-                  }}
-                />
-              )}
+              {/* TAB 2: APPEARANCE // SURFACE (900 PAIRS) · TYPE · AMBIENT */}
+              {APPEARANCE_TABS.includes(settingsTab) && (
+                <div className={`flex flex-col gap-3 sm:gap-4 ${settingsTab === 'themes' ? 'h-full' : ''}`}>
+                  <div
+                    className={`grid grid-cols-3 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
+                    role="tablist"
+                    aria-label={t.tabAppearance}
+                  >
+                    {(
+                      [
+                        ['themes', t.appearanceSurface, SURFACE_THEME_PAIRS.length],
+                        ['fonts', t.appearanceType, UI_FONTS.length],
+                        ['ambient', t.appearanceAmbient, AMBIENT_THEMES.length],
+                      ] as Array<[SettingsTab, string, number]>
+                    ).map(([tab, label, count], idx) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={settingsTab === tab}
+                        onClick={() => setSettingsTab(tab)}
+                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 border-r border-b ${borderCol} transition-colors cursor-pointer ${
+                          settingsTab === tab
+                            ? 'bg-emerald-500/10 text-emerald-400 font-bold'
+                            : `${textMuted} hover:text-emerald-400`
+                        }`}
+                      >
+                        <span className="truncate">
+                          <span className="hidden sm:inline opacity-60">02.{idx + 1} </span>
+                          {label}
+                        </span>
+                        <span className="tabular-nums opacity-70">{count}</span>
+                      </button>
+                    ))}
+                  </div>
 
-              {settingsTab === 'fonts' && (
-                <UiFontPicker
-                  activeFontId={activeUiFont.id}
-                  onSelect={handleSelectUiFont}
-                  progress={chronoProgress}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                />
-              )}
+                  <div className={settingsTab === 'themes' ? 'flex-1 min-h-0' : ''}>
+                    {settingsTab === 'themes' && (
+                      <SurfaceThemeSelectorPanel
+                        activeThemeId={surfaceThemeId}
+                        onSelectThemeId={handleSelectSurfaceTheme}
+                        isDark={isDark}
+                        onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+                        userClearanceLevel={clearanceStatus.rewardUnlockLevel}
+                        userTotalAscensions={clearanceStatus.totalAscensions}
+                        userTotalHours={clearanceStatus.totalHours}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                        fxEnabled={surfaceFxEnabled}
+                        onToggleFx={() => {
+                          const next = !surfaceFxEnabled;
+                          setSurfaceFxEnabled(next);
+                          queueUiPrefsSave({ surface_fx: next });
+                        }}
+                      />
+                    )}
 
-              {settingsTab === 'ambient' && (
-                <AmbientSettingsPanel
-                  activeThemeId={activeAmbientTheme.id}
-                  onSelect={handleSelectAmbientTheme}
-                  onPreview={setAmbientPreviewId}
-                  progress={chronoProgress}
-                  showClock={ambientClock}
-                  onToggleClock={() => {
-                    const next = !ambientClock;
-                    setAmbientClock(next);
-                    queueUiPrefsSave({ ambient_clock: next });
-                  }}
-                  dim={ambientDim}
-                  onChangeDim={setAmbientDim}
-                  keepAwakeMode={keepAwakeMode}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                />
+                    {settingsTab === 'fonts' && (
+                      <UiFontPicker
+                        activeFontId={activeUiFont.id}
+                        onSelect={handleSelectUiFont}
+                        progress={chronoProgress}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+
+                    {settingsTab === 'ambient' && (
+                      <AmbientSettingsPanel
+                        activeThemeId={activeAmbientTheme.id}
+                        onSelect={handleSelectAmbientTheme}
+                        onPreview={setAmbientPreviewId}
+                        progress={chronoProgress}
+                        showClock={ambientClock}
+                        onToggleClock={() => {
+                          const next = !ambientClock;
+                          setAmbientClock(next);
+                          queueUiPrefsSave({ ambient_clock: next });
+                        }}
+                        dim={ambientDim}
+                        onChangeDim={setAmbientDim}
+                        keepAwakeMode={keepAwakeMode}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-1,000H PER CYCLE) */}
