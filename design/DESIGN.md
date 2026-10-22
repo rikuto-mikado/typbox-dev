@@ -92,7 +92,8 @@ In practice:
 | COMMAND PALETTE | Every action via ⌘K / Ctrl+K | Fully keyboard-drivable |
 | STATUS CARD | Shareable image | WIDE / SQUARE / PORTRAIT / STORY; preview height stays fixed when switching |
 | AMBIENT / NOISE | Focus environment | Up to 5 layers across 8 noise families, sleep timer |
-| SURFACE THEMES | Background and palette | 900 dark/light pairs; patterns and scene art show **only through gutters**, never behind text |
+| PLANETARY SIGNAL | Earth and Sun since the last session | Four strips on one time axis (quakes, flares, CMEs, Kp meter); quiet unless something happened |
+| SURFACE THEMES | Background and palette | 900 plain dark/light pairs (CLASSIC / CHROMA saturation contrast / COMPLEMENT hue contrast) + 12 illustrated prestige; art shows **only through gutters**, never behind text |
 
 ## 6. Motion
 
@@ -135,4 +136,4 @@ Customizing the look is itself the reward for keeping going. Keep that relations
 | Fonts | `frontend/src/uiFonts.ts` |
 | Category color handling | `frontend/src/categoryStyle.ts` |
 | Weather display | `frontend/src/weatherThemes.ts`, `Weather.tsx` |
-| Background art and patterns | `frontend/src/pixelArtThemes.ts`, `surfaceSceneArt.tsx`, `surfacePatterns.ts`, `surfaceThemesNeo.json` |
+| Surface Themes | `frontend/src/surfaceThemeCatalog.json`, `surfaceThemes.ts`, `surfacePalettes.ts`, `surfaceColor.ts`, `surfacePrestige.ts` |

@@ -10,6 +10,7 @@ from .views import (
     HubTelemetryView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
+    PlanetarySignalView,
     PortfolioFeedView,
     RegisterView,
     StudyLogViewSet,
@@ -38,6 +39,9 @@ urlpatterns = [
 
     # Research Discovery panel: server-side arXiv proxy (arXiv has no CORS)
     path('research/discover/', ArxivDiscoveryView.as_view(), name='research_discover'),
+
+    # Planetary Signal panel: USGS earthquakes + NASA DONKI space weather proxy
+    path('planetary/signal/', PlanetarySignalView.as_view(), name='planetary_signal'),
 
     # CRUD Router for categories and logs
     path('', include(router.urls)),

@@ -22,6 +22,8 @@ Thumbs.db
 !.vscode/launch.json
 !.vscode/extensions.json
 .idea/
+# Claude Code: per-machine settings (shared .claude/settings.json stays committable)
+.claude/settings.local.json
 *.sublime-workspace
 *.sublime-project
 *.swp

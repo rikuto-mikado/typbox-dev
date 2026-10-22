@@ -61,9 +61,12 @@ const MoonIcon: React.FC<{ fraction: number; size: number; isDark: boolean; clas
   className,
 }) => {
   const r = size / 2;
-  const litColor = isDark ? '#e4e4e7' : '#52525b';
-  const shadowColor = isDark ? '#52525b' : '#d4d4d8';
-  const ringColor = isDark ? '#27272a' : '#a1a1aa';
+  // The lit side stays the lighter tone in both themes — inverting it for
+  // light mode made a full moon read as a dark disk (i.e. a new moon). The
+  // light-mode ring is what separates a white full moon from the pale cells.
+  const litColor = isDark ? '#e4e4e7' : '#ffffff';
+  const shadowColor = isDark ? '#52525b' : '#a1a1aa';
+  const ringColor = isDark ? '#27272a' : '#71717a';
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={`shrink-0 ${className ?? ''}`} aria-hidden="true">
       <circle cx={r} cy={r} r={r - 0.5} fill={shadowColor} />

@@ -201,11 +201,28 @@ canvas {
   animation: log-row-flash 2.4s ease-out;
 }
 
+/* Planetary Signal ticker: each rotated event slides in from below */
+@keyframes planetary-ticker-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.planetary-ticker-in {
+  animation: planetary-ticker-in 380ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .typbox-toast,
   .typbox-toast-pop,
   .commit-success-flash,
-  .log-row-flash {
+  .log-row-flash,
+  .planetary-ticker-in {
     animation: none;
   }
 }
@@ -545,7 +562,7 @@ canvas {
 }
 
 /* ==========================================
-   NEO Surface Theme motion FX (SurfaceFx.tsx)
+   PRESTIGE Surface Theme motion FX (SurfaceFx.tsx)
    Fixed behind the whole app inside the isolated root (z-index -1), so it
    only shows through gutters / translucent chrome. Color comes from the
    theme accent (--fx-rgb); --fx-gain quiets it on light surfaces.
@@ -562,52 +579,6 @@ canvas {
   .surface-fx {
     display: none;
   }
-}
-
-/* ==========================================
-   Pixel-art Surface Theme scene illustration (SceneLayer.tsx)
-   Same fixed/behind-everything composition as .surface-fx above, but
-   horizon-anchored and height-capped so it reads as distant scenery under
-   the normal gradient background rather than a full wallpaper.
-
-   Used by all 300 pixel-art Surface Themes, so the readability margin below
-   is deliberately generous: every content panel already sits on its own
-   fully opaque bgCard, so this art is only ever visible through page
-   gutters/translucent chrome — never directly behind text — but the
-   ::after scrim keeps even that gutter art from reading as visually noisy.
-========================================== */
-.scene-layer {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.scene-layer-art {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 42vh;
-  min-height: 220px;
-  opacity: 0.78;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 38%);
-  mask-image: linear-gradient(to bottom, transparent, black 38%);
-  transition: opacity 0.4s ease;
-}
-
-/* Dampens contrast on the densest part of the art (bottom third, where
-   lit windows/stars/lanterns concentrate) without hiding it outright. */
-.scene-layer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.1) 55%, transparent 85%);
-}
-
-.scene-layer.scene-layer-light::after {
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.15) 55%, transparent 85%);
 }
 
 .surface-fx-p {
@@ -631,22 +602,7 @@ canvas {
   100% { transform: translate(var(--p-dx), var(--p-dy)); opacity: 0; }
 }
 
-/* snow / matrix / rain: fall from above the viewport to below it */
-.surface-fx-snow .surface-fx-p,
-.surface-fx-rain .surface-fx-p {
-  top: -5% !important;
-  animation-name: fx-fall;
-}
-.surface-fx-rain .surface-fx-p {
-  border-radius: 0;
-  background: linear-gradient(to bottom, transparent, rgba(var(--fx-rgb), 0.9));
-}
-@keyframes fx-fall {
-  0% { transform: translate(0, 0); opacity: 0; }
-  8%, 90% { opacity: calc(var(--p-o) * var(--fx-gain) * 0.55); }
-  100% { transform: translate(calc(var(--p-dx) * 0.25), 112vh); opacity: 0; }
-}
-
+/* matrix: glyph columns falling from above the viewport */
 .surface-fx-matrix .surface-fx-p {
   top: -40%;
   border-radius: 0;
@@ -664,19 +620,6 @@ canvas {
   100% { transform: translateY(150vh); opacity: 0; }
 }
 
-/* fireflies: wander + blink with a soft glow */
-.surface-fx-fireflies .surface-fx-p {
-  box-shadow: 0 0 8px 2px rgba(var(--fx-rgb), 0.55);
-  animation-name: fx-firefly;
-  animation-timing-function: ease-in-out;
-}
-@keyframes fx-firefly {
-  0%, 100% { transform: translate(0, 0); opacity: 0; }
-  30% { opacity: calc(var(--p-o) * var(--fx-gain) * 0.7); }
-  50% { transform: translate(calc(var(--p-dx) * 0.4), calc(var(--p-dy) * 0.25)); opacity: calc(var(--p-o) * var(--fx-gain) * 0.25); }
-  70% { opacity: calc(var(--p-o) * var(--fx-gain) * 0.75); }
-}
-
 /* stars: fixed points that twinkle */
 .surface-fx-stars .surface-fx-p {
   animation-name: fx-twinkle;
@@ -692,13 +635,6 @@ canvas {
   top: auto !important;
   bottom: -2%;
   box-shadow: 0 0 6px 1px rgba(var(--fx-rgb), 0.5);
-  animation-name: fx-rise;
-}
-.surface-fx-bubbles .surface-fx-p {
-  top: auto !important;
-  bottom: -4%;
-  background: transparent;
-  border: 1px solid rgba(var(--fx-rgb), 0.9);
   animation-name: fx-rise;
 }
 @keyframes fx-rise {
@@ -731,22 +667,6 @@ canvas {
 @keyframes fx-aurora {
   0% { transform: translate(0, 0) scale(1); opacity: calc(var(--p-o) * var(--fx-gain) * 0.14); }
   100% { transform: translate(var(--p-dx), calc(var(--p-dy) * -0.3)) scale(1.25); opacity: calc(var(--p-o) * var(--fx-gain) * 0.26); }
-}
-
-/* scan: one soft band sweeping down the viewport */
-.surface-fx-scan .surface-fx-p {
-  left: 0;
-  top: -20vh;
-  width: 100%;
-  height: 18vh;
-  border-radius: 0;
-  background: linear-gradient(to bottom, transparent, rgba(var(--fx-rgb), 0.07), transparent);
-  opacity: var(--fx-gain);
-  animation: fx-scan 11s linear infinite;
-}
-@keyframes fx-scan {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(140vh); }
 }
 
 /* pulse: a slow breathing glow from the top center */

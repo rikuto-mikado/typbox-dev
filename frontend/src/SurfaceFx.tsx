@@ -1,7 +1,7 @@
 import React from 'react';
 import type { SurfaceFx } from './telemetryFeatures';
 
-// Ambient motion layer for NEO Surface Themes that declare an `fx`. It sits
+// Ambient motion layer for PRESTIGE Surface Themes that declare an `fx`. It sits
 // fixed behind the whole app (negative z-index inside the isolated root), so
 // it only shows through page gutters and translucent chrome — never over
 // card text. Particles are deterministic (seeded once at module load), use
@@ -50,12 +50,8 @@ function particles(seed: number, count: number, opts: { size: [number, number]; 
 
 const FIELDS = {
   dust: particles(1, 30, { size: [1, 2.4], dur: [18, 36], o: [0.25, 0.6] }),
-  snow: particles(2, 40, { size: [1.2, 3.2], dur: [14, 30], o: [0.3, 0.7] }),
-  rain: particles(3, 38, { size: [10, 26], dur: [1.1, 2.4], o: [0.2, 0.45] }),
-  fireflies: particles(4, 18, { size: [2, 3.4], dur: [6, 14], o: [0.4, 0.9] }),
   stars: particles(5, 64, { size: [0.8, 2], dur: [3, 8], o: [0.25, 0.8] }),
   embers: particles(6, 24, { size: [1.4, 3], dur: [8, 16], o: [0.35, 0.8] }),
-  bubbles: particles(7, 18, { size: [4, 11], dur: [10, 22], o: [0.25, 0.55] }),
   glitch: particles(8, 4, { size: [2, 6], dur: [7, 13], o: [0.35, 0.6] }),
   matrix: particles(9, 14, { size: [11, 13], dur: [14, 26], o: [0.35, 0.7] }),
   aurora: particles(10, 3, { size: [38, 60], dur: [22, 34], o: [0.5, 0.9] }),
@@ -112,15 +108,9 @@ export const SurfaceFxLayer: React.FC<SurfaceFxLayerProps> = ({ fx, accentHex, i
   let content: React.ReactNode = null;
   switch (fx) {
     case 'dust':
-    case 'snow':
-    case 'fireflies':
     case 'stars':
     case 'embers':
-    case 'bubbles':
       content = FIELDS[fx].map((p, i) => dot(p, i));
-      break;
-    case 'rain':
-      content = FIELDS.rain.map((p, i) => dot(p, i, { width: '1px', height: `${p.size}px` }));
       break;
     case 'glitch':
       content = FIELDS.glitch.map((p, i) => dot(p, i, { left: 0, width: '100%', height: `${p.size}px` }));
@@ -149,7 +139,6 @@ export const SurfaceFxLayer: React.FC<SurfaceFxLayerProps> = ({ fx, accentHex, i
         dot(p, i, { width: `${p.size}vmax`, height: `${p.size * 0.45}vmax`, left: `${10 + i * 28}%`, top: `${-8 + i * 6}%` })
       );
       break;
-    case 'scan':
     case 'pulse':
     case 'sweep':
       content = <span className="surface-fx-p" />;

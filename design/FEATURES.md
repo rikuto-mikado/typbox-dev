@@ -3,7 +3,7 @@
 A complete inventory of what TYPBOX does today, so a rebuild can reproduce it feature for feature.
 Look and intent: [`DESIGN.md`](./DESIGN.md). Numbers: [`tokens.json`](./tokens.json).
 
-Counts below were measured by running the catalogs in `frontend/src` on 2026-10-21, not copied from code comments (several comments are stale, e.g. "600 pairs" when there are 900).
+Counts below were measured by running the catalogs in `frontend/src` on 2026-10-23, not copied from code comments.
 
 ---
 
@@ -12,7 +12,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 | System | Size |
 |---|---|
 | Clearance ranks | **3,000** per cycle, 10 divisions, 1,000 hours per cycle, repeatable via Ascension |
-| Surface Themes | **900** dark/light pairs (1,800 surfaces) |
+| Surface Themes | **900** dark/light pairs in 3 series, plus **12** illustrated prestige themes |
 | Chronometer faces | **112** in 11 families |
 | UI fonts | **44** monospace faces in 4 kinds |
 | Ambient noise | **60** procedurally synthesized profiles in 8 families, mix up to 5 |
@@ -88,6 +88,11 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - Primary focus (top category), average session, peak day, all-time record, habit patterns.
 - Data vault shortcuts: export JSON / CSV.
 
+### Discovery panels
+- **Research Discovery**: one random recent arXiv paper at a time (title, authors, abstract, link), rotating every 90s, with SHUFFLE to jump to another field. Fetched through the backend proxy (§9).
+- **Lunar Calendar**: the month's moon phases computed client-side, today's illumination, and the next full / new moon.
+- **Planetary Signal** (above the log stream): what the Earth and Sun did since the last study session (or the last 24h, minimum 24h, maximum 7 days). Four strips on one time axis: M2.5+ earthquakes (USGS), solar flares, coronal mass ejections with Earth-arrival ETA, and geomagnetic storms on a 9-cell Kp meter (NASA DONKI). A ticker rotates notable events with links. Each feed degrades on its own (`CACHED` / `FEED OFFLINE`).
+
 ---
 
 ## 4. Progression and unlocks
@@ -131,21 +136,22 @@ Rewards unlock by **level**, **total hours**, **session count**, **longest singl
 
 ## 5. Personalization
 
-### 5.1 Surface Themes (900 pairs)
-- Every theme is a **dark/light pair** (e.g. `CARBON BLACK ⇄ ALABASTER WHITE`) with a code (`THM-01`), name, description, division, unlock level, accent color and background pattern.
-- Three series plus prestige:
+### 5.1 Surface Themes (900 pairs + 12 prestige)
+- Every theme is a **dark/light pair** (e.g. `CARBON BLACK ⇄ ALABASTER WHITE`) with a code, name, description, division, unlock level and accent color.
+- Three plain series (no background patterns; a soft top glow and, in dark mode, an accent wash in the top corners) plus prestige:
 
-  | Series | Pairs | Character |
-  |---|---|---|
-  | Archive (original) | 292 | Architectural / technical palettes with geometric patterns |
-  | Pixel-art | 300 | Illustrated day/night scenes on the horizon (cyberpunk alley, medieval fortress, snowy summit, deep sea, space dock, lake reflection, crystal cave, subway station, shrine garden… plus 100 "region" scenes) |
-  | NEO SIGNAL | 308 | Two-hue palettes (surface hue + neon pattern/glow hue) with SVG tile motifs |
-  | of which Prestige | 12 | `AURUM`, `ARGENTUM`, `PRISM` and NEO prestige, gated by Ascension count |
+  | Series | Code | Pairs | Character |
+  |---|---|---|---|
+  | CLASSIC | `CLS-001` | 300 | The most distinct palettes kept from the former archive and NEO SIGNAL waves |
+  | CHROMA | `CHR-001` | 300 | Saturation contrast: a saturated layer (cards, page field, or edges only) against near-grey layers of the same hue |
+  | COMPLEMENT | `HUE-001` | 300 | Hue contrast: a field hue answered by its opposite (180°) or near-opposite (±150°) hue, far apart in lightness |
+  | PRESTIGE | `PRS-01` | 12 | Hand-composed SVG backdrops per polarity (kintsugi, neon halo, eclipse, accretion disk, aurora, monolith…), gated by Ascension count |
 
-- Distribution: 84–96 pairs per division.
-- **Background patterns**: none, grid, dots, blueprint, scanline, radial, diagonal, crosshatch, isometric, horizon, circuit, vignette, hexgrid, triangulate, constellation, topographic, chevron, honeycomb, starburst, waveform, polygon, sigil, rings, weave, plus prestige aurum/argentum/prism and NEO SVG motifs.
-- **Motion FX** (169 themes, switchable off): dust, snow, rain, fireflies, stars, embers, scan, glitch, pulse, bubbles, matrix, aurora, sweep.
-- Readability rules: art and FX sit behind everything (z-index −1), only visible through gutters; panels are always opaque; NEO pattern ink ≤ ~8% alpha.
+- Distribution: 90 pairs per division (30 of each series, interleaved so the unlock track alternates series).
+- CHROMA / COMPLEMENT palettes are generated in OKLCH so every hue sits at the same perceived lightness; text is solved for contrast (main ≥ 8:1, muted ≥ 4.5:1 on every surface).
+- Ids from retired themes are mapped to the closest CLASSIC palette (`aliases` in `surfaceThemeCatalog.json`).
+- **Motion FX** (prestige only, switchable off): dust, stars, embers, glitch, pulse, matrix, aurora, sweep.
+- Readability rules: art and FX sit behind everything (z-index −1), only visible through gutters; panels are always opaque. Prestige art is pinned to the viewport.
 - Light/dark toggle switches polarity within the chosen pair.
 
 ### 5.2 Chronometer faces (112)
@@ -218,6 +224,8 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 |---|---|
 | `GET /api/hub/telemetry/` | Aggregate totals, per-category week/month hours and 5 recent logs, for logs with `is_public_to_hub` |
 | `GET /api/portfolio/feed/` | Read-only feed for rikutomikado.tech: only `PORTFOLIO_USERNAME`'s logs, last `PORTFOLIO_FEED_DAYS` days, `is_public_to_portfolio=True` |
+| `GET /api/research/discover/` | arXiv proxy for Research Discovery (arXiv has no CORS); shared cache of a few hours |
+| `GET /api/planetary/signal/` | USGS + NASA DONKI proxy for Planetary Signal: 7-day window, per-source cache with stale fallback; DONKI key in `NASA_API_KEY` |
 
 ### Platform details
 - Frontend: React 19 + Vite + Tailwind 4 + lucide-react. Backend: Django + DRF + SimpleJWT, PostgreSQL in production.
@@ -230,3 +238,4 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 ## 10. Retired
 
 - **EXPLORE MAP** (removed in migration 0011): its 100 region rewards became the pixel-art "region" Surface Themes.
+- **Archive / NEO SIGNAL / pixel-art Surface Themes** (2026-10): 900 themes with background patterns, motion FX and scene art, replaced by CLASSIC (300 curated from them, made plain), CHROMA and COMPLEMENT. Saved ids map to the closest CLASSIC theme.

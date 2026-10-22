@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Flame,
   Activity,
+  Grid3x3,
   Download,
   Pencil,
   Settings,
@@ -49,7 +50,7 @@ import {
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
-import { SceneLayer } from './SceneLayer';
+import { resolveSurfaceThemeId } from './surfaceThemes';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
@@ -140,6 +141,7 @@ import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
 import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
 import { useKeepAwake } from './keepAwake';
 import { ResearchDiscoveryPanel } from './ResearchDiscovery';
+import { PlanetarySignalPanel } from './PlanetarySignal';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 
 // ==========================================
@@ -350,7 +352,7 @@ const getRecentDateString = (daysAgo: number, timeZone: string): string => {
 
 const THEME_STORAGE_KEY = 'typbox_theme';
 const SURFACE_THEME_STORAGE_KEY = 'typbox_surface_theme';
-// Motion FX for NEO Surface Themes: a device-local comfort setting (like
+// Motion FX for PRESTIGE Surface Themes: a device-local comfort setting (like
 // polarity), so it isn't synced to the account.
 const SURFACE_FX_STORAGE_KEY = 'typbox_surface_fx';
 const ASCENSION_STORAGE_PREFIX = 'typbox_ascension_';
@@ -560,7 +562,7 @@ const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
 const getInitialSurfaceTheme = (): string => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(SURFACE_THEME_STORAGE_KEY);
-    if (saved) return saved;
+    if (saved) return resolveSurfaceThemeId(saved);
   }
   return 'monolith';
 };
@@ -968,6 +970,22 @@ export default function App() {
   }, [currentTime, timeZone]);
   const currentWeekStartStr = useMemo(() => startOfWeekStr(todayStr, weekStart), [todayStr, weekStart]);
 
+  // When the most recent log was committed: the left edge of the Planetary
+  // Signal panel's "since last session" window. Scanned rather than read off
+  // logs[0], since imported/backfilled logs aren't guaranteed to arrive in order.
+  const lastSessionAt = useMemo(() => {
+    let latest: string | null = null;
+    let latestMs = -Infinity;
+    for (const log of logs) {
+      const ms = Date.parse(log.createdAt);
+      if (ms > latestMs) {
+        latestMs = ms;
+        latest = log.createdAt;
+      }
+    }
+    return latest;
+  }, [logs]);
+
   // User Dropdown, Account Settings Modal & Account Deletion State
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
@@ -1339,7 +1357,7 @@ export default function App() {
 
     if (pendingSurfaceThemeRef.current !== null) return;
     if (me.surface_theme) {
-      setSurfaceThemeId(me.surface_theme);
+      setSurfaceThemeId(resolveSurfaceThemeId(me.surface_theme));
       return;
     }
     // First sync for this account: adopt the theme this device already uses
@@ -2981,8 +2999,13 @@ export default function App() {
   const textMuted = 'text-[var(--tb-text-muted)]';
   const inputBg =
     'bg-[var(--tb-bg-input)] border-[var(--tb-border)] text-[var(--tb-text-main)] focus:border-emerald-500';
+  // PRESTIGE art is pinned to the viewport so the composition frames the
+  // dashboard instead of being stretched down the full page height.
   const surfaceBgStyle = useMemo(
-    () => getSurfaceBackgroundStyle(activeSurfacePair, isDark),
+    () => ({
+      ...getSurfaceBackgroundStyle(activeSurfacePair, isDark),
+      ...(activeSurfacePair.art ? { backgroundAttachment: 'fixed' } : {}),
+    }),
     [activeSurfacePair, isDark]
   );
 
@@ -2992,7 +3015,7 @@ export default function App() {
       className={`isolate min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
     >
-      {/* NEO Surface Theme motion layer (behind everything; see SurfaceFx.tsx) */}
+      {/* PRESTIGE Surface Theme motion layer (behind everything; see SurfaceFx.tsx) */}
       {surfaceFxEnabled && activeSurfacePair.fx && (
         <SurfaceFxLayer
           key={`${activeSurfacePair.id}-${isDark ? 'd' : 'l'}`}
@@ -3000,11 +3023,6 @@ export default function App() {
           accentHex={activeSurfacePair.accentHex}
           isDark={isDark}
         />
-      )}
-
-      {/* Pixel-art Surface Theme scene illustration (behind everything; see SceneLayer.tsx) */}
-      {activeSurfacePair.scene && (
-        <SceneLayer key={`${activeSurfacePair.id}-scene-${isDark ? 'd' : 'l'}`} scene={activeSurfacePair.scene} isDark={isDark} />
       )}
 
       {/* Ambient Mode: the chosen overlay while the stopwatch runs
@@ -3900,7 +3918,7 @@ export default function App() {
 
               <div className={`flex items-center justify-between pb-4 mb-5 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
-                  <FolderPlus className="w-4 h-4" />
+                  <FolderPlus className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
                     {t.categoriesTitle}
                   </h2>
@@ -5067,7 +5085,7 @@ export default function App() {
                 }`}
               >
                 <div className="flex items-center space-x-2.5">
-                  <Activity className="w-4 h-4 text-emerald-500" />
+                  <Grid3x3 className="w-4 h-4 text-emerald-500" />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
                     {t.cadenceTitle}
                   </h2>
@@ -5390,11 +5408,16 @@ export default function App() {
               </div>
             </div>
 
+            {/* PLANETARY SIGNAL PANEL (USGS + NASA DONKI, since the last session) */}
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-9 lg:order-none`}>
+              <PlanetarySignalPanel since={lastSessionAt} borderCol={borderCol} textMuted={textMuted} isDark={isDark} />
+            </div>
+
             {/* CHRONOLOGICAL LOG STREAM */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-9 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-6 order-10 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
-                  <Terminal className="w-4 h-4" />
+                  <Terminal className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
                     {t.recentLogs}
                   </h2>
