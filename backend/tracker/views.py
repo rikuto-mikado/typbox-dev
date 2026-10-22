@@ -41,28 +41,6 @@ from .timezones import get_user_zone, user_localdate, user_week_start, week_star
 User = get_user_model()
 
 
-def _is_trusted_frontend_origin(origin: str) -> bool:
-    """
-    True only if `origin` matches the same allowlist CORS already trusts
-    (settings.CORS_ALLOWED_ORIGINS / CORS_ALLOWED_ORIGIN_REGEXES).
-
-    The `Origin` request header is attacker-controlled on any direct HTTP
-    call (CORS is a browser-side policy, not a server-side access check), so
-    it must never be trusted blindly for security-sensitive output such as
-    the link embedded in a password-reset email — otherwise a caller could
-    set `Origin: https://evil.example` and have TYPBOX's own mailer send the
-    victim a legitimate-looking reset email pointing at a phishing site.
-    """
-    if not origin:
-        return False
-    if origin in getattr(settings, 'CORS_ALLOWED_ORIGINS', []):
-        return True
-    for pattern in getattr(settings, 'CORS_ALLOWED_ORIGIN_REGEXES', []):
-        if re.match(pattern, origin):
-            return True
-    return False
-
-
 # ==========================================
 # Authentication & Account Management Views
 # ==========================================
@@ -187,9 +165,11 @@ class PasswordResetRequestView(APIView):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
 
-            origin = request.headers.get('Origin', '').rstrip('/')
-            frontend_base = origin if _is_trusted_frontend_origin(origin) else settings.FRONTEND_URL
-            reset_url = f"{frontend_base}/?reset_uid={uid}&reset_token={token}"
+            # Always the configured frontend, never the request's Origin header:
+            # it's attacker-controlled on direct HTTP calls, and the wildcard
+            # CORS regexes (e.g. any *.onrender.com) would let a caller point
+            # TYPBOX's own reset email at a phishing site.
+            reset_url = f"{settings.FRONTEND_URL}/?reset_uid={uid}&reset_token={token}"
 
             subject = '[TYPBOX] Password Reset Request / パスワード再設定のご案内'
             message = (
@@ -274,6 +254,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
         if user_categories_count <= 1:
             return Response(
                 {'detail': 'At least one category is required for study tracking.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # DONE categories can't be logged against, so the last in-progress
+        # one must stay too (same rule as marking it DONE).
+        instance = self.get_object()
+        if instance.completed_at is None and not Category.objects.filter(
+            user=request.user, completed_at__isnull=True
+        ).exclude(pk=instance.pk).exists():
+            return Response(
+                {'detail': 'At least one in-progress category is required.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         return super().destroy(request, *args, **kwargs)
@@ -384,6 +374,13 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         target_int = 5
                     raw_active = item.get('isActive', item.get('is_active', True))
                     is_active = raw_active if isinstance(raw_active, bool) else True
+                    raw_completed = item.get('completedAt') or item.get('completed_at')
+                    try:
+                        completed_at = parse_datetime(str(raw_completed)) if raw_completed else None
+                    except ValueError:
+                        completed_at = None
+                    if completed_at is not None and timezone.is_naive(completed_at):
+                        completed_at = timezone.make_aware(completed_at, dt_timezone.utc)
 
                     new_cat = Category.objects.create(
                         user=request.user,
@@ -392,6 +389,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         color=color,
                         weekly_target_hours=target_int,
                         is_active=is_active,
+                        completed_at=completed_at,
                     )
                     existing_cats[code] = new_cat
                     created_cats += 1
@@ -550,19 +548,21 @@ class HubTelemetryView(APIView):
                 0
             ),
         )
-        cat_data = [
-            {
+        cat_data = []
+        for cat in categories:
+            # Parked and DONE categories keep their hours but have no target.
+            has_target = cat.is_active and cat.completed_at is None
+            cat_data.append({
                 'code': cat.code,
                 'name': cat.name,
                 'is_active': cat.is_active,
+                'is_completed': cat.completed_at is not None,
                 'monthly_hours': round(cat.month_min / 60, 1),
                 'weekly_hours': round(cat.week_min / 60, 1),
-                'weekly_target_hours': cat.weekly_target_hours if cat.is_active else None,
+                'weekly_target_hours': cat.weekly_target_hours if has_target else None,
                 # Kept for existing consumers; now the weekly target.
-                'target_hours': cat.weekly_target_hours if cat.is_active else None,
-            }
-            for cat in categories
-        ]
+                'target_hours': cat.weekly_target_hours if has_target else None,
+            })
 
         recent_public = public_logs.order_by('-date', '-created_at')[:5]
         recent_logs_data = [

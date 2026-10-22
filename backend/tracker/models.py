@@ -76,6 +76,10 @@ class Category(models.Model):
 
     Inactive categories keep their history (logs, analytics) but no longer
     carry a weekly target; they're parked rather than deleted.
+
+    Completed categories (completed_at set) are finished one-off goals such
+    as a driving-licence exam: hidden from the registry and the log form,
+    but their logs still count everywhere in analytics.
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -89,6 +93,8 @@ class Category(models.Model):
     # their time zone); resets at 00:00 on that day.
     weekly_target_hours = models.PositiveIntegerField(default=5)
     is_active = models.BooleanField(default=True)
+    # null = in progress; set = marked DONE at that moment.
+    completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

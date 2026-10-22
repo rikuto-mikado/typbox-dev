@@ -72,8 +72,11 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
     };
   }, [open, isMobile]);
 
-  const active = categories.filter((c) => c.isActive);
-  const inactive = categories.filter((c) => !c.isActive);
+  const active = categories.filter((c) => c.isActive && !c.completedAt);
+  const inactive = categories.filter((c) => !c.isActive && !c.completedAt);
+  // Only reachable from the log editor (the log form gets in-progress ones),
+  // so a log already filed under a finished category stays editable.
+  const done = categories.filter((c) => c.completedAt);
   const selected = categories.find((c) => String(c.id) === String(value)) ?? null;
 
   const pick = (id: string | number) => {
@@ -94,7 +97,7 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
           isSelected ? 'bg-emerald-500/10 text-emerald-400 font-semibold' : `${textMuted} hover:bg-[var(--tb-text-main)]/5`
         }`}
       >
-        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(c.color, c.isActive)} />
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(c.color, c.isActive && !c.completedAt)} />
         <span className="shrink-0 font-bold">[{c.code}]</span>
         <span className="truncate flex-1">{c.name}</span>
         {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
@@ -113,6 +116,14 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
           {inactive.map(row)}
         </>
       )}
+      {done.length > 0 && (
+        <>
+          <div className={`px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-wider ${textMuted}`}>
+            — {t.done} —
+          </div>
+          {done.map(row)}
+        </>
+      )}
     </>
   );
 
@@ -128,7 +139,7 @@ export const CategorySelect: React.FC<CategorySelectProps> = ({
       >
         {selected ? (
           <span className="flex items-center gap-2 min-w-0">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(selected.color, selected.isActive)} />
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(selected.color, selected.isActive && !selected.completedAt)} />
             <span className="truncate">
               [{selected.code}] {selected.name}
             </span>

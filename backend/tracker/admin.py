@@ -10,8 +10,8 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'user', 'color', 'weekly_target_hours', 'is_active', 'created_at')
-    list_filter = ('user', 'is_active')
+    list_display = ('code', 'name', 'user', 'color', 'weekly_target_hours', 'is_active', 'completed_at', 'created_at')
+    list_filter = ('user', 'is_active', ('completed_at', admin.EmptyFieldListFilter))
     search_fields = ('name', 'code', 'user__username')
 
 

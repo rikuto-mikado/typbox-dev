@@ -1,14 +1,21 @@
+import re
 from datetime import date, datetime, timedelta, timezone as dt_timezone
-from unittest import mock
+from pathlib import Path
+from unittest import mock, skipUnless
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import Category, StudyLog, UserProfile, monthly_to_weekly_hours
+from .serializers import USER_STATUS_IDS
 
 User = get_user_model()
+
+# The status catalog lives in the frontend; the backend keeps a copy of its ids.
+FRONTEND_USER_STATUS_TS = Path(settings.BASE_DIR).parent / 'frontend' / 'src' / 'userStatus.ts'
 
 
 class SurfaceThemeSyncTests(APITestCase):
@@ -309,6 +316,92 @@ class CategoryWeeklyTargetTests(APITestCase):
         )
 
 
+class CategoryCompletionTests(APITestCase):
+    """DONE categories: server-stamped completed_at, reversible, logs kept."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', email='operator@example.com', password='s3cure-pass-123'
+        )
+        self.client.force_authenticate(user=self.user)
+        self.dev = Category.objects.create(user=self.user, name='Dev', code='DEV', weekly_target_hours=8)
+        self.lic = Category.objects.create(user=self.user, name='Licence', code='LIC', weekly_target_hours=4)
+        StudyLog.objects.create(user=self.user, category=self.lic, date=date(2026, 10, 1), duration_minutes=90)
+
+    def test_new_category_is_in_progress(self):
+        res = self.client.get('/api/categories/')
+        self.assertTrue(all(c['completed_at'] is None for c in res.data))
+
+    def test_mark_done_stamps_server_time_and_keeps_logs(self):
+        before = timezone.now()
+        res = self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.lic.refresh_from_db()
+        self.assertIsNotNone(self.lic.completed_at)
+        self.assertGreaterEqual(self.lic.completed_at, before)
+        self.assertTrue(res.data['completed_at'].endswith('Z'))
+        self.assertEqual(StudyLog.objects.filter(category=self.lic).count(), 1)
+
+    def test_marking_done_again_keeps_original_timestamp(self):
+        self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        self.lic.refresh_from_db()
+        first = self.lic.completed_at
+        self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        self.lic.refresh_from_db()
+        self.assertEqual(self.lic.completed_at, first)
+
+    def test_restore_clears_completed_at(self):
+        self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        res = self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': False}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.data['completed_at'])
+
+    def test_completed_at_cannot_be_written_directly(self):
+        res = self.client.patch(
+            f'/api/categories/{self.lic.id}/', {'completed_at': '2020-01-01T00:00:00Z'}, format='json'
+        )
+        self.assertEqual(res.status_code, 200)
+        self.lic.refresh_from_db()
+        self.assertIsNone(self.lic.completed_at)
+
+    def test_last_in_progress_category_cannot_be_done(self):
+        self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        res = self.client.patch(f'/api/categories/{self.dev.id}/', {'completed': True}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.dev.refresh_from_db()
+        self.assertIsNone(self.dev.completed_at)
+
+    def test_last_in_progress_category_cannot_be_deleted(self):
+        self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        res = self.client.delete(f'/api/categories/{self.dev.id}/')
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(Category.objects.filter(pk=self.dev.pk).exists())
+        # A DONE category itself can still be deleted.
+        res = self.client.delete(f'/api/categories/{self.lic.id}/')
+        self.assertEqual(res.status_code, 204)
+
+    def test_hub_keeps_done_hours_without_target(self):
+        self.client.patch(f'/api/categories/{self.lic.id}/', {'completed': True}, format='json')
+        res = self.client.get('/api/hub/telemetry/', {'username': 'operator'})
+        lic = next(c for c in res.data['categories'] if c['code'] == 'LIC')
+        self.assertTrue(lic['is_completed'])
+        self.assertIsNone(lic['weekly_target_hours'])
+        self.assertEqual(res.data['summary']['total_hours'], 1.5)
+
+    def test_import_restores_completed_at(self):
+        res = self.client.post(
+            '/api/logs/import-backup/',
+            {
+                'categories': [{'code': 'CERT', 'name': 'Cert', 'completedAt': '2026-09-30T12:00:00Z'}],
+                'logs': [],
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, 201)
+        cert = Category.objects.get(user=self.user, code='CERT')
+        self.assertEqual(cert.completed_at, datetime(2026, 9, 30, 12, 0, tzinfo=dt_timezone.utc))
+
+
 class WeekStartSettingTests(APITestCase):
     """
     Weekly totals follow the calendar week (not a rolling 7 days); the first
@@ -421,6 +514,19 @@ class UserStatusTests(APITestCase):
     def test_rejects_non_list(self):
         res = self.client.patch('/api/auth/me/', {'user_statuses': 'gap_year'}, format='json')
         self.assertEqual(res.status_code, 400)
+
+    def test_accepts_hobby_exam_language_sport_and_style_ids(self):
+        picks = ['hobby_shogi', 'exam_fe', 'lang_english', 'sport_running', 'style_night_owl']
+        res = self.client.patch('/api/auth/me/', {'user_statuses': picks}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['user_statuses'], picks)
+
+    @skipUnless(FRONTEND_USER_STATUS_TS.exists(), 'frontend source not present')
+    def test_ids_match_frontend_catalog(self):
+        frontend_ids = re.findall(r"\['([a-z0-9_]+)', ", FRONTEND_USER_STATUS_TS.read_text(encoding='utf-8'))
+        self.assertEqual(len(frontend_ids), len(set(frontend_ids)))
+        self.assertEqual(set(frontend_ids), set(USER_STATUS_IDS))
+        self.assertEqual(len(USER_STATUS_IDS), len(set(USER_STATUS_IDS)))
 
     def test_can_clear_statuses(self):
         self.client.patch('/api/auth/me/', {'user_statuses': ['gap_year']}, format='json')

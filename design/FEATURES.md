@@ -18,7 +18,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 | Ambient noise | **60** procedurally synthesized profiles in 8 families, mix up to 5 |
 | Ambient overlay scenes | **23** |
 | Weather display styles | **33** |
-| Profile statuses | **103** options in 10 groups, pick up to 5 |
+| Profile statuses | **428** options in 15 groups, pick up to 5 |
 | Status card shapes | 4 (WIDE / SQUARE / PORTRAIT / STORY) |
 | Avatar presets | 12 icons + initial, 36 accent colors, or uploaded image |
 
@@ -61,6 +61,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - Create, edit, delete (the server refuses to delete the last remaining category).
 - Weekly progress against the target with a "target met" state.
 - **Inactive ("parked") categories** are never hidden: hollow ring swatches and diagonal-hatch bars keep history readable.
+- **DONE categories** (finished one-off goals, e.g. a driving-licence exam): the ✓✓ button on a registry row marks it DONE (server-stamped `completed_at`, with an UNDO toast). DONE categories leave the registry, the log form and the command palette, and fold into a dashed `DONE (n)` section under the registry showing all-time hours and completion date, with restore and delete. Their logs keep counting everywhere in analytics, drawn hatched like parked ones. The last in-progress category can't be marked DONE. JSON backups carry `completedAt` and imports restore it.
 - **Category Trend Table**: per-category hours across day / week / month columns; collapsed view shows the top categories and folds the rest into OTHER so totals still add up; shows `N ACTIVE · N IDLE`, click to expand.
 
 ---
@@ -156,7 +157,7 @@ Kinds: CODE 19, HUMANIST 10, RETRO 7, DISPLAY 8. Default is the system monospace
 
 ### 5.4 Profile
 - Username, email, avatar: 12 icon presets (initial, terminal, cpu, code, zap, shield, globe, sparkles, flame, compass, layers, database) × 36 accent colors, or an uploaded image.
-- **Statuses**: up to 5 from 103 options in 10 groups (major, school, research, tech, data, business, independent, creative, industry, life).
+- **Statuses**: up to 5 from 428 options in 15 groups (major, school, research, tech, data, business, independent, creative, industry, exams, languages, hobbies, sports, study style, life). Ids are append-only; `tracker/tests.py` checks the backend allowlist matches `userStatus.ts`.
 - Timezone and week start (Mon/Sun); all week/month math follows them.
 
 ### 5.5 Settings modal tabs

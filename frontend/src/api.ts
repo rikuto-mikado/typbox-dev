@@ -44,6 +44,17 @@ export const clearTokens = () => {
   localStorage.removeItem(REFRESH_KEY);
 };
 
+/** Error for a non-2xx API response, carrying its HTTP status. */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 interface FetchOptions extends RequestInit {
   requiresAuth?: boolean;
 }
@@ -88,7 +99,7 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
       });
     } else {
       clearTokens();
-      throw new Error('Session expired. Please sign in again.');
+      throw new ApiError('Session expired. Please sign in again.', 401);
     }
   }
 
@@ -100,7 +111,7 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
     } catch {
       errorDetail = `HTTP ${response.status}: ${response.statusText}`;
     }
-    throw new Error(errorDetail);
+    throw new ApiError(errorDetail, response.status);
   }
 
   // Handle 204 No Content
@@ -248,6 +259,8 @@ export const api = {
         color: string;
         weekly_target_hours?: number;
         is_active?: boolean;
+        /** UTC ISO timestamp when marked DONE; null while in progress. */
+        completed_at?: string | null;
         /** Legacy (pre-weekly) field; only used as a fallback during rollout. */
         monthly_target_hours?: number;
         created_at: string;
@@ -267,9 +280,17 @@ export const api = {
     },
     update: async (
       id: string | number,
-      data: Partial<{ name: string; code: string; color: string; weekly_target_hours: number; is_active: boolean }>
+      data: Partial<{
+        name: string;
+        code: string;
+        color: string;
+        weekly_target_hours: number;
+        is_active: boolean;
+        /** true = mark DONE (server stamps completed_at), false = back to in progress. */
+        completed: boolean;
+      }>
     ) => {
-      return apiFetch(`/categories/${id}/`, {
+      return apiFetch<{ id: number | string; completed_at: string | null }>(`/categories/${id}/`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       });

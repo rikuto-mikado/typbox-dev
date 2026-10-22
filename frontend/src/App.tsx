@@ -44,8 +44,10 @@ import {
   Share2,
   Palette,
   Briefcase,
+  CheckCheck,
+  Undo2,
 } from 'lucide-react';
-import { api, apiFetch, getAccessToken } from './api';
+import { api, apiFetch, ApiError, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
 import { SceneLayer } from './SceneLayer';
 import { CategoryTrendTable } from './CategoryTrendTable';
@@ -56,6 +58,7 @@ import {
   LEGACY_LANG_STORAGE_KEY,
   TZ_STORAGE_KEY,
   buildI18nValue,
+  formatDateTimeInZone,
   formatUtcOffset,
   getDeviceTimeZone,
   getZoneOffsetMinutes,
@@ -152,6 +155,12 @@ export interface Category {
   weeklyTargetHours: number;
   /** Inactive = parked: history stays, no weekly target is tracked. */
   isActive: boolean;
+  /**
+   * UTC ISO timestamp when marked DONE (a finished one-off goal), else null.
+   * DONE categories leave the registry and the log form but their logs
+   * still count everywhere in analytics.
+   */
+  completedAt: string | null;
 }
 
 export interface StudyLog {
@@ -317,6 +326,13 @@ const socialLinks = [
   },
 ];
 
+// Default log-form category: the first active in-progress one, else any
+// in-progress one. DONE categories are never picked.
+const pickDefaultCategory = (cats: Category[]): Category | undefined => {
+  const open = cats.filter((c) => !c.completedAt);
+  return open.find((c) => c.isActive) ?? open[0];
+};
+
 const formatLocalDateString = (d: Date): string => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -376,11 +392,18 @@ const PrestigeChip: React.FC<{ totalAscensions: number; className?: string }> = 
 
 type ToastKind = 'success' | 'error';
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastItem {
   id: number;
   kind: ToastKind;
   title: string;
   message?: string;
+  /** Optional inline button, e.g. UNDO; clicking it also dismisses the toast. */
+  action?: ToastAction;
 }
 
 const TOAST_DURATION_MS = 3600;
@@ -428,6 +451,18 @@ const ToastStack: React.FC<{
                 </div>
               )}
             </div>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.action?.onClick();
+                  onDismiss(toast.id);
+                }}
+                className="self-center text-[10px] font-bold uppercase tracking-widest px-2 py-1 border border-emerald-500/60 text-emerald-400 hover:bg-emerald-500/10 cursor-pointer shrink-0"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onDismiss(toast.id)}
@@ -514,6 +549,11 @@ const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
   business: 'statusGroupBusiness',
   industry: 'statusGroupIndustry',
   independent: 'statusGroupIndependent',
+  exams: 'statusGroupExams',
+  languages: 'statusGroupLanguages',
+  hobbies: 'statusGroupHobbies',
+  sports: 'statusGroupSports',
+  lifestyle: 'statusGroupLifestyle',
   life: 'statusGroupLife',
 };
 
@@ -1038,11 +1078,11 @@ export default function App() {
   }, []);
 
   const pushToast = useCallback(
-    (kind: ToastKind, title: string, message?: string) => {
+    (kind: ToastKind, title: string, message?: string, action?: ToastAction) => {
       toastSeqRef.current += 1;
       const id = toastSeqRef.current;
       // Keep at most 3 on screen; newest at the bottom.
-      setToasts((prev) => [...prev.slice(-2), { id, kind, title, message }]);
+      setToasts((prev) => [...prev.slice(-2), { id, kind, title, message, action }]);
       window.setTimeout(() => dismissToast(id), TOAST_DURATION_MS);
     },
     [dismissToast]
@@ -1153,6 +1193,7 @@ export default function App() {
   // Category Edit State
   const [editingCatId, setEditingCatId] = useState<string | number | null>(null);
   const [showAllCategories, setShowAllCategories] = useState<boolean>(false);
+  const [showDoneCategories, setShowDoneCategories] = useState<boolean>(false);
   const [editCatName, setEditCatName] = useState<string>('');
   const [editCatCode, setEditCatCode] = useState<string>('');
   const [editCatColor, setEditCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
@@ -1183,6 +1224,7 @@ export default function App() {
           c.weekly_target_hours ??
           (c.monthly_target_hours ? Math.max(1, Math.round((c.monthly_target_hours * 12) / 52)) : 5),
         isActive: c.is_active !== false,
+        completedAt: c.completed_at ?? null,
       }));
 
       const formattedLogs: StudyLog[] = fetchedLogs.map((l) => ({
@@ -1201,8 +1243,14 @@ export default function App() {
 
       setCategories(formattedCats);
       setLogs(formattedLogs);
-      if (formattedCats.length > 0 && !selectedCatId) {
-        setSelectedCatId((formattedCats.find((c) => c.isActive) ?? formattedCats[0]).id);
+      // Functional update keeps this callback free of selectedCatId, so
+      // picking a category doesn't re-run the initial auth effect below.
+      const fallbackCat = pickDefaultCategory(formattedCats);
+      if (fallbackCat) {
+        setSelectedCatId((prev) => {
+          const current = formattedCats.find((c) => String(c.id) === String(prev));
+          return current && !current.completedAt ? prev : fallbackCat.id;
+        });
       }
     } catch (err: unknown) {
       const error = err as Error;
@@ -1210,7 +1258,7 @@ export default function App() {
     } finally {
       setDataLoading(false);
     }
-  }, [selectedCatId]);
+  }, []);
 
   // ==========================================
   // Account-Synced Surface Theme
@@ -1417,8 +1465,14 @@ export default function App() {
           applyServerSurfaceTheme(me);
           await loadUserData();
         }
-      } catch {
-        api.auth.logout();
+      } catch (err: unknown) {
+        // Only a rejected token signs the user out; a network failure or a
+        // cold-starting backend keeps the stored tokens for the next load.
+        if (err instanceof ApiError && err.status === 401) {
+          api.auth.logout();
+        } else {
+          setApiError((err as Error).message || 'Failed to load data from backend');
+        }
         setUser(null);
       } finally {
         setAuthLoading(false);
@@ -1919,6 +1973,7 @@ export default function App() {
         color: newCatColor,
         weeklyTargetHours: Number(newCatTarget) || 5,
         isActive: true,
+        completedAt: null,
       };
 
       setCategories([...categories, newCat]);
@@ -2008,6 +2063,11 @@ export default function App() {
       alert(t.errLastCategory);
       return;
     }
+    const target = categories.find((c) => String(c.id) === String(id));
+    if (target && !target.completedAt && !categories.some((c) => !c.completedAt && String(c.id) !== String(id))) {
+      alert(t.errLastOpenCategory);
+      return;
+    }
     const hasLogs = logs.some((l) => String(l.categoryId) === String(id));
     const confirmMsg = hasLogs
       ? tf(t.confirmDeleteCategoryLogs, { name })
@@ -2024,12 +2084,58 @@ export default function App() {
         setEditingCatId(null);
       }
 
-      if (String(selectedCatId) === String(id) && remaining.length > 0) {
-        setSelectedCatId(remaining[0].id);
+      const nextCat = pickDefaultCategory(remaining);
+      if (String(selectedCatId) === String(id) && nextCat) {
+        setSelectedCatId(nextCat.id);
       }
     } catch (err: unknown) {
       const error = err as Error;
       alert(tf(t.errDeleteCategory, { msg: error.message }));
+    }
+  };
+
+  // DONE <-> in progress. Marking DONE hides the category from the registry
+  // and the log form (its logs keep counting in analytics) and offers UNDO.
+  const handleSetCategoryDone = async (cat: Category, done: boolean, offerUndo = true) => {
+    if (!user) return;
+    if (done) {
+      if (!categories.some((c) => !c.completedAt && String(c.id) !== String(cat.id))) {
+        alert(t.errLastOpenCategory);
+        return;
+      }
+      const isTiming = (isRunning || elapsedSeconds > 0) && String(selectedCatId) === String(cat.id);
+      if (isTiming && !window.confirm(tf(t.confirmDoneWhileTiming, { code: cat.code }))) return;
+    }
+
+    try {
+      const updated = await api.categories.update(cat.id, { completed: done });
+      const completedAt = updated.completed_at ?? null;
+      // A backend without DONE support ignores `completed`; don't claim success.
+      if (done && !completedAt) throw new Error(t.errDoneUnsupported);
+      setCategories((prev) =>
+        prev.map((c) => (String(c.id) === String(cat.id) ? { ...c, completedAt } : c))
+      );
+      if (String(editingCatId) === String(cat.id)) setEditingCatId(null);
+
+      if (done) {
+        if (String(selectedCatId) === String(cat.id)) {
+          const nextCat = pickDefaultCategory(
+            categories.filter((c) => String(c.id) !== String(cat.id))
+          );
+          if (nextCat) setSelectedCatId(nextCat.id);
+        }
+        pushToast(
+          'success',
+          tf(t.toastCategoryDone, { code: cat.code }),
+          t.toastCategoryDoneHint,
+          offerUndo ? { label: t.undo, onClick: () => void handleSetCategoryDone(cat, false, false) } : undefined
+        );
+      } else if (offerUndo) {
+        pushToast('success', tf(t.toastCategoryRestored, { code: cat.code }));
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      pushToast('error', t.errCategoryDone, error.message);
     }
   };
 
@@ -2133,6 +2239,16 @@ export default function App() {
     localStorage.setItem(SURFACE_THEME_STORAGE_KEY, surfaceThemeId);
   }, [theme, surfaceThemeId, activeSurfacePair]);
 
+  // In-progress categories feed the registry, the log form and the command
+  // palette; DONE ones only live on in analytics (and the DONE fold).
+  const openCategories = useMemo(() => categories.filter((c) => !c.completedAt), [categories]);
+  // Analytics keeps every category's history but draws DONE ones like
+  // parked ones: hatched, no weekly target.
+  const analyticsCategories = useMemo(
+    () => categories.map((c) => (c.completedAt ? { ...c, isActive: false } : c)),
+    [categories]
+  );
+
   // Weekly Navigation Data: one calendar week, left edge pinned to its
   // first day (Monday or Sunday per the user's setting).
   const selectedWeeklyDays = useMemo(
@@ -2150,7 +2266,7 @@ export default function App() {
     return selectedWeeklyDays.map((dateStr) => {
       const dayLogs = logs.filter((l) => l.date === dateStr);
       const totalDayMin = dayLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
-      const byCategory = categories.map((cat) => {
+      const byCategory = analyticsCategories.map((cat) => {
         const catMin = dayLogs
           .filter((l) => String(l.categoryId) === String(cat.id))
           .reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -2166,7 +2282,7 @@ export default function App() {
         byCategory,
       };
     });
-  }, [logs, categories, selectedWeeklyDays, todayStr, t]);
+  }, [logs, analyticsCategories, selectedWeeklyDays, todayStr, t]);
 
   const weeklyPeriodTotalMinutes = useMemo(() => {
     return weeklyChartData.reduce((acc, d) => acc + d.totalMinutes, 0);
@@ -2227,7 +2343,8 @@ export default function App() {
   const weeklyBreakdown = useMemo(() => {
     const weekSet = new Set(currentWeekDates);
     const weekLogs = logs.filter((l) => weekSet.has(l.date));
-    const rows = categories.map((cat) => {
+    // DONE categories are left out here: they have their own fold below.
+    const rows = openCategories.map((cat) => {
       const catLogs = weekLogs.filter((l) => String(l.categoryId) === String(cat.id));
       const minutes = catLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
       const hours = +(minutes / 60).toFixed(1);
@@ -2244,9 +2361,24 @@ export default function App() {
     });
     // Active categories first; original order is kept within each group.
     return [...rows.filter((r) => r.isActive), ...rows.filter((r) => !r.isActive)];
-  }, [logs, categories, currentWeekDates]);
+  }, [logs, openCategories, currentWeekDates]);
 
-  const activeCategoryCount = useMemo(() => categories.filter((c) => c.isActive).length, [categories]);
+  const activeCategoryCount = useMemo(() => openCategories.filter((c) => c.isActive).length, [openCategories]);
+
+  // DONE fold: all-time hours per finished category, most recently finished first.
+  const doneCategories = useMemo(
+    () =>
+      categories
+        .filter((c) => c.completedAt)
+        .map((cat) => ({
+          ...cat,
+          minutes: logs
+            .filter((l) => String(l.categoryId) === String(cat.id))
+            .reduce((acc, l) => acc + l.durationMinutes, 0),
+        }))
+        .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
+    [categories, logs]
+  );
 
   // The registry lists the first CATEGORY_PREVIEW_COUNT rows; the rest fold
   // behind SHOW MORE. A row being edited always stays visible.
@@ -2273,7 +2405,7 @@ export default function App() {
       const dateSet = new Set(bucketDates);
       const weekLogs = logs.filter((l) => dateSet.has(l.date));
       const totalMinutes = weekLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
-      const byCategory = categories.map((cat) => {
+      const byCategory = analyticsCategories.map((cat) => {
         const catMin = weekLogs
           .filter((l) => String(l.categoryId) === String(cat.id))
           .reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -2300,7 +2432,7 @@ export default function App() {
       maxWeekMinutes,
       windowLabel,
     };
-  }, [weeklyOffset, logs, categories, currentWeekStartStr]);
+  }, [weeklyOffset, logs, analyticsCategories, currentWeekStartStr]);
 
   // 12-Month Aggregation Data (1 Bar = 1 Full Calendar Month Bucket, ending at monthlyOffset)
   const monthlyAggBuckets = useMemo(() => {
@@ -2318,7 +2450,7 @@ export default function App() {
 
       const monthLogs = logs.filter((l) => l.date.startsWith(monthPrefix));
       const totalMinutes = monthLogs.reduce((acc, l) => acc + l.durationMinutes, 0);
-      const byCategory = categories.map((cat) => {
+      const byCategory = analyticsCategories.map((cat) => {
         const catMin = monthLogs
           .filter((l) => String(l.categoryId) === String(cat.id))
           .reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -2349,7 +2481,7 @@ export default function App() {
       maxMonthMinutes,
       windowLabel,
     };
-  }, [monthlyOffset, logs, categories, locale, timeZone]);
+  }, [monthlyOffset, logs, analyticsCategories, locale, timeZone]);
 
   // Category Trend Matrix columns (one per bar in each stacked chart view)
   const weeklyTrendColumns = useMemo(
@@ -3288,14 +3420,14 @@ export default function App() {
                     {user ? activeCategoryCount : '0'}
                   </span>
                   <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>
-                    {user && activeCategoryCount !== categories.length
-                      ? tf(t.unitActiveOf, { n: categories.length })
+                    {user && activeCategoryCount !== openCategories.length
+                      ? tf(t.unitActiveOf, { n: openCategories.length })
                       : t.unitUnits}
                   </span>
                 </div>
-                {user && categories.length > 0 && (
+                {user && openCategories.length > 0 && (
                   <div className="flex flex-wrap items-center justify-end gap-1 max-w-[84px] sm:max-w-[148px]">
-                    {categories.slice(0, 12).map((c) => (
+                    {openCategories.slice(0, 12).map((c) => (
                       <span
                         key={c.id}
                         className="w-2 h-2 rounded-full shrink-0"
@@ -3303,15 +3435,15 @@ export default function App() {
                         title={`[${c.code}] ${c.name}${c.isActive ? '' : ` (${t.inactive})`}`}
                       />
                     ))}
-                    {categories.length > 12 && (
+                    {openCategories.length > 12 && (
                       <span
                         className={`font-mono text-[9px] leading-none px-1 py-0.5 border ${borderCol} ${textMuted} shrink-0`}
-                        title={categories
+                        title={openCategories
                           .slice(12)
                           .map((c) => `[${c.code}] ${c.name}`)
                           .join(', ')}
                       >
-                        +{categories.length - 12}
+                        +{openCategories.length - 12}
                       </span>
                     )}
                   </div>
@@ -3643,13 +3775,13 @@ export default function App() {
                   <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
                     {t.category}
                   </label>
-                  {categories.length === 0 ? (
+                  {openCategories.length === 0 ? (
                     <div className={`p-2.5 text-xs font-mono border ${borderCol} ${textMuted}`}>
                       {t.noCategoriesYet}
                     </div>
                   ) : (
                     <CategorySelect
-                      categories={categories}
+                      categories={openCategories}
                       value={selectedCatId}
                       onChange={setSelectedCatId}
                       borderCol={borderCol}
@@ -3719,7 +3851,7 @@ export default function App() {
 
                 <button
                   type="submit"
-                  disabled={categories.length === 0 || commitState === 'submitting'}
+                  disabled={openCategories.length === 0 || commitState === 'submitting'}
                   aria-busy={commitState === 'submitting'}
                   className={`w-full min-h-[46px] lg:min-h-0 py-3.5 lg:py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors duration-300 flex items-center justify-center space-x-2 ${
                     commitState === 'success'
@@ -3884,7 +4016,7 @@ export default function App() {
                       {tf(t.weekResetsOn, { date: addDays(currentWeekStartStr, 7).slice(5).replace('-', '.') })}
                     </span>
                     <span>
-                      {tf(t.activeOfTotal, { a: activeCategoryCount, b: categories.length })}
+                      {tf(t.activeOfTotal, { a: activeCategoryCount, b: openCategories.length })}
                     </span>
                     <span className="basis-full normal-case tracking-normal">
                       {tf(t.weekWindowHint, {
@@ -3894,7 +4026,7 @@ export default function App() {
                     </span>
                   </div>
                 )}
-                {categories.length === 0 ? (
+                {openCategories.length === 0 ? (
                   <div className={`py-6 text-center font-mono text-xs ${textMuted}`}>
                     {t.noCategoriesConfigured}
                   </div>
@@ -3940,6 +4072,25 @@ export default function App() {
 
                             <button
                               type="button"
+                              onClick={() => handleSetCategoryDone(cat, true)}
+                              disabled={openCategories.length <= 1}
+                              className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} transition-all ${
+                                openCategories.length <= 1
+                                  ? 'opacity-20 cursor-not-allowed'
+                                  : 'opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50 cursor-pointer'
+                              }`}
+                              title={
+                                openCategories.length <= 1
+                                  ? t.errLastOpenCategory
+                                  : tf(t.markDoneCode, { code: cat.code })
+                              }
+                              aria-label={tf(t.markDoneName, { name: cat.name })}
+                            >
+                              <CheckCheck className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() =>
                                 isEditing ? handleCancelEditCategory() : handleStartEditCategory(cat)
                               }
@@ -3957,14 +4108,14 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                              disabled={categories.length <= 1}
+                              disabled={openCategories.length <= 1}
                               className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} transition-all ${
-                                categories.length <= 1
+                                openCategories.length <= 1
                                   ? 'opacity-20 cursor-not-allowed'
                                   : 'opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 cursor-pointer'
                               }`}
                               title={
-                                categories.length <= 1
+                                openCategories.length <= 1
                                   ? t.needOneCategory
                                   : tf(t.deleteCategoryCode, { code: cat.code })
                               }
@@ -4182,6 +4333,69 @@ export default function App() {
                       </span>
                     )}
                   </button>
+                )}
+
+                {/* DONE fold: finished one-off categories, out of the way but restorable */}
+                {doneCategories.length > 0 && (
+                  <div className={`border border-dashed ${borderCol}`}>
+                    <button
+                      type="button"
+                      onClick={() => setShowDoneCategories((v) => !v)}
+                      aria-expanded={showDoneCategories}
+                      className={`w-full min-h-[38px] lg:min-h-0 flex items-center justify-between gap-3 px-2.5 py-2 font-mono text-[10px] uppercase tracking-wider ${textMuted} hover:text-emerald-400 transition-colors cursor-pointer`}
+                    >
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDoneCategories ? 'rotate-180' : ''}`} />
+                        {tf(t.doneCategoriesFold, { n: doneCategories.length })}
+                      </span>
+                      <span className="tabular-nums normal-case shrink-0">
+                        {+(doneCategories.reduce((acc, c) => acc + c.minutes, 0) / 60).toFixed(1)}h
+                      </span>
+                    </button>
+
+                    {showDoneCategories && (
+                      <div className={`border-t border-dashed ${borderCol} px-2.5 py-1`}>
+                        {doneCategories.map((cat) => (
+                          <div key={cat.id} className="group flex items-center justify-between gap-2 py-1.5 text-xs">
+                            <div className="flex items-center space-x-2 min-w-0 opacity-70">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(cat.color, false)} />
+                              <span className="font-mono font-semibold text-[11px] shrink-0">[{cat.code}]</span>
+                              <span className="truncate max-w-[100px] sm:max-w-[140px] font-medium" title={cat.name}>
+                                {cat.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0">
+                              <span
+                                className={`font-mono text-[10px] tabular-nums ${textMuted}`}
+                                title={tf(t.doneAtTitle, { stamp: formatDateTime(cat.completedAt ?? '') })}
+                              >
+                                {+(cat.minutes / 60).toFixed(1)}h · {formatDateTimeInZone(cat.completedAt ?? '', timeZone).slice(0, 10).replace(/-/g, '.')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleSetCategoryDone(cat, false)}
+                                className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50 transition-all cursor-pointer`}
+                                title={tf(t.restoreCategoryCode, { code: cat.code })}
+                                aria-label={tf(t.restoreCategoryName, { name: cat.name })}
+                              >
+                                <Undo2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                                disabled={categories.length <= 1}
+                                className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 transition-all cursor-pointer`}
+                                title={tf(t.deleteCategoryCode, { code: cat.code })}
+                                aria-label={tf(t.deleteCategoryName, { name: cat.name })}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -4471,7 +4685,7 @@ export default function App() {
                   {/* Category Trend Matrix (numeric breakdown + color legend) */}
                   <CategoryTrendTable
                     columns={weeklyTrendColumns}
-                    categories={categories}
+                    categories={analyticsCategories}
                     unitLabel={t.unitDay}
                     isDark={isDark}
                     borderCol={borderCol}
@@ -4556,7 +4770,7 @@ export default function App() {
                   {/* Category Trend Matrix (numeric breakdown + color legend) */}
                   <CategoryTrendTable
                     columns={weeklyAggTrendColumns}
-                    categories={categories}
+                    categories={analyticsCategories}
                     unitLabel={t.unitWeek}
                     isDark={isDark}
                     borderCol={borderCol}
@@ -4641,7 +4855,7 @@ export default function App() {
                   {/* Category Trend Matrix (numeric breakdown + color legend) */}
                   <CategoryTrendTable
                     columns={monthlyAggTrendColumns}
-                    categories={categories}
+                    categories={analyticsCategories}
                     unitLabel={t.unitMonth}
                     isDark={isDark}
                     borderCol={borderCol}
@@ -6679,7 +6893,7 @@ export default function App() {
         bgCard={bgCard}
         textMuted={textMuted}
         isAuthenticated={!!user}
-        categories={categories}
+        categories={openCategories}
         selectedCatId={selectedCatId}
         isRunning={isRunning}
         onQuickLog={handleQuickLogFromPalette}
