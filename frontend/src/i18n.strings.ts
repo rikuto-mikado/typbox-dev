@@ -577,17 +577,6 @@ export const EN = {
   keepAwakeVideo: "Active. This browser has no Wake Lock, so a silent background video keeps the display on.",
   keepAwakeUnavailable: "Waiting. Tap the page once so the browser allows keep-awake.",
 
-  // Research Discovery (arXiv paper feed panel)
-  researchTitle: "RESEARCH DISCOVERY",
-  researchLoading: "FETCHING A PAPER...",
-  researchError: "Could not reach the research feed.",
-  researchRetry: "RETRY",
-  researchSource: "SOURCE: ARXIV.ORG",
-  researchShuffle: "SHUFFLE",
-  researchViewMore: "View more",
-  researchViewLess: "Show less",
-  researchReadMore: "Read on arXiv",
-
   // Lunar calendar (client-side moon-phase panel)
   moonCalendarTitle: "LUNAR CALENDAR",
   moonIlluminated: "{pct}% ILLUMINATED",
@@ -638,6 +627,7 @@ export const EN = {
   planetaryTickerCme: "CME · {speed} KM/S",
   planetaryTickerCmeEarth: "EARTH-DIRECTED",
   planetaryTickerStorm: "GEOMAGNETIC STORM · Kp {kp}",
+
 };
 
 export type Dict = { [K in keyof typeof EN]: string };

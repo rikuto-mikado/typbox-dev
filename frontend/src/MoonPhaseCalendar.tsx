@@ -147,7 +147,9 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
         <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</span>
       </div>
 
-      <div className="pt-3 space-y-3 font-mono">
+      {/* flex-1 down to the grid: when the panel is stretched to line up with the
+          other column (desktop), the extra height goes into taller day cells. */}
+      <div className="pt-3 space-y-3 font-mono flex-1 flex flex-col">
         <div className={`flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider ${textMuted}`}>
           <span className="flex items-center gap-2 text-sm normal-case tracking-normal">
             <MoonIcon fraction={todayFraction} size={26} isDark={isDark} />
@@ -156,15 +158,15 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
           <span className="tabular-nums">{tf(t.moonIlluminated, { pct: illuminated })}</span>
         </div>
 
-        <div>
+        <div className="flex-1 flex flex-col">
           <div className="grid grid-cols-7 gap-1.5 mb-2 text-center text-[10px] text-zinc-500">
             {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d) => (
               <span key={d}>{d}</span>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1.5">
+          <div className="flex-1 grid grid-cols-7 auto-rows-fr gap-1.5">
             {Array.from({ length: leadingBlanks }).map((_, idx) => (
-              <div key={`empty-lead-${idx}`} className="h-11 border border-transparent opacity-0 pointer-events-none" />
+              <div key={`empty-lead-${idx}`} className="min-h-11 border border-transparent opacity-0 pointer-events-none" />
             ))}
             {cells.map((cell) => {
               const isToday = cell.day === today;
@@ -172,7 +174,7 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
                 <div
                   key={cell.day}
                   title={t[PHASE_KEYS[cell.phaseIdx]]}
-                  className={`p-1.5 border text-[9px] flex flex-col items-center justify-between h-11 transition-colors ${
+                  className={`p-1.5 border text-[9px] flex flex-col items-center justify-between min-h-11 transition-colors ${
                     isToday
                       ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400 font-semibold'
                       : isDark

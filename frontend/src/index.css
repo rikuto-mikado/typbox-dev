@@ -20,6 +20,32 @@ canvas {
 }
 
 /* ==========================================
+   iOS / iPadOS date inputs
+   Safari on iPhone/iPad draws <input type="date"> as a native pill: it keeps
+   an intrinsic min-width that pushes past `w-full`, centers the value, and
+   collapses the box when empty, so it never lines up with the inputs next to
+   it. Dropping the native look (the picker still opens on tap) lets the
+   Tailwind padding/border/height on the element apply as written.
+   `-webkit-touch-callout` is only supported by iOS Safari, which keeps
+   desktop browsers' calendar icon untouched.
+========================================== */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-width: 0;
+    line-height: 1.5;
+  }
+
+  input[type="date"]::-webkit-date-and-time-value {
+    margin: 0;
+    min-height: 1.5em;
+    text-align: left;
+  }
+}
+
+/* ==========================================
    Custom Geometric Origami Loader
 ========================================== */
 .loader {

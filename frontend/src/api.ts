@@ -365,31 +365,6 @@ export const api = {
       });
     },
   },
-  research: {
-    // Public (no auth) proxy for arXiv's paper feed — arXiv itself has no
-    // CORS headers, so the backend fetches and caches it server-side.
-    // `exclude`: ask for a category other than this one (used by SHUFFLE so
-    // it doesn't have a 1-in-N chance of re-showing the same cached batch).
-    discover: async (category?: string, exclude?: string) => {
-      const params = new URLSearchParams();
-      if (category) params.set('category', category);
-      if (exclude) params.set('exclude', exclude);
-      const query = params.toString() ? `?${params.toString()}` : '';
-      return apiFetch<{
-        category: string;
-        categoryLabel: string;
-        papers: Array<{
-          id: string;
-          title: string;
-          summary: string;
-          authors: string[];
-          published: string;
-          url: string;
-          primaryCategory: string;
-        }>;
-      }>(`/research/discover/${query}`, { requiresAuth: false });
-    },
-  },
   planetary: {
     // Public (no auth) proxy for USGS earthquakes + NASA DONKI space weather.
     // Always the last `windowDays` days; the panel narrows it client-side.

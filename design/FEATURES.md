@@ -24,6 +24,10 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 
 ---
 
+### Workspace layout
+- **Desktop (lg+)**: two columns that end on the same line — left: chronometer, session logger, category registry, insights & vault, lunar calendar; right: analytics, cadence matrix, log stream, planetary signal. The last panel of the shorter column stretches (the lunar calendar's day cells absorb the height).
+- **Phones**: one column (chronometer, logger, cadence, analytics, insights, registry, lunar, planetary), with the log stream always last.
+
 ## 1. Study logging
 
 ### Session Logger
@@ -49,7 +53,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - Sign in / register when logged out.
 
 ### Chronological Log Stream
-- Newest-first list, 6 rows initially with load-more and collapse.
+- Newest-first list, 5 rows initially, with load-more (+10) and collapse. On desktop the list keeps its 5-row height once expanded and scrolls inside it (jumping to the first newly shown row), so the page and the stretched left column don't grow with it.
 - Inline edit (category, date, duration) and delete per row.
 - Each log carries `is_public_to_hub` and `is_public_to_portfolio` flags (see §9).
 
@@ -89,9 +93,8 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - Data vault shortcuts: export JSON / CSV.
 
 ### Discovery panels
-- **Research Discovery**: one random recent arXiv paper at a time (title, authors, abstract, link), rotating every 90s, with SHUFFLE to jump to another field. Fetched through the backend proxy (§9).
 - **Lunar Calendar**: the month's moon phases computed client-side, today's illumination, and the next full / new moon.
-- **Planetary Signal** (above the log stream): what the Earth and Sun did since the last study session (or the last 24h, minimum 24h, maximum 7 days). Four strips on one time axis: M2.5+ earthquakes (USGS), solar flares, coronal mass ejections with Earth-arrival ETA, and geomagnetic storms on a 9-cell Kp meter (NASA DONKI). A ticker rotates notable events with links. Each feed degrades on its own (`CACHED` / `FEED OFFLINE`).
+- **Planetary Signal** (under the log stream on desktop; after the lunar calendar on phones): what the Earth and Sun did since the last study session (or the last 24h, minimum 24h, maximum 7 days). Four strips on one time axis: M2.5+ earthquakes (USGS), solar flares, coronal mass ejections with Earth-arrival ETA, and geomagnetic storms on a 9-cell Kp meter (NASA DONKI). A ticker rotates notable events with links. Each feed degrades on its own (`CACHED` / `FEED OFFLINE`).
 
 ---
 
@@ -224,7 +227,6 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 |---|---|
 | `GET /api/hub/telemetry/` | Aggregate totals, per-category week/month hours and 5 recent logs, for logs with `is_public_to_hub` |
 | `GET /api/portfolio/feed/` | Read-only feed for rikutomikado.tech: only `PORTFOLIO_USERNAME`'s logs, last `PORTFOLIO_FEED_DAYS` days, `is_public_to_portfolio=True` |
-| `GET /api/research/discover/` | arXiv proxy for Research Discovery (arXiv has no CORS); shared cache of a few hours |
 | `GET /api/planetary/signal/` | USGS + NASA DONKI proxy for Planetary Signal: 7-day window, per-source cache with stale fallback; DONKI key in `NASA_API_KEY` |
 
 ### Platform details

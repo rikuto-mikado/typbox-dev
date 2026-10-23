@@ -140,7 +140,6 @@ import {
 import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
 import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
 import { useKeepAwake } from './keepAwake';
-import { ResearchDiscoveryPanel } from './ResearchDiscovery';
 import { PlanetarySignalPanel } from './PlanetarySignal';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 
@@ -883,12 +882,44 @@ export default function App() {
   }, [initialResetParams.hasReset]);
 
   // Data State (Directly synchronized with Django Backend)
-  const INITIAL_VISIBLE_LOGS = 6;
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<StudyLog[]>([]);
-  const [visibleLogCount, setVisibleLogCount] = useState<number>(INITIAL_VISIBLE_LOGS);
+  // The log stream starts with 5 logs; SHOW MORE adds 10 at a time on top of that.
+  const INITIAL_VISIBLE_LOGS = 5;
+  const [extraVisibleLogs, setExtraVisibleLogs] = useState<number>(0);
+  const visibleLogCount = INITIAL_VISIBLE_LOGS + extraVisibleLogs;
+
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // On desktop the log list stays as tall as its collapsed (5-log) height:
+  // SHOW MORE / SHOW ALL scroll inside it, so the right column (and the lunar
+  // calendar stretched to match it) doesn't grow with every expansion. The cap
+  // is measured, not fixed, since rows change height (e.g. the inline editor).
+  const logListRef = React.useRef<HTMLDivElement>(null);
+  const [logListCap, setLogListCap] = useState<number | null>(null);
+  const logStreamExpanded = extraVisibleLogs > 0;
+  useEffect(() => {
+    const el = logListRef.current;
+    if (!el || logStreamExpanded || typeof ResizeObserver === 'undefined') return;
+    // Fires once on observe, then on every content resize while collapsed.
+    const observer = new ResizeObserver(() => setLogListCap(el.scrollHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [logStreamExpanded, logs.length, dataLoading]);
+
+  // After SHOW MORE / SHOW ALL, bring the first newly shown row into view
+  // inside the capped list (a no-op on phones, where the list isn't capped).
+  const prevExtraVisibleLogsRef = React.useRef(0);
+  useEffect(() => {
+    const el = logListRef.current;
+    const firstNewRow = INITIAL_VISIBLE_LOGS + prevExtraVisibleLogsRef.current;
+    const grew = extraVisibleLogs > prevExtraVisibleLogsRef.current;
+    prevExtraVisibleLogsRef.current = extraVisibleLogs;
+    if (!el || !grew || el.scrollHeight <= el.clientHeight) return;
+    const row = el.children[firstNewRow] as HTMLElement | undefined;
+    if (row) el.scrollTo({ top: row.offsetTop, behavior: 'smooth' });
+  }, [extraVisibleLogs]);
 
   // Timeline Navigation State for Analytics Module
   const [weeklyOffset, setWeeklyOffset] = useState<number>(0); // weeks ago (0 = current week)
@@ -3575,10 +3606,13 @@ export default function App() {
           </div>
         </section>
 
-        {/* 2. MAIN WORKSPACE */}
+        {/* 2. MAIN WORKSPACE: two columns that end on the same line (the last panel of
+            the shorter one stretches; the lunar calendar's day cells absorb it). On
+            phones both wrappers are `contents`, so the panels form one column in their
+            order-N sequence, log stream last. */}
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
-          {/* LEFT COLUMN: Chronometer, Recording & Category Creation */}
-          <div className="contents lg:block lg:col-span-5 lg:space-y-8">
+          {/* LEFT COLUMN: Chronometer, Recording, Categories, Insights, Lunar Calendar */}
+          <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-5 lg:[&>*:last-child]:grow">
             {/* SYSTEM CHRONOMETER (DIGITAL CLOCK PANEL) */}
             <div className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
               {/* Wraps instead of overflowing on narrow phones: weather badges
@@ -4531,19 +4565,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* RESEARCH DISCOVERY PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-7 lg:order-none`}>
-              <ResearchDiscoveryPanel borderCol={borderCol} textMuted={textMuted} isDark={isDark} />
-            </div>
-
             {/* LUNAR CALENDAR PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-8 lg:order-none`}>
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
               <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Analytics & Chronological Stream */}
-          <div className="contents lg:block lg:col-span-7 lg:space-y-8">
+          {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Planetary Signal */}
+          <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-7 lg:[&>*:last-child]:grow">
             {/* ANALYTICS MODULE */}
             <div className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
               <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-6 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
@@ -5408,13 +5437,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* PLANETARY SIGNAL PANEL (USGS + NASA DONKI, since the last session) */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-9 lg:order-none`}>
-              <PlanetarySignalPanel since={lastSessionAt} borderCol={borderCol} textMuted={textMuted} isDark={isDark} />
-            </div>
-
-            {/* CHRONOLOGICAL LOG STREAM */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-10 lg:order-none`}>
+            {/* CHRONOLOGICAL LOG STREAM (always last on phones) */}
+            <div className={`border ${borderCol} ${bgCard} p-6 order-9 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -5438,7 +5462,19 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className={`divide-y ${isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'}`}>
+                  <div
+                    ref={logListRef}
+                    className={`relative divide-y ${isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'} ${
+                      logStreamExpanded && logListCap
+                        ? 'lg:max-h-[var(--log-list-cap)] lg:overflow-y-auto lg:pr-2 lg:[scrollbar-width:thin]'
+                        : ''
+                    }`}
+                    style={
+                      logStreamExpanded && logListCap
+                        ? ({ '--log-list-cap': `${logListCap}px` } as React.CSSProperties)
+                        : undefined
+                    }
+                  >
                     {logs.slice(0, visibleLogCount).map((log) => {
                       const cat = categories.find((c) => String(c.id) === String(log.categoryId));
                       const isEditingLog = String(editingLogId) === String(log.id);
@@ -5609,7 +5645,7 @@ export default function App() {
                           <>
                             <button
                               type="button"
-                              onClick={() => setVisibleLogCount((prev) => Math.min(prev + 10, logs.length))}
+                              onClick={() => setExtraVisibleLogs((prev) => prev + Math.min(10, logs.length - visibleLogCount))}
                               className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-4 py-2 lg:px-3.5 lg:py-1.5 border ${borderCol} ${
                                 isDark
                                   ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
@@ -5621,7 +5657,7 @@ export default function App() {
                             {logs.length - visibleLogCount > 10 && (
                               <button
                                 type="button"
-                                onClick={() => setVisibleLogCount(logs.length)}
+                                onClick={() => setExtraVisibleLogs(logs.length - INITIAL_VISIBLE_LOGS)}
                                 className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 border ${borderCol} ${
                                   isDark
                                     ? 'text-zinc-300 hover:text-white hover:bg-zinc-800/40'
@@ -5636,7 +5672,7 @@ export default function App() {
                         {visibleLogCount > INITIAL_VISIBLE_LOGS && (
                           <button
                             type="button"
-                            onClick={() => setVisibleLogCount(INITIAL_VISIBLE_LOGS)}
+                            onClick={() => setExtraVisibleLogs(0)}
                             className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 border ${borderCol} ${
                               isDark
                                 ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
@@ -5651,6 +5687,11 @@ export default function App() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* PLANETARY SIGNAL PANEL (USGS + NASA DONKI, since the last session) */}
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-8 lg:order-none`}>
+              <PlanetarySignalPanel since={lastSessionAt} borderCol={borderCol} textMuted={textMuted} isDark={isDark} />
             </div>
           </div>
         </div>

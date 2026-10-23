@@ -3,7 +3,6 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
-    ArxivDiscoveryView,
     CategoryViewSet,
     ChangePasswordView,
     CurrentUserView,
@@ -36,9 +35,6 @@ urlpatterns = [
 
     # rikutomikado.tech read-only portfolio feed
     path('portfolio/feed/', PortfolioFeedView.as_view(), name='portfolio_feed'),
-
-    # Research Discovery panel: server-side arXiv proxy (arXiv has no CORS)
-    path('research/discover/', ArxivDiscoveryView.as_view(), name='research_discover'),
 
     # Planetary Signal panel: USGS earthquakes + NASA DONKI space weather proxy
     path('planetary/signal/', PlanetarySignalView.as_view(), name='planetary_signal'),
