@@ -1,7 +1,7 @@
 # TYPBOX Design
 
 A blueprint for rebuilding TYPBOX with the same character.
-Numbers live in [`tokens.json`](./tokens.json), the full feature inventory in [`FEATURES.md`](./FEATURES.md), the look in [`screenshots/`](./screenshots/), and the **intent** here.
+Numbers live in [`tokens.json`](./tokens.json), the full feature inventory in [`FEATURES.md`](./FEATURES.md), and the **intent** here.
 
 > A rebuild brief should fit in one line:
 > "Read the three things in `design/` and build it in this spirit."
@@ -25,17 +25,18 @@ In practice:
 
 ## 2. Mood
 
-| Is | Is not |
-|---|---|
-| Instrument panel, terminal, drafting table, control room | Cute, bubbly, illustration-led |
-| Numbers are the hero | Prose is the hero |
-| Quiet, with an occasional glow | Constantly moving |
-| The game-like joy of unlocking things | Ad-like flash, notifications that nag |
-| Black (CARBON BLACK) by default, white (ALABASTER) treated as an equal | Polishing only one mode |
+| Is                                                                     | Is not                                |
+| ---------------------------------------------------------------------- | ------------------------------------- |
+| Instrument panel, terminal, drafting table, control room               | Cute, bubbly, illustration-led        |
+| Numbers are the hero                                                   | Prose is the hero                     |
+| Quiet, with an occasional glow                                         | Constantly moving                     |
+| The game-like joy of unlocking things                                  | Ad-like flash, notifications that nag |
+| Black (CARBON BLACK) by default, white (ALABASTER) treated as an equal | Polishing only one mode               |
 
 ## 3. Visual rules
 
 ### Color
+
 - One accent: emerald. Text uses `emerald-400` on dark and `emerald-700` on light.
 - Three status colors only: **emerald = ok / done**, **amber = recording / in progress**, **rose = error**.
 - Tinted chips always follow one recipe: **40% border + 10% fill + strong text** (e.g. `border-emerald-500/40 bg-emerald-500/10 text-emerald-400`).
@@ -43,18 +44,21 @@ In practice:
 - Every theme is a dark/light pair with exactly nine keys (`label` `bgMain` `bgCard` `bgInput` `border` `textMain` `textMuted` `patternTint` `glowTint`). Components read only these keys, so changing theme never moves layout.
 
 ### Type
+
 - Monospace by default (the system mono stack). Sans only for prose (descriptions, help).
 - Labels, headings and buttons are **uppercase with open tracking** (`tracking-wider` / `tracking-widest`).
 - Every changing number uses `tabular-nums`. Digits never jitter.
 - Users can pick from 44 fonts, but all of them are monospace. Monospace is non-negotiable.
 
 ### Shape and line
+
 - 1px lines. Cell grids draw top+left on the wrapper and right+bottom on each cell so lines never double up.
 - Dividers inside a panel are one step fainter than the panel border (`zinc-800/60` on dark).
 - Glows are accent-colored rings or blurred circles at ~5% opacity, never drop shadows.
 
 ### Notation
-- Separator: ` // ` (`REC // ACTIVE`, `SYNC // Asia/Tokyo`).
+
+- Separator: `//` (`REC // ACTIVE`, `SYNC // Asia/Tokyo`).
 - Number the metrics (`01 / TOTAL LOGGED`).
 - Put machine-style codes next to names (`THM-01`, `DIV-03`, `LV.1,240`).
 - Icons are lucide at 14–16px. Only the icon that names a panel is accent-colored.
@@ -82,18 +86,18 @@ In practice:
 
 ## 5. Key components
 
-| Component | Role | What makes it TYPBOX |
-|---|---|---|
-| SYSTEM CHRONOMETER | Clock and stopwatch | 112 faces (neon, nixie, split-flap, CRT…). Status dot: emerald pulse when idle, amber ping when recording |
-| Metrics strip | Totals at a glance | Numbered labels, large light digits, small units |
-| CLEARANCE | 3,000 ranks over 1,000 hours | Color shifts across 10 divisions; prism gradient after an Ascension |
-| TELEMETRY CADENCE MATRIX | Daily volume grid | 7 days × weeks; only today's cell pulses, quietly |
-| LOG STREAM | Session list | Rows separated by rules only; a new row flashes emerald and fades |
-| COMMAND PALETTE | Every action via ⌘K / Ctrl+K | Fully keyboard-drivable |
-| STATUS CARD | Shareable image | WIDE / SQUARE / PORTRAIT / STORY; preview height stays fixed when switching |
-| AMBIENT / NOISE | Focus environment | Up to 5 layers across 8 noise families, sleep timer |
-| PLANETARY SIGNAL | Earth and Sun since the last session | Four strips on one time axis (quakes, flares, CMEs, Kp meter); quiet unless something happened |
-| SURFACE THEMES | Background and palette | 900 plain dark/light pairs (CLASSIC / CHROMA saturation contrast / COMPLEMENT hue contrast) + 12 illustrated prestige; art shows **only through gutters**, never behind text |
+| Component                | Role                                 | What makes it TYPBOX                                                                                                                                                         |
+| ------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SYSTEM CHRONOMETER       | Clock and stopwatch                  | 112 faces (neon, nixie, split-flap, CRT…). Status dot: emerald pulse when idle, amber ping when recording                                                                    |
+| Metrics strip            | Totals at a glance                   | Numbered labels, large light digits, small units                                                                                                                             |
+| CLEARANCE                | 3,000 ranks over 1,000 hours         | Color shifts across 10 divisions; prism gradient after an Ascension                                                                                                          |
+| TELEMETRY CADENCE MATRIX | Daily volume grid                    | 7 days × weeks; only today's cell pulses, quietly                                                                                                                            |
+| LOG STREAM               | Session list                         | Rows separated by rules only; a new row flashes emerald and fades                                                                                                            |
+| COMMAND PALETTE          | Every action via ⌘K / Ctrl+K         | Fully keyboard-drivable                                                                                                                                                      |
+| STATUS CARD              | Shareable image                      | WIDE / SQUARE / PORTRAIT / STORY; preview height stays fixed when switching                                                                                                  |
+| AMBIENT / NOISE          | Focus environment                    | Up to 5 layers across 8 noise families, sleep timer                                                                                                                          |
+| PLANETARY SIGNAL         | Earth and Sun since the last session | Four strips on one time axis (quakes, flares, CMEs, Kp meter); quiet unless something happened                                                                               |
+| SURFACE THEMES           | Background and palette               | 900 plain dark/light pairs (CLASSIC / CHROMA saturation contrast / COMPLEMENT hue contrast) + 12 illustrated prestige; art shows **only through gutters**, never behind text |
 
 ## 6. Motion
 
@@ -127,13 +131,13 @@ Customizing the look is itself the reward for keeping going. Keep that relations
 
 ## 10. Source files
 
-| What | File |
-|---|---|
-| Animations, chronometer effects, background motion | `frontend/src/index.css` |
-| Page layout, panels | `frontend/src/App.tsx` |
-| Themes, clearance, noise, status card, command palette | `frontend/src/telemetryFeatures.tsx` |
-| Chronometer faces | `frontend/src/chronometerThemes.json`, `ChronometerFace.tsx` |
-| Fonts | `frontend/src/uiFonts.ts` |
-| Category color handling | `frontend/src/categoryStyle.ts` |
-| Weather display | `frontend/src/weatherThemes.ts`, `Weather.tsx` |
-| Surface Themes | `frontend/src/surfaceThemeCatalog.json`, `surfaceThemes.ts`, `surfacePalettes.ts`, `surfaceColor.ts`, `surfacePrestige.ts` |
+| What                                                   | File                                                                                                                       |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Animations, chronometer effects, background motion     | `frontend/src/index.css`                                                                                                   |
+| Page layout, panels                                    | `frontend/src/App.tsx`                                                                                                     |
+| Themes, clearance, noise, status card, command palette | `frontend/src/telemetryFeatures.tsx`                                                                                       |
+| Chronometer faces                                      | `frontend/src/chronometerThemes.json`, `ChronometerFace.tsx`                                                               |
+| Fonts                                                  | `frontend/src/uiFonts.ts`                                                                                                  |
+| Category color handling                                | `frontend/src/categoryStyle.ts`                                                                                            |
+| Weather display                                        | `frontend/src/weatherThemes.ts`, `Weather.tsx`                                                                             |
+| Surface Themes                                         | `frontend/src/surfaceThemeCatalog.json`, `surfaceThemes.ts`, `surfacePalettes.ts`, `surfaceColor.ts`, `surfacePrestige.ts` |
