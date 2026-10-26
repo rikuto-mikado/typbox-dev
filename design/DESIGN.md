@@ -88,7 +88,7 @@ In practice:
 
 | Component                | Role                                 | What makes it TYPBOX                                                                                                                                                         |
 | ------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SYSTEM CHRONOMETER       | Clock and stopwatch                  | 112 faces (neon, nixie, split-flap, CRT…). Status dot: emerald pulse when idle, amber ping when recording                                                                    |
+| SYSTEM CHRONOMETER       | Clock and stopwatch                  | 336 faces (neon, nixie, split-flap, CRT…). Status dot: emerald pulse when idle, amber ping when recording                                                                    |
 | Metrics strip            | Totals at a glance                   | Numbered labels, large light digits, small units                                                                                                                             |
 | CLEARANCE                | 3,000 ranks over 1,000 hours         | Color shifts across 10 divisions; prism gradient after an Ascension                                                                                                          |
 | TELEMETRY CADENCE MATRIX | Daily volume grid                    | 7 days × weeks; only today's cell pulses, quietly                                                                                                                            |

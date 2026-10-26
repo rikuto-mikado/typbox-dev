@@ -1020,6 +1020,2022 @@
       "family": "PRESTIGE",
       "render": { "kind": "text", "font": { "family": "Honk", "google": true }, "scale": 0.95 },
       "unlock": { "type": "ascension", "value": 5 }
+    },
+    {
+      "id": "twelve-hour",
+      "code": "CHR-113",
+      "name": "TWELVE-HOUR",
+      "desc": "The everyday kitchen-wall reading: hours one through twelve with an AM / PM tag.",
+      "family": "CORE",
+      "render": { "kind": "text", "meridiem": { "labels": ["AM", "PM"] } },
+      "unlock": { "type": "default" }
+    },
+    {
+      "id": "zulu-utc",
+      "code": "CHR-114",
+      "name": "ZULU UTC",
+      "desc": "Coordinated Universal Time with the aviator's Z suffix, for syncing with the rest of the planet.",
+      "family": "CORE",
+      "render": { "kind": "text", "numeral": "utc", "font": { "family": "IBM Plex Mono", "weight": 300, "google": true } },
+      "unlock": { "type": "default" }
+    },
+    {
+      "id": "fira-code",
+      "code": "CHR-115",
+      "name": "FIRA CODE",
+      "desc": "The ligature-happy editor face, its slashed zero ready for a long debug session.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Fira Code", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 110 }
+    },
+    {
+      "id": "courier-prime",
+      "code": "CHR-116",
+      "name": "COURIER PRIME",
+      "desc": "The screenwriter's Courier, redrawn for a crisper page count.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Courier Prime", "google": true } },
+      "unlock": { "type": "level", "value": 405 }
+    },
+    {
+      "id": "martian-mono",
+      "code": "CHR-117",
+      "name": "MARTIAN MONO",
+      "desc": "Wide, squarish mono numerals built for dashboards on another planet.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Martian Mono", "weight": 300, "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 540 }
+    },
+    {
+      "id": "geist-mono",
+      "code": "CHR-118",
+      "name": "GEIST MONO",
+      "desc": "Swiss-precise developer mono with a geometric, no-nonsense rhythm.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Geist Mono", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 1020 }
+    },
+    {
+      "id": "josefin-thin",
+      "code": "CHR-119",
+      "name": "JOSEFIN THIN",
+      "desc": "Geometric 1920s-inspired sans in its thinnest cut, all compass and ruler.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Josefin Sans", "weight": 100, "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 1205 }
+    },
+    {
+      "id": "unbounded",
+      "code": "CHR-120",
+      "name": "UNBOUNDED",
+      "desc": "Round, extended display numerals with crypto-era confidence.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Unbounded", "weight": 300, "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 1920 }
+    },
+    {
+      "id": "countdown",
+      "code": "CHR-121",
+      "name": "DAY COUNTDOWN",
+      "desc": "Time left until midnight, counting down: how much of today is still yours.",
+      "family": "CORE",
+      "render": { "kind": "text", "numeral": "countdown", "font": { "family": "Space Mono", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "hours", "value": 75 }
+    },
+    {
+      "id": "long-shadow",
+      "code": "CHR-122",
+      "name": "LONG SHADOW",
+      "desc": "Flat-design numerals casting a stepped shadow down to the right.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Russo One", "google": true }, "fx": "longshadow", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 665 }
+    },
+    {
+      "id": "exo-neon",
+      "code": "CHR-123",
+      "name": "EXO NEON",
+      "desc": "Thin sci-fi numerals with a violet plasma halo.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Exo 2", "weight": 200, "google": true }, "fx": "neon", "color": "#a78bfa", "colorLight": "#6d28d9" },
+      "unlock": { "type": "level", "value": 53 }
+    },
+    {
+      "id": "michroma",
+      "code": "CHR-124",
+      "name": "MICHROMA",
+      "desc": "Wide automotive-HUD lettering lifted from a concept-car instrument cluster.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Michroma", "google": true }, "scale": 0.75 },
+      "unlock": { "type": "level", "value": 215 }
+    },
+    {
+      "id": "aldrich-hud",
+      "code": "CHR-125",
+      "name": "ALDRICH HUD",
+      "desc": "Squared aerospace numerals for a cockpit multifunction display.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Aldrich", "google": true }, "color": "#38bdf8", "colorLight": "#0369a1" },
+      "unlock": { "type": "level", "value": 325 }
+    },
+    {
+      "id": "electrolize",
+      "code": "CHR-126",
+      "name": "ELECTROLIZE",
+      "desc": "Technical sans with clipped corners, like readouts on a lab power supply.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Electrolize", "google": true }, "fx": "neon", "color": "#2dd4bf", "colorLight": "#0f766e" },
+      "unlock": { "type": "level", "value": 475 }
+    },
+    {
+      "id": "quantico",
+      "code": "CHR-127",
+      "name": "QUANTICO OPS",
+      "desc": "Tactical display numerals from a military training sim.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Quantico", "weight": 700, "google": true }, "color": "#a3e635", "colorLight": "#4d7c0f" },
+      "unlock": { "type": "level", "value": 585 }
+    },
+    {
+      "id": "tektur",
+      "code": "CHR-128",
+      "name": "TEKTUR",
+      "desc": "Angular techno-architectural numerals with bevelled joints.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Tektur", "weight": 500, "google": true }, "fx": "vapor" },
+      "unlock": { "type": "level", "value": 700 }
+    },
+    {
+      "id": "jura-console",
+      "code": "CHR-129",
+      "name": "JURA CONSOLE",
+      "desc": "Light, slightly squared console digits under a cool blue glow.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Jura", "weight": 300, "google": true }, "fx": "pulse", "color": "#60a5fa", "colorLight": "#1d4ed8" },
+      "unlock": { "type": "level", "value": 785 }
+    },
+    {
+      "id": "wallpoet",
+      "code": "CHR-130",
+      "name": "WALLPOET",
+      "desc": "Stencil-cut street-tech numerals sprayed on a server-room wall.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Wallpoet", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 965 }
+    },
+    {
+      "id": "stalinist",
+      "code": "CHR-131",
+      "name": "STALINIST ONE",
+      "desc": "Heavy constructivist sci-fi glyphs with a red-alert glow.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Stalinist One", "google": true }, "fx": "neon", "scale": 0.62, "color": "#f87171", "colorLight": "#b91c1c" },
+      "unlock": { "type": "level", "value": 1145 }
+    },
+    {
+      "id": "nova-square",
+      "code": "CHR-132",
+      "name": "NOVA SQUARE",
+      "desc": "Boxy future-terminal digits in a cold mint glow.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Nova Square", "google": true }, "fx": "neon", "color": "#6ee7b7", "colorLight": "#047857" },
+      "unlock": { "type": "level", "value": 1305 }
+    },
+    {
+      "id": "krona",
+      "code": "CHR-133",
+      "name": "KRONA ONE",
+      "desc": "Broad Scandinavian display numerals built for a starship bridge.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Krona One", "google": true }, "scale": 0.7 },
+      "unlock": { "type": "level", "value": 1410 }
+    },
+    {
+      "id": "goldman",
+      "code": "CHR-134",
+      "name": "GOLDMAN",
+      "desc": "Chunky arcade-racing digits with a heat-shimmer gradient.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Goldman", "google": true }, "fx": "sunset", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 1520 }
+    },
+    {
+      "id": "bruno-ace",
+      "code": "CHR-135",
+      "name": "BRUNO ACE",
+      "desc": "Sports-car speedometer lettering in brushed chrome.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Bruno Ace SC", "google": true }, "fx": "chrome", "scale": 0.82 },
+      "unlock": { "type": "level", "value": 1860 }
+    },
+    {
+      "id": "tilt-prism",
+      "code": "CHR-136",
+      "name": "TILT PRISM",
+      "desc": "Faceted neon tubing that tilts in three dimensions.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Tilt Prism", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 2015 }
+    },
+    {
+      "id": "kode-mono",
+      "code": "CHR-137",
+      "name": "KODE MONO",
+      "desc": "A mono for hackers on a deadline, blinking green on black.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Kode Mono", "weight": 500, "google": true }, "fx": "matrix", "color": "#4ade80", "colorLight": "#15803d" },
+      "unlock": { "type": "level", "value": 2125 }
+    },
+    {
+      "id": "bungee-hairline",
+      "code": "CHR-138",
+      "name": "HAIRLINE NEON",
+      "desc": "Single-stroke neon tubing bent into signage numerals.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Bungee Hairline", "google": true }, "fx": "neon", "scale": 0.85, "color": "#facc15", "colorLight": "#a16207" },
+      "unlock": { "type": "level", "value": 2215 }
+    },
+    {
+      "id": "aurora-hud",
+      "code": "CHR-139",
+      "name": "AURORA HUD",
+      "desc": "Polar-light gradient drifting across a thin flight-deck readout.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Orbitron", "weight": 400, "google": true }, "fx": "aurora", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 2470 }
+    },
+    {
+      "id": "rubik-80s",
+      "code": "CHR-140",
+      "name": "80S FADE",
+      "desc": "Horizontal-scanline numerals straight off a VHS cover.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Rubik 80s Fade", "google": true }, "scale": 0.95, "color": "#f472b6", "colorLight": "#be185d" },
+      "unlock": { "type": "level", "value": 2610 }
+    },
+    {
+      "id": "rubik-glitch-pop",
+      "code": "CHR-141",
+      "name": "GLITCH POP",
+      "desc": "Shattered bitmap numerals with a candy-colored channel split.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Rubik Glitch Pop", "google": true }, "fx": "glitch", "scale": 0.92 },
+      "unlock": { "type": "level", "value": 2715 }
+    },
+    {
+      "id": "mars-sol",
+      "code": "CHR-142",
+      "name": "MARS SOL TIME",
+      "desc": "Coordinated Mars Time: the mean solar clock at the Martian prime meridian, ticking a sol of 24h 39m.",
+      "family": "CYBER",
+      "render": { "kind": "text", "numeral": "mars", "font": { "family": "Orbitron", "weight": 500, "google": true }, "fx": "neon", "scale": 0.9, "color": "#fb923c", "colorLight": "#c2410c" },
+      "unlock": { "type": "hours", "value": 400 }
+    },
+    {
+      "id": "silkscreen",
+      "code": "CHR-143",
+      "name": "SILKSCREEN",
+      "desc": "Tiny bitmap numerals made for web buttons in the year 2000.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Silkscreen", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "level", "value": 14 }
+    },
+    {
+      "id": "pixelify",
+      "code": "CHR-144",
+      "name": "PIXELIFY",
+      "desc": "Friendly rounded pixel numerals from an indie platformer HUD.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Pixelify Sans", "weight": 500, "google": true }, "color": "#a78bfa", "colorLight": "#6d28d9" },
+      "unlock": { "type": "level", "value": 170 }
+    },
+    {
+      "id": "micro-5",
+      "code": "CHR-145",
+      "name": "MICRO 5",
+      "desc": "Five-pixel micro digits, the smallest readable clock on a handheld.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Micro 5", "google": true }, "scale": 1.4 },
+      "unlock": { "type": "level", "value": 385 }
+    },
+    {
+      "id": "amber-terminal",
+      "code": "CHR-146",
+      "name": "AMBER TERMINAL",
+      "desc": "A monochrome amber monitor from a 1980s office terminal.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "VT323", "google": true }, "fx": "crt", "scale": 1.25, "color": "#fbbf24", "colorLight": "#b45309" },
+      "unlock": { "type": "level", "value": 530 }
+    },
+    {
+      "id": "jersey-20",
+      "code": "CHR-147",
+      "name": "JERSEY 20",
+      "desc": "Chunkier pixel jersey digits for the big-screen replay.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Jersey 20", "google": true }, "scale": 1.15, "color": "#fb923c", "colorLight": "#c2410c" },
+      "unlock": { "type": "level", "value": 645 }
+    },
+    {
+      "id": "jacquard-24",
+      "code": "CHR-148",
+      "name": "JACQUARD 24",
+      "desc": "Woven punch-card loom pattern, set at a finer 24-thread gauge.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Jacquard 24", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 985 }
+    },
+    {
+      "id": "bastarda",
+      "code": "CHR-149",
+      "name": "JACQUARDA BASTARDA",
+      "desc": "Pixel-woven gothic bastarda, a medieval scribe on an 8-bit loom.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Jacquarda Bastarda 9", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 1165 }
+    },
+    {
+      "id": "rubik-pixels",
+      "code": "CHR-150",
+      "name": "RUBIK PIXELS",
+      "desc": "Rounded grotesk numerals broken down into coarse pixel blocks.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Rubik Pixels", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "level", "value": 1325 }
+    },
+    {
+      "id": "white-phosphor",
+      "code": "CHR-151",
+      "name": "WHITE PHOSPHOR",
+      "desc": "Paper-white phosphor on a mainframe console, scanlines and all.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "VT323", "google": true }, "fx": "crt", "scale": 1.25, "color": "#e5e7eb", "colorLight": "#3f3f46" },
+      "unlock": { "type": "level", "value": 1430 }
+    },
+    {
+      "id": "press-start-gold",
+      "code": "CHR-152",
+      "name": "HIGH SCORE",
+      "desc": "Arcade attract-mode digits in gold: the high-score table you finally topped.",
+      "family": "PIXEL",
+      "render": { "kind": "text", "font": { "family": "Press Start 2P", "google": true }, "fx": "gold", "scale": 0.72 },
+      "unlock": { "type": "sessions", "value": 300 }
+    },
+    {
+      "id": "led-green",
+      "code": "CHR-153",
+      "name": "GREEN LED CLOCK",
+      "desc": "Bright green LED segments from a 1970s clock radio.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#4ade80", "off": "rgba(74,222,128,0.07)", "glow": true, "panel": { "bg": "#04110a", "border": "#0f3b22" } },
+      "unlock": { "type": "level", "value": 33 }
+    },
+    {
+      "id": "lcd-blue",
+      "code": "CHR-154",
+      "name": "BACKLIT BLUE LCD",
+      "desc": "Dark segments on an electroluminescent blue backlight, like a 90s stereo.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#0b1d3a", "off": "rgba(11,29,58,0.1)", "panel": { "bg": "#5aa7e8", "border": "#2f6aa3" } },
+      "unlock": { "type": "level", "value": 190 }
+    },
+    {
+      "id": "calculator",
+      "code": "CHR-155",
+      "name": "POCKET CALCULATOR",
+      "desc": "Grey reflective LCD from a solar-powered pocket calculator.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#27272a", "off": "rgba(39,39,42,0.08)", "slant": true, "panel": { "bg": "#b8bdb0", "border": "#83887c" } },
+      "unlock": { "type": "level", "value": 345 }
+    },
+    {
+      "id": "vfd-violet",
+      "code": "CHR-156",
+      "name": "VIOLET VFD",
+      "desc": "A violet vacuum-fluorescent display behind smoked glass.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#c084fc", "off": "rgba(192,132,252,0.07)", "glow": true, "slant": true, "panel": { "bg": "#0c0614", "border": "#2e1a47" } },
+      "unlock": { "type": "level", "value": 485 }
+    },
+    {
+      "id": "led-blue",
+      "code": "CHR-157",
+      "name": "BLUE LED ALARM",
+      "desc": "Ice-blue LED segments that light up a dark bedroom.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#60a5fa", "off": "rgba(96,165,250,0.07)", "glow": true, "panel": { "bg": "#050a14", "border": "#13284a" } },
+      "unlock": { "type": "level", "value": 605 }
+    },
+    {
+      "id": "lcd-negative",
+      "code": "CHR-158",
+      "name": "NEGATIVE LCD",
+      "desc": "Inverted LCD: lit white segments on a black glass mask, car-dashboard style.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#f4f4f5", "off": "rgba(244,244,245,0.05)", "panel": { "bg": "#09090b", "border": "#27272a" } },
+      "unlock": { "type": "level", "value": 950 }
+    },
+    {
+      "id": "lcd-yellow",
+      "code": "CHR-159",
+      "name": "AMBER BACKLIGHT",
+      "desc": "Yellow-green backlit LCD from a vintage digital wristwatch.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#1c1a05", "off": "rgba(28,26,5,0.1)", "panel": { "bg": "#d6c84c", "border": "#9c902a" } },
+      "unlock": { "type": "level", "value": 1130 }
+    },
+    {
+      "id": "plasma-orange",
+      "code": "CHR-160",
+      "name": "ORANGE PLASMA",
+      "desc": "Neon-gas plasma segments from a 1980s gas-pump price board.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#fb923c", "off": "rgba(251,146,60,0.06)", "glow": true, "panel": { "bg": "#140803", "border": "#4a1d0a" } },
+      "unlock": { "type": "level", "value": 1875 }
+    },
+    {
+      "id": "vfd-green",
+      "code": "CHR-161",
+      "name": "TEAL VFD",
+      "desc": "The blue-green glow of a microwave or VCR vacuum-fluorescent panel.",
+      "family": "DEVICE",
+      "render": { "kind": "segment", "on": "#34d399", "off": "rgba(52,211,153,0.07)", "glow": true, "panel": { "bg": "#03100b", "border": "#0d3a28" } },
+      "unlock": { "type": "level", "value": 2030 }
+    },
+    {
+      "id": "flap-airport",
+      "code": "CHR-162",
+      "name": "DEPARTURES BOARD",
+      "desc": "Condensed split-flap tiles clattering over an airport concourse.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Oswald", "weight": 500, "google": true }, "cells": "flap", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 715 }
+    },
+    {
+      "id": "flap-station",
+      "code": "CHR-163",
+      "name": "STATION FLAP",
+      "desc": "Tall, narrow split-flap tiles from a European railway hall.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Teko", "weight": 500, "google": true }, "cells": "flap", "scale": 1.0 },
+      "unlock": { "type": "level", "value": 2140 }
+    },
+    {
+      "id": "bungee-shade",
+      "code": "CHR-164",
+      "name": "BUNGEE SHADE",
+      "desc": "Vertical-signage numerals with a drop-shade, like a theater marquee.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bungee Shade", "google": true }, "scale": 0.8, "color": "#fb923c", "colorLight": "#c2410c" },
+      "unlock": { "type": "level", "value": 290 }
+    },
+    {
+      "id": "bungee-inline",
+      "code": "CHR-165",
+      "name": "BUNGEE INLINE",
+      "desc": "Inline-striped signage numerals from a roadside diner sign.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bungee Inline", "google": true }, "scale": 0.85, "color": "#f87171", "colorLight": "#b91c1c" },
+      "unlock": { "type": "level", "value": 805 }
+    },
+    {
+      "id": "train-one",
+      "code": "CHR-166",
+      "name": "TRAIN ONE",
+      "desc": "Rail-track outline numerals from a Japanese station display.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Train One", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 1290 }
+    },
+    {
+      "id": "big-shoulders-stencil",
+      "code": "CHR-167",
+      "name": "DOCKYARD STENCIL",
+      "desc": "Condensed stencil numerals spray-painted on a shipping container.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Big Shoulders Stencil Display", "weight": 700, "google": true }, "color": "#fbbf24", "colorLight": "#b45309" },
+      "unlock": { "type": "level", "value": 1395 }
+    },
+    {
+      "id": "stardos",
+      "code": "CHR-168",
+      "name": "CRATE STENCIL",
+      "desc": "Serif stencil digits stamped on a wooden supply crate.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Stardos Stencil", "google": true }, "fx": "stamp" },
+      "unlock": { "type": "level", "value": 875 }
+    },
+    {
+      "id": "six-caps",
+      "code": "CHR-169",
+      "name": "SIX CAPS",
+      "desc": "Ultra-condensed poster numerals stacked like a stadium countdown.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Six Caps", "google": true }, "scale": 1.35 },
+      "unlock": { "type": "level", "value": 1505 }
+    },
+    {
+      "id": "bungee-tint",
+      "code": "CHR-170",
+      "name": "BUNGEE TINT",
+      "desc": "Two-tone color-font signage numerals with a built-in tint layer.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Bungee Tint", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 2455 }
+    },
+    {
+      "id": "foldit",
+      "code": "CHR-171",
+      "name": "FOLDIT",
+      "desc": "Color-font numerals folded from strips of paper ribbon.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Foldit", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 2590 }
+    },
+    {
+      "id": "rubik-vinyl",
+      "code": "CHR-172",
+      "name": "RUBIK VINYL",
+      "desc": "Cut-vinyl sign lettering with a raised, glossy edge.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Rubik Vinyl", "google": true }, "scale": 0.92 },
+      "unlock": { "type": "level", "value": 2695 }
+    },
+    {
+      "id": "rubik-burned",
+      "code": "CHR-173",
+      "name": "BURNED",
+      "desc": "Scorched sign numerals, edges charred from the furnace.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Rubik Burned", "google": true }, "fx": "fire", "scale": 0.92 },
+      "unlock": { "type": "level", "value": 2765 }
+    },
+    {
+      "id": "dot-green",
+      "code": "CHR-174",
+      "name": "GREEN DOT MATRIX",
+      "desc": "Green LED dots from a factory-floor production counter.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "round", "on": "#4ade80", "off": "rgba(74,222,128,0.08)", "glow": true, "panel": { "bg": "#03100a", "border": "#0f3b22" } },
+      "unlock": { "type": "level", "value": 275 }
+    },
+    {
+      "id": "dot-red",
+      "code": "CHR-175",
+      "name": "BUS DESTINATION",
+      "desc": "Red LED dots from the destination sign of a night bus.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "round", "on": "#f87171", "off": "rgba(248,113,113,0.08)", "glow": true, "panel": { "bg": "#120404", "border": "#3b0d0d" } },
+      "unlock": { "type": "level", "value": 760 }
+    },
+    {
+      "id": "dot-blue",
+      "code": "CHR-176",
+      "name": "BLUE PIXEL BOARD",
+      "desc": "Square blue LEDs from a train-platform information board.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "square", "on": "#60a5fa", "off": "rgba(96,165,250,0.08)", "glow": true, "panel": { "bg": "#040a16", "border": "#13284a" } },
+      "unlock": { "type": "level", "value": 1535 }
+    },
+    {
+      "id": "dot-white",
+      "code": "CHR-177",
+      "name": "WHITE LED TICKER",
+      "desc": "Crisp white LEDs from a stock-exchange ticker.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "round", "on": "#f4f4f5", "off": "rgba(244,244,245,0.06)", "glow": true, "panel": { "bg": "#0a0a0b", "border": "#27272a" } },
+      "unlock": { "type": "level", "value": 1645 }
+    },
+    {
+      "id": "dot-cyan",
+      "code": "CHR-178",
+      "name": "CYAN SCOREBOARD",
+      "desc": "Cyan bulbs blazing across an ice-rink scoreboard.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "round", "on": "#22d3ee", "off": "rgba(34,211,238,0.08)", "glow": true, "panel": { "bg": "#020f12", "border": "#0e3a44" } },
+      "unlock": { "type": "level", "value": 1935 }
+    },
+    {
+      "id": "dot-gameboy",
+      "code": "CHR-179",
+      "name": "POCKET HANDHELD",
+      "desc": "Four-shade olive pixels from a 1989 pocket game console.",
+      "family": "PIXEL",
+      "render": { "kind": "dotmatrix", "shape": "square", "on": "#0f380f", "off": "rgba(15,56,15,0.12)", "panel": { "bg": "#9bbc0f", "border": "#306230" } },
+      "unlock": { "type": "streak", "value": 4 }
+    },
+    {
+      "id": "bcd-red",
+      "code": "CHR-180",
+      "name": "RED BINARY LAMPS",
+      "desc": "BCD indicator lamps glowing red on a minicomputer front panel.",
+      "family": "CODE",
+      "render": { "kind": "bcd", "on": "#ef4444", "off": "rgba(127,127,127,0.16)", "glow": true },
+      "unlock": { "type": "level", "value": 415 }
+    },
+    {
+      "id": "bcd-amber",
+      "code": "CHR-181",
+      "name": "AMBER BINARY LAMPS",
+      "desc": "Incandescent amber bit lamps blinking on a 1970s mainframe.",
+      "family": "CODE",
+      "render": { "kind": "bcd", "on": "#f59e0b", "off": "rgba(127,127,127,0.16)", "glow": true },
+      "unlock": { "type": "level", "value": 1040 }
+    },
+    {
+      "id": "bcd-green",
+      "code": "CHR-182",
+      "name": "GREEN BINARY LAMPS",
+      "desc": "Green status LEDs reading out the hour bit by bit.",
+      "family": "CODE",
+      "render": { "kind": "bcd", "on": "#22c55e", "off": "rgba(127,127,127,0.16)", "glow": true },
+      "unlock": { "type": "level", "value": 1890 }
+    },
+    {
+      "id": "bcd-violet",
+      "code": "CHR-183",
+      "name": "VIOLET BINARY LAMPS",
+      "desc": "Ultraviolet bit lamps from a supercomputer art installation.",
+      "family": "CODE",
+      "render": { "kind": "bcd", "on": "#a855f7", "off": "rgba(127,127,127,0.16)", "glow": true },
+      "unlock": { "type": "level", "value": 2490 }
+    },
+    {
+      "id": "dial-navy",
+      "code": "CHR-184",
+      "name": "NAVY DIVER",
+      "desc": "A diver's watch dial with a lume-orange seconds hand.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "minimal", "on": "#f97316", "color": "#93c5fd", "colorLight": "#1e3a8a" },
+      "unlock": { "type": "level", "value": 425 }
+    },
+    {
+      "id": "dial-railway-red",
+      "code": "CHR-185",
+      "name": "STATION MASTER",
+      "desc": "The railway clock with its signal-red paddle hand on a cream face.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "swiss", "on": "#dc2626", "color": "#e7e5e4", "colorLight": "#1c1917" },
+      "unlock": { "type": "level", "value": 1055 }
+    },
+    {
+      "id": "dial-bauhaus-blue",
+      "code": "CHR-186",
+      "name": "BAUHAUS BLUE",
+      "desc": "Primary-color Bauhaus dial in blue and yellow.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "bauhaus", "on": "#facc15", "color": "#60a5fa", "colorLight": "#1d4ed8" },
+      "unlock": { "type": "level", "value": 1955 }
+    },
+    {
+      "id": "dial-radar-amber",
+      "code": "CHR-187",
+      "name": "AMBER RADAR",
+      "desc": "An amber weather-radar scope sweeping the hour.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "radar", "on": "#f59e0b" },
+      "unlock": { "type": "level", "value": 2525 }
+    },
+    {
+      "id": "dial-gold",
+      "code": "CHR-188",
+      "name": "GOLD DRESS WATCH",
+      "desc": "A minimal dress-watch dial in polished gold for nine hundred hours of focus.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "minimal", "on": "#fbbf24", "color": "#fde68a", "colorLight": "#92400e" },
+      "unlock": { "type": "hours", "value": 900 }
+    },
+    {
+      "id": "dial-swiss-mint",
+      "code": "CHR-189",
+      "name": "MINT RAILWAY",
+      "desc": "Swiss railway geometry repainted in a pastel mint.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "swiss", "on": "#10b981", "color": "#a7f3d0", "colorLight": "#065f46" },
+      "unlock": { "type": "level", "value": 1235 }
+    },
+    {
+      "id": "garamond",
+      "code": "CHR-190",
+      "name": "GARAMOND",
+      "desc": "Old-style Renaissance figures with a calm, bookish rhythm.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "EB Garamond", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 135 }
+    },
+    {
+      "id": "baskerville",
+      "code": "CHR-191",
+      "name": "BASKERVILLE",
+      "desc": "Transitional serif figures from an 18th-century printing house.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Libre Baskerville", "google": true } },
+      "unlock": { "type": "level", "value": 315 }
+    },
+    {
+      "id": "bodoni",
+      "code": "CHR-192",
+      "name": "BODONI",
+      "desc": "High-contrast Didone figures for a luxury-magazine masthead.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Bodoni Moda", "weight": 500, "google": true } },
+      "unlock": { "type": "level", "value": 455 }
+    },
+    {
+      "id": "fell-english",
+      "code": "CHR-193",
+      "name": "FELL TYPES",
+      "desc": "Rough 17th-century Oxford type, with ink spread from a hand press.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "IM Fell English", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 570 }
+    },
+    {
+      "id": "spectral",
+      "code": "CHR-194",
+      "name": "SPECTRAL",
+      "desc": "A screen-first serif with crisp book-page figures.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Spectral", "weight": 300, "google": true } },
+      "unlock": { "type": "level", "value": 915 }
+    },
+    {
+      "id": "cardo",
+      "code": "CHR-195",
+      "name": "CARDO SCHOLAR",
+      "desc": "A classicist's serif built for critical editions of ancient texts.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Cardo", "google": true } },
+      "unlock": { "type": "level", "value": 1090 }
+    },
+    {
+      "id": "uncial",
+      "code": "CHR-196",
+      "name": "UNCIAL",
+      "desc": "Rounded insular-manuscript lettering from an Irish scriptorium.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Uncial Antiqua", "google": true } },
+      "unlock": { "type": "level", "value": 1250 }
+    },
+    {
+      "id": "medieval-sharp",
+      "code": "CHR-197",
+      "name": "MEDIEVAL SHARP",
+      "desc": "Chiselled medieval numerals carved into a guildhall beam.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "MedievalSharp", "google": true } },
+      "unlock": { "type": "level", "value": 1360 }
+    },
+    {
+      "id": "almendra",
+      "code": "CHR-198",
+      "name": "ALMENDRA",
+      "desc": "Calligraphic display figures with a fairy-tale flourish.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Almendra Display", "google": true }, "scale": 1.05 },
+      "unlock": { "type": "level", "value": 1465 }
+    },
+    {
+      "id": "grenze-gotisch",
+      "code": "CHR-199",
+      "name": "GRENZE GOTISCH",
+      "desc": "Narrow blackletter with a modern, condensed edge.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Grenze Gotisch", "weight": 500, "google": true }, "scale": 1.05 },
+      "unlock": { "type": "level", "value": 1815 }
+    },
+    {
+      "id": "new-rocker",
+      "code": "CHR-200",
+      "name": "NEW ROCKER",
+      "desc": "Spiked gothic numerals from a heavy-metal record sleeve.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "New Rocker", "google": true }, "color": "#f87171", "colorLight": "#991b1b" },
+      "unlock": { "type": "level", "value": 1970 }
+    },
+    {
+      "id": "limelight",
+      "code": "CHR-201",
+      "name": "LIMELIGHT",
+      "desc": "Art-deco movie-palace numerals, lit from below.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Limelight", "google": true }, "fx": "gold" },
+      "unlock": { "type": "level", "value": 2075 }
+    },
+    {
+      "id": "diplomata",
+      "code": "CHR-202",
+      "name": "DIPLOMATA",
+      "desc": "Ultra-wide engraved figures from a state diploma.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Diplomata SC", "google": true }, "scale": 0.55 },
+      "unlock": { "type": "level", "value": 2435 }
+    },
+    {
+      "id": "ewert",
+      "code": "CHR-203",
+      "name": "EWERT",
+      "desc": "Ornate Victorian wood-type figures with cut-out decoration.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Ewert", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "level", "value": 2575 }
+    },
+    {
+      "id": "fredericka",
+      "code": "CHR-204",
+      "name": "FREDERICKA",
+      "desc": "Hand-drawn chalk Victorian capitals from a saloon menu board.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Fredericka the Great", "google": true }, "fx": "chalk" },
+      "unlock": { "type": "level", "value": 2680 }
+    },
+    {
+      "id": "sancreek",
+      "code": "CHR-205",
+      "name": "SANCREEK",
+      "desc": "Frontier-town wood type for a gold-rush clock tower.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Sancreek", "google": true }, "fx": "emboss" },
+      "unlock": { "type": "level", "value": 2750 }
+    },
+    {
+      "id": "lapidary-roman",
+      "code": "CHR-206",
+      "name": "LAPIDARY ROMAN",
+      "desc": "Roman numerals cut into marble with Trajan-style capitals.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "roman", "font": { "family": "Marcellus SC", "google": true }, "scale": 0.62, "sep": "·" },
+      "unlock": { "type": "level", "value": 685 }
+    },
+    {
+      "id": "manuscript-roman",
+      "code": "CHR-207",
+      "name": "MANUSCRIPT ROMAN",
+      "desc": "Roman numerals in a monk's uncial hand, rubricated in red.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "roman", "font": { "family": "Uncial Antiqua", "google": true }, "scale": 0.6, "sep": "·", "color": "#dc2626", "colorLight": "#991b1b" },
+      "unlock": { "type": "level", "value": 2170 }
+    },
+    {
+      "id": "fraktur-roman",
+      "code": "CHR-208",
+      "name": "FRAKTUR ROMAN",
+      "desc": "Roman numerals set in German Fraktur for a cathedral clock.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "roman", "font": { "family": "UnifrakturMaguntia", "google": true }, "scale": 0.66, "sep": "·" },
+      "unlock": { "type": "level", "value": 2805 }
+    },
+    {
+      "id": "rosegold-didot",
+      "code": "CHR-209",
+      "name": "ROSE GOLD",
+      "desc": "Fine Didone figures in a rose-gold leaf, earned over fifty unbroken days.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Playfair Display", "weight": 500, "google": true }, "fx": "rosegold" },
+      "unlock": { "type": "streak", "value": 50 }
+    },
+    {
+      "id": "chinese-daxie",
+      "code": "CHR-210",
+      "name": "CHINESE DAXIE",
+      "desc": "Anti-fraud \"capital\" numerals from Chinese banking ledgers: 壹貳參.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["零", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖"], "ten": "拾", "units": ["時", "分", "秒"] }, "font": { "family": "Noto Serif TC", "weight": 500, "google": true }, "scale": 0.62 },
+      "unlock": { "type": "level", "value": 1570 }
+    },
+    {
+      "id": "kanji-meridiem",
+      "code": "CHR-211",
+      "name": "午前午後",
+      "desc": "The Japanese twelve-hour reading: 午前 / 午後 with kanji hours.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "meridiem": { "labels": ["午前", "午後"], "before": true }, "font": { "family": "Shippori Mincho", "weight": 500, "google": true }, "scale": 0.6 },
+      "unlock": { "type": "level", "value": 775 }
+    },
+    {
+      "id": "sidereal",
+      "code": "CHR-212",
+      "name": "SIDEREAL",
+      "desc": "Greenwich sidereal time: the clock of the stars, gaining four minutes a day on the Sun.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "sidereal", "font": { "family": "Cormorant Garamond", "weight": 500, "google": true }, "scale": 1.1, "fx": "aurora" },
+      "unlock": { "type": "hours", "value": 600 }
+    },
+    {
+      "id": "ghati",
+      "code": "CHR-213",
+      "name": "GHAṬĪ PALA",
+      "desc": "Vedic timekeeping from sunrise: sixty ghaṭī of sixty pala each.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "ghati", "font": { "family": "Noto Serif Devanagari", "weight": 500, "google": true } },
+      "unlock": { "type": "level", "value": 2230 }
+    },
+    {
+      "id": "hundred-ke",
+      "code": "CHR-214",
+      "name": "HUNDRED KE",
+      "desc": "The ancient Chinese water-clock day: one hundred 刻, each of a hundred 分.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "ke", "font": { "family": "Noto Serif TC", "weight": 500, "google": true }, "scale": 0.62 },
+      "unlock": { "type": "level", "value": 2850 }
+    },
+    {
+      "id": "hebrew",
+      "code": "CHR-215",
+      "name": "HEBREW GEMATRIA",
+      "desc": "Hebrew letter numerals, with ט״ו and ט״ז written to avoid the divine name.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"], "tens": ["", "י", "כ", "ל", "מ", "נ"], "zero": "·", "overrides": { "15": "טו", "16": "טז" } }, "font": { "family": "Frank Ruhl Libre", "weight": 500, "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 845 }
+    },
+    {
+      "id": "armenian",
+      "code": "CHR-216",
+      "name": "ARMENIAN",
+      "desc": "Mesrop Mashtots' alphabet doubling as numerals: Ա is one, Ժ is ten.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "Ա", "Բ", "Գ", "Դ", "Ե", "Զ", "Է", "Ը", "Թ"], "tens": ["", "Ժ", "Ի", "Լ", "Խ", "Ծ"], "zero": "·" }, "font": { "family": "Noto Serif Armenian", "weight": 500, "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 1680 }
+    },
+    {
+      "id": "georgian",
+      "code": "CHR-217",
+      "name": "GEORGIAN",
+      "desc": "Georgian letters in their numeric order, ა through ნ.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "ა", "ბ", "გ", "დ", "ე", "ვ", "ზ", "ჱ", "თ"], "tens": ["", "ი", "კ", "ლ", "მ", "ნ"], "zero": "·" }, "font": { "family": "Noto Serif Georgian", "weight": 500, "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 1735 }
+    },
+    {
+      "id": "geez",
+      "code": "CHR-218",
+      "name": "GEʽEZ NUMERALS",
+      "desc": "Ethiopic numerals framed by bars above and below, with no zero at all.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "፩", "፪", "፫", "፬", "፭", "፮", "፯", "፰", "፱"], "tens": ["", "፲", "፳", "፴", "፵", "፶"], "zero": "·" }, "font": { "family": "Noto Sans Ethiopic", "google": true }, "sep": " ፡ " },
+      "unlock": { "type": "level", "value": 2280 }
+    },
+    {
+      "id": "coptic",
+      "code": "CHR-219",
+      "name": "COPTIC",
+      "desc": "Greek-derived Coptic letter numerals from Egyptian monastery manuscripts.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "ⲁ", "ⲃ", "ⲅ", "ⲇ", "ⲉ", "ⲋ", "ⲍ", "ⲏ", "ⲑ"], "tens": ["", "ⲓ", "ⲕ", "ⲗ", "ⲙ", "ⲛ"], "zero": "·" }, "font": { "family": "Noto Sans Coptic", "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 2325 }
+    },
+    {
+      "id": "gothic-wulfila",
+      "code": "CHR-220",
+      "name": "WULFILA GOTHIC",
+      "desc": "The 4th-century Gothic alphabet of Bishop Wulfila, letters as numbers.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "𐌰", "𐌱", "𐌲", "𐌳", "𐌴", "𐌵", "𐌶", "𐌷", "𐌸"], "tens": ["", "𐌹", "𐌺", "𐌻", "𐌼", "𐌽"], "zero": "·" }, "font": { "family": "Noto Sans Gothic", "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 2885 }
+    },
+    {
+      "id": "church-slavonic",
+      "code": "CHR-221",
+      "name": "CHURCH SLAVONIC",
+      "desc": "Cyrillic letter numerals with a titlo, teens written unit-first as the scribes did.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "а", "в", "г", "д", "є", "ѕ", "з", "и", "ѳ"], "tens": ["", "і", "к", "л", "м", "н"], "zero": "·", "teensUnitsFirst": true, "mark": "҃" }, "font": { "family": "Noto Serif", "weight": 500, "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 2920 }
+    },
+    {
+      "id": "aegean",
+      "code": "CHR-222",
+      "name": "AEGEAN LINEAR B",
+      "desc": "Bronze-age Aegean number signs from Mycenaean palace inventories.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "𐄇", "𐄈", "𐄉", "𐄊", "𐄋", "𐄌", "𐄍", "𐄎", "𐄏"], "tens": ["", "𐄐", "𐄑", "𐄒", "𐄓", "𐄔"], "zero": "·" }, "font": { "family": "Noto Sans Linear B", "google": true }, "sep": " ⁚ " },
+      "unlock": { "type": "level", "value": 2355 }
+    },
+    {
+      "id": "brahmi-numbers",
+      "code": "CHR-223",
+      "name": "BRAHMI NUMBERS",
+      "desc": "Ashoka-era Brahmi number signs, the ancestors of the digits you use today.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "additive", "additive": { "units": ["", "𑁒", "𑁓", "𑁔", "𑁕", "𑁖", "𑁗", "𑁘", "𑁙", "𑁚"], "tens": ["", "𑁛", "𑁜", "𑁝", "𑁞", "𑁟"], "zero": "·" }, "font": { "family": "Noto Sans Brahmi", "google": true }, "sep": " : " },
+      "unlock": { "type": "level", "value": 2955 }
+    },
+    {
+      "id": "soroban-lacquer",
+      "code": "CHR-224",
+      "name": "LACQUER SOROBAN",
+      "desc": "A merchant's abacus with vermilion-lacquered beads.",
+      "family": "CLASSIC",
+      "render": { "kind": "soroban", "on": "#dc2626" },
+      "unlock": { "type": "level", "value": 1770 }
+    },
+    {
+      "id": "rods-ink",
+      "code": "CHR-225",
+      "name": "VERMILION RODS",
+      "desc": "Counting rods laid out in cinnabar red on a scholar's table.",
+      "family": "CLASSIC",
+      "render": { "kind": "rods", "on": "#ef4444" },
+      "unlock": { "type": "level", "value": 2370 }
+    },
+    {
+      "id": "mayan-jade",
+      "code": "CHR-226",
+      "name": "JADE MAYAN",
+      "desc": "Mayan bar-and-dot numerals carved in jade.",
+      "family": "CLASSIC",
+      "render": { "kind": "mayan", "on": "#10b981", "panel": { "bg": "#0a1712", "border": "#14532d" } },
+      "unlock": { "type": "level", "value": 2385 }
+    },
+    {
+      "id": "mayan-gold",
+      "code": "CHR-227",
+      "name": "GOLDEN CODEX",
+      "desc": "Mayan numerals painted in gold leaf on a bark-paper codex.",
+      "family": "CLASSIC",
+      "render": { "kind": "mayan", "on": "#facc15", "panel": { "bg": "#1c1408", "border": "#713f12" } },
+      "unlock": { "type": "streak", "value": 120 }
+    },
+    {
+      "id": "pips-red",
+      "code": "CHR-228",
+      "name": "RED DICE PIPS",
+      "desc": "Casino-red pips counting each digit like a stack of dice.",
+      "family": "SIGNAL",
+      "render": { "kind": "pips", "on": "#ef4444" },
+      "unlock": { "type": "sessions", "value": 15 }
+    },
+    {
+      "id": "gujarati",
+      "code": "CHR-229",
+      "name": "GUJARATI",
+      "desc": "Gujarati digits: Devanagari's cousin, minus the headline bar.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["૦", "૧", "૨", "૩", "૪", "૫", "૬", "૭", "૮", "૯"], "font": { "family": "Noto Sans Gujarati", "google": true } },
+      "unlock": { "type": "level", "value": 73 }
+    },
+    {
+      "id": "gurmukhi",
+      "code": "CHR-230",
+      "name": "GURMUKHI",
+      "desc": "Gurmukhi digits from the Punjabi script of the Sikh scriptures.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["੦", "੧", "੨", "੩", "੪", "੫", "੬", "੭", "੮", "੯"], "font": { "family": "Noto Sans Gurmukhi", "google": true } },
+      "unlock": { "type": "level", "value": 230 }
+    },
+    {
+      "id": "telugu",
+      "code": "CHR-231",
+      "name": "TELUGU",
+      "desc": "Round, looping Telugu digits from Andhra Pradesh.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["౦", "౧", "౨", "౩", "౪", "౫", "౬", "౭", "౮", "౯"], "font": { "family": "Noto Sans Telugu", "google": true } },
+      "unlock": { "type": "level", "value": 355 }
+    },
+    {
+      "id": "kannada",
+      "code": "CHR-232",
+      "name": "KANNADA",
+      "desc": "Kannada digits, close kin of Telugu, written in Karnataka.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["೦", "೧", "೨", "೩", "೪", "೫", "೬", "೭", "೮", "೯"], "font": { "family": "Noto Sans Kannada", "google": true } },
+      "unlock": { "type": "level", "value": 505 }
+    },
+    {
+      "id": "malayalam",
+      "code": "CHR-233",
+      "name": "MALAYALAM",
+      "desc": "Malayalam digits from the coast of Kerala.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["൦", "൧", "൨", "൩", "൪", "൫", "൬", "൭", "൮", "൯"], "font": { "family": "Noto Sans Malayalam", "google": true } },
+      "unlock": { "type": "level", "value": 615 }
+    },
+    {
+      "id": "odia",
+      "code": "CHR-234",
+      "name": "ODIA",
+      "desc": "Odia digits, crowned with the script's signature parasol curve.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["୦", "୧", "୨", "୩", "୪", "୫", "୬", "୭", "୮", "୯"], "font": { "family": "Noto Sans Oriya", "google": true } },
+      "unlock": { "type": "level", "value": 730 }
+    },
+    {
+      "id": "sinhala",
+      "code": "CHR-235",
+      "name": "SINHALA LITH",
+      "desc": "Sinhala astrological digits from Sri Lankan horoscopes.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["෦", "෧", "෨", "෩", "෪", "෫", "෬", "෭", "෮", "෯"], "font": { "family": "Noto Sans Sinhala", "google": true } },
+      "unlock": { "type": "level", "value": 930 }
+    },
+    {
+      "id": "ol-chiki",
+      "code": "CHR-236",
+      "name": "OL CHIKI",
+      "desc": "Digits from the Santali alphabet, invented in 1925.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᱐", "᱑", "᱒", "᱓", "᱔", "᱕", "᱖", "᱗", "᱘", "᱙"], "font": { "family": "Noto Sans Ol Chiki", "google": true } },
+      "unlock": { "type": "level", "value": 815 }
+    },
+    {
+      "id": "nko",
+      "code": "CHR-237",
+      "name": "NKO",
+      "desc": "N'Ko digits from the West African Manding alphabet, written right to left.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["߀", "߁", "߂", "߃", "߄", "߅", "߆", "߇", "߈", "߉"], "font": { "family": "Noto Sans NKo", "google": true } },
+      "unlock": { "type": "level", "value": 1110 }
+    },
+    {
+      "id": "adlam",
+      "code": "CHR-238",
+      "name": "ADLAM",
+      "desc": "Adlam digits, created by two teenage brothers in Guinea for the Fula language.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙"], "font": { "family": "Noto Sans Adlam", "google": true } },
+      "unlock": { "type": "level", "value": 1270 }
+    },
+    {
+      "id": "javanese",
+      "code": "CHR-239",
+      "name": "JAVANESE",
+      "desc": "Javanese aksara digits from the courts of Yogyakarta.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["꧐", "꧑", "꧒", "꧓", "꧔", "꧕", "꧖", "꧗", "꧘", "꧙"], "font": { "family": "Noto Sans Javanese", "google": true } },
+      "unlock": { "type": "level", "value": 1375 }
+    },
+    {
+      "id": "balinese",
+      "code": "CHR-240",
+      "name": "BALINESE",
+      "desc": "Balinese digits from palm-leaf lontar manuscripts.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᭐", "᭑", "᭒", "᭓", "᭔", "᭕", "᭖", "᭗", "᭘", "᭙"], "font": { "family": "Noto Sans Balinese", "google": true } },
+      "unlock": { "type": "level", "value": 1485 }
+    },
+    {
+      "id": "sundanese",
+      "code": "CHR-241",
+      "name": "SUNDANESE",
+      "desc": "Sundanese digits from West Java.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᮰", "᮱", "᮲", "᮳", "᮴", "᮵", "᮶", "᮷", "᮸", "᮹"], "font": { "family": "Noto Sans Sundanese", "google": true } },
+      "unlock": { "type": "level", "value": 1590 }
+    },
+    {
+      "id": "limbu",
+      "code": "CHR-242",
+      "name": "LIMBU",
+      "desc": "Limbu digits from the eastern hills of Nepal.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᥆", "᥇", "᥈", "᥉", "᥊", "᥋", "᥌", "᥍", "᥎", "᥏"], "font": { "family": "Noto Sans Limbu", "google": true } },
+      "unlock": { "type": "level", "value": 1695 }
+    },
+    {
+      "id": "lepcha",
+      "code": "CHR-243",
+      "name": "LEPCHA",
+      "desc": "Lepcha digits from the Himalayan kingdom of Sikkim.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᱀", "᱁", "᱂", "᱃", "᱄", "᱅", "᱆", "᱇", "᱈", "᱉"], "font": { "family": "Noto Sans Lepcha", "google": true } },
+      "unlock": { "type": "level", "value": 1830 }
+    },
+    {
+      "id": "new-tai-lue",
+      "code": "CHR-244",
+      "name": "NEW TAI LUE",
+      "desc": "Simplified Tai Lü digits from Xishuangbanna.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᧐", "᧑", "᧒", "᧓", "᧔", "᧕", "᧖", "᧗", "᧘", "᧙"], "font": { "family": "Noto Sans New Tai Lue", "google": true } },
+      "unlock": { "type": "level", "value": 1755 }
+    },
+    {
+      "id": "tai-tham",
+      "code": "CHR-245",
+      "name": "TAI THAM HORA",
+      "desc": "Lanna \"hora\" digits used by astrologers in northern Thailand.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["᪀", "᪁", "᪂", "᪃", "᪄", "᪅", "᪆", "᪇", "᪈", "᪉"], "font": { "family": "Noto Sans Tai Tham", "google": true } },
+      "unlock": { "type": "level", "value": 1985 }
+    },
+    {
+      "id": "shan",
+      "code": "CHR-246",
+      "name": "SHAN",
+      "desc": "Shan digits from the highlands of Myanmar.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["႐", "႑", "႒", "႓", "႔", "႕", "႖", "႗", "႘", "႙"], "font": { "family": "Noto Sans Myanmar", "google": true } },
+      "unlock": { "type": "level", "value": 1785 }
+    },
+    {
+      "id": "cham",
+      "code": "CHR-247",
+      "name": "CHAM",
+      "desc": "Cham digits from the old kingdom of Champa.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["꩐", "꩑", "꩒", "꩓", "꩔", "꩕", "꩖", "꩗", "꩘", "꩙"], "font": { "family": "Noto Sans Cham", "google": true } },
+      "unlock": { "type": "level", "value": 2090 }
+    },
+    {
+      "id": "meetei-mayek",
+      "code": "CHR-248",
+      "name": "MEETEI MAYEK",
+      "desc": "Manipuri digits from the Meetei Mayek script.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["꯰", "꯱", "꯲", "꯳", "꯴", "꯵", "꯶", "꯷", "꯸", "꯹"], "font": { "family": "Noto Sans Meetei Mayek", "google": true } },
+      "unlock": { "type": "level", "value": 2185 }
+    },
+    {
+      "id": "vai",
+      "code": "CHR-249",
+      "name": "VAI",
+      "desc": "Digits from the Vai syllabary of Liberia, one of Africa's oldest indigenous scripts.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["꘠", "꘡", "꘢", "꘣", "꘤", "꘥", "꘦", "꘧", "꘨", "꘩"], "font": { "family": "Noto Sans Vai", "google": true } },
+      "unlock": { "type": "level", "value": 2250 }
+    },
+    {
+      "id": "osmanya",
+      "code": "CHR-250",
+      "name": "OSMANYA",
+      "desc": "Digits from the 1920s Osmanya script for Somali.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𐒠", "𐒡", "𐒢", "𐒣", "𐒤", "𐒥", "𐒦", "𐒧", "𐒨", "𐒩"], "font": { "family": "Noto Sans Osmanya", "google": true } },
+      "unlock": { "type": "level", "value": 2295 }
+    },
+    {
+      "id": "hanifi-rohingya",
+      "code": "CHR-251",
+      "name": "HANIFI ROHINGYA",
+      "desc": "Rohingya digits from the Hanifi script of the 1980s.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𐴰", "𐴱", "𐴲", "𐴳", "𐴴", "𐴵", "𐴶", "𐴷", "𐴸", "𐴹"], "font": { "family": "Noto Sans Hanifi Rohingya", "google": true } },
+      "unlock": { "type": "level", "value": 2340 }
+    },
+    {
+      "id": "sora-sompeng",
+      "code": "CHR-252",
+      "name": "SORA SOMPENG",
+      "desc": "Digits from a 1936 script revealed in a dream for the Sora language.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑃰", "𑃱", "𑃲", "𑃳", "𑃴", "𑃵", "𑃶", "𑃷", "𑃸", "𑃹"], "font": { "family": "Noto Sans Sora Sompeng", "google": true } },
+      "unlock": { "type": "level", "value": 2420 }
+    },
+    {
+      "id": "brahmi",
+      "code": "CHR-253",
+      "name": "BRAHMI DIGITS",
+      "desc": "Positional Brahmi digits, the root of nearly every Indic numeral.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑁦", "𑁧", "𑁨", "𑁩", "𑁪", "𑁫", "𑁬", "𑁭", "𑁮", "𑁯"], "font": { "family": "Noto Sans Brahmi", "google": true } },
+      "unlock": { "type": "level", "value": 2560 }
+    },
+    {
+      "id": "takri",
+      "code": "CHR-254",
+      "name": "TAKRI",
+      "desc": "Takri digits from the hill states of the western Himalaya.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑛀", "𑛁", "𑛂", "𑛃", "𑛄", "𑛅", "𑛆", "𑛇", "𑛈", "𑛉"], "font": { "family": "Noto Sans Takri", "google": true } },
+      "unlock": { "type": "level", "value": 2660 }
+    },
+    {
+      "id": "tirhuta",
+      "code": "CHR-255",
+      "name": "TIRHUTA",
+      "desc": "Mithilakshar digits from the Maithili tradition of Bihar.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑓐", "𑓑", "𑓒", "𑓓", "𑓔", "𑓕", "𑓖", "𑓗", "𑓘", "𑓙"], "font": { "family": "Noto Sans Tirhuta", "google": true } },
+      "unlock": { "type": "level", "value": 2730 }
+    },
+    {
+      "id": "modi",
+      "code": "CHR-256",
+      "name": "MODI",
+      "desc": "Modi shorthand digits from Maratha administrative records.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑙐", "𑙑", "𑙒", "𑙓", "𑙔", "𑙕", "𑙖", "𑙗", "𑙘", "𑙙"], "font": { "family": "Noto Sans Modi", "google": true } },
+      "unlock": { "type": "level", "value": 2785 }
+    },
+    {
+      "id": "newa",
+      "code": "CHR-257",
+      "name": "NEWA",
+      "desc": "Newar digits from the temples of the Kathmandu valley.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑑐", "𑑑", "𑑒", "𑑓", "𑑔", "𑑕", "𑑖", "𑑗", "𑑘", "𑑙"], "font": { "family": "Noto Sans Newa", "google": true } },
+      "unlock": { "type": "level", "value": 2835 }
+    },
+    {
+      "id": "ahom",
+      "code": "CHR-258",
+      "name": "AHOM",
+      "desc": "Ahom digits from the Tai kingdom of medieval Assam.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑜰", "𑜱", "𑜲", "𑜳", "𑜴", "𑜵", "𑜶", "𑜷", "𑜸", "𑜹"], "font": { "family": "Noto Serif Ahom", "google": true } },
+      "unlock": { "type": "level", "value": 2870 }
+    },
+    {
+      "id": "gunjala-gondi",
+      "code": "CHR-259",
+      "name": "GUNJALA GONDI",
+      "desc": "Gunjala Gondi digits, rediscovered in village manuscripts in 2006.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𑶠", "𑶡", "𑶢", "𑶣", "𑶤", "𑶥", "𑶦", "𑶧", "𑶨", "𑶩"], "font": { "family": "Noto Sans Gunjala Gondi", "google": true } },
+      "unlock": { "type": "level", "value": 2905 }
+    },
+    {
+      "id": "mro",
+      "code": "CHR-260",
+      "name": "MRO",
+      "desc": "Digits of the Mro script from the Bangladesh–Myanmar border.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𖩠", "𖩡", "𖩢", "𖩣", "𖩤", "𖩥", "𖩦", "𖩧", "𖩨", "𖩩"], "font": { "family": "Noto Sans Mro", "google": true } },
+      "unlock": { "type": "level", "value": 2940 }
+    },
+    {
+      "id": "pahawh-hmong",
+      "code": "CHR-261",
+      "name": "PAHAWH HMONG",
+      "desc": "Pahawh Hmong digits, devised in 1959 by Shong Lue Yang.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𖭐", "𖭑", "𖭒", "𖭓", "𖭔", "𖭕", "𖭖", "𖭗", "𖭘", "𖭙"], "font": { "family": "Noto Sans Pahawh Hmong", "google": true } },
+      "unlock": { "type": "level", "value": 2975 }
+    },
+    {
+      "id": "wancho",
+      "code": "CHR-262",
+      "name": "WANCHO",
+      "desc": "Wancho digits from Arunachal Pradesh, encoded in 2019.",
+      "family": "SCRIPT",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𞋰", "𞋱", "𞋲", "𞋳", "𞋴", "𞋵", "𞋶", "𞋷", "𞋸", "𞋹"], "font": { "family": "Noto Sans Wancho", "google": true } },
+      "unlock": { "type": "level", "value": 2990 }
+    },
+    {
+      "id": "math-bold",
+      "code": "CHR-263",
+      "name": "MATH BOLD",
+      "desc": "Mathematical bold digits from the Unicode math alphabet.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"], "font": { "family": "Noto Sans Math", "google": true } },
+      "unlock": { "type": "level", "value": 150 }
+    },
+    {
+      "id": "math-sans",
+      "code": "CHR-264",
+      "name": "MATH SANS",
+      "desc": "Mathematical sans-serif digits, as set in a physics paper.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𝟢", "𝟣", "𝟤", "𝟥", "𝟦", "𝟧", "𝟨", "𝟩", "𝟪", "𝟫"], "font": { "family": "Noto Sans Math", "google": true } },
+      "unlock": { "type": "level", "value": 445 }
+    },
+    {
+      "id": "math-sans-bold",
+      "code": "CHR-265",
+      "name": "MATH SANS BOLD",
+      "desc": "Heavy mathematical sans digits for a theorem's headline.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𝟬", "𝟭", "𝟮", "𝟯", "𝟰", "𝟱", "𝟲", "𝟳", "𝟴", "𝟵"], "font": { "family": "Noto Sans Math", "google": true } },
+      "unlock": { "type": "level", "value": 1075 }
+    },
+    {
+      "id": "math-mono",
+      "code": "CHR-266",
+      "name": "MATH MONOSPACE",
+      "desc": "Mathematical monospace digits, the typewriter of the math block.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["𝟶", "𝟷", "𝟸", "𝟹", "𝟺", "𝟻", "𝟼", "𝟽", "𝟾", "𝟿"], "font": { "family": "Noto Sans Math", "google": true } },
+      "unlock": { "type": "level", "value": 1905 }
+    },
+    {
+      "id": "superscript",
+      "code": "CHR-267",
+      "name": "SUPERSCRIPT",
+      "desc": "Every digit raised to a power: ⁰¹²³⁴⁵⁶⁷⁸⁹.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"], "font": { "family": "Noto Sans", "weight": 300, "google": true }, "scale": 1.2 },
+      "unlock": { "type": "streak", "value": 2 }
+    },
+    {
+      "id": "subscript",
+      "code": "CHR-268",
+      "name": "SUBSCRIPT",
+      "desc": "Chemical-formula subscripts: the time written like H₂O.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "digits", "digits": ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"], "font": { "family": "Noto Sans", "weight": 300, "google": true }, "scale": 1.2 },
+      "unlock": { "type": "streak", "value": 6 }
+    },
+    {
+      "id": "braille-bits",
+      "code": "CHR-269",
+      "name": "BRAILLE BITS",
+      "desc": "Each field as one eight-dot Braille cell: the dots are the value's bits.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "glyph", "glyph": { "start": 10240 }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 1.3, "sep": " " },
+      "unlock": { "type": "level", "value": 2060 }
+    },
+    {
+      "id": "i-ching",
+      "code": "CHR-270",
+      "name": "I CHING HEXAGRAMS",
+      "desc": "One Yijing hexagram per field, from ䷀ the Creative onward.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "glyph", "glyph": { "start": 19904 }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 1.2, "sep": " " },
+      "unlock": { "type": "streak", "value": 60 }
+    },
+    {
+      "id": "tai-xuan",
+      "code": "CHR-271",
+      "name": "TAI XUAN TETRAGRAMS",
+      "desc": "Yang Xiong's 81 tetragrams of the Canon of Supreme Mystery, one per field.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "glyph", "glyph": { "start": 119558 }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 1.2, "sep": " " },
+      "unlock": { "type": "level", "value": 2540 }
+    },
+    {
+      "id": "trigrams",
+      "code": "CHR-272",
+      "name": "BAGUA TRIGRAMS",
+      "desc": "Octal written in the eight trigrams of the bagua: ☰ through ☷.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 8, "pad": 2, "digits": "☰☱☲☳☴☵☶☷" }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "streak", "value": 25 }
+    },
+    {
+      "id": "dice",
+      "code": "CHR-273",
+      "name": "DICE BASE-6",
+      "desc": "Base-six on die faces: ⚀ is zero, ⚅ is five.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 6, "pad": 3, "digits": "⚀⚁⚂⚃⚄⚅" }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 1.0 },
+      "unlock": { "type": "sessions", "value": 40 }
+    },
+    {
+      "id": "zodiac",
+      "code": "CHR-274",
+      "name": "ZODIAC DUODECIMAL",
+      "desc": "Base-twelve on the zodiac wheel, ♈ Aries through ♓ Pisces.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 12, "pad": 2, "digits": "♈♉♊♋♌♍♎♏♐♑♒♓" }, "font": { "family": "Noto Sans Symbols", "google": true }, "scale": 1.0 },
+      "unlock": { "type": "streak", "value": 35 }
+    },
+    {
+      "id": "card-suits",
+      "code": "CHR-275",
+      "name": "CARD SUITS",
+      "desc": "Base-four in the four suits: ♠ ♥ ♦ ♣.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 4, "pad": 3, "digits": "♠♥♦♣" }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "sessions", "value": 75 }
+    },
+    {
+      "id": "chess",
+      "code": "CHR-276",
+      "name": "CHESS SENARY",
+      "desc": "Base-six on the chessboard, from ♔ king to ♙ pawn.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 6, "pad": 3, "digits": "♔♕♖♗♘♙" }, "font": { "family": "Noto Sans Symbols 2", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "sessions", "value": 150 }
+    },
+    {
+      "id": "moon-phases",
+      "code": "CHR-277",
+      "name": "LUNAR OCTAL",
+      "desc": "Octal in the eight phases of the moon, new moon to waning crescent.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 8, "pad": 2, "digits": "🌑🌒🌓🌔🌕🌖🌗🌘" }, "scale": 0.8, "sep": " " },
+      "unlock": { "type": "streak", "value": 90 }
+    },
+    {
+      "id": "runic-tally",
+      "code": "CHR-278",
+      "name": "RUNIC PENTADIC",
+      "desc": "Base-five carved in runes: ᛁ ᚢ ᚦ ᚨ ᚱ, as on a wooden calendar stick.",
+      "family": "SIGNAL",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 5, "pad": 3, "digits": "ᛁᚢᚦᚨᚱ" }, "font": { "family": "Noto Sans Runic", "google": true }, "scale": 1.0 },
+      "unlock": { "type": "streak", "value": 180 }
+    },
+    {
+      "id": "chalkboard",
+      "code": "CHR-279",
+      "name": "CHALKBOARD",
+      "desc": "Dusty chalk numerals on a classroom blackboard.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Fredericka the Great", "google": true }, "fx": "chalk", "scale": 1.05 },
+      "unlock": { "type": "streak", "value": 9 }
+    },
+    {
+      "id": "seximal",
+      "code": "CHR-280",
+      "name": "SEXIMAL",
+      "desc": "Base six, championed by its fans as the most elegant base of all.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 6, "pad": 3 }, "font": { "family": "Space Mono", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 555 }
+    },
+    {
+      "id": "septenary",
+      "code": "CHR-281",
+      "name": "SEPTENARY",
+      "desc": "Base seven, one digit per day of the week.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 7, "pad": 3 }, "font": { "family": "JetBrains Mono", "google": true }, "scale": 0.85 },
+      "unlock": { "type": "level", "value": 1215 }
+    },
+    {
+      "id": "crockford32",
+      "code": "CHR-282",
+      "name": "CROCKFORD BASE-32",
+      "desc": "Douglas Crockford's base-32, with I, L, O and U left out to avoid typos.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 32, "pad": 2, "digits": "0123456789ABCDEFGHJKMNPQRSTVWXYZ" }, "font": { "family": "Red Hat Mono", "google": true } },
+      "unlock": { "type": "level", "value": 2045 }
+    },
+    {
+      "id": "gray-code",
+      "code": "CHR-283",
+      "name": "GRAY CODE",
+      "desc": "Reflected binary: only one bit flips between any two consecutive seconds.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 2, "pad": 6, "gray": true }, "font": { "family": "Azeret Mono", "google": true }, "scale": 0.5, "color": "#f472b6", "colorLight": "#be185d" },
+      "unlock": { "type": "level", "value": 2155 }
+    },
+    {
+      "id": "dollar-hex",
+      "code": "CHR-284",
+      "name": "6502 HEX",
+      "desc": "Hex with the $ prefix of 8-bit assembly listings.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "radix", "radix": { "base": 16, "pad": 2, "prefix": "$" }, "font": { "family": "VT323", "google": true }, "scale": 1.2, "color": "#a5b4fc", "colorLight": "#4338ca" },
+      "unlock": { "type": "level", "value": 670 }
+    },
+    {
+      "id": "hexday",
+      "code": "CHR-285",
+      "name": "HEXADECIMAL DAY",
+      "desc": "The day split into 65,536 hex units: sixteen hex-hours of 256 hex-minutes.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "hexday", "font": { "family": "Fira Code", "weight": 400, "google": true }, "color": "#60a5fa", "colorLight": "#1d4ed8" },
+      "unlock": { "type": "hours", "value": 150 }
+    },
+    {
+      "id": "julian-date",
+      "code": "CHR-286",
+      "name": "JULIAN DATE",
+      "desc": "Astronomers' continuous day count since 4713 BC, to five decimal places.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "julian", "font": { "family": "JetBrains Mono", "google": true }, "scale": 0.55 },
+      "unlock": { "type": "hours", "value": 800 }
+    },
+    {
+      "id": "kiloseconds",
+      "code": "CHR-287",
+      "name": "KILOSECONDS",
+      "desc": "Metric time of day: 86.4 kiloseconds from midnight to midnight.",
+      "family": "CODE",
+      "render": { "kind": "text", "numeral": "kilosec", "font": { "family": "Space Mono", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "hours", "value": 40 }
+    },
+    {
+      "id": "rubik-maze",
+      "code": "CHR-288",
+      "name": "MAZE",
+      "desc": "Numerals drawn as single-path mazes: solve the hour.",
+      "family": "CODE",
+      "render": { "kind": "text", "font": { "family": "Rubik Maze", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 2625 }
+    },
+    {
+      "id": "indie-flower",
+      "code": "CHR-289",
+      "name": "INDIE FLOWER",
+      "desc": "Bubbly felt-tip numerals from the margin of a study notebook.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Indie Flower", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "level", "value": 92 }
+    },
+    {
+      "id": "gochi-hand",
+      "code": "CHR-290",
+      "name": "GOCHI HAND",
+      "desc": "Rounded marker handwriting on a whiteboard.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Gochi Hand", "google": true }, "scale": 1.1, "color": "#60a5fa", "colorLight": "#1d4ed8" },
+      "unlock": { "type": "level", "value": 375 }
+    },
+    {
+      "id": "architects-daughter",
+      "code": "CHR-291",
+      "name": "ARCHITECT'S HAND",
+      "desc": "Drafting-table lettering from a set of blueprints.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Architects Daughter", "google": true }, "scale": 1.0 },
+      "unlock": { "type": "level", "value": 515 }
+    },
+    {
+      "id": "rock-salt",
+      "code": "CHR-292",
+      "name": "ROCK SALT",
+      "desc": "Rough marker scrawl on a roadside cardboard sign.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Rock Salt", "google": true }, "scale": 0.75 },
+      "unlock": { "type": "level", "value": 630 }
+    },
+    {
+      "id": "gloria",
+      "code": "CHR-293",
+      "name": "GLORIA HALLELUJAH",
+      "desc": "Comic-book handwriting, loud and cheerful.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Gloria Hallelujah", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 1005 }
+    },
+    {
+      "id": "homemade-apple",
+      "code": "CHR-294",
+      "name": "HOMEMADE APPLE",
+      "desc": "Loopy cursive from a handwritten recipe card.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Homemade Apple", "google": true }, "scale": 0.8 },
+      "unlock": { "type": "level", "value": 1845 }
+    },
+    {
+      "id": "dancing-script",
+      "code": "CHR-295",
+      "name": "DANCING SCRIPT",
+      "desc": "Bouncy brush-script numerals from a café chalkboard.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Dancing Script", "weight": 500, "google": true }, "scale": 1.15 },
+      "unlock": { "type": "level", "value": 1180 }
+    },
+    {
+      "id": "sacramento",
+      "code": "CHR-296",
+      "name": "SACRAMENTO",
+      "desc": "Monoline neon script, like a signature in light.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Sacramento", "google": true }, "fx": "neon", "scale": 1.3, "color": "#f9a8d4", "colorLight": "#be185d" },
+      "unlock": { "type": "level", "value": 2000 }
+    },
+    {
+      "id": "pinyon",
+      "code": "CHR-297",
+      "name": "PINYON SCRIPT",
+      "desc": "Copperplate engraving script from a 19th-century letterhead.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Pinyon Script", "google": true }, "scale": 1.15 },
+      "unlock": { "type": "level", "value": 2505 }
+    },
+    {
+      "id": "rubik-scribble",
+      "code": "CHR-298",
+      "name": "SCRIBBLE",
+      "desc": "Numerals filled in with a frantic biro scribble.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Rubik Scribble", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 745 }
+    },
+    {
+      "id": "rubik-doodle",
+      "code": "CHR-299",
+      "name": "DOODLE SHADOW",
+      "desc": "Doodled numerals with a hand-hatched drop shadow.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Rubik Doodle Shadow", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "level", "value": 1340 }
+    },
+    {
+      "id": "rubik-spray",
+      "code": "CHR-300",
+      "name": "SPRAY PAINT",
+      "desc": "Stencil-free spray-can numerals with overspray.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Rubik Spray Paint", "google": true }, "scale": 0.95, "color": "#a3e635", "colorLight": "#4d7c0f" },
+      "unlock": { "type": "level", "value": 2110 }
+    },
+    {
+      "id": "klee-pencil",
+      "code": "CHR-301",
+      "name": "KLEE PENCIL",
+      "desc": "Pencil-written kanji numerals from a Japanese schoolbook.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "font": { "family": "Klee One", "weight": 600, "google": true }, "scale": 0.62 },
+      "unlock": { "type": "level", "value": 250 }
+    },
+    {
+      "id": "yomogi",
+      "code": "CHR-302",
+      "name": "YOMOGI",
+      "desc": "Soft, rounded handwriting like a note in a friend's planner.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Yomogi", "google": true }, "scale": 1.0 },
+      "unlock": { "type": "level", "value": 830 }
+    },
+    {
+      "id": "hachi-maru",
+      "code": "CHR-303",
+      "name": "HACHI MARU POP",
+      "desc": "Rounded \"maru-moji\" teen handwriting from 1980s Japan.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Hachi Maru Pop", "google": true }, "scale": 0.85, "color": "#f472b6", "colorLight": "#be185d" },
+      "unlock": { "type": "level", "value": 1455 }
+    },
+    {
+      "id": "zen-kurenaido",
+      "code": "CHR-304",
+      "name": "ZEN KURENAIDO",
+      "desc": "Dry, brushed kanji numerals with a quiet strength.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "font": { "family": "Zen Kurenaido", "google": true }, "scale": 0.62 },
+      "unlock": { "type": "level", "value": 1555 }
+    },
+    {
+      "id": "yuji-boku",
+      "code": "CHR-305",
+      "name": "YUJI BOKU",
+      "desc": "Bold wooden-tablet brushwork, as on a temple ema plaque.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "font": { "family": "Yuji Boku", "google": true }, "scale": 0.62, "fx": "ink" },
+      "unlock": { "type": "level", "value": 2200 }
+    },
+    {
+      "id": "ma-shan-zheng",
+      "code": "CHR-306",
+      "name": "MA SHAN ZHENG",
+      "desc": "Regular-script Chinese brush calligraphy in the 楷书 style.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["时", "分", "秒"] }, "font": { "family": "Ma Shan Zheng", "google": true }, "scale": 0.62 },
+      "unlock": { "type": "level", "value": 2265 }
+    },
+    {
+      "id": "zhi-mang-xing",
+      "code": "CHR-307",
+      "name": "ZHI MANG XING",
+      "desc": "Free-flowing running-script brushwork, ink racing across the page.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["时", "分", "秒"] }, "font": { "family": "Zhi Mang Xing", "google": true }, "scale": 0.66, "fx": "ink" },
+      "unlock": { "type": "level", "value": 2645 }
+    },
+    {
+      "id": "liu-jian",
+      "code": "CHR-308",
+      "name": "WILD CURSIVE",
+      "desc": "Wild-cursive 草书 brushwork for the five-hour session that left you in flow.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["时", "分", "秒"] }, "font": { "family": "Liu Jian Mao Cao", "google": true }, "scale": 0.7, "fx": "ink" },
+      "unlock": { "type": "session", "value": 300 }
+    },
+    {
+      "id": "nanum-brush",
+      "code": "CHR-309",
+      "name": "NANUM BRUSH",
+      "desc": "Korean brush handwriting with Sino-Korean numerals.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"], "ten": "십" }, "font": { "family": "Nanum Brush Script", "google": true }, "scale": 0.8 },
+      "unlock": { "type": "level", "value": 1660 }
+    },
+    {
+      "id": "pomodoro",
+      "code": "CHR-310",
+      "name": "POMODORO",
+      "desc": "A tomato kitchen timer, for the first session that ran past forty-five minutes.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Fredoka", "weight": 600, "google": true }, "color": "#ef4444", "colorLight": "#b91c1c" },
+      "unlock": { "type": "session", "value": 45 }
+    },
+    {
+      "id": "deep-work",
+      "code": "CHR-311",
+      "name": "DEEP WORK",
+      "desc": "A quiet, heavy readout for your first two-hour stretch of unbroken focus.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Inter", "weight": 800, "google": true }, "scale": 0.95 },
+      "unlock": { "type": "session", "value": 120 }
+    },
+    {
+      "id": "marathon",
+      "code": "CHR-312",
+      "name": "MARATHON",
+      "desc": "Race-bib numerals for a two-and-a-half-hour session.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Saira Condensed", "weight": 700, "google": true }, "scale": 1.05, "color": "#facc15", "colorLight": "#a16207" },
+      "unlock": { "type": "session", "value": 150 }
+    },
+    {
+      "id": "night-owl",
+      "code": "CHR-313",
+      "name": "NIGHT OWL",
+      "desc": "A dim indigo pulse for a three-and-a-half-hour session that ran into the night.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Jura", "weight": 400, "google": true }, "fx": "pulse", "color": "#818cf8", "colorLight": "#3730a3" },
+      "unlock": { "type": "session", "value": 210 }
+    },
+    {
+      "id": "ocean-depth",
+      "code": "CHR-314",
+      "name": "OCEAN DEPTH",
+      "desc": "Gradient from surface to abyss for a session that went deep.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Exo 2", "weight": 700, "google": true }, "fx": "ocean" },
+      "unlock": { "type": "session", "value": 270 }
+    },
+    {
+      "id": "ultramarathon",
+      "code": "CHR-315",
+      "name": "ULTRAMARATHON",
+      "desc": "Bold condensed numerals for a six-hour session.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Big Shoulders Display", "weight": 800, "google": true }, "fx": "fire" },
+      "unlock": { "type": "session", "value": 360 }
+    },
+    {
+      "id": "first-week",
+      "code": "CHR-316",
+      "name": "FIRST WEEK",
+      "desc": "Hand-drawn tally-board digits celebrating twelve days in a row.",
+      "family": "HAND",
+      "render": { "kind": "text", "font": { "family": "Schoolbell", "google": true }, "scale": 1.1 },
+      "unlock": { "type": "streak", "value": 12 }
+    },
+    {
+      "id": "kintsugi-type",
+      "code": "CHR-317",
+      "name": "KINTSUGI",
+      "desc": "Mincho numerals mended with gold seams after 150 consecutive days.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "numeral": "cjk", "cjk": { "digits": ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"], "ten": "十", "units": ["時", "分", "秒"] }, "font": { "family": "Shippori Mincho", "weight": 700, "google": true }, "scale": 0.62, "fx": "gold" },
+      "unlock": { "type": "streak", "value": 150 }
+    },
+    {
+      "id": "year-of-days",
+      "code": "CHR-318",
+      "name": "YEAR OF DAYS",
+      "desc": "Iridescent prism numerals reserved for a full year without missing a day.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Unbounded", "weight": 700, "google": true }, "fx": "holo", "scale": 0.85 },
+      "unlock": { "type": "streak", "value": 365 }
+    },
+    {
+      "id": "session-five",
+      "code": "CHR-319",
+      "name": "FIVE SESSIONS",
+      "desc": "Rounded, friendly numerals for your fifth logged session.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "M PLUS Rounded 1c", "weight": 300, "google": true } },
+      "unlock": { "type": "sessions", "value": 5 }
+    },
+    {
+      "id": "session-200",
+      "code": "CHR-320",
+      "name": "TWO HUNDRED",
+      "desc": "Chromed racing numerals for two hundred logged sessions.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Russo One", "google": true }, "fx": "chrome", "scale": 0.9 },
+      "unlock": { "type": "sessions", "value": 200 }
+    },
+    {
+      "id": "session-400",
+      "code": "CHR-321",
+      "name": "FOUR HUNDRED",
+      "desc": "Embossed brass plaque numerals marking four hundred sessions.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Rye", "google": true }, "fx": "gold", "scale": 0.85 },
+      "unlock": { "type": "sessions", "value": 400 }
+    },
+    {
+      "id": "session-750",
+      "code": "CHR-322",
+      "name": "SEVEN FIFTY",
+      "desc": "Engraved gold-leaf figures for seven hundred and fifty sessions.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Cinzel Decorative", "weight": 700, "google": true }, "fx": "gold", "scale": 0.7 },
+      "unlock": { "type": "sessions", "value": 750 }
+    },
+    {
+      "id": "session-1000",
+      "code": "CHR-323",
+      "name": "THOUSAND SESSIONS",
+      "desc": "Liquid-chrome color-font numerals for a thousand logged sessions.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Kalnia Glaze", "google": true }, "scale": 0.9 },
+      "unlock": { "type": "sessions", "value": 1000 }
+    },
+    {
+      "id": "hours-10",
+      "code": "CHR-324",
+      "name": "TEN HOURS",
+      "desc": "A sharp, confident sans for your first ten hours.",
+      "family": "CORE",
+      "render": { "kind": "text", "font": { "family": "Sora", "weight": 300, "google": true } },
+      "unlock": { "type": "hours", "value": 10 }
+    },
+    {
+      "id": "hours-200",
+      "code": "CHR-325",
+      "name": "TWO HUNDRED HOURS",
+      "desc": "An aurora gradient across extended numerals for two hundred hours.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Krona One", "google": true }, "fx": "aurora", "scale": 0.7 },
+      "unlock": { "type": "hours", "value": 200 }
+    },
+    {
+      "id": "hours-300",
+      "code": "CHR-326",
+      "name": "THREE HUNDRED HOURS",
+      "desc": "Rose-gold display Garamond for three hundred hours.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Cormorant Garamond", "weight": 600, "google": true }, "fx": "rosegold", "scale": 1.1 },
+      "unlock": { "type": "hours", "value": 300 }
+    },
+    {
+      "id": "hours-700",
+      "code": "CHR-327",
+      "name": "SEVEN HUNDRED HOURS",
+      "desc": "Ink-wash color-font numerals for seven hundred hours.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Blaka Ink", "google": true }, "scale": 0.95 },
+      "unlock": { "type": "hours", "value": 700 }
+    },
+    {
+      "id": "final-hour",
+      "code": "CHR-328",
+      "name": "FINAL HOUR",
+      "desc": "The capstone of cycle one: molten-gold numerals for reaching LV.3000.",
+      "family": "PRESTIGE",
+      "render": { "kind": "text", "font": { "family": "Cinzel Decorative", "weight": 900, "google": true }, "fx": "gold", "scale": 0.62 },
+      "unlock": { "type": "level", "value": 3000 }
+    },
+    {
+      "id": "chakra-violet",
+      "code": "CHR-329",
+      "name": "CHAKRA VIOLET",
+      "desc": "Angular Thai-inspired techno numerals in ultraviolet.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Chakra Petch", "weight": 300, "google": true }, "fx": "neon", "color": "#c084fc", "colorLight": "#7e22ce" },
+      "unlock": { "type": "level", "value": 1625 }
+    },
+    {
+      "id": "rubik-dirt",
+      "code": "CHR-330",
+      "name": "DIRT",
+      "desc": "Grimy, sandblasted numerals from a construction site.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Rubik Dirt", "google": true }, "scale": 0.92 },
+      "unlock": { "type": "level", "value": 1610 }
+    },
+    {
+      "id": "rubik-gemstones",
+      "code": "CHR-331",
+      "name": "GEMSTONES",
+      "desc": "Faceted, cut-gem numerals that catch the light.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Rubik Gemstones", "google": true }, "scale": 0.92, "fx": "holo" },
+      "unlock": { "type": "level", "value": 2820 }
+    },
+    {
+      "id": "federo",
+      "code": "CHR-332",
+      "name": "FEDERO",
+      "desc": "Art-deco capitals from a 1930s train-station clock.",
+      "family": "CLASSIC",
+      "render": { "kind": "text", "font": { "family": "Federo", "google": true } },
+      "unlock": { "type": "level", "value": 890 }
+    },
+    {
+      "id": "vapor-hud",
+      "code": "CHR-333",
+      "name": "VAPOR HUD",
+      "desc": "Pastel vaporwave double-exposure on a squared HUD.",
+      "family": "CYBER",
+      "render": { "kind": "text", "font": { "family": "Audiowide", "google": true }, "fx": "vapor", "scale": 0.9 },
+      "unlock": { "type": "level", "value": 865 }
+    },
+    {
+      "id": "chalk-roman",
+      "code": "CHR-334",
+      "name": "CHALK ROMAN",
+      "desc": "Roman numerals chalked on a slate in a Latin classroom.",
+      "family": "HAND",
+      "render": { "kind": "text", "numeral": "roman", "font": { "family": "Fredericka the Great", "google": true }, "scale": 0.62, "sep": "·", "fx": "chalk" },
+      "unlock": { "type": "level", "value": 2310 }
+    },
+    {
+      "id": "stamp-date",
+      "code": "CHR-335",
+      "name": "DATE STAMP",
+      "desc": "Rubber date-stamp numerals inked a little crooked.",
+      "family": "DEVICE",
+      "render": { "kind": "text", "font": { "family": "Special Elite", "google": true }, "fx": "stamp", "color": "#ef4444", "colorLight": "#b91c1c" },
+      "unlock": { "type": "level", "value": 1715 }
+    },
+    {
+      "id": "rosegold-dial",
+      "code": "CHR-336",
+      "name": "ROSE GOLD DIAL",
+      "desc": "A minimal dial in rose gold for seventy-five days in a row.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "minimal", "on": "#fda4af", "color": "#fecdd3", "colorLight": "#9f1239" },
+      "unlock": { "type": "streak", "value": 75 }
     }
   ]
 }

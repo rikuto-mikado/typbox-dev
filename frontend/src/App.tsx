@@ -3066,7 +3066,6 @@ export default function App() {
         <AmbientOverlay
           themeId={ambientPreviewId}
           dimAlpha={ambientDimAlpha}
-          clock={ambientClock ? { main: formatTimer(elapsedSeconds), sub: 'PREVIEW' } : null}
           preview
           onExit={exitAmbientPreview}
         />

@@ -457,6 +457,66 @@ canvas {
   animation: chrono-flicker 3.6s steps(1) infinite;
 }
 
+.chrono-fx-aurora,
+.chrono-fx-ocean,
+.chrono-fx-rosegold {
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.chrono-fx-aurora {
+  background-image: linear-gradient(100deg, #34d399, #22d3ee, #818cf8, #c084fc, #34d399);
+  background-size: 300% 100%;
+  filter: drop-shadow(0 0 0.1em rgba(52, 211, 153, 0.4));
+  animation: prism-shift 11s linear infinite;
+}
+
+.chrono-fx-ocean {
+  background-image: linear-gradient(180deg, #a5f3fc 0%, #22d3ee 35%, #0284c7 70%, #1e3a8a 100%);
+}
+
+.chrono-fx-rosegold {
+  background-image: linear-gradient(180deg, #ffe4e6 0%, #fda4af 35%, #be7c6d 60%, #fecdd3 85%, #9f5f55 100%);
+  filter: drop-shadow(0 1px 0 rgba(127, 29, 29, 0.35));
+}
+
+.chrono-fx-vapor {
+  text-shadow: 2px 2px 0 rgba(244, 114, 182, 0.85), -2px -1px 0 rgba(34, 211, 238, 0.85);
+}
+
+.chrono-fx-longshadow {
+  text-shadow: 1px 1px 0 rgba(127, 127, 127, 0.45), 2px 2px 0 rgba(127, 127, 127, 0.38), 3px 3px 0 rgba(127, 127, 127, 0.3),
+    4px 4px 0 rgba(127, 127, 127, 0.22), 5px 5px 0 rgba(127, 127, 127, 0.15), 6px 6px 0 rgba(127, 127, 127, 0.08);
+}
+
+.chrono-fx-pulse {
+  text-shadow: 0 0 4px currentColor, 0 0 14px currentColor;
+  animation: chrono-pulse 4s ease-in-out infinite;
+}
+
+.chrono-fx-chalk {
+  text-shadow: 0.5px 0.5px 0 currentColor, -0.5px 0 1px currentColor, 0 0 3px rgba(255, 255, 255, 0.25);
+  opacity: 0.88;
+  filter: blur(0.15px);
+}
+
+.chrono-fx-stamp {
+  transform: rotate(-3deg);
+  opacity: 0.82;
+  filter: drop-shadow(0 0 0.5px currentColor);
+}
+
+@keyframes chrono-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.62;
+  }
+}
+
 @keyframes chrono-fire {
   0% {
     background-position: 0% 100%;
@@ -582,6 +642,8 @@ canvas {
   .chrono-fx-quantum,
   .chrono-fx-fire,
   .chrono-fx-flicker,
+  .chrono-fx-aurora,
+  .chrono-fx-pulse,
   .chrono-cell-flap {
     animation: none;
   }
