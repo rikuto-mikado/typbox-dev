@@ -18,8 +18,8 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 | Ambient noise | **60** procedurally synthesized profiles in 8 families, mix up to 5 |
 | Ambient overlay scenes | **23** |
 | Weather display styles | **33** |
-| Profile statuses | **428** options in 15 groups, pick up to 5 |
-| Status card shapes | 4 (WIDE / SQUARE / PORTRAIT / STORY) |
+| Profile statuses | **206** options in 9 groups, pick up to 12 |
+| Status card | 1 square card (1080×1080), painted over the active Surface Theme |
 | Avatar presets | 12 icons + initial, 36 accent colors, or uploaded image |
 
 ---
@@ -43,7 +43,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 
 ### Command Palette (⌘K / Ctrl+K)
 - Fuzzy search over every action; ↑ / ↓ / Enter / Esc.
-- **Natural-language quick log**: typing `log 90m math`, `45m cs`, `1h30m`, `1.5h` parses duration + category and commits directly.
+- **Natural-language quick log**: typing `log 90m math`, `45m cs`, `1h30m`, `1.5h` parses duration + category and commits directly. An unknown category name logs nothing (it never falls back to the default category), and a commit can't be fired twice by a double Enter.
 - Category quick-log presets for each active category.
 - Sound: play brown / pink / white / 40Hz drone, stop.
 - Analytics horizon: 7D / 12W / 12M / calendar.
@@ -168,7 +168,7 @@ Kinds: CODE 19, HUMANIST 10, RETRO 7, DISPLAY 8. Default is the system monospace
 
 ### 5.4 Profile
 - Username, email, avatar: 12 icon presets (initial, terminal, cpu, code, zap, shield, globe, sparkles, flame, compass, layers, database) × 36 accent colors, or an uploaded image.
-- **Statuses**: up to 5 from 428 options in 15 groups (major, school, research, tech, data, business, independent, creative, industry, exams, languages, hobbies, sports, study style, life). Ids are append-only; `tracker/tests.py` checks the backend allowlist matches `userStatus.ts`.
+- **Statuses** (STATUS // LEARNER PROFILE): up to 12 from 206 options in 9 groups (field of study, school & pathway, current mission, study rhythm & planning, study method & setting, learner archetype, study fuel, hobbies, sports). Ids are never renamed; a removed id is silently dropped from accounts. `tracker/tests.py` checks the backend allowlist matches `userStatus.ts`.
 - Timezone and week start (Mon/Sun); all week/month math follows them.
 
 ### 5.5 Settings modal tabs
@@ -206,9 +206,9 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 ## 8. Sharing
 
 ### Status Card generator
-- Renders a share image on a canvas: username, avatar, clearance rank and progress, total / week / month hours, current & longest streak, active days, optional category breakdown.
-- Shapes: **WIDE** 16:9 (1200×675), **SQUARE** 1:1 (1080×1080), **PORTRAIT** 4:5 (1080×1350), **STORY** 9:16 (1080×1920).
-- Dark or light; download PNG or copy to clipboard. Preview stage keeps a fixed height when switching shapes.
+- Renders one 1:1 share image (1080×1080) on a canvas: username, avatar, clearance rank and progress ring, total / week / month hours, current & longest streak, an activity heatmap shaded by minutes per day, optional category split.
+- The background and colors follow the user's active Surface Theme and polarity (palette, accent wash, PRESTIGE art).
+- Download PNG or copy to clipboard.
 
 ---
 

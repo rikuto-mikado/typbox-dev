@@ -32,6 +32,7 @@ import {
   Settings,
   Upload,
   KeyRound,
+  Save,
   Mail,
   CheckCircle2,
   Cpu,
@@ -47,12 +48,14 @@ import {
   Briefcase,
   CheckCheck,
   Undo2,
+  ArrowUpRight,
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken } from './api';
 import { TypboxLogo } from './TypboxLogo';
 import { resolveSurfaceThemeId } from './surfaceThemes';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
+import { SaveButton, useSaveState } from './SaveButton';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
 import {
   I18nContext,
@@ -273,60 +276,6 @@ const ACCENT_PALETTE = [
   { name: 'Silver', hex: '#a1a1aa' },
 ];
 
-// Social Icon Components for Footer
-const GithubIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-    />
-  </svg>
-);
-
-const LinkedinIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 8.76a1.64 1.64 0 1 0 0-3.28 1.64 1.64 0 0 0 0 3.28m1.37 9.74V9.93H5.09v8.57h2.74z" />
-  </svg>
-);
-
-const InstagramIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-  </svg>
-);
-
-const SpotifyIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2C6.477 2 2 6.477 2 12c0 5.523 4.477 10 10 10s10-4.477 10-10c0-5.523-4.477-10-10-10zm4.586 14.424c-.18.295-.563.387-.857.207-2.35-1.435-5.308-1.76-8.793-.963-.335.077-.67-.133-.746-.468-.077-.334.132-.67.467-.746 3.808-.87 7.076-.496 9.722 1.115.294.18.386.562.207.855zm1.226-2.727c-.227.37-.711.487-1.08.26-2.69-1.654-6.79-2.134-9.97-1.168-.415.126-.857-.11-1.002-.524-.127-.416.11-.858.524-1.003 3.633-1.103 8.147-.568 11.267 1.354.37.227.488.712.261 1.081zm.105-2.835C14.692 8.95 9.375 8.775 6.297 9.71c-.496.15-1.022-.134-1.173-.63-.15-.495.134-1.022.63-1.172 3.535-1.073 9.404-.868 13.115 1.334.446.265.592.845.327 1.291-.265.446-.845.592-1.291.328z" />
-  </svg>
-);
-
-const socialLinks = [
-  {
-    name: 'GitHub',
-    url: 'https://github.com/rikuto-mikado',
-    icon: GithubIcon,
-  },
-  {
-    name: 'LinkedIn',
-    url: 'https://www.linkedin.com/in/rikuto-mikado',
-    icon: LinkedinIcon,
-  },
-  {
-    name: 'Instagram',
-    url: 'https://www.instagram.com/rikuto_jpn/',
-    icon: InstagramIcon,
-  },
-  {
-    name: 'Spotify',
-    url: 'https://open.spotify.com/user/31ziidnuokqdfrdhwhyug37jxbli?si=4996df09eae84262',
-    icon: SpotifyIcon,
-  },
-];
-
 // Default log-form category: the first active in-progress one, else any
 // in-progress one. DONE categories are never picked.
 const pickDefaultCategory = (cats: Category[]): Category | undefined => {
@@ -541,21 +490,15 @@ const getInitialAmbientDim = (): AmbientDim => {
 };
 
 const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
-  school: 'statusGroupSchool',
   major: 'statusGroupMajor',
-  research: 'statusGroupResearch',
-  tech: 'statusGroupTech',
-  data: 'statusGroupData',
-  creative: 'statusGroupCreative',
-  business: 'statusGroupBusiness',
-  industry: 'statusGroupIndustry',
-  independent: 'statusGroupIndependent',
-  exams: 'statusGroupExams',
-  languages: 'statusGroupLanguages',
+  school: 'statusGroupSchool',
+  mission: 'statusGroupMission',
+  rhythm: 'statusGroupRhythm',
+  method: 'statusGroupMethod',
+  archetype: 'statusGroupArchetype',
+  fuel: 'statusGroupFuel',
   hobbies: 'statusGroupHobbies',
   sports: 'statusGroupSports',
-  lifestyle: 'statusGroupLifestyle',
-  life: 'statusGroupLife',
 };
 
 const getInitialSurfaceTheme = (): string => {
@@ -1030,7 +973,10 @@ export default function App() {
   const [statusLimitHit, setStatusLimitHit] = useState<boolean>(false);
   const [statusQuery, setStatusQuery] = useState<string>('');
   const [openStatusGroups, setOpenStatusGroups] = useState<UserStatusGroup[]>([]);
-  const [profileSaving, setProfileSaving] = useState<boolean>(false);
+  const profileSave = useSaveState();
+  // Save failures are shown next to the save button (the form is long, so
+  // the status box at its top is usually scrolled out of view).
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
   const [profileStatus, setProfileStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [regionStatus, setRegionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -1038,6 +984,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
   const [passwordSaving, setPasswordSaving] = useState<boolean>(false);
+  const passwordSave = useSaveState();
   const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [clearLogsConfirmText, setClearLogsConfirmText] = useState<string>('');
@@ -1076,7 +1023,7 @@ export default function App() {
         setProfileAvatarImage(user.avatar_image || '');
         const statuses = sanitizeUserStatuses(user.user_statuses);
         setProfileStatuses(statuses);
-        // ~100 options: open only the groups that already hold a pick.
+        // ~200 options: open only the groups that already hold a pick.
         setOpenStatusGroups(
           USER_STATUS_GROUPS.filter((g) => statuses.some((id) => getUserStatusOption(id)?.group === g))
         );
@@ -1084,6 +1031,7 @@ export default function App() {
       setStatusLimitHit(false);
       setStatusQuery('');
       setProfileStatus(null);
+      setProfileSaveError(null);
       setRegionStatus(null);
       setPasswordStatus(null);
       setDataStatus(null);
@@ -1625,24 +1573,28 @@ export default function App() {
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    setProfileSaving(true);
+    profileSave.begin();
     setProfileStatus(null);
+    setProfileSaveError(null);
     try {
+      const username = profileUsername.trim();
+      const email = profileEmail.trim();
       const updated = await api.auth.updateProfile({
-        username: profileUsername.trim(),
-        email: profileEmail.trim(),
+        // Only send identity fields that changed, so unrelated edits never
+        // re-run the server's uniqueness checks.
+        ...(username !== user.username ? { username } : {}),
+        ...(email.toLowerCase() !== (user.email || '').toLowerCase() ? { email } : {}),
         avatar_color: profileAvatarColor,
         avatar_preset: profileAvatarPreset,
         avatar_image: profileAvatarImage,
         user_statuses: profileStatuses,
       });
       setUser(updated);
-      setProfileStatus({ type: 'success', text: t.msgProfileUpdated });
+      profileSave.succeed();
     } catch (err: unknown) {
       const error = err as Error;
-      setProfileStatus({ type: 'error', text: error.message || t.errProfileUpdate });
-    } finally {
-      setProfileSaving(false);
+      profileSave.fail();
+      setProfileSaveError(error.message || t.errProfileUpdate);
     }
   };
 
@@ -1716,18 +1668,18 @@ export default function App() {
       setPasswordStatus({ type: 'error', text: t.errNewPasswordMismatch });
       return;
     }
-    setPasswordSaving(true);
+    passwordSave.begin();
     try {
       await api.auth.changePassword(currentPassword, newPassword);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
+      passwordSave.succeed();
       setPasswordStatus({ type: 'success', text: t.msgPasswordUpdated });
     } catch (err: unknown) {
       const error = err as Error;
+      passwordSave.fail();
       setPasswordStatus({ type: 'error', text: error.message || t.errChangePassword });
-    } finally {
-      setPasswordSaving(false);
     }
   };
 
@@ -1913,7 +1865,7 @@ export default function App() {
 
   const handleQuickLogFromPalette = useCallback(
     async (categoryId: string | number, minutes: number) => {
-      if (!user || minutes <= 0) return;
+      if (!user || minutes <= 0) return false;
       const todayDate = getRecentDateString(0, timeZone);
       try {
         const created = await api.logs.create({
@@ -1940,9 +1892,11 @@ export default function App() {
 
         setLogs((prev) => [newLogItem, ...prev]);
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
+        return true;
       } catch (err: unknown) {
         const error = err as Error;
         pushToast('error', t.toastQuickLogFailed, error.message || t.errSaveLog);
+        return false;
       }
     },
     [user, categories, announceLogCommitted, pushToast, t, timeZone]
@@ -2442,6 +2396,34 @@ export default function App() {
     () => weeklyBreakdown.filter((c) => !hiddenCategories.includes(c)),
     [weeklyBreakdown, hiddenCategories]
   );
+
+  // Same pattern as the log stream: on desktop the registry keeps its
+  // collapsed (CATEGORY_PREVIEW_COUNT-row) height and SHOW MORE scrolls
+  // inside it instead of stretching the column. Measured while collapsed,
+  // since rows change height (inline editor, hints).
+  const categoryListRef = React.useRef<HTMLDivElement>(null);
+  const [categoryListCap, setCategoryListCap] = useState<number | null>(null);
+  useEffect(() => {
+    const el = categoryListRef.current;
+    if (!el || showAllCategories || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setCategoryListCap(el.scrollHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showAllCategories, weeklyBreakdown.length, dataLoading]);
+
+  // Expanding brings the first newly shown row into view; collapsing
+  // resets the scroll so the next expansion starts from the top.
+  useEffect(() => {
+    const el = categoryListRef.current;
+    if (!el) return;
+    if (!showAllCategories) {
+      el.scrollTop = 0;
+      return;
+    }
+    if (el.scrollHeight <= el.clientHeight) return;
+    const row = el.children[CATEGORY_PREVIEW_COUNT] as HTMLElement | undefined;
+    if (row) el.scrollTo({ top: row.offsetTop - el.offsetTop, behavior: 'smooth' });
+  }, [showAllCategories]);
 
   // 12-Week Aggregation Data (1 Bar = 1 Calendar Week Bucket, ending at weeklyOffset)
   const weeklyAggBuckets = useMemo(() => {
@@ -4082,7 +4064,22 @@ export default function App() {
                     {t.noCategoriesConfigured}
                   </div>
                 ) : (
-                  visibleCategories.map((cat) => {
+                  // -mx-2/px-2 leaves room for the rows' hover bleed once
+                  // the expanded list becomes a scroll box (desktop).
+                  <div
+                    ref={categoryListRef}
+                    className={`space-y-3 -mx-2 px-2 ${
+                      showAllCategories && categoryListCap
+                        ? 'lg:max-h-[var(--category-list-cap)] lg:overflow-y-auto lg:[scrollbar-width:thin]'
+                        : ''
+                    }`}
+                    style={
+                      showAllCategories && categoryListCap
+                        ? ({ '--category-list-cap': `${categoryListCap}px` } as React.CSSProperties)
+                        : undefined
+                    }
+                  >
+                  {visibleCategories.map((cat) => {
                     const isEditing = String(editingCatId) === String(cat.id);
                     return (
                       <div
@@ -4346,7 +4343,8 @@ export default function App() {
                         )}
                       </div>
                     );
-                  })
+                  })}
+                  </div>
                 )}
 
                 {weeklyBreakdown.length > CATEGORY_PREVIEW_COUNT && (
@@ -5700,59 +5698,38 @@ export default function App() {
           7. FOOTER SECTION (Standard Theme Polarity)
       ========================================== */}
       <footer
-        id="contact"
-        className={`relative w-full py-16 sm:py-20 px-6 scroll-mt-6 border-t transition-colors duration-300 ${bgMain} ${borderCol}`}
+        className={`relative w-full py-12 sm:py-14 px-6 border-t transition-colors duration-300 ${bgMain} ${borderCol}`}
       >
-        <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center space-y-10">
-          <div
-            className={`flex flex-col md:flex-row items-center justify-between w-full border-b pb-10 gap-6 ${borderCol}`}
-          >
-            <div>
-              <span
-                className={`text-xs uppercase tracking-widest font-sans block mb-1 font-medium ${textMuted}`}
-              >
-                {t.footerContact}
-              </span>
-              <a
-                href="mailto:mikadorikuto@gmail.com"
-                className="font-serif text-2xl sm:text-3xl hover:underline underline-offset-4 transition-opacity hover:opacity-80"
-              >
-                mikadorikuto@gmail.com
-              </a>
-            </div>
-
-            {/* Social media links */}
-            <div className="flex items-center space-x-3">
-              {socialLinks.map((link) => {
-                const Icon = link.icon;
-                return (
-                  <a
-                    key={link.name}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={link.name}
-                    className={`p-3 rounded-full transition-all transform hover:scale-110 border ${borderCol} ${bgCard} hover:border-emerald-500/60`}
-                  >
-                    <Icon className="w-5 h-5" />
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Brand sign-off: same TYPBOX .me lockup as the header, then the
-              copyright / mark notice. */}
+        <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
+          {/* Brand sign-off: same TYPBOX .me lockup as the header, the
+              author credit, then the copyright / mark notice. The notice is
+              split where it reads naturally so each half stays on one line
+              on desktop and phones only wrap inside a half. */}
           <div className="w-full flex flex-col items-center gap-3 font-mono text-center">
             <div className="flex items-center space-x-2">
               <TypboxLogo className="w-4 h-4" isDark={isDark} />
               <span className="text-base font-bold tracking-tighter">TYPBOX</span>
               <span className={`text-[10px] px-1 py-0.5 border ${borderCol} ${textMuted}`}>.me</span>
             </div>
-            <div className={`text-[10px] sm:text-[11px] tracking-[0.2em] uppercase ${textMuted}`}>{t.copyrightLine}</div>
-            <div className={`flex items-center gap-2 text-[9px] sm:text-[10px] tracking-widest uppercase opacity-75 max-w-xl leading-relaxed ${textMuted}`}>
-              <span className="w-1 h-1 bg-emerald-500 shrink-0" aria-hidden="true" />
-              <span>{t.copyrightRights}</span>
+            <a
+              href="https://rikutomikado.tech"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`group inline-flex items-center gap-1 text-[11px] tracking-widest uppercase ${textMuted} hover:text-emerald-400 transition-colors`}
+            >
+              {t.builtBy}
+              <ArrowUpRight className="w-3 h-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </a>
+            <div className="flex flex-col items-center gap-1.5 mt-1">
+              <div className={`text-[10px] sm:text-[11px] tracking-[0.2em] uppercase sm:whitespace-nowrap ${textMuted}`}>
+                {t.copyrightLine}
+              </div>
+              <div
+                className={`flex items-center gap-2 text-[9px] sm:text-[10px] tracking-widest uppercase opacity-75 leading-relaxed sm:whitespace-nowrap ${textMuted}`}
+              >
+                <span className="w-1 h-1 bg-emerald-500 shrink-0" aria-hidden="true" />
+                <span>{t.copyrightRights}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -6425,7 +6402,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* User Status / Market (multi-select, max 5) */}
+                {/* User Status / Learner Profile (multi-select, max MAX_USER_STATUSES) */}
                 <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
@@ -6577,13 +6554,20 @@ export default function App() {
                   </p>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={profileSaving}
-                  className="w-full py-2.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {profileSaving ? t.savingProfile : t.saveProfile}
-                </button>
+                {profileSaveError && (
+                  <div className="p-3 border flex items-center space-x-2 border-rose-500/40 bg-rose-500/10 text-rose-300" role="alert">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{profileSaveError}</span>
+                  </div>
+                )}
+                <SaveButton
+                  state={profileSave.state}
+                  isDark={isDark}
+                  idleLabel={t.saveProfile}
+                  savingLabel={t.savingProfile}
+                  savedLabel={t.profileSaved}
+                  icon={<Save className="w-4 h-4" />}
+                />
               </form>
                 </div>
             )}
@@ -6657,13 +6641,15 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button
-                    type="submit"
+                  <SaveButton
+                    state={passwordSave.state}
+                    isDark={isDark}
+                    idleLabel={t.updatePassword}
+                    savingLabel={t.updatingPassword}
+                    savedLabel={t.passwordUpdated}
+                    icon={<KeyRound className="w-4 h-4" />}
                     disabled={passwordSaving}
-                    className="w-full py-2.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider hover:bg-emerald-400 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {passwordSaving ? t.updatingPassword : t.updatePassword}
-                  </button>
+                  />
                 </form>
 
                 {/* Email Recovery Dispatch */}
@@ -6677,7 +6663,7 @@ export default function App() {
                   </p>
                   <button
                     type="button"
-                    disabled={passwordSaving}
+                    disabled={passwordSaving || passwordSave.state === 'saving'}
                     onClick={handleSendResetEmailFromSettings}
                     className={`px-3.5 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-semibold cursor-pointer`}
                   >
@@ -6896,9 +6882,9 @@ export default function App() {
         monthlyHours={user ? stats.monthlyHours : '0.0'}
         currentStreak={user ? streakStats.currentStreak : 0}
         longestStreak={user ? streakStats.longestStreak : 0}
-        activeDaysCount={user ? new Set(logs.map((l) => l.date)).size : 0}
         categories={user ? categories : []}
         logs={user ? logs : []}
+        surfacePair={activeSurfacePair}
         isDark={isDark}
         borderCol={borderCol}
         bgCard={bgCard}

@@ -1,7 +1,12 @@
 import re
 import urllib.parse
 from collections import Counter
-from datetime import date as date_cls, datetime as datetime_cls, timedelta, timezone as dt_timezone
+from datetime import (
+    date as date_cls,
+    datetime as datetime_cls,
+    timedelta,
+    timezone as dt_timezone,
+)
 
 import requests
 from django.conf import settings
@@ -43,16 +48,17 @@ User = get_user_model()
 # Authentication & Account Management Views
 # ==========================================
 
+
 class RegisterThrottle(ScopedRateThrottle):
-    scope = 'register'
+    scope = "register"
 
 
 class LoginThrottle(ScopedRateThrottle):
-    scope = 'login'
+    scope = "login"
 
 
 class PasswordResetThrottle(ScopedRateThrottle):
-    scope = 'password_reset'
+    scope = "password_reset"
 
 
 class RegisterView(generics.CreateAPIView):
@@ -61,16 +67,17 @@ class RegisterView(generics.CreateAPIView):
     Register a new user and initialize default categories.
     Closed (403) unless settings.ALLOW_REGISTRATION is enabled.
     """
+
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = (permissions.AllowAny,)
     throttle_classes = (RegisterThrottle,)
-    throttle_scope = 'register'
+    throttle_scope = "register"
 
     def create(self, request, *args, **kwargs):
         if not settings.ALLOW_REGISTRATION:
             return Response(
-                {'detail': 'Registration is currently closed.'},
+                {"detail": "Registration is currently closed."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return super().create(request, *args, **kwargs)
@@ -83,8 +90,9 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
     limit — the default anon throttle (120/min) is far too loose for a
     credential-stuffing / brute-force surface.
     """
+
     throttle_classes = (LoginThrottle,)
-    throttle_scope = 'login'
+    throttle_scope = "login"
 
 
 class CurrentUserView(APIView):
@@ -93,6 +101,7 @@ class CurrentUserView(APIView):
     PATCH /api/auth/me/  - Update username, email, and avatar settings
     DELETE /api/auth/me/ - Permanently delete account and all data
     """
+
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
@@ -101,10 +110,7 @@ class CurrentUserView(APIView):
 
     def patch(self, request):
         serializer = UserSerializer(
-            request.user,
-            data=request.data,
-            partial=True,
-            context={'request': request}
+            request.user, data=request.data, partial=True, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -121,8 +127,8 @@ class CurrentUserView(APIView):
         user = request.user
         user.delete()
         return Response(
-            {'detail': 'Account successfully deleted.'},
-            status=status.HTTP_204_NO_CONTENT
+            {"detail": "Account successfully deleted."},
+            status=status.HTTP_204_NO_CONTENT,
         )
 
 
@@ -131,15 +137,20 @@ class ChangePasswordView(APIView):
     POST /api/auth/password-change/
     Allow an authenticated user to change their password using current_password & new_password.
     """
+
     permission_classes = (permissions.IsAuthenticated,)
 
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         user = request.user
-        user.set_password(serializer.validated_data['new_password'])
-        user.save(update_fields=['password'])
-        return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return Response(
+            {"detail": "Password updated successfully."}, status=status.HTTP_200_OK
+        )
 
 
 class PasswordResetRequestView(APIView):
@@ -147,14 +158,15 @@ class PasswordResetRequestView(APIView):
     POST /api/auth/password-reset/
     Generate a one-time password reset token and send a reset link to the user's email.
     """
+
     permission_classes = (permissions.AllowAny,)
     throttle_classes = (PasswordResetThrottle,)
-    throttle_scope = 'password_reset'
+    throttle_scope = "password_reset"
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data['email']
+        email = serializer.validated_data["email"]
 
         user = User.objects.filter(email__iexact=email, is_active=True).first()
         debug_reset_url = None
@@ -169,7 +181,7 @@ class PasswordResetRequestView(APIView):
             # TYPBOX's own reset email at a phishing site.
             reset_url = f"{settings.FRONTEND_URL}/?reset_uid={uid}&reset_token={token}"
 
-            subject = '[TYPBOX] Password Reset Request / パスワード再設定のご案内'
+            subject = "[TYPBOX] Password Reset Request / パスワード再設定のご案内"
             message = (
                 f"Hello {user.username},\n\n"
                 f"A password reset was requested for your TYPBOX account ({user.email}).\n"
@@ -194,21 +206,25 @@ class PasswordResetRequestView(APIView):
                     fail_silently=False,
                 )
             except Exception as exc:
-                print(f"Warning: Failed to send password reset email to {user.email}: {exc}")
+                print(
+                    f"Warning: Failed to send password reset email to {user.email}: {exc}"
+                )
                 if not settings.DEBUG:
                     return Response(
-                        {'detail': 'Unable to dispatch email at this time. Please check server SMTP configuration.'},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE
+                        {
+                            "detail": "Unable to dispatch email at this time. Please check server SMTP configuration."
+                        },
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
                     )
 
-            if settings.DEBUG and not getattr(settings, 'EMAIL_HOST_USER', ''):
+            if settings.DEBUG and not getattr(settings, "EMAIL_HOST_USER", ""):
                 debug_reset_url = reset_url
 
         response_payload = {
-            'detail': 'If an account with that email exists, a password reset link has been sent.'
+            "detail": "If an account with that email exists, a password reset link has been sent."
         }
         if debug_reset_url:
-            response_payload['debug_reset_url'] = debug_reset_url
+            response_payload["debug_reset_url"] = debug_reset_url
 
         return Response(response_payload, status=status.HTTP_200_OK)
 
@@ -218,25 +234,31 @@ class PasswordResetConfirmView(APIView):
     POST /api/auth/password-reset/confirm/
     Verify uid and token from the password reset email and set the user's new password.
     """
+
     permission_classes = (permissions.AllowAny,)
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        user.set_password(serializer.validated_data['new_password'])
-        user.save(update_fields=['password'])
-        return Response({'detail': 'Password has been reset successfully. You may now sign in.'}, status=status.HTTP_200_OK)
+        user = serializer.validated_data["user"]
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return Response(
+            {"detail": "Password has been reset successfully. You may now sign in."},
+            status=status.HTTP_200_OK,
+        )
 
 
 # ==========================================
 # Category ViewSet
 # ==========================================
 
+
 class CategoryViewSet(viewsets.ModelViewSet):
     """
     CRUD API for study categories of the authenticated user.
     """
+
     serializer_class = CategorySerializer
     permission_classes = (permissions.IsAuthenticated,)
 
@@ -251,18 +273,23 @@ class CategoryViewSet(viewsets.ModelViewSet):
         user_categories_count = Category.objects.filter(user=request.user).count()
         if user_categories_count <= 1:
             return Response(
-                {'detail': 'At least one category is required for study tracking.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "At least one category is required for study tracking."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         # DONE categories can't be logged against, so the last in-progress
         # one must stay too (same rule as marking it DONE).
         instance = self.get_object()
-        if instance.completed_at is None and not Category.objects.filter(
-            user=request.user, completed_at__isnull=True
-        ).exclude(pk=instance.pk).exists():
+        if (
+            instance.completed_at is None
+            and not Category.objects.filter(
+                user=request.user, completed_at__isnull=True
+            )
+            .exclude(pk=instance.pk)
+            .exists()
+        ):
             return Response(
-                {'detail': 'At least one in-progress category is required.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "At least one in-progress category is required."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         return super().destroy(request, *args, **kwargs)
 
@@ -271,9 +298,14 @@ class CategoryViewSet(viewsets.ModelViewSet):
 # Study Log ViewSet
 # ==========================================
 
+
 def _log_import_key(category_code, log_date, duration_minutes, created_at):
     """Identity of a log for duplicate detection on backup import."""
-    created = created_at.astimezone(dt_timezone.utc).replace(microsecond=0).isoformat() if created_at else ''
+    created = (
+        created_at.astimezone(dt_timezone.utc).replace(microsecond=0).isoformat()
+        if created_at
+        else ""
+    )
     return (category_code.upper(), log_date, duration_minutes, created)
 
 
@@ -281,31 +313,34 @@ class StudyLogViewSet(viewsets.ModelViewSet):
     """
     CRUD API for study logs of the authenticated user.
     """
+
     serializer_class = StudyLogSerializer
     permission_classes = (permissions.IsAuthenticated,)
 
     def get_queryset(self):
-        queryset = StudyLog.objects.filter(user=self.request.user).select_related('category')
-        category_id = self.request.query_params.get('category')
+        queryset = StudyLog.objects.filter(user=self.request.user).select_related(
+            "category"
+        )
+        category_id = self.request.query_params.get("category")
         if category_id:
             queryset = queryset.filter(category_id=category_id)
 
-        is_public = self.request.query_params.get('is_public')
+        is_public = self.request.query_params.get("is_public")
         if is_public is not None:
-            is_public_bool = is_public.lower() in ('true', '1')
+            is_public_bool = is_public.lower() in ("true", "1")
             queryset = queryset.filter(is_public_to_hub=is_public_bool)
 
         return queryset
 
     def perform_create(self, serializer):
         extra = {}
-        if 'date' not in serializer.validated_data:
+        if "date" not in serializer.validated_data:
             # No explicit study date: use "today" in the user's own zone
             # rather than the server's UTC date.
-            extra['date'] = user_localdate(self.request.user)
+            extra["date"] = user_localdate(self.request.user)
         serializer.save(user=self.request.user, **extra)
 
-    @action(detail=False, methods=['delete'], url_path='clear-all')
+    @action(detail=False, methods=["delete"], url_path="clear-all")
     def clear_all(self, request):
         """
         DELETE /api/logs/clear-all/
@@ -320,11 +355,11 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             deleted_count, _ = StudyLog.objects.filter(user=request.user).delete()
             deleted_cats, _ = Category.objects.filter(user=request.user).delete()
         return Response(
-            {'deleted': deleted_count, 'deleted_categories': deleted_cats},
+            {"deleted": deleted_count, "deleted_categories": deleted_cats},
             status=status.HTTP_200_OK,
         )
 
-    @action(detail=False, methods=['post'], url_path='import-backup')
+    @action(detail=False, methods=["post"], url_path="import-backup")
     def import_backup(self, request):
         """
         POST /api/logs/import-backup/
@@ -336,49 +371,60 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         category isn't in the account or the backup are kept uncategorized
         rather than credited to some other category.
         """
-        raw_categories = request.data.get('categories', [])
-        raw_logs = request.data.get('logs', [])
+        raw_categories = request.data.get("categories", [])
+        raw_logs = request.data.get("logs", [])
 
         if not isinstance(raw_logs, list):
-            return Response({'detail': 'Invalid backup format: logs must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Invalid backup format: logs must be a list."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         with transaction.atomic():
-            existing_cats = {c.code.upper(): c for c in Category.objects.filter(user=request.user)}
+            existing_cats = {
+                c.code.upper(): c for c in Category.objects.filter(user=request.user)
+            }
             created_cats = 0
 
             if isinstance(raw_categories, list):
                 for item in raw_categories:
                     if not isinstance(item, dict):
                         continue
-                    code = str(item.get('code', '')).strip().upper()[:10]
-                    name = str(item.get('name', '')).strip()[:100]
+                    code = str(item.get("code", "")).strip().upper()[:10]
+                    name = str(item.get("name", "")).strip()[:100]
                     if not code or not name or code in existing_cats:
                         continue
-                    color = str(item.get('color', '#10b981')).strip()[:20] or '#10b981'
+                    color = str(item.get("color", "#10b981")).strip()[:20] or "#10b981"
                     # Backups from before the weekly switch only carry
                     # monthlyTargetHours; the number is taken as-is as the
                     # weekly target (no monthly -> weekly scaling), so a
                     # restore never shrinks the user's targets.
                     target = (
-                        item.get('weeklyTargetHours')
-                        or item.get('weekly_target_hours')
-                        or item.get('monthlyTargetHours')
-                        or item.get('monthly_target_hours')
+                        item.get("weeklyTargetHours")
+                        or item.get("weekly_target_hours")
+                        or item.get("monthlyTargetHours")
+                        or item.get("monthly_target_hours")
                         or 5
                     )
                     try:
                         target_int = max(1, min(168, int(target)))
                     except (ValueError, TypeError):
                         target_int = 5
-                    raw_active = item.get('isActive', item.get('is_active', True))
+                    raw_active = item.get("isActive", item.get("is_active", True))
                     is_active = raw_active if isinstance(raw_active, bool) else True
-                    raw_completed = item.get('completedAt') or item.get('completed_at')
+                    raw_completed = item.get("completedAt") or item.get("completed_at")
                     try:
-                        completed_at = parse_datetime(str(raw_completed)) if raw_completed else None
+                        completed_at = (
+                            parse_datetime(str(raw_completed))
+                            if raw_completed
+                            else None
+                        )
                     except ValueError:
                         completed_at = None
                     if completed_at is not None and timezone.is_naive(completed_at):
-                        completed_at = timezone.make_aware(completed_at, dt_timezone.utc)
+                        completed_at = timezone.make_aware(
+                            completed_at, dt_timezone.utc
+                        )
 
                     new_cat = Category.objects.create(
                         user=request.user,
@@ -400,38 +446,53 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             # Multiset of logs already on the account, so legit repeats inside
             # one backup (two 60m sessions on the same day) still import.
             existing_keys = Counter(
-                _log_import_key(log.category.code if log.category else '', log.date, log.duration_minutes, log.created_at)
-                for log in StudyLog.objects.filter(user=request.user).select_related('category')
+                _log_import_key(
+                    log.category.code if log.category else "",
+                    log.date,
+                    log.duration_minutes,
+                    log.created_at,
+                )
+                for log in StudyLog.objects.filter(user=request.user).select_related(
+                    "category"
+                )
             )
 
             for entry in raw_logs[:5000]:
                 if not isinstance(entry, dict):
                     continue
-                cat_code = str(entry.get('categoryCode') or entry.get('category_code') or '').strip().upper()
+                cat_code = (
+                    str(entry.get("categoryCode") or entry.get("category_code") or "")
+                    .strip()
+                    .upper()
+                )
                 cat_obj = existing_cats.get(cat_code)
 
-                date_str = str(entry.get('date', '')).strip()
+                date_str = str(entry.get("date", "")).strip()
                 try:
                     parsed_date = date_cls.fromisoformat(date_str)
                 except ValueError:
                     parsed_date = fallback_date
 
-                raw_dur = entry.get('durationMinutes') or entry.get('duration_minutes') or 60
+                raw_dur = (
+                    entry.get("durationMinutes") or entry.get("duration_minutes") or 60
+                )
                 try:
                     dur_int = max(1, min(1440, int(raw_dur)))
                 except (ValueError, TypeError):
                     dur_int = 60
 
-                topic_str = ''
+                topic_str = ""
 
                 # Keep the original commit timestamp from the backup (UTC
                 # ISO-8601; naive values are treated as UTC).
-                raw_created = entry.get('createdAt') or entry.get('created_at')
+                raw_created = entry.get("createdAt") or entry.get("created_at")
                 created_dt = parse_datetime(str(raw_created)) if raw_created else None
                 if created_dt is not None and timezone.is_naive(created_dt):
                     created_dt = timezone.make_aware(created_dt, dt_timezone.utc)
 
-                key = _log_import_key(cat_obj.code if cat_obj else '', parsed_date, dur_int, created_dt)
+                key = _log_import_key(
+                    cat_obj.code if cat_obj else "", parsed_date, dur_int, created_dt
+                )
                 if existing_keys[key] > 0:
                     existing_keys[key] -= 1
                     skipped_logs += 1
@@ -460,22 +521,22 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         obj.created_at = original
                         restored.append(obj)
                 if restored:
-                    StudyLog.objects.bulk_update(restored, ['created_at'])
+                    StudyLog.objects.bulk_update(restored, ["created_at"])
 
         return Response(
             {
-                'imported_logs': len(logs_to_create),
-                'skipped_logs': skipped_logs,
-                'created_categories': created_cats,
+                "imported_logs": len(logs_to_create),
+                "skipped_logs": skipped_logs,
+                "created_categories": created_cats,
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_201_CREATED,
         )
-
 
 
 # ==========================================
 # Portfolio / Django Hub Telemetry View
 # ==========================================
+
 
 class HubTelemetryView(APIView):
     """
@@ -483,25 +544,32 @@ class HubTelemetryView(APIView):
     Public aggregate telemetry endpoint matching typbox.me React payload format.
     Accepts optional ?username=<username> query parameter (defaults to first superuser or active user).
     """
+
     permission_classes = (permissions.AllowAny,)
 
     def get(self, request):
-        username = request.query_params.get('username')
+        username = request.query_params.get("username")
         if username:
             user = User.objects.filter(username=username).first()
         elif request.user.is_authenticated:
             user = request.user
         else:
-            user = User.objects.filter(is_superuser=True).first() or User.objects.first()
+            user = (
+                User.objects.filter(is_superuser=True).first() or User.objects.first()
+            )
 
         if not user:
             return Response(
                 {
-                    'source': 'typbox.me',
-                    'timestamp': timezone.now().isoformat(),
-                    'summary': {'total_hours': 0, 'weekly_hours': 0, 'monthly_hours': 0},
-                    'categories': [],
-                    'recent_public_logs': [],
+                    "source": "typbox.me",
+                    "timestamp": timezone.now().isoformat(),
+                    "summary": {
+                        "total_hours": 0,
+                        "weekly_hours": 0,
+                        "monthly_hours": 0,
+                    },
+                    "categories": [],
+                    "recent_public_logs": [],
                 }
             )
 
@@ -514,81 +582,99 @@ class HubTelemetryView(APIView):
         week_end_day = week_start_day + timedelta(days=6)
         first_day_of_month = now.replace(day=1)
 
-        public_logs = StudyLog.objects.filter(user=user, is_public_to_hub=True).select_related('category')
+        public_logs = StudyLog.objects.filter(
+            user=user, is_public_to_hub=True
+        ).select_related("category")
 
         aggregates = public_logs.aggregate(
-            total_min=Coalesce(Sum('duration_minutes'), 0),
-            weekly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=week_start_day, date__lte=week_end_day)), 0),
-            monthly_min=Coalesce(Sum('duration_minutes', filter=Q(date__gte=first_day_of_month)), 0),
+            total_min=Coalesce(Sum("duration_minutes"), 0),
+            weekly_min=Coalesce(
+                Sum(
+                    "duration_minutes",
+                    filter=Q(date__gte=week_start_day, date__lte=week_end_day),
+                ),
+                0,
+            ),
+            monthly_min=Coalesce(
+                Sum("duration_minutes", filter=Q(date__gte=first_day_of_month)), 0
+            ),
         )
-        total_min = aggregates['total_min']
-        weekly_min = aggregates['weekly_min']
-        monthly_min = aggregates['monthly_min']
+        total_min = aggregates["total_min"]
+        weekly_min = aggregates["weekly_min"]
+        monthly_min = aggregates["monthly_min"]
 
         # Category hours for this month and this week in a single annotated query
         categories = Category.objects.filter(user=user).annotate(
             month_min=Coalesce(
                 Sum(
-                    'logs__duration_minutes',
-                    filter=Q(logs__is_public_to_hub=True, logs__date__gte=first_day_of_month)
+                    "logs__duration_minutes",
+                    filter=Q(
+                        logs__is_public_to_hub=True, logs__date__gte=first_day_of_month
+                    ),
                 ),
-                0
+                0,
             ),
             week_min=Coalesce(
                 Sum(
-                    'logs__duration_minutes',
+                    "logs__duration_minutes",
                     filter=Q(
                         logs__is_public_to_hub=True,
                         logs__date__gte=week_start_day,
                         logs__date__lte=week_end_day,
-                    )
+                    ),
                 ),
-                0
+                0,
             ),
         )
         cat_data = []
         for cat in categories:
             # Parked and DONE categories keep their hours but have no target.
             has_target = cat.is_active and cat.completed_at is None
-            cat_data.append({
-                'code': cat.code,
-                'name': cat.name,
-                'is_active': cat.is_active,
-                'is_completed': cat.completed_at is not None,
-                'monthly_hours': round(cat.month_min / 60, 1),
-                'weekly_hours': round(cat.week_min / 60, 1),
-                'weekly_target_hours': cat.weekly_target_hours if has_target else None,
-                # Kept for existing consumers; now the weekly target.
-                'target_hours': cat.weekly_target_hours if has_target else None,
-            })
+            cat_data.append(
+                {
+                    "code": cat.code,
+                    "name": cat.name,
+                    "is_active": cat.is_active,
+                    "is_completed": cat.completed_at is not None,
+                    "monthly_hours": round(cat.month_min / 60, 1),
+                    "weekly_hours": round(cat.week_min / 60, 1),
+                    "weekly_target_hours": (
+                        cat.weekly_target_hours if has_target else None
+                    ),
+                    # Kept for existing consumers; now the weekly target.
+                    "target_hours": cat.weekly_target_hours if has_target else None,
+                }
+            )
 
-        recent_public = public_logs.order_by('-date', '-created_at')[:5]
+        recent_public = public_logs.order_by("-date", "-created_at")[:5]
         recent_logs_data = [
             {
-                'id': log.id,
-                'date': log.date.isoformat(),
-                'category_code': log.category.code if log.category else 'MISC',
-                'duration_minutes': log.duration_minutes,
-                'topic': log.topic,
-                'created_at': log.created_at.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z'),
+                "id": log.id,
+                "date": log.date.isoformat(),
+                "category_code": log.category.code if log.category else "MISC",
+                "duration_minutes": log.duration_minutes,
+                "topic": log.topic,
+                "created_at": log.created_at.astimezone(dt_timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
             }
             for log in recent_public
         ]
 
         payload = {
-            'source': 'typbox.me',
-            'timestamp': timezone.now().isoformat(),
-            'user': user.username,
-            'timezone': user_zone.key if user_zone else 'UTC',
-            'week_start': week_start,
-            'week_start_date': week_start_day.isoformat(),
-            'summary': {
-                'total_hours': round(total_min / 60, 1),
-                'weekly_hours': round(weekly_min / 60, 1),
-                'monthly_hours': round(monthly_min / 60, 1),
+            "source": "typbox.me",
+            "timestamp": timezone.now().isoformat(),
+            "user": user.username,
+            "timezone": user_zone.key if user_zone else "UTC",
+            "week_start": week_start,
+            "week_start_date": week_start_day.isoformat(),
+            "summary": {
+                "total_hours": round(total_min / 60, 1),
+                "weekly_hours": round(weekly_min / 60, 1),
+                "monthly_hours": round(monthly_min / 60, 1),
             },
-            'categories': cat_data,
-            'recent_public_logs': recent_logs_data,
+            "categories": cat_data,
+            "recent_public_logs": recent_logs_data,
         }
         return Response(payload)
 
@@ -600,6 +686,7 @@ class PortfolioFeedView(generics.ListAPIView):
     settings.PORTFOLIO_USERNAME's logs from the last PORTFOLIO_FEED_DAYS days
     with is_public_to_portfolio=True (the default; opt out from Django Admin).
     """
+
     serializer_class = PortfolioFeedLogSerializer
     permission_classes = (permissions.AllowAny,)
     # No auth: a stale/invalid Bearer token must not turn this into a 401.
@@ -611,8 +698,10 @@ class PortfolioFeedView(generics.ListAPIView):
             return StudyLog.objects.none()
         since = user_localdate(user) - timedelta(days=settings.PORTFOLIO_FEED_DAYS - 1)
         return StudyLog.objects.filter(
-            user=user, is_public_to_portfolio=True, date__gte=since,
-        ).select_related('category')
+            user=user,
+            is_public_to_portfolio=True,
+            date__gte=since,
+        ).select_related("category")
 
 
 # ==========================================
@@ -639,10 +728,12 @@ PLANETARY_STALE_TTL_SECONDS = 24 * 60 * 60
 
 # USGS regenerates its summary feeds every minute; M2.5+ over a week is
 # a few hundred events worldwide.
-USGS_WEEK_FEED_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson'
+USGS_WEEK_FEED_URL = (
+    "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson"
+)
 USGS_CACHE_TTL_SECONDS = 5 * 60
 
-DONKI_BASE_URL = 'https://api.nasa.gov/DONKI/'
+DONKI_BASE_URL = "https://api.nasa.gov/DONKI/"
 # DEMO_KEY allows only ~50 requests/day per IP and each refresh costs three
 # (FLR + CME + GST), so it refreshes far less often than a real key does.
 DONKI_CACHE_TTL_SECONDS = 30 * 60
@@ -651,18 +742,20 @@ DONKI_DEMO_CACHE_TTL_SECONDS = 2 * 60 * 60
 
 def _clean_text(value):
     """Collapses runs of whitespace (feeds line-wrap long fields)."""
-    return re.sub(r'\s+', ' ', value or '').strip()
+    return re.sub(r"\s+", " ", value or "").strip()
 
 
 def _is_https_url_on(url, domain):
     """True for an https URL whose host is `domain` or one of its subdomains."""
-    parsed = urllib.parse.urlparse(url or '')
-    hostname = parsed.hostname or ''
-    return parsed.scheme == 'https' and (hostname == domain or hostname.endswith(f'.{domain}'))
+    parsed = urllib.parse.urlparse(url or "")
+    hostname = parsed.hostname or ""
+    return parsed.scheme == "https" and (
+        hostname == domain or hostname.endswith(f".{domain}")
+    )
 
 
 def _iso_utc(dt):
-    return dt.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
+    return dt.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _parse_donki_time(value):
@@ -682,114 +775,141 @@ def _parse_donki_time(value):
 
 def _parse_usgs_feed(geojson):
     events = []
-    for feature in geojson.get('features') or []:
-        props = feature.get('properties') or {}
-        mag = props.get('mag')
-        time_ms = props.get('time')
-        if props.get('type') != 'earthquake' or not isinstance(mag, (int, float)) or not isinstance(time_ms, (int, float)):
+    for feature in geojson.get("features") or []:
+        props = feature.get("properties") or {}
+        mag = props.get("mag")
+        time_ms = props.get("time")
+        if (
+            props.get("type") != "earthquake"
+            or not isinstance(mag, (int, float))
+            or not isinstance(time_ms, (int, float))
+        ):
             continue
-        url = props.get('url')
-        events.append({
-            'id': feature.get('id') or props.get('code') or '',
-            'time': _iso_utc(datetime_cls.fromtimestamp(time_ms / 1000, tz=dt_timezone.utc)),
-            'mag': round(float(mag), 1),
-            'place': _clean_text(props.get('place')) or 'Unknown location',
-            'tsunami': bool(props.get('tsunami')),
-            'url': url if _is_https_url_on(url, 'usgs.gov') else None,
-        })
-    events.sort(key=lambda e: e['time'], reverse=True)
+        url = props.get("url")
+        events.append(
+            {
+                "id": feature.get("id") or props.get("code") or "",
+                "time": _iso_utc(
+                    datetime_cls.fromtimestamp(time_ms / 1000, tz=dt_timezone.utc)
+                ),
+                "mag": round(float(mag), 1),
+                "place": _clean_text(props.get("place")) or "Unknown location",
+                "tsunami": bool(props.get("tsunami")),
+                "url": url if _is_https_url_on(url, "usgs.gov") else None,
+            }
+        )
+    events.sort(key=lambda e: e["time"], reverse=True)
     return events
 
 
 def _parse_donki_flares(items):
     flares = []
     for item in items:
-        class_type = (item.get('classType') or '').strip().upper()
-        peak = _parse_donki_time(item.get('peakTime')) or _parse_donki_time(item.get('beginTime'))
-        if not re.fullmatch(r'[ABCMX]\d+(\.\d+)?', class_type) or not peak:
+        class_type = (item.get("classType") or "").strip().upper()
+        peak = _parse_donki_time(item.get("peakTime")) or _parse_donki_time(
+            item.get("beginTime")
+        )
+        if not re.fullmatch(r"[ABCMX]\d+(\.\d+)?", class_type) or not peak:
             continue
-        link = item.get('link')
-        flares.append({
-            'id': item.get('flrID') or '',
-            'time': peak,
-            'classType': class_type,
-            'region': item.get('activeRegionNum'),
-            'url': link if _is_https_url_on(link, 'nasa.gov') else None,
-        })
-    flares.sort(key=lambda f: f['time'], reverse=True)
+        link = item.get("link")
+        flares.append(
+            {
+                "id": item.get("flrID") or "",
+                "time": peak,
+                "classType": class_type,
+                "region": item.get("activeRegionNum"),
+                "url": link if _is_https_url_on(link, "nasa.gov") else None,
+            }
+        )
+    flares.sort(key=lambda f: f["time"], reverse=True)
     return flares
 
 
 def _parse_donki_cmes(items):
     cmes = []
     for item in items:
-        start = _parse_donki_time(item.get('startTime'))
+        start = _parse_donki_time(item.get("startTime"))
         if not start:
             continue
-        analyses = item.get('cmeAnalyses') or []
-        analysis = next((a for a in analyses if a.get('isMostAccurate')), analyses[0] if analyses else {})
+        analyses = item.get("cmeAnalyses") or []
+        analysis = next(
+            (a for a in analyses if a.get("isMostAccurate")),
+            analyses[0] if analyses else {},
+        )
         # WSA-Enlil runs only set estimatedShockArrivalTime when the CME is
         # modelled to reach Earth; the earliest of them is the headline ETA.
         arrivals = []
         glancing = False
-        for run in analysis.get('enlilList') or []:
-            arrival = _parse_donki_time(run.get('estimatedShockArrivalTime'))
+        for run in analysis.get("enlilList") or []:
+            arrival = _parse_donki_time(run.get("estimatedShockArrivalTime"))
             if arrival:
                 arrivals.append(arrival)
-                glancing = glancing or bool(run.get('isEarthGB'))
-        speed = analysis.get('speed')
-        link = item.get('link')
-        cmes.append({
-            'id': item.get('activityID') or '',
-            'time': start,
-            'speed': round(speed) if isinstance(speed, (int, float)) else None,
-            'earthArrival': min(arrivals) if arrivals else None,
-            'glancing': glancing,
-            'url': link if _is_https_url_on(link, 'nasa.gov') else None,
-        })
-    cmes.sort(key=lambda c: c['time'], reverse=True)
+                glancing = glancing or bool(run.get("isEarthGB"))
+        speed = analysis.get("speed")
+        link = item.get("link")
+        cmes.append(
+            {
+                "id": item.get("activityID") or "",
+                "time": start,
+                "speed": round(speed) if isinstance(speed, (int, float)) else None,
+                "earthArrival": min(arrivals) if arrivals else None,
+                "glancing": glancing,
+                "url": link if _is_https_url_on(link, "nasa.gov") else None,
+            }
+        )
+    cmes.sort(key=lambda c: c["time"], reverse=True)
     return cmes
 
 
 def _parse_donki_storms(items):
     storms = []
     for item in items:
-        start = _parse_donki_time(item.get('startTime'))
-        kps = [k.get('kpIndex') for k in item.get('allKpIndex') or [] if isinstance(k.get('kpIndex'), (int, float))]
+        start = _parse_donki_time(item.get("startTime"))
+        kps = [
+            k.get("kpIndex")
+            for k in item.get("allKpIndex") or []
+            if isinstance(k.get("kpIndex"), (int, float))
+        ]
         if not start or not kps:
             continue
-        link = item.get('link')
-        storms.append({
-            'id': item.get('gstID') or '',
-            'time': start,
-            'maxKp': round(max(kps), 2),
-            'url': link if _is_https_url_on(link, 'nasa.gov') else None,
-        })
-    storms.sort(key=lambda s: s['time'], reverse=True)
+        link = item.get("link")
+        storms.append(
+            {
+                "id": item.get("gstID") or "",
+                "time": start,
+                "maxKp": round(max(kps), 2),
+                "url": link if _is_https_url_on(link, "nasa.gov") else None,
+            }
+        )
+    storms.sort(key=lambda s: s["time"], reverse=True)
     return storms
 
 
 def _fetch_usgs():
     upstream = requests.get(
         USGS_WEEK_FEED_URL,
-        headers={'User-Agent': 'TypboxPlanetaryPanel/1.0 (+https://typbox.me)'},
+        headers={"User-Agent": "TypboxPlanetaryPanel/1.0 (+https://typbox.me)"},
         timeout=PLANETARY_REQUEST_TIMEOUT_SECONDS,
     )
     upstream.raise_for_status()
-    return {'events': _parse_usgs_feed(upstream.json())}
+    return {"events": _parse_usgs_feed(upstream.json())}
 
 
 def _fetch_donki():
     api_key = settings.NASA_API_KEY
     end = timezone.now().date()
     params = {
-        'startDate': (end - timedelta(days=PLANETARY_WINDOW_DAYS)).isoformat(),
-        'endDate': end.isoformat(),
-        'api_key': api_key,
+        "startDate": (end - timedelta(days=PLANETARY_WINDOW_DAYS)).isoformat(),
+        "endDate": end.isoformat(),
+        "api_key": api_key,
     }
 
     def get(endpoint):
-        upstream = requests.get(f'{DONKI_BASE_URL}{endpoint}', params=params, timeout=PLANETARY_REQUEST_TIMEOUT_SECONDS)
+        upstream = requests.get(
+            f"{DONKI_BASE_URL}{endpoint}",
+            params=params,
+            timeout=PLANETARY_REQUEST_TIMEOUT_SECONDS,
+        )
         upstream.raise_for_status()
         # DONKI answers an empty range with an empty body rather than [].
         if not upstream.content.strip():
@@ -798,25 +918,29 @@ def _fetch_donki():
         return data if isinstance(data, list) else []
 
     return {
-        'flares': _parse_donki_flares(get('FLR')),
-        'cmes': _parse_donki_cmes(get('CME')),
-        'storms': _parse_donki_storms(get('GST')),
+        "flares": _parse_donki_flares(get("FLR")),
+        "cmes": _parse_donki_cmes(get("CME")),
+        "storms": _parse_donki_storms(get("GST")),
     }
 
 
 def _cached_source(name, ttl, fetcher, empty):
-    cache_key = f'planetary_{name}'
+    cache_key = f"planetary_{name}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
     try:
-        result = {'status': 'ok', **fetcher()}
-        cache.set(f'{cache_key}_stale', result, PLANETARY_STALE_TTL_SECONDS)
+        result = {"status": "ok", **fetcher()}
+        cache.set(f"{cache_key}_stale", result, PLANETARY_STALE_TTL_SECONDS)
         cache.set(cache_key, result, ttl)
     except (requests.RequestException, ValueError, TypeError, AttributeError):
-        stale = cache.get(f'{cache_key}_stale')
-        result = {**stale, 'status': 'stale'} if stale is not None else {'status': 'unavailable', **empty}
+        stale = cache.get(f"{cache_key}_stale")
+        result = (
+            {**stale, "status": "stale"}
+            if stale is not None
+            else {"status": "unavailable", **empty}
+        )
         cache.set(cache_key, result, PLANETARY_RETRY_SECONDS)
     return result
 
@@ -828,14 +952,28 @@ class PlanetarySignalView(APIView):
     PLANETARY_WINDOW_DAYS of M2.5+ earthquakes (USGS) plus solar flares,
     coronal mass ejections and geomagnetic storms (NASA DONKI).
     """
+
     permission_classes = (permissions.AllowAny,)
     authentication_classes = ()
 
     def get(self, request):
-        donki_ttl = DONKI_DEMO_CACHE_TTL_SECONDS if settings.NASA_API_KEY == 'DEMO_KEY' else DONKI_CACHE_TTL_SECONDS
-        return Response({
-            'generatedAt': _iso_utc(timezone.now()),
-            'windowDays': PLANETARY_WINDOW_DAYS,
-            'seismic': _cached_source('usgs', USGS_CACHE_TTL_SECONDS, _fetch_usgs, {'events': []}),
-            'solar': _cached_source('donki', donki_ttl, _fetch_donki, {'flares': [], 'cmes': [], 'storms': []}),
-        })
+        donki_ttl = (
+            DONKI_DEMO_CACHE_TTL_SECONDS
+            if settings.NASA_API_KEY == "DEMO_KEY"
+            else DONKI_CACHE_TTL_SECONDS
+        )
+        return Response(
+            {
+                "generatedAt": _iso_utc(timezone.now()),
+                "windowDays": PLANETARY_WINDOW_DAYS,
+                "seismic": _cached_source(
+                    "usgs", USGS_CACHE_TTL_SECONDS, _fetch_usgs, {"events": []}
+                ),
+                "solar": _cached_source(
+                    "donki",
+                    donki_ttl,
+                    _fetch_donki,
+                    {"flares": [], "cmes": [], "storms": []},
+                ),
+            }
+        )

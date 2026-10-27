@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import type { Category, StudyLog } from './App';
 import { useI18n, tf } from './i18n';
-import { drawStatusCard, STATUS_CARD_LAYOUTS, type StatusCardLayout } from './statusCard';
+import { drawStatusCard, loadSurfaceArt, STATUS_CARD_SIZE } from './statusCard';
 import { CHROMA_THEME_PAIRS, CLASSIC_THEME_PAIRS, COMPLEMENT_THEME_PAIRS, resolveSurfaceThemeId } from './surfaceThemes';
 import { PRESTIGE_THEME_PAIRS } from './surfacePrestige';
 
@@ -2126,9 +2126,10 @@ interface StatusCardModalProps {
   monthlyHours: string;
   currentStreak: number;
   longestStreak: number;
-  activeDaysCount: number;
   categories: Category[];
   logs: StudyLog[];
+  /** The user's active Surface Theme; the card is painted over it. */
+  surfacePair: SurfaceThemePair;
   isDark: boolean;
   borderCol: string;
   bgCard: string;
@@ -2147,9 +2148,9 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
   monthlyHours,
   currentStreak,
   longestStreak,
-  activeDaysCount,
   categories,
   logs,
+  surfacePair,
   isDark,
   borderCol,
   bgCard,
@@ -2157,11 +2158,6 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
 }) => {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [cardTheme, setCardTheme] = useState<'dark' | 'light'>('dark');
-  // Phones default to the 4:5 portrait card; larger screens to the 16:9 one.
-  const [cardLayout, setCardLayout] = useState<StatusCardLayout>(() =>
-    typeof window !== 'undefined' && window.matchMedia?.('(max-width: 639px)').matches ? 'portrait' : 'wide'
-  );
   const [showCategoriesOnCard, setShowCategoriesOnCard] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -2185,8 +2181,11 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
         avatarImg = null;
       }
     }
+    const surfaceArt = await loadSurfaceArt(surfacePair, isDark);
+    // Web fonts used by the card may still be loading on first open.
+    await document.fonts?.ready;
 
-    drawStatusCard(canvas, cardLayout, {
+    const draw = (art: HTMLImageElement | null) => drawStatusCard(canvas, {
       username,
       avatarColor,
       avatarImg,
@@ -2196,15 +2195,25 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
       monthlyHours,
       currentStreak,
       longestStreak,
-      activeDaysCount,
       categories,
       logs,
-      theme: cardTheme,
+      surface: surfacePair,
+      isDark,
+      surfaceArt: art,
       showCategories: showCategoriesOnCard,
     });
+    draw(surfaceArt);
+    // Some browsers (older Safari) taint a canvas once an SVG is drawn on
+    // it, which would break Download / Copy. Fall back to the palette-only
+    // backdrop rather than export nothing.
+    if (surfaceArt) {
+      try {
+        canvas.toDataURL('image/png');
+      } catch {
+        draw(null);
+      }
+    }
   }, [
-    cardLayout,
-    cardTheme,
     showCategoriesOnCard,
     clearance,
     avatarColor,
@@ -2215,9 +2224,10 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     longestStreak,
     weeklyHours,
     monthlyHours,
-    activeDaysCount,
     logs,
     categories,
+    surfacePair,
+    isDark,
   ]);
 
   useEffect(() => {
@@ -2234,7 +2244,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     const dataUrl = canvas.toDataURL('image/png');
     const link = document.createElement('a');
     const dateStr = new Date().toISOString().slice(0, 10);
-    link.download = `typbox-status-${username || 'operator'}-${cardLayout}-${dateStr}.png`;
+    link.download = `typbox-status-${username || 'operator'}-${dateStr}.png`;
     link.href = dataUrl;
     link.click();
   };
@@ -2254,10 +2264,12 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     }
   };
 
+  const surfaceLabel = `${surfacePair.name} · ${(isDark ? surfacePair.dark : surfacePair.light).label}`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
       <div
-        className={`w-full max-w-3xl border ${borderCol} ${bgCard} p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl my-4 sm:my-8 font-mono`}
+        className={`w-full max-w-xl border ${borderCol} ${bgCard} p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl my-4 sm:my-8 font-mono`}
       >
         <div className="flex items-center justify-between border-b pb-3 border-zinc-800">
           <div className="flex items-center space-x-2">
@@ -2275,78 +2287,15 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           </button>
         </div>
 
-        <div className="space-y-1.5">
-          <span className={`text-[10px] uppercase ${textMuted}`}>{t.cardShape}</span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="radiogroup" aria-label={t.cardShapeAria}>
-            {STATUS_CARD_LAYOUTS.map((l) => {
-              const active = cardLayout === l.id;
-              // Mini aspect-ratio glyph, normalized to a 22px-tall box.
-              const glyphH = 22;
-              const glyphW = Math.max(9, Math.round((l.width / l.height) * glyphH));
-              return (
-                <button
-                  key={l.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setCardLayout(l.id)}
-                  className={`min-h-[52px] px-2.5 py-2 border flex items-center gap-2.5 text-left cursor-pointer transition-colors ${
-                    active
-                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
-                      : `${borderCol} hover:border-zinc-500`
-                  }`}
-                >
-                  <span className="w-8 flex items-center justify-center shrink-0">
-                    <span
-                      className={`block border-2 ${active ? 'border-emerald-400' : 'border-zinc-500'}`}
-                      style={{ width: glyphW, height: glyphH }}
-                    />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[11px] font-bold leading-tight">
-                      {l.label} <span className="font-normal opacity-80">{l.ratio}</span>
-                    </span>
-                    <span className={`block text-[9px] font-sans leading-tight ${active ? 'text-emerald-400/80' : textMuted}`}>
-                      {l.hint}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center space-x-2">
-            <span className={`text-[10px] uppercase ${textMuted}`}>{t.cardTheme}</span>
-            <div className={`flex border ${borderCol} text-[10px]`}>
-              <button
-                type="button"
-                onClick={() => setCardTheme('dark')}
-                className={`px-2.5 py-1 cursor-pointer ${
-                  cardTheme === 'dark'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                DARK MONOLITH
-              </button>
-              <button
-                type="button"
-                onClick={() => setCardTheme('light')}
-                className={`px-2.5 py-1 cursor-pointer ${
-                  cardTheme === 'light'
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                LIGHT ARCHIVE
-              </button>
-            </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-[10px] uppercase shrink-0 ${textMuted}`}>{t.cardTheme}</span>
+            <span
+              className={`inline-block w-3 h-3 border ${borderCol} shrink-0`}
+              style={{ background: surfacePair.accentHex }}
+              aria-hidden="true"
+            />
+            <span className="text-[11px] font-bold truncate">{surfaceLabel}</span>
           </div>
 
           <label className="flex items-center space-x-2 text-[11px] cursor-pointer select-none">
@@ -2360,9 +2309,8 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           </label>
         </div>
 
-        {/* Fixed-height stage: switching shapes never changes the modal's
-            height (no layout shift). The canvas is scaled down to fit inside
-            it, contain-style; the exported PNG is always full resolution. */}
+        {/* Fixed-height stage: the canvas is scaled down to fit inside it,
+            contain-style; the exported PNG is always full resolution. */}
         <div
           className={`status-card-stage relative border ${borderCol} ${isDark ? 'bg-black/50' : 'bg-zinc-100'}`}
         >
@@ -2383,8 +2331,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <p className={`text-[11px] font-sans ${textMuted}`}>
             {t.cardTipPre} <strong>{t.copyImage}</strong> {t.cardTipMid} <strong>{t.downloadPng}</strong>{' '}
-            ({STATUS_CARD_LAYOUTS.find((l) => l.id === cardLayout)?.width}×
-            {STATUS_CARD_LAYOUTS.find((l) => l.id === cardLayout)?.height}px).
+            ({STATUS_CARD_SIZE}×{STATUS_CARD_SIZE}px).
           </p>
 
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
@@ -2439,7 +2386,8 @@ interface CommandPaletteModalProps {
   categories: Category[];
   selectedCatId: string | number;
   isRunning: boolean;
-  onQuickLog: (categoryId: string | number, minutes: number) => Promise<void>;
+  /** Resolves true once the log is saved; false if it failed (the caller reports why). */
+  onQuickLog: (categoryId: string | number, minutes: number) => Promise<boolean>;
   onToggleTimer: () => void;
   onResetTimer: () => void;
   onSetInputMode: (mode: 'manual' | 'timer') => void;
@@ -2490,9 +2438,13 @@ function parseQuickLogQuery(
   let matchedDuration = false;
   let remaining = body;
 
-  // Match hours + minutes e.g. "1h30m", "1h 30m", "1.5h", "90m"
-  const hmRegex = /(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(?:(\d+)\s*(?:m|min|mins|minute|minutes)?)?/i;
-  const mOnlyRegex = /(\d+)\s*(?:m|min|mins|minute|minutes)\b/i;
+  // Match hours + minutes e.g. "1h30m", "1h 30m", "1.5h", "90m". A unit
+  // must end the token (or run into the minutes), so "log 30 history" is
+  // 30 minutes of HIST, not 30 hours of "istory". Longer unit spellings come
+  // first so "1.5hours" is not read as "1.5h" + category "ours".
+  const hmRegex =
+    /(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)(?=\d|\s|$)\s*(?:(\d+)\s*(?:minutes|minute|mins|min|m)?(?=\s|$))?/i;
+  const mOnlyRegex = /(\d+)\s*(?:minutes|minute|mins|min|m)(?=\s|$)/i;
   const plainNumberRegex = /^(\d{1,4})(?:\s+|$)/;
 
   const hmMatch = remaining.match(hmRegex);
@@ -2531,9 +2483,9 @@ function parseQuickLogQuery(
       categories.find((c) => c.code.toLowerCase() === catToken) ||
       categories.find((c) => c.code.toLowerCase().startsWith(catToken)) ||
       categories.find((c) => c.name.toLowerCase().includes(catToken));
-  }
-
-  if (!matchedCat) {
+    // A typed-but-unknown category must not silently log to the default one.
+    if (!matchedCat) return null;
+  } else {
     matchedCat =
       categories.find((c) => String(c.id) === String(fallbackCatId)) || categories[0];
   }
@@ -2573,6 +2525,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // Blocks a second command (double Enter / key repeat) while a log commit
+  // is in flight or its success banner is showing.
+  const [committing, setCommitting] = useState(false);
 
   const updateQuery = (nextQuery: string) => {
     setQuery(nextQuery);
@@ -2585,6 +2540,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       setQuery('');
       setSelectedIndex(0);
       setStatusBanner(null);
+      setCommitting(false);
       inputRef.current?.focus();
     }, 10);
     return () => window.clearTimeout(timer);
@@ -2597,6 +2553,22 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       })
     );
   };
+
+  const commitQuickLog = useCallback(
+    async (cat: Category, minutes: number) => {
+      setCommitting(true);
+      const ok = await onQuickLog(cat.id, minutes);
+      if (!ok) {
+        setCommitting(false);
+        return;
+      }
+      setStatusBanner(tf(t.pcCommitted, { min: minutes, code: cat.code, name: cat.name }));
+      setTimeout(() => {
+        onClose();
+      }, 450);
+    },
+    [onQuickLog, onClose, t]
+  );
 
   const parsedQuickLog = useMemo(() => {
     if (!isAuthenticated) return null;
@@ -2618,13 +2590,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         badge: t.pcEnterToCommit,
         accentColor: category.color,
         keywords: `log commit ${category.code} ${category.name} ${minutes}`,
-        action: async () => {
-          await onQuickLog(category.id, minutes);
-          setStatusBanner(tf(t.pcCommitted, { min: minutes, code: category.code, name: category.name }));
-          setTimeout(() => {
-            onClose();
-          }, 450);
-        },
+        action: () => commitQuickLog(category, minutes),
       });
     }
 
@@ -2641,13 +2607,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             badge: `log ${mins}m ${cat.code.toLowerCase()}`,
             accentColor: cat.color,
             keywords: `log ${mins}m ${mins / 60}h ${cat.code} ${cat.name} session commit`,
-            action: async () => {
-              await onQuickLog(cat.id, mins);
-              setStatusBanner(tf(t.pcCommitted, { min: mins, code: cat.code, name: cat.name }));
-              setTimeout(() => {
-                onClose();
-              }, 450);
-            },
+            action: () => commitQuickLog(cat, mins),
           });
         });
       });
@@ -2927,8 +2887,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     }
 
     const tokens = q.split(/\s+/).filter((t) => t.length > 0 && t !== 'log');
+    const instantId = parsedQuickLog ? `${parsedQuickLog.category.id}-${parsedQuickLog.minutes}` : null;
     return items.filter((item) => {
       if (item.id.startsWith('instant-log-')) return true;
+      // The preset identical to the parsed command would just repeat it.
+      if (instantId && item.id === `preset-log-${instantId}`) return false;
       const hay = `${item.title} ${item.subtitle} ${item.badge} ${item.keywords}`.toLowerCase();
       return tokens.every((tok) => hay.includes(tok));
     });
@@ -2939,7 +2902,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     isRunning,
     isDark,
     query,
-    onQuickLog,
+    commitQuickLog,
     onClose,
     onOpenAuth,
     onSetAnalyticsMode,
@@ -2957,6 +2920,13 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     t,
   ]);
 
+  // Keep the keyboard selection visible while arrowing through a long list.
+  useEffect(() => {
+    if (!isOpen) return;
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-cmd-index="${selectedIndex}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [isOpen, selectedIndex]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -2968,7 +2938,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       );
     } else if (e.key === 'Enter' && commands[selectedIndex]) {
       e.preventDefault();
-      commands[selectedIndex].action();
+      if (!committing) commands[selectedIndex].action();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
@@ -3087,8 +3057,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 <button
                   key={cmd.id}
                   type="button"
+                  data-cmd-index={idx}
                   onMouseEnter={() => setSelectedIndex(idx)}
-                  onClick={() => cmd.action()}
+                  onClick={() => {
+                    if (!committing) cmd.action();
+                  }}
                   className={`w-full px-4 py-3 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                     isInstant
                       ? isSelected

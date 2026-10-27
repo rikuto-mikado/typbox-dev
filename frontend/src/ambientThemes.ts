@@ -181,22 +181,6 @@ function planets(f: OrbitFrame, halo = 6) {
   }
 }
 
-/** A fading comet tail laid along the orbit behind a body. */
-function trail(f: OrbitFrame, b: OrbitBody, span: number, width: number, alpha = 0.6, color = b.color) {
-  const { ctx } = f;
-  const steps = 20;
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  for (let k = 0; k < steps; k++) {
-    const fade = 1 - k / steps;
-    ctx.globalAlpha = alpha * fade * fade;
-    ctx.lineWidth = Math.max(0.6, width * (0.35 + 0.65 * fade));
-    orbitPath(f, b.r, b.a - (span * (k + 1)) / steps, b.a - (span * k) / steps);
-    ctx.stroke();
-  }
-  ctx.lineCap = 'butt';
-}
-
 /** Radial tick marks around an orbit (every `major`-th one is longer). */
 function ticks(f: OrbitFrame, r: number, count: number, len: number, color: string, alpha: number, major = 0) {
   const { ctx } = f;
@@ -263,55 +247,116 @@ const accretion: SceneFactory = (w, h) => {
   });
 };
 
+
+// ------------------------------------------
+// Shared refined pieces
+// ------------------------------------------
+// The redesigned scenes share one visual grammar with ORBITAL CLOCK,
+// ACCRETION DISK and VECTOR SCOPE: hairline orbits, a progress arc that
+// brightens toward its planet, small precise bodies with a soft halo, and
+// one atmosphere per theme drawn with geometry (no emoji-like sprites, no
+// faked perspective).
+
+/** Progress arc that brightens toward the body, like light trailing it. */
+function fadeArc(f: OrbitFrame, b: OrbitBody, color: string, width: number, alpha: number) {
+  const span = b.frac * TAU;
+  if (span < 0.01) return;
+  const { ctx } = f;
+  const segs = Math.max(4, Math.ceil(span / 0.08));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  for (let k = 0; k < segs; k++) {
+    const p = (k + 1) / segs;
+    ctx.globalAlpha = alpha * (0.14 + 0.86 * p * p);
+    // A hair of overlap so segment joins never show as gaps.
+    orbitPath(f, b.r, TOP + (span * k) / segs, TOP + (span * (k + 1)) / segs + 0.004);
+    ctx.stroke();
+  }
+}
+
+/** Hairline orbits plus fading progress arcs, in each body's color. */
+function fineRings(f: OrbitFrame, o: { ring?: number; arc?: number; width?: number; ringColor?: string } = {}) {
+  const { ctx } = f;
+  for (const b of f.bodies) {
+    ctx.strokeStyle = o.ringColor ?? b.color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = o.ring ?? 0.13;
+    orbitPath(f, b.r);
+    ctx.stroke();
+    fadeArc(f, b, b.color, o.width ?? 1.6, o.arc ?? 0.6);
+  }
+  ctx.lineWidth = 1;
+}
+
+/** A planet: soft halo, solid core and a pin-point highlight. */
+function core(f: OrbitFrame, b: OrbitBody, o: { halo?: number; glowColor?: string; size?: number; alpha?: number } = {}) {
+  const s = f.px * (o.size ?? 1.2 - b.i * 0.18);
+  glow(f.ctx, b.x, b.y, s * (o.halo ?? 6), hexTint(o.glowColor ?? b.color), o.alpha ?? 0.9);
+  dot(f.ctx, b.x, b.y, s, b.color, 0.95);
+  dot(f.ctx, b.x - s * 0.25, b.y - s * 0.25, s * 0.38, '#ffffff', 0.55);
+}
+
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+
+// ------------------------------------------
+// Scenes
+// ------------------------------------------
+
 const rainOrbit: SceneFactory = (w, h) => {
-  const drops = Array.from({ length: density(w, h, 70, 30, 150) }, () => ({
-    x: rnd(-w * 0.2, w), y: rnd(-h, h), len: rnd(10, 24), v: rnd(650, 1000), a: rnd(0.06, 0.16),
-  }));
-  const ripples: Array<{ x: number; y: number; age: number; max: number; size: number; color: string }> = [];
+  // Depth z drives length, speed, width and brightness together, so the
+  // rain reads as layers rather than one flat sheet.
+  const spawn = (init: boolean) => {
+    const z = Math.random();
+    return { x: rnd(-w * 0.1, w * 1.05), y: init ? rnd(-h, h) : rnd(-h * 0.3, -20), z, len: 8 + z * 24, v: 420 + z * 680, a: 0.025 + z * 0.1 };
+  };
+  const drops = Array.from({ length: density(w, h, 90, 40, 200) }, () => spawn(true));
+  const splashes: Array<{ x: number; y: number; age: number; life: number; size: number; color: string }> = [];
   let frame: OrbitFrame | null = null;
   const tick = everySecond((s) => {
     if (!frame) return;
     const [, m, sec] = frame.bodies;
-    ripples.push({ x: sec.x, y: sec.y, age: 0, max: 1.8, size: frame.base * 0.32, color: sec.color });
-    if (s === 0) ripples.push({ x: m.x, y: m.y, age: 0, max: 3, size: frame.base * 0.6, color: m.color });
+    splashes.push({ x: sec.x, y: sec.y, age: 0, life: 1.6, size: frame.base * 0.28, color: sec.color });
+    if (s === 0) splashes.push({ x: m.x, y: m.y, age: 0, life: 2.6, size: frame.base * 0.5, color: m.color });
   });
   return orbital(w, h, {
     colors: ['#a5b4fc', '#7dd3fc', '#e0f2fe'],
     back: (f) => {
       const { ctx } = f;
-      ctx.strokeStyle = '#b4d2ff';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#c7dcff';
+      ctx.lineCap = 'round';
       for (const d of drops) {
         d.y += d.v * f.dt;
-        d.x += d.v * 0.12 * f.dt;
-        if (d.y > h + 30) { d.y = rnd(-80, -10); d.x = rnd(-w * 0.2, w); }
+        d.x += d.v * 0.07 * f.dt;
+        if (d.y - d.len > h) Object.assign(d, spawn(false));
         ctx.globalAlpha = d.a;
+        ctx.lineWidth = 0.5 + d.z * 0.7;
         ctx.beginPath();
         ctx.moveTo(d.x, d.y);
-        ctx.lineTo(d.x - d.len * 0.12, d.y - d.len);
+        ctx.lineTo(d.x - d.len * 0.07, d.y - d.len);
         ctx.stroke();
       }
+      ctx.lineCap = 'butt';
     },
-    rings: (f) => plainRings(f, { ring: 0.14, arc: 0.42, width: 1.5 }),
+    rings: (f) => fineRings(f, { ring: 0.12, arc: 0.55, width: 1.4 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 5.5 });
+    },
     front: (f) => {
       frame = f;
       tick(f.now);
       const { ctx } = f;
-      ctx.lineWidth = 1.1;
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const r = ripples[i];
-        r.age += f.dt;
-        if (r.age > r.max) { ripples.splice(i, 1); continue; }
-        const k = r.age / r.max;
-        const ease = 1 - (1 - k) * (1 - k);
-        ctx.strokeStyle = r.color;
-        for (const [scale, a] of [[1, 0.5], [0.55, 0.3]]) {
-          const rr = r.size * ease * scale;
-          if (rr < 1) continue;
-          ctx.globalAlpha = a * (1 - k);
+      ctx.lineWidth = 1;
+      for (let i = splashes.length - 1; i >= 0; i--) {
+        const sp = splashes[i];
+        sp.age += f.dt;
+        const k = sp.age / sp.life;
+        if (k >= 1) { splashes.splice(i, 1); continue; }
+        const ease = 1 - (1 - k) ** 3;
+        ctx.strokeStyle = sp.color;
+        for (const [scale, a] of [[1, 0.42], [0.62, 0.26], [0.32, 0.16]] as const) {
+          ctx.globalAlpha = a * (1 - k) ** 1.4;
           ctx.beginPath();
-          // Flattened like a ring on a water surface seen at an angle.
-          ctx.ellipse(r.x, r.y, rr, rr * 0.42, 0, 0, TAU);
+          ctx.arc(sp.x, sp.y, Math.max(0.5, sp.size * ease * scale), 0, TAU);
           ctx.stroke();
         }
       }
@@ -319,827 +364,1023 @@ const rainOrbit: SceneFactory = (w, h) => {
   });
 };
 
-function snowflake(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rot);
-  ctx.beginPath();
-  for (let k = 0; k < 6; k++) {
-    ctx.rotate(TAU / 6);
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, -r);
-    ctx.moveTo(0, -r * 0.55);
-    ctx.lineTo(r * 0.24, -r * 0.78);
-    ctx.moveTo(0, -r * 0.55);
-    ctx.lineTo(-r * 0.24, -r * 0.78);
-  }
-  ctx.stroke();
-  ctx.restore();
-}
-
 const frost: SceneFactory = (w, h) => {
-  const flakes = Array.from({ length: density(w, h, 60, 24, 130) }, () => ({
-    x: rnd(0, w), y: rnd(-h, h), r: rnd(0.7, 2.4), v: rnd(14, 40), ph: rnd(0, TAU), sway: rnd(8, 24),
-  }));
+  const flakes = Array.from({ length: density(w, h, 70, 30, 150) }, () => {
+    const z = Math.random();
+    return { x: rnd(0, w), y: rnd(0, h), z, ph: rnd(0, TAU), v: 7 + z * 26, s: 0.5 + z * 1.9 };
+  });
   return orbital(w, h, {
-    colors: ['#e0f2fe', '#bae6fd', '#f8fafc'],
+    colors: ['#c7d2fe', '#bae6fd', '#f0f9ff'],
     back: (f) => {
       const { ctx } = f;
-      ctx.fillStyle = '#fff';
       for (const p of flakes) {
         p.y += p.v * f.dt;
-        if (p.y > h + 5) { p.y = -5; p.x = rnd(0, w); }
-        ctx.globalAlpha = 0.18 + p.r * 0.1;
-        ctx.beginPath();
-        ctx.arc(p.x + Math.sin(f.t * 0.6 + p.ph) * p.sway, p.y, p.r, 0, TAU);
-        ctx.fill();
+        p.x += Math.sin(f.t * 0.5 + p.ph) * (4 + p.z * 10) * f.dt;
+        if (p.y > h + 6) { p.y = -6; p.x = rnd(0, w); }
+        if (p.z > 0.82) glow(ctx, p.x, p.y, p.s * 4, hexTint('#e0f2fe'), 0.35);
+        dot(ctx, p.x, p.y, p.s, '#f0f9ff', 0.18 + p.z * 0.45);
       }
     },
     rings: (f) => {
-      plainRings(f, { ring: 0.14, arc: 0.45, width: 1.5 });
-      // Twelve ice crystals mark the hours on the outer orbit.
-      const { ctx } = f;
-      const outer = f.bodies[2].r + f.base * 0.16;
-      ctx.strokeStyle = '#e0f2fe';
-      ctx.lineWidth = 0.8;
-      for (let k = 0; k < 12; k++) {
-        const [x, y] = onOrbit(f, outer, (k / 12) * TAU + TOP);
-        ctx.globalAlpha = k % 3 === 0 ? 0.45 : 0.22;
-        snowflake(ctx, x, y, f.base * (k % 3 === 0 ? 0.07 : 0.045), f.t * 0.05);
-      }
+      fineRings(f, { ring: 0.13, arc: 0.6, width: 1.4 });
+      // Precision frost scale on the outer orbit: 60 hairlines, every fifth longer.
+      ticks(f, f.bodies[2].r + f.base * 0.06, 60, f.base * 0.03, '#e0f2fe', 0.2, 5);
     },
     bodies: (f) => {
       const { ctx } = f;
       for (const b of f.bodies) {
-        const s = f.px * (3.1 - b.i * 0.45);
-        glow(ctx, b.x, b.y, s * 3.2, hexTint('#bae6fd'), 0.7);
+        core(f, b, { halo: 6 });
+        // A hexagonal ice crystal around each planet, turning very slowly.
+        const R = f.px * (3.4 - b.i * 0.6);
+        const rot = f.t * 0.12 * (b.i % 2 ? -1 : 1);
         ctx.strokeStyle = b.color;
-        ctx.lineWidth = 1.1;
-        ctx.globalAlpha = 0.95;
-        snowflake(ctx, b.x, b.y, s, f.t * (0.15 + b.i * 0.12));
+        ctx.lineWidth = 0.8;
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        for (let k = 0; k <= 6; k++) {
+          const a = rot + (k / 6) * TAU;
+          const x = b.x + Math.cos(a) * R;
+          const y = b.y + Math.sin(a) * R;
+          if (k === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.globalAlpha = 0.25;
+        for (let k = 0; k < 6; k++) {
+          const a = rot + (k / 6) * TAU;
+          ctx.moveTo(b.x + Math.cos(a) * R, b.y + Math.sin(a) * R);
+          ctx.lineTo(b.x + Math.cos(a) * R * 1.45, b.y + Math.sin(a) * R * 1.45);
+        }
+        ctx.stroke();
       }
     },
   });
 };
 
-function sparkle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, alpha: number) {
-  ctx.strokeStyle = color;
+const ROMAN = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+
+/** Four-point star: two thin tapered diamonds. */
+function starPoint(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, alpha: number) {
   ctx.globalAlpha = alpha;
-  ctx.lineWidth = 0.8;
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(x - r, y);
-  ctx.lineTo(x + r, y);
   ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r * 0.12, y);
   ctx.lineTo(x, y + r);
-  ctx.stroke();
+  ctx.lineTo(x - r * 0.12, y);
+  ctx.closePath();
+  ctx.moveTo(x - r, y);
+  ctx.lineTo(x, y + r * 0.12);
+  ctx.lineTo(x + r, y);
+  ctx.lineTo(x, y - r * 0.12);
+  ctx.closePath();
+  ctx.fill();
 }
 
 const starChart: SceneFactory = (w, h) => {
-  const stars = makeStars(w, h, 200, 70, 360);
-  const shooting: Array<{ x: number; y: number; vx: number; vy: number; life: number; max: number }> = [];
-  let next = rnd(4, 9);
+  const stars = makeStars(w, h, 120, 50, 260);
+  const INK = '#d9c48f';
   return orbital(w, h, {
-    colors: ['#fde68a', '#c7d2fe', '#f9fafb'],
+    colors: ['#f2d58a', '#e9e2cf', '#bcd4ff'],
     back: (f) => {
       const { ctx } = f;
-      drawStars(ctx, stars, f.t);
-      next -= f.dt;
-      if (next <= 0) {
-        next = rnd(5, 11);
-        const speed = rnd(600, 950);
-        const ang = rnd(0.35, 0.65);
-        shooting.push({ x: rnd(w * 0.2, w * 1.1), y: rnd(-20, h * 0.35), vx: -Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 0, max: rnd(0.6, 1.1) });
+      drawStars(ctx, stars, f.t, 0.55);
+      const R = f.bodies[2].r + f.base * 0.34;
+      // Hour-angle lines and the planisphere's graduated rim.
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 0.8;
+      ctx.globalAlpha = 0.07;
+      ctx.beginPath();
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * TAU + TOP;
+        ctx.moveTo(f.cx + Math.cos(a) * f.bodies[0].r * 0.35, f.cy + Math.sin(a) * f.bodies[0].r * 0.35);
+        ctx.lineTo(f.cx + Math.cos(a) * R, f.cy + Math.sin(a) * R);
       }
-      for (let i = shooting.length - 1; i >= 0; i--) {
-        const m = shooting[i];
-        m.life += f.dt;
-        m.x += m.vx * f.dt;
-        m.y += m.vy * f.dt;
-        if (m.life > m.max) { shooting.splice(i, 1); continue; }
-        const g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * 0.14, m.y - m.vy * 0.14);
-        g.addColorStop(0, `rgba(255,255,255,${0.8 * (1 - m.life / m.max)})`);
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = g;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(m.x, m.y);
-        ctx.lineTo(m.x - m.vx * 0.14, m.y - m.vy * 0.14);
-        ctx.stroke();
+      ctx.stroke();
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath();
+      ctx.arc(f.cx, f.cy, R, 0, TAU);
+      ctx.stroke();
+      ticks(f, R, 72, f.base * 0.03, INK, 0.22, 6);
+      ctx.fillStyle = INK;
+      ctx.globalAlpha = 0.4;
+      ctx.font = `${Math.max(8, f.px * 2.4)}px Georgia, "Times New Roman", serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * TAU + TOP;
+        const rr = R + f.base * 0.16;
+        ctx.fillText(ROMAN[k], f.cx + Math.cos(a) * rr, f.cy + Math.sin(a) * rr);
       }
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     },
     rings: (f) => {
       const { ctx } = f;
-      ctx.setLineDash([1.5, 5]);
+      ctx.setLineDash([2, 5]);
       for (const b of f.bodies) {
         ctx.strokeStyle = b.color;
-        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.24;
         orbitPath(f, b.r);
         ctx.stroke();
       }
       ctx.setLineDash([]);
-      for (const b of f.bodies) {
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = 1.4;
-        ctx.globalAlpha = 0.5;
-        orbitPath(f, b.r, TOP, b.a);
-        ctx.stroke();
-      }
-      ctx.lineWidth = 1;
-      // A planisphere bezel: minute ticks outside the second orbit, hour ticks inside the hour orbit.
-      ticks(f, f.bodies[2].r + f.base * 0.1, 60, f.base * 0.035, '#e0e7ff', 0.3, 5);
-      ticks(f, f.bodies[0].r - f.base * 0.14, 12, f.base * 0.06, '#fde68a', 0.3);
+      for (const b of f.bodies) fadeArc(f, b, b.color, 1.3, 0.6);
     },
     bodies: (f) => {
       const { ctx } = f;
-      const [hb, mb, sb] = f.bodies;
       // The three planets drawn as one constellation.
-      ctx.setLineDash([3, 4]);
-      ctx.strokeStyle = '#e0e7ff';
-      ctx.globalAlpha = 0.2;
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 0.8;
+      ctx.globalAlpha = 0.3;
       ctx.beginPath();
-      ctx.moveTo(hb.x, hb.y);
-      ctx.lineTo(mb.x, mb.y);
-      ctx.lineTo(sb.x, sb.y);
+      f.bodies.forEach((b, k) => (k === 0 ? ctx.moveTo(b.x, b.y) : ctx.lineTo(b.x, b.y)));
       ctx.stroke();
-      ctx.setLineDash([]);
       for (const b of f.bodies) {
-        const s = f.px * (1.2 - b.i * 0.15);
-        glow(ctx, b.x, b.y, s * 5, hexTint(b.color), 0.8);
-        sparkle(ctx, b.x, b.y, s * 3.4, b.color, 0.7 + 0.3 * Math.sin(f.t * 2 + b.i));
-        dot(ctx, b.x, b.y, s * 0.8, '#fff');
+        glow(ctx, b.x, b.y, f.px * 5, hexTint(b.color), 0.7);
+        starPoint(ctx, b.x, b.y, f.px * (3.6 - b.i * 0.6), b.color, 0.9);
+        dot(ctx, b.x, b.y, f.px * 0.7, '#ffffff', 0.95);
       }
     },
   });
 };
 
 const fireflyOrbit: SceneFactory = (w, h) => {
-  const flies = Array.from({ length: density(w, h, 36, 15, 60) }, () => ({
-    ring: Math.floor(Math.random() * 3), th: rnd(0, TAU), sp: rnd(0.04, 0.12) * (Math.random() < 0.5 ? -1 : 1),
-    ph: rnd(0, TAU), wob: rnd(0.4, 1.1), pulse: rnd(0.6, 1.4), off: rnd(-0.15, 0.15),
+  const flies = Array.from({ length: density(w, h, 40, 16, 70) }, () => ({
+    x: rnd(0, w), y: rnd(0, h), ax: rnd(20, 60), ay: rnd(14, 40), f1: rnd(0.08, 0.22), f2: rnd(0.11, 0.3),
+    p1: rnd(0, TAU), p2: rnd(0, TAU), fb: rnd(0.35, 0.9), pb: rnd(0, TAU), s: rnd(0.8, 1.6),
   }));
   return orbital(w, h, {
-    colors: ['#fde047', '#bef264', '#d9f99d'],
+    colors: ['#facc15', '#bef264', '#fef9c3'],
     back: (f) => {
       const { ctx } = f;
       ctx.globalCompositeOperation = 'lighter';
       for (const p of flies) {
-        const b = f.bodies[p.ring];
-        p.th += p.sp * f.dt;
-        const r = b.r + f.base * (p.off + 0.1 * Math.sin(f.t * p.wob + p.ph));
-        const [x, y] = onOrbit(f, r, p.th + 0.05 * Math.sin(f.t * 0.9 + p.ph));
-        const lit = Math.max(0, Math.sin(f.t * p.pulse + p.ph));
-        if (lit < 0.02) continue;
-        glow(ctx, x, y, f.px * 4.5, (a) => `rgba(210,250,110,${a})`, lit);
-        dot(ctx, x, y, 0.9, '#f7fee7', lit * 0.9);
+        const x = p.x + Math.sin(f.t * p.f1 + p.p1) * p.ax + Math.sin(f.t * p.f2 * 1.7 + p.p2) * p.ax * 0.4;
+        const y = p.y + Math.cos(f.t * p.f2 + p.p2) * p.ay + Math.sin(f.t * p.f1 * 1.3 + p.p1) * p.ay * 0.4;
+        // Slow blink: mostly dark, a soft swell of light now and then.
+        const on = Math.max(0, Math.sin(f.t * p.fb + p.pb)) ** 3;
+        if (on < 0.02) continue;
+        glow(ctx, x, y, f.px * 6 * p.s, hexTint('#d9f99d'), on * 0.7);
+        dot(ctx, x, y, p.s * 0.9, '#f7fee7', on * 0.9);
       }
       ctx.globalCompositeOperation = 'source-over';
     },
-    rings: (f) => plainRings(f, { ring: 0.1, arc: 0.36, width: 1.5 }),
+    rings: (f) => fineRings(f, { ring: 0.1, arc: 0.5, width: 1.4 }),
     bodies: (f) => {
-      const { ctx } = f;
-      ctx.globalCompositeOperation = 'lighter';
-      for (const b of f.bodies) {
-        const s = f.px * (1.3 - b.i * 0.15);
-        const breathe = 0.7 + 0.3 * Math.sin(f.t * (1.2 + b.i * 0.5) + b.i * 2);
-        glow(ctx, b.x, b.y, s * 9 * breathe, hexTint(b.color), 1);
-        dot(ctx, b.x, b.y, s, '#fefce8');
-      }
-      ctx.globalCompositeOperation = 'source-over';
+      for (const b of f.bodies) core(f, b, { halo: 6.5 + 1.5 * Math.sin(f.t * 1.1 + b.i * 2), glowColor: '#d9f99d' });
     },
   });
 };
 
-/** A gently wobbling orbit, as if drawn on the surface of a bubble. */
-function wobblePath(f: OrbitFrame, r: number, from: number, to: number, phase: number) {
-  const { ctx } = f;
-  const steps = Math.max(8, Math.ceil(((to - from) / TAU) * 120));
-  ctx.beginPath();
-  for (let k = 0; k <= steps; k++) {
-    const a = from + ((to - from) * k) / steps;
-    const rr = r * (1 + 0.005 * Math.sin(a * 6 + f.t * 0.8 + phase));
-    const [x, y] = onOrbit(f, rr, a);
-    if (k === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-}
-
-function bubble(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
-  ctx.globalAlpha = 0.1;
-  ctx.fillStyle = color;
+/** Glass sphere: faint body, bright rim and a curved specular highlight. */
+function glassBubble(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, alpha: number) {
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+  g.addColorStop(0, hexA(color, 0));
+  g.addColorStop(0.75, hexA(color, 0.06 * alpha));
+  g.addColorStop(1, hexA(color, 0.24 * alpha));
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, TAU);
   ctx.fill();
-  ctx.globalAlpha = 0.75;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 0.9;
+  ctx.globalAlpha = 0.5 * alpha;
   ctx.stroke();
-  ctx.globalAlpha = 0.8;
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(0.8, r * 0.11);
+  ctx.globalAlpha = 0.6 * alpha;
   ctx.beginPath();
-  ctx.arc(x, y, r * 0.7, -2.5, -1.5);
+  ctx.arc(x, y, r * 0.68, -2.55, -1.95);
   ctx.stroke();
-  dot(ctx, x + r * 0.35, y + r * 0.4, Math.max(0.6, r * 0.09), '#fff', 0.6);
+  ctx.lineCap = 'butt';
+  dot(ctx, x + r * 0.38, y + r * 0.42, Math.max(0.5, r * 0.06), '#ffffff', 0.25 * alpha);
 }
 
 const bubbleOrrery: SceneFactory = (w, h) => {
-  const rising = Array.from({ length: density(w, h, 16, 8, 32) }, () => ({ x: rnd(0, w), y: rnd(0, h), r: rnd(2, 9), v: rnd(14, 40), ph: rnd(0, TAU) }));
+  const spawn = (init: boolean) => {
+    const z = Math.random();
+    return { x: rnd(0, w), y: init ? rnd(0, h) : h + 20, z, r: 2 + z * 9, v: 8 + z * 22, ph: rnd(0, TAU) };
+  };
+  const rising = Array.from({ length: density(w, h, 14, 6, 26) }, () => spawn(true));
   return orbital(w, h, {
-    colors: ['#99f6e4', '#a5f3fc', '#e0e7ff'],
+    colors: ['#5eead4', '#67e8f9', '#e0f2fe'],
     back: (f) => {
-      const { ctx } = f;
-      ctx.lineWidth = 1;
-      for (const b of rising) {
-        b.y -= b.v * f.dt;
-        if (b.y < -b.r - 5) { b.y = h + b.r; b.x = rnd(0, w); }
-        const x = b.x + Math.sin(f.t * 1.2 + b.ph) * 6;
-        ctx.globalAlpha = 0.2;
-        ctx.strokeStyle = '#bae6fd';
-        ctx.beginPath();
-        ctx.arc(x, b.y, b.r, 0, TAU);
-        ctx.stroke();
+      for (const p of rising) {
+        p.y -= p.v * f.dt;
+        p.x += Math.sin(f.t * 0.7 + p.ph) * 6 * f.dt;
+        if (p.y < -20) Object.assign(p, spawn(false));
+        glassBubble(f.ctx, p.x, p.y, p.r, '#a5f3fc', 0.35 + p.z * 0.4);
       }
     },
-    rings: (f) => {
-      const { ctx } = f;
-      for (const b of f.bodies) {
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.16;
-        wobblePath(f, b.r, 0, TAU, b.i * 2);
-        ctx.stroke();
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.45;
-        wobblePath(f, b.r, TOP, b.a, b.i * 2);
-        ctx.stroke();
-      }
-      ctx.lineWidth = 1;
-    },
+    rings: (f) => fineRings(f, { ring: 0.13, arc: 0.55, width: 1.4 }),
     bodies: (f) => {
       for (const b of f.bodies) {
-        const rr = b.r * (1 + 0.005 * Math.sin(b.a * 6 + f.t * 0.8 + b.i * 2));
-        const [x, y] = onOrbit(f, rr, b.a);
-        const s = f.px * (3.4 - b.i * 0.5) * (1 + 0.04 * Math.sin(f.t * 2.4 + b.i));
-        bubble(f.ctx, x, y, s, b.color);
+        const r = f.px * (4.4 - b.i * 0.8);
+        glow(f.ctx, b.x, b.y, r * 2.4, hexTint(b.color), 0.45);
+        glassBubble(f.ctx, b.x, b.y, r, b.color, 1);
+        dot(f.ctx, b.x, b.y, f.px * 0.55, b.color, 0.9);
       }
     },
   });
 };
 
-function petal(ctx: CanvasRenderingContext2D, s: number) {
+/** Cherry-blossom petal (notched tip), centered, pointing up, length s. */
+function petalPath(ctx: CanvasRenderingContext2D, s: number) {
   ctx.beginPath();
-  ctx.moveTo(0, -s);
-  ctx.quadraticCurveTo(s * 0.75, -s * 0.15, 0, s);
-  ctx.quadraticCurveTo(-s * 0.75, -s * 0.15, 0, -s);
-  ctx.fill();
-}
-
-function blossom(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, rot: number, color: string) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rot);
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.92;
-  for (let k = 0; k < 5; k++) {
-    ctx.save();
-    ctx.rotate((k / 5) * TAU);
-    ctx.translate(0, -s * 0.62);
-    petal(ctx, s * 0.62);
-    ctx.restore();
-  }
-  ctx.restore();
-  dot(ctx, x, y, s * 0.24, '#fde68a', 0.95);
+  ctx.moveTo(0, s * 0.5);
+  ctx.bezierCurveTo(s * 0.55, s * 0.18, s * 0.42, -s * 0.42, s * 0.13, -s * 0.5);
+  ctx.lineTo(0, -s * 0.36);
+  ctx.lineTo(-s * 0.13, -s * 0.5);
+  ctx.bezierCurveTo(-s * 0.42, -s * 0.42, -s * 0.55, s * 0.18, 0, s * 0.5);
+  ctx.closePath();
 }
 
 const sakuraOrbit: SceneFactory = (w, h) => {
-  const PER = 8;
-  // Fixed scatter per trailing petal so the wake reads as a stable drift.
-  const wake = Array.from({ length: 3 * PER }, () => ({ off: rnd(-1, 1), s: rnd(0.6, 1.1), rot: rnd(0, TAU), spin: rnd(-1.2, 1.2), lag: rnd(0, 1) }));
-  const falling = Array.from({ length: density(w, h, 16, 8, 34) }, () => ({
-    x: rnd(0, w), y: rnd(-h, h), s: rnd(2.5, 5), v: rnd(18, 40), vx: rnd(10, 30), rot: rnd(0, TAU), vr: rnd(-1.2, 1.2), ph: rnd(0, TAU),
-  }));
+  const spawn = (init: boolean) => {
+    const z = Math.random();
+    return {
+      x: rnd(-w * 0.1, w), y: init ? rnd(0, h) : -12, z, s: 3.5 + z * 6, vy: 14 + z * 26, vx: 6 + z * 14,
+      rot: rnd(0, TAU), spin: rnd(-0.8, 0.8), flip: rnd(0.6, 1.6), ph: rnd(0, TAU),
+    };
+  };
+  const petals = Array.from({ length: density(w, h, 26, 12, 48) }, () => spawn(true));
+  const drawPetal = (ctx: CanvasRenderingContext2D, x: number, y: number, s: number, rot: number, flip: number, color: string, alpha: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    // Tumbling: the petal turns edge-on and back as it falls.
+    ctx.scale(Math.max(0.15, Math.abs(flip)), 1);
+    petalPath(ctx, s);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  };
   return orbital(w, h, {
-    colors: ['#f9a8d4', '#fbcfe8', '#fce7f3'],
+    colors: ['#f472b6', '#f9a8d4', '#fde2ec'],
     back: (f) => {
-      const { ctx } = f;
-      ctx.fillStyle = '#fbcfe8';
-      for (const p of falling) {
-        p.y += p.v * f.dt;
-        p.x += (p.vx + Math.sin(f.t + p.ph) * 20) * f.dt;
-        p.rot += p.vr * f.dt;
-        if (p.y > h + 20 || p.x > w + 20) { p.y = rnd(-40, -10); p.x = rnd(-w * 0.3, w); }
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.scale(1, 0.35 + 0.65 * Math.abs(Math.cos(f.t * 1.3 + p.ph)));
-        ctx.globalAlpha = 0.4;
-        petal(ctx, p.s);
-        ctx.restore();
+      for (const p of petals) {
+        p.y += p.vy * f.dt;
+        p.x += (p.vx + Math.sin(f.t * 0.9 + p.ph) * 12) * f.dt;
+        p.rot += p.spin * f.dt;
+        if (p.y > h + 14 || p.x > w + 14) Object.assign(p, spawn(false));
+        drawPetal(f.ctx, p.x, p.y, p.s, p.rot, Math.cos(f.t * p.flip + p.ph), p.z > 0.5 ? '#fbcfe8' : '#f9a8d4', 0.25 + p.z * 0.45);
       }
     },
-    rings: (f) => plainRings(f, { ring: 0.14, arc: 0.4, width: 1.5 }),
+    rings: (f) => fineRings(f, { ring: 0.13, arc: 0.55, width: 1.4 }),
     bodies: (f) => {
       const { ctx } = f;
-      const spans = [0.35, 0.5, 0.85];
       for (const b of f.bodies) {
-        for (let k = 0; k < PER; k++) {
-          const p = wake[b.i * PER + k];
-          const back = spans[b.i] * ((k + p.lag) / PER);
-          const [x, y] = onOrbit(f, b.r + p.off * f.base * 0.09 * (k / PER + 0.3), b.a - back);
+        const s = f.px * (2.6 - b.i * 0.45);
+        glow(ctx, b.x, b.y, s * 4.5, hexTint('#f9a8d4'), 0.7);
+        // Five-petal blossom, turning slowly.
+        for (let k = 0; k < 5; k++) {
           ctx.save();
-          ctx.translate(x, y);
-          ctx.rotate(p.rot + f.t * p.spin);
-          ctx.globalAlpha = 0.9 * (1 - k / PER) ** 1.2;
-          ctx.fillStyle = b.color;
-          petal(ctx, f.px * 2.3 * p.s);
+          ctx.translate(b.x, b.y);
+          ctx.rotate(f.t * 0.15 + (k / 5) * TAU);
+          ctx.translate(0, -s * 0.55);
+          petalPath(ctx, s);
+          ctx.globalAlpha = 0.92;
+          ctx.fillStyle = k % 2 ? '#fce7f3' : '#fbcfe8';
+          ctx.fill();
           ctx.restore();
         }
-        glow(ctx, b.x, b.y, f.px * 7, hexTint(b.color), 0.55);
-        blossom(ctx, b.x, b.y, f.px * (3.6 - b.i * 0.5), f.t * (0.2 + b.i * 0.15), b.color);
+        dot(ctx, b.x, b.y, s * 0.22, '#db2777', 0.9);
       }
     },
   });
 };
 
 const emberOrbit: SceneFactory = (w, h) => {
-  const sparks: Array<{ x: number; y: number; vx: number; vy: number; life: number; max: number; r: number }> = [];
-  const rates = [2, 4, 9];
-  const owed = [0, 0, 0];
+  const sparks: Array<{ x: number; y: number; vx: number; vy: number; age: number; life: number; ph: number }> = [];
+  const rates = [2.5, 3.5, 5];
+  const acc = [0, 0, 0];
+  const heat = (k: number): string => (k < 0.25 ? '#fef3c7' : k < 0.55 ? '#fdba74' : '#f97316');
+  // Loose embers drifting up across the whole screen, far from the fire.
+  const spawnDrift = (init: boolean) => ({ x: rnd(0, w), y: init ? rnd(0, h) : h + 10, v: rnd(10, 26), ph: rnd(0, TAU), s: rnd(0.6, 1.4) });
+  const drift = Array.from({ length: density(w, h, 22, 10, 40) }, () => spawnDrift(true));
   return orbital(w, h, {
-    colors: ['#fb923c', '#f97316', '#fde047'],
-    rings: (f) => {
-      plainRings(f, { ring: 0.12, arc: 0.32, width: 1.5 });
-      const spans = [0.25, 0.45, 1];
-      for (const b of f.bodies) trail(f, b, spans[b.i], f.px * 0.9, 0.55);
-    },
-    bodies: (f) => {
+    colors: ['#fb923c', '#f97316', '#fde68a'],
+    back: (f) => {
       const { ctx } = f;
       ctx.globalCompositeOperation = 'lighter';
+      for (const p of drift) {
+        p.y -= p.v * f.dt;
+        p.x += Math.sin(f.t * 0.8 + p.ph) * 10 * f.dt;
+        if (p.y < -10) Object.assign(p, spawnDrift(false));
+        const on = 0.5 + 0.5 * Math.sin(f.t * 2.2 + p.ph);
+        glow(ctx, p.x, p.y, p.s * 5, hexTint('#f97316'), 0.35 * on);
+        dot(ctx, p.x, p.y, p.s * 0.7, '#fed7aa', 0.3 + 0.4 * on);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    },
+    rings: (f) => fineRings(f, { ring: 0.14, arc: 0.6, width: 1.5, ringColor: '#c2410c' }),
+    bodies: (f) => {
       for (const b of f.bodies) {
-        owed[b.i] += rates[b.i] * f.dt;
-        while (owed[b.i] >= 1 && sparks.length < 160) {
-          owed[b.i] -= 1;
-          sparks.push({ x: b.x, y: b.y, vx: rnd(-14, 14), vy: rnd(-48, -16), life: 0, max: rnd(1.2, 2.6), r: rnd(0.6, 1.5) });
+        acc[b.i] += rates[b.i] * f.dt;
+        while (acc[b.i] >= 1) {
+          acc[b.i] -= 1;
+          sparks.push({ x: b.x, y: b.y, vx: rnd(-14, 14), vy: rnd(-34, -14), age: 0, life: rnd(1.1, 2.2), ph: rnd(0, TAU) });
         }
-        const s = f.px * (1.35 - b.i * 0.15);
-        const flicker = 0.85 + 0.15 * Math.sin(f.t * 13 + b.i * 2) * Math.sin(f.t * 7.3 + b.i);
-        glow(ctx, b.x, b.y, s * 8 * flicker, hexTint(b.color), 1);
-        dot(ctx, b.x, b.y, s, '#fff7ed');
+        const flicker = 0.85 + 0.15 * Math.sin(f.t * 9 + b.i * 2) * Math.sin(f.t * 3.3 + b.i);
+        glow(f.ctx, b.x, b.y, f.px * 7.5, hexTint('#f97316'), flicker);
+        dot(f.ctx, b.x, b.y, f.px * (1.25 - b.i * 0.18), '#fdba74', 0.95);
+        dot(f.ctx, b.x, b.y, f.px * (0.6 - b.i * 0.08), '#fff7ed', 1);
       }
+    },
+    front: (f) => {
+      const { ctx } = f;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
       for (let i = sparks.length - 1; i >= 0; i--) {
-        const e = sparks[i];
-        e.life += f.dt;
-        if (e.life > e.max) { sparks.splice(i, 1); continue; }
-        e.x += (e.vx + Math.sin(f.t * 2 + e.y * 0.02) * 10) * f.dt;
-        e.y += e.vy * f.dt;
-        const k = 1 - e.life / e.max;
-        ctx.globalAlpha = k * (0.6 + 0.4 * Math.sin(f.t * 13 + e.x));
-        ctx.fillStyle = `hsl(${20 + 25 * k}, 100%, ${50 + 20 * k}%)`;
+        const p = sparks[i];
+        p.age += f.dt;
+        const k = p.age / p.life;
+        if (k >= 1) { sparks.splice(i, 1); continue; }
+        p.vy -= 10 * f.dt;
+        p.vx += Math.sin(f.t * 2.3 + p.ph) * 18 * f.dt;
+        p.x += p.vx * f.dt;
+        p.y += p.vy * f.dt;
+        ctx.strokeStyle = heat(k);
+        ctx.globalAlpha = 0.85 * (1 - k);
+        ctx.lineWidth = 1.3 * (1 - k) + 0.3;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.r, 0, TAU);
-        ctx.fill();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - p.vx * 0.06, p.y - p.vy * 0.06);
+        ctx.stroke();
       }
+      ctx.lineCap = 'butt';
       ctx.globalCompositeOperation = 'source-over';
     },
   });
 };
 
-const GLYPHS = [...'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモラリルレロワン0123456789'];
+const HEX = '0123456789ABCDEF';
+const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+
 const glyphOrbit: SceneFactory = (w, h) => {
-  const counts = [12, 60, 60];
-  const rings = counts.map((n) => Array.from({ length: n }, () => pick(GLYPHS)));
-  const rainSize = w < 600 ? 12 : 14;
-  const cols = Array.from({ length: Math.min(36, Math.ceil(w / (rainSize * 3))) }, (_, i) => ({
-    x: (i + rnd(0, 1)) * rainSize * 3, y: rnd(-h, h), v: rnd(30, 90), chars: Array.from({ length: 8 }, () => pick(GLYPHS)),
+  // Each orbit is a ring of hex digits; the stretch the hand has covered is
+  // lit, brightest just behind the planet. A few digits re-roll each second.
+  let ringChars: string[][] | null = null;
+  const cols = Array.from({ length: density(w, h, 26, 10, 46) }, () => ({
+    x: rnd(0, w), y: rnd(-h, h), v: rnd(22, 60), n: Math.floor(rnd(5, 14)), chars: Array.from({ length: 14 }, () => pick([...HEX])),
   }));
   return orbital(w, h, {
-    colors: ['#bbf7d0', '#4ade80', '#22c55e'],
+    colors: ['#6ee7b7', '#34d399', '#d1fae5'],
     back: (f) => {
       const { ctx } = f;
-      ctx.font = `${rainSize}px ui-monospace, monospace`;
+      const fs = Math.max(8, f.px * 2.4);
+      ctx.font = `${fs}px ${MONO}`;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = '#34d399';
       for (const c of cols) {
         c.y += c.v * f.dt;
-        if (c.y - 8 * rainSize > h) { c.y = rnd(-200, 0); c.v = rnd(30, 90); }
-        if (Math.random() < 0.04) c.chars[Math.floor(Math.random() * 8)] = pick(GLYPHS);
-        for (let k = 0; k < 8; k++) {
-          ctx.globalAlpha = 0.09 * (1 - k / 8);
-          ctx.fillText(c.chars[k], c.x, c.y - k * rainSize);
+        if (c.y - c.n * fs > h) { c.y = rnd(-h * 0.4, 0); c.x = rnd(0, w); }
+        if (Math.random() < f.dt * 2) c.chars[Math.floor(Math.random() * c.chars.length)] = pick([...HEX]);
+        for (let k = 0; k < c.n; k++) {
+          ctx.globalAlpha = 0.09 * (1 - k / c.n);
+          ctx.fillText(c.chars[k], c.x, c.y - k * fs * 1.1);
         }
       }
     },
-    // The orbits are made of glyphs, so there are no stroked rings.
     rings: (f) => {
       const { ctx } = f;
+      const fs = Math.max(8, f.px * 2.5);
+      const step = fs * 1.05;
+      if (!ringChars) ringChars = f.bodies.map((b) => Array.from({ length: Math.max(12, Math.floor((TAU * b.r) / step)) }, () => pick([...HEX])));
+      ctx.font = `${fs}px ${MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const sizes = [0.2, 0.11, 0.14];
-      for (const b of f.bodies) {
-        const n = counts[b.i];
-        const glyphs = rings[b.i];
-        if (Math.random() < f.dt * 3) glyphs[Math.floor(Math.random() * n)] = pick(GLYPHS);
-        ctx.font = `${Math.max(6, f.base * sizes[b.i])}px ui-monospace, monospace`;
-        const head = Math.floor(b.frac * n);
+      f.bodies.forEach((b, i) => {
+        const chars = ringChars![i];
+        const n = chars.length;
+        if (Math.random() < f.dt * 3) chars[Math.floor(Math.random() * n)] = pick([...HEX]);
         for (let k = 0; k < n; k++) {
-          const [x, y] = onOrbit(f, b.r, (k / n) * TAU + TOP);
-          if (k === head) continue;
-          const lit = k < head;
-          ctx.globalAlpha = lit ? 0.5 + 0.15 * (k / Math.max(1, head)) : 0.1;
-          ctx.fillStyle = lit ? b.color : '#14532d';
-          ctx.fillText(glyphs[k], x, y);
+          const p = k / n;
+          const a = p * TAU + TOP;
+          const [x, y] = onOrbit(f, b.r, a);
+          const lit = p <= b.frac;
+          const behind = (b.frac - p) * n;
+          ctx.fillStyle = lit && behind < 1 ? '#ffffff' : b.color;
+          ctx.globalAlpha = lit ? 0.2 + 0.6 * Math.exp(-behind / 6) : 0.07;
+          ctx.fillText(chars[k], x, y);
         }
-      }
+      });
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     },
     bodies: (f) => {
-      const { ctx } = f;
-      const sizes = [0.2, 0.11, 0.14];
       for (const b of f.bodies) {
-        const n = counts[b.i];
-        const head = Math.floor(b.frac * n);
-        const [x, y] = onOrbit(f, b.r, (head / n) * TAU + TOP);
-        glow(ctx, x, y, f.base * sizes[b.i] * 1.8, hexTint('#86efac'), 0.9);
-        ctx.font = `${Math.max(6, f.base * sizes[b.i])}px ui-monospace, monospace`;
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = '#f0fdf4';
-        ctx.fillText(rings[b.i][head], x, y);
+        const s = f.px * (2 - b.i * 0.3);
+        glow(f.ctx, b.x, b.y, s * 5, hexTint(b.color), 0.8);
+        f.ctx.globalAlpha = 0.95;
+        f.ctx.fillStyle = b.color;
+        f.ctx.fillRect(b.x - s / 2, b.y - s * 0.7, s, s * 1.4);
       }
     },
   });
 };
 
 const constellationOrbit: SceneFactory = (w, h) => {
-  const drifters = Array.from({ length: density(w, h, 32, 14, 56) }, () => ({ x: rnd(0, w), y: rnd(0, h), vx: rnd(-10, 10), vy: rnd(-10, 10) }));
-  const pts: Array<[number, number]> = [];
+  const nodes = Array.from({ length: density(w, h, 55, 26, 100) }, () => ({
+    x: rnd(0, w), y: rnd(0, h), vx: rnd(-5, 5), vy: rnd(-5, 5), r: rnd(0.6, 1.4), ph: rnd(0, TAU),
+  }));
   return orbital(w, h, {
-    colors: ['#c4b5fd', '#a5b4fc', '#f0abfc'],
+    colors: ['#c4b5fd', '#a5b4fc', '#e0e7ff'],
     back: (f) => {
       const { ctx } = f;
-      for (const n of drifters) {
+      const L = Math.min(w, h) * 0.21;
+      for (const n of nodes) {
         n.x += n.vx * f.dt;
         n.y += n.vy * f.dt;
-        if (n.x < 0 || n.x > w) n.vx *= -1;
-        if (n.y < 0 || n.y > h) n.vy *= -1;
+        if (n.x < -10) n.x = w + 10;
+        if (n.x > w + 10) n.x = -10;
+        if (n.y < -10) n.y = h + 10;
+        if (n.y > h + 10) n.y = -10;
       }
-      // Nodes: drifting stars, the twelve hour marks, and the three planets.
-      pts.length = 0;
-      for (const n of drifters) pts.push([n.x, n.y]);
-      for (let k = 0; k < 12; k++) pts.push(onOrbit(f, f.bodies[2].r + f.base * 0.25, (k / 12) * TAU + TOP));
-      for (const b of f.bodies) pts.push([b.x, b.y]);
-      const link = Math.max(24, f.base * 1.1);
-      ctx.strokeStyle = '#a5b4fc';
+      const pts = [...nodes.map((n) => [n.x, n.y] as const), ...f.bodies.map((b) => [b.x, b.y] as const)];
+      ctx.strokeStyle = '#c7d2fe';
       ctx.lineWidth = 0.7;
       for (let i = 0; i < pts.length; i++) {
         for (let j = i + 1; j < pts.length; j++) {
           const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]);
-          if (d > link) continue;
-          ctx.globalAlpha = 0.28 * (1 - d / link);
+          const lim = i >= nodes.length || j >= nodes.length ? L * 1.3 : L;
+          if (d > lim) continue;
+          ctx.globalAlpha = 0.3 * (1 - d / lim) ** 1.3;
           ctx.beginPath();
           ctx.moveTo(pts[i][0], pts[i][1]);
           ctx.lineTo(pts[j][0], pts[j][1]);
           ctx.stroke();
         }
       }
-      ctx.fillStyle = '#e0e7ff';
-      for (let i = 0; i < pts.length - 3; i++) {
-        const marker = i >= drifters.length;
-        ctx.globalAlpha = marker ? 0.55 : 0.4;
-        const s = marker ? 2.2 : 1.6;
-        ctx.fillRect(pts[i][0] - s / 2, pts[i][1] - s / 2, s, s);
-      }
+      for (const n of nodes) dot(ctx, n.x, n.y, n.r, '#e0e7ff', 0.35 + 0.25 * Math.sin(f.t * 0.8 + n.ph));
     },
-    rings: (f) => plainRings(f, { ring: 0.08, arc: 0.36, width: 1.3 }),
+    rings: (f) => fineRings(f, { ring: 0.11, arc: 0.55, width: 1.3 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 6 });
+    },
   });
 };
 
-const AURORA_STOPS: Array<[number, string]> = [[0, '#34d399'], [0.33, '#22d3ee'], [0.66, '#a78bfa'], [1, '#34d399']];
+/** One aurora curtain: thin vertical rays with a bright lower hem. */
+function curtain(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  t: number,
+  o: { color: string; top: number; drift: number; seed: number; alpha: number }
+) {
+  const g = ctx.createLinearGradient(0, 0, 0, 1);
+  g.addColorStop(0, hexA(o.color, 0));
+  g.addColorStop(0.75, hexA(o.color, 0.55));
+  g.addColorStop(0.92, hexA(o.color, 1));
+  g.addColorStop(1, hexA(o.color, 0));
+  ctx.fillStyle = g;
+  const step = 2;
+  for (let x = 0; x < w; x += step) {
+    const u = x + o.seed;
+    const hem = h * o.top + Math.sin(u * 0.0032 + t * o.drift) * h * 0.06 + Math.sin(u * 0.009 - t * o.drift * 1.6) * h * 0.022;
+    const len = h * (0.16 + 0.12 * (0.5 + 0.5 * Math.sin(u * 0.006 + t * 0.09)));
+    const rays = (0.5 + 0.5 * Math.sin(u * 0.05 + t * 0.35 + Math.sin(u * 0.004) * 4)) ** 3;
+    const fade = Math.sin((x / w) * Math.PI) ** 0.6;
+    ctx.globalAlpha = o.alpha * (0.3 + 1.1 * rays) * fade;
+    ctx.save();
+    ctx.translate(x, hem - len);
+    ctx.scale(1, len);
+    ctx.fillRect(0, 0, step, 1);
+    ctx.restore();
+  }
+}
+
 const auroraOrbit: SceneFactory = (w, h) => {
-  const bands = [
-    { hue: 150, y: 0.26, amp: 0.07, k: 2.1, s: 0.18, ph: rnd(0, TAU) },
-    { hue: 175, y: 0.34, amp: 0.06, k: 3.2, s: -0.13, ph: rnd(0, TAU) },
-    { hue: 275, y: 0.2, amp: 0.05, k: 1.6, s: 0.1, ph: rnd(0, TAU) },
-  ];
-  const stars = makeStars(w, h, 50, 25, 120);
+  const stars = makeStars(w, h, 60, 25, 120);
   return orbital(w, h, {
-    colors: ['#6ee7b7', '#67e8f9', '#c4b5fd'],
+    colors: ['#5eead4', '#a7f3d0', '#ddd6fe'],
     back: (f) => {
       const { ctx } = f;
-      drawStars(ctx, stars, f.t, 0.6);
+      drawStars(ctx, stars, f.t, 0.45);
       ctx.globalCompositeOperation = 'lighter';
-      for (const b of bands) {
-        const steps = 40;
-        ctx.beginPath();
-        for (let i = 0; i <= steps; i++) {
-          const x = (i / steps) * w;
-          const y = h * (b.y + b.amp * Math.sin((i / steps) * TAU * b.k * 0.5 + f.t * b.s + b.ph) + 0.02 * Math.sin(f.t * 0.7 + i));
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.lineTo(w, h * (b.y + 0.35));
-        ctx.lineTo(0, h * (b.y + 0.35));
-        ctx.closePath();
-        const g = ctx.createLinearGradient(0, h * (b.y - b.amp), 0, h * (b.y + 0.35));
-        g.addColorStop(0, `hsla(${b.hue}, 90%, 60%, 0)`);
-        g.addColorStop(0.15, `hsla(${b.hue}, 90%, 60%, 0.1)`);
-        g.addColorStop(1, `hsla(${b.hue}, 90%, 50%, 0)`);
-        ctx.globalAlpha = 0.3 + 0.2 * Math.sin(f.t * 0.3 + b.ph);
-        ctx.fillStyle = g;
-        ctx.fill();
-      }
+      curtain(ctx, w, h, f.t, { color: '#34d399', top: 0.42, drift: 0.07, seed: 0, alpha: 0.16 });
+      curtain(ctx, w, h, f.t, { color: '#8b5cf6', top: 0.3, drift: 0.05, seed: 900, alpha: 0.1 });
       ctx.globalCompositeOperation = 'source-over';
     },
-    rings: (f) => {
-      const { ctx } = f;
-      // Polar light flowing around the orbits (solid fallback where conic gradients are missing).
-      let paint: CanvasGradient | string = '#67e8f9';
-      if (typeof ctx.createConicGradient === 'function') {
-        const g = ctx.createConicGradient(f.t * 0.08, f.cx, f.cy);
-        for (const [stop, color] of AURORA_STOPS) g.addColorStop(stop, color);
-        paint = g;
-      }
-      ctx.strokeStyle = paint;
-      for (const b of f.bodies) {
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.22;
-        orbitPath(f, b.r);
-        ctx.stroke();
-        ctx.lineWidth = 2.5;
-        ctx.globalAlpha = 0.6;
-        orbitPath(f, b.r, TOP, b.a);
-        ctx.stroke();
-      }
-      ctx.lineWidth = 1;
+    rings: (f) => fineRings(f, { ring: 0.13, arc: 0.6, width: 1.5 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 6 });
     },
   });
 };
 
 const rippleClock: SceneFactory = (w, h) => {
-  const ripples: Array<{ x: number; y: number; age: number; max: number; size: number; color: string }> = [];
-  const every = [6, 3, 1];
-  const owed = [0, 0, 0];
+  const rings: Array<{ x: number; y: number; age: number; life: number; max: number; color: string }> = [];
+  const every = [3.6, 2.2, 1.1];
+  const life = [7, 5, 3.2];
+  const acc = [0, 0, 0];
   return orbital(w, h, {
-    colors: ['#5eead4', '#67e8f9', '#a5b4fc'],
-    rings: (f) => {
+    colors: ['#93c5fd', '#67e8f9', '#e0f2fe'],
+    back: (f) => {
       const { ctx } = f;
       for (const b of f.bodies) {
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = 0.8;
-        ctx.globalAlpha = 0.1;
-        orbitPath(f, b.r - f.base * 0.035);
-        ctx.stroke();
-        orbitPath(f, b.r + f.base * 0.035);
-        ctx.stroke();
-        ctx.lineWidth = 1.8;
-        ctx.globalAlpha = 0.42;
-        orbitPath(f, b.r, TOP, b.a);
-        ctx.stroke();
-      }
-      ctx.lineWidth = 1;
-    },
-    bodies: (f) => {
-      const { ctx } = f;
-      for (const b of f.bodies) {
-        owed[b.i] += f.dt;
-        if (owed[b.i] >= every[b.i]) {
-          owed[b.i] = 0;
-          ripples.push({ x: b.x, y: b.y, age: 0, max: 2.4 + b.i * -0.3, size: f.base * [0.75, 0.55, 0.38][b.i], color: b.color });
+        acc[b.i] += f.dt;
+        if (acc[b.i] >= every[b.i]) {
+          acc[b.i] = 0;
+          rings.push({ x: b.x, y: b.y, age: 0, life: life[b.i], max: f.base * (1 - b.i * 0.22), color: b.color });
         }
       }
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const r = ripples[i];
+      ctx.lineWidth = 1;
+      for (let i = rings.length - 1; i >= 0; i--) {
+        const r = rings[i];
         r.age += f.dt;
-        if (r.age > r.max) { ripples.splice(i, 1); continue; }
-        const k = r.age / r.max;
+        const k = r.age / r.life;
+        if (k >= 1) { rings.splice(i, 1); continue; }
         ctx.strokeStyle = r.color;
-        ctx.lineWidth = 1;
-        for (const [scale, a] of [[1, 0.45], [0.62, 0.28], [0.3, 0.16]]) {
-          const rr = r.size * (1 - (1 - k) * (1 - k)) * scale;
-          if (rr < 1) continue;
-          ctx.globalAlpha = a * (1 - k);
+        // A leading ring and two softer followers, like a real ripple train.
+        for (const [lag, a] of [[0, 0.38], [0.12, 0.2], [0.24, 0.1]] as const) {
+          const kk = k - lag;
+          if (kk <= 0) continue;
+          ctx.globalAlpha = a * (1 - kk) ** 1.6;
           ctx.beginPath();
-          ctx.arc(r.x, r.y, rr, 0, TAU);
+          ctx.arc(r.x, r.y, r.max * (1 - (1 - kk) ** 2), 0, TAU);
           ctx.stroke();
         }
       }
-      planets(f, 5);
+    },
+    rings: (f) => fineRings(f, { ring: 0.12, arc: 0.55, width: 1.4 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 5 });
     },
   });
 };
 
 const synthwaveOrbit: SceneFactory = (w, h) => {
-  const horizon = h * 0.6;
-  // Orbit halves above the center pass behind the sun, the rest in front of it.
-  const half = (f: OrbitFrame, front: boolean, draw: () => void) => {
-    f.ctx.save();
-    f.ctx.beginPath();
-    if (front) f.ctx.rect(0, f.cy, w, h - f.cy);
-    else f.ctx.rect(0, 0, w, f.cy);
-    f.ctx.clip();
-    draw();
-    f.ctx.restore();
-  };
-  const neonRings = (f: OrbitFrame) => {
-    const { ctx } = f;
-    for (const b of f.bodies) {
-      ctx.strokeStyle = b.color;
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.28;
-      orbitPath(f, b.r);
-      ctx.stroke();
-      ctx.lineWidth = 2.2;
-      ctx.globalAlpha = 0.7;
-      orbitPath(f, b.r, TOP, b.a);
-      ctx.stroke();
-    }
-    ctx.lineWidth = 1;
-  };
-  const neonBodies = (f: OrbitFrame, front: boolean) => {
-    for (const b of f.bodies) {
-      if (Math.sin(b.a) >= 0 !== front) continue;
-      const s = f.px * (1.3 - b.i * 0.15);
-      glow(f.ctx, b.x, b.y, s * 7, hexTint(b.color), 1);
-      dot(f.ctx, b.x, b.y, s, '#fff');
-    }
-  };
+  // Flat retro poster: a banded sunset disc behind the dial and neon
+  // orbits, all face-on (no perspective grid).
+  const stars = makeStars(w, h, 50, 20, 100);
   return orbital(w, h, {
-    colors: ['#fde047', '#f472b6', '#22d3ee'],
-    tilt: 0.36,
-    scale: 1.45,
-    anchor: [0.5, 0.42],
+    colors: ['#f472b6', '#22d3ee', '#fde047'],
     back: (f) => {
-      const { ctx } = f;
-      // Perspective grid floor.
-      ctx.strokeStyle = '#e879f9';
-      ctx.lineWidth = 1;
-      const rows = 14;
-      const scroll = (f.t * 0.3) % 1;
-      for (let i = 0; i < rows; i++) {
-        const z = (i + scroll) / rows;
-        const y = horizon + (h - horizon) * z * z;
-        ctx.globalAlpha = 0.32 * z;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-      }
-      const lines = 22;
-      ctx.globalAlpha = 0.2;
-      ctx.beginPath();
-      for (let i = -lines; i <= lines; i++) {
-        ctx.moveTo(w / 2 + i * (w / lines) * 0.08, horizon);
-        ctx.lineTo(w / 2 + i * (w / lines) * 1.6, h);
-      }
-      ctx.stroke();
-      ctx.globalAlpha = 0.45;
-      ctx.strokeStyle = '#22d3ee';
-      ctx.beginPath();
-      ctx.moveTo(0, horizon);
-      ctx.lineTo(w, horizon);
-      ctx.stroke();
-      half(f, false, () => {
-        neonRings(f);
-        neonBodies(f, false);
-      });
-      // The striped sun sits at the center of the orbits.
-      const r = f.base * 0.62;
-      const sun = ctx.createLinearGradient(0, f.cy - r, 0, f.cy + r);
-      sun.addColorStop(0, '#fde047');
-      sun.addColorStop(1, '#ec4899');
-      glow(ctx, f.cx, f.cy, r * 2.4, (a) => `rgba(244,114,182,${a})`, 0.6);
+      const { ctx, cx, cy } = f;
+      drawStars(ctx, stars, f.t, 0.4);
+      const R = f.bodies[0].r * 0.72;
+      glow(ctx, cx, cy, R * 2.6, hexTint('#f472b6'), 0.35);
+      const g = ctx.createLinearGradient(0, cy - R, 0, cy + R);
+      g.addColorStop(0, '#fde68a');
+      g.addColorStop(0.45, '#fb7185');
+      g.addColorStop(1, '#a21caf');
       ctx.save();
       ctx.beginPath();
-      ctx.arc(f.cx, f.cy, r, 0, TAU);
+      ctx.arc(cx, cy, R, 0, TAU);
       ctx.clip();
-      ctx.fillStyle = sun;
-      ctx.globalAlpha = 0.8;
-      // Bands that thin out toward the bottom, the classic cut-stripe sun.
-      let y = f.cy - r;
-      while (y < f.cy + r) {
-        const gap = y < f.cy - r * 0.1 ? 0 : 1 + (y - f.cy) / (r * 0.18);
-        const band = Math.max(1.5, r * 0.16 - gap * 0.6);
-        ctx.fillRect(f.cx - r, y, r * 2, band);
-        y += band + gap;
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = g;
+      // Solid top half, then bands that thin out toward the bottom.
+      ctx.fillRect(cx - R, cy - R, R * 2, R * 1.05);
+      let y = cy + R * 0.05;
+      let band = R * 0.11;
+      let gap = R * 0.025;
+      while (y < cy + R) {
+        ctx.fillRect(cx - R, y + gap, R * 2, Math.max(0.5, band));
+        y += gap + band;
+        gap *= 1.35;
+        band *= 0.78;
       }
       ctx.restore();
-    },
-    rings: (f) => half(f, true, () => neonRings(f)),
-    bodies: (f) => neonBodies(f, true),
-  });
-};
-
-const cometClock: SceneFactory = (w, h) => {
-  const stars = makeStars(w, h, 120, 50, 260);
-  const meteors: Array<{ x: number; y: number; vx: number; vy: number; life: number; max: number; hue: number }> = [];
-  let next = rnd(1, 3);
-  return orbital(w, h, {
-    colors: ['#fca5a5', '#fcd34d', '#93c5fd'],
-    back: (f) => {
-      const { ctx } = f;
-      drawStars(ctx, stars, f.t, 0.8);
-      next -= f.dt;
-      if (next <= 0) {
-        next = rnd(1.5, 4);
-        const speed = rnd(600, 1000);
-        const ang = rnd(0.35, 0.65);
-        meteors.push({ x: rnd(w * 0.1, w * 1.1), y: rnd(-20, h * 0.4), vx: -Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 0, max: rnd(0.5, 1), hue: rnd(160, 320) });
-      }
-      for (let i = meteors.length - 1; i >= 0; i--) {
-        const m = meteors[i];
-        m.life += f.dt;
-        m.x += m.vx * f.dt;
-        m.y += m.vy * f.dt;
-        if (m.life > m.max) { meteors.splice(i, 1); continue; }
-        const g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * 0.12, m.y - m.vy * 0.12);
-        g.addColorStop(0, `hsla(${m.hue}, 90%, 80%, ${0.7 * (1 - m.life / m.max)})`);
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = g;
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.moveTo(m.x, m.y);
-        ctx.lineTo(m.x - m.vx * 0.12, m.y - m.vy * 0.12);
-        ctx.stroke();
-      }
     },
     rings: (f) => {
       const { ctx } = f;
       for (const b of f.bodies) {
         ctx.strokeStyle = b.color;
-        ctx.globalAlpha = 0.12;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.18;
+        orbitPath(f, b.r);
+        ctx.stroke();
+        // Neon tube: a wide soft stroke under the crisp arc.
+        fadeArc(f, b, b.color, 6, 0.12);
+        fadeArc(f, b, b.color, 1.6, 0.9);
+      }
+    },
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 7 });
+    },
+  });
+};
+
+const cometClock: SceneFactory = (w, h) => {
+  const stars = makeStars(w, h, 90, 40, 180);
+  return orbital(w, h, {
+    colors: ['#fde68a', '#a5f3fc', '#e0e7ff'],
+    back: (f) => drawStars(f.ctx, stars, f.t, 0.6),
+    rings: (f) => {
+      const { ctx } = f;
+      for (const b of f.bodies) {
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.1;
         orbitPath(f, b.r);
         ctx.stroke();
       }
-      // The dust tail is the progress marker here: long, curved, fading.
-      const spans = [0.6, 1, 1.9];
-      for (const b of f.bodies) trail(f, b, spans[b.i], f.px * (1.7 - b.i * 0.25), 0.8);
     },
     bodies: (f) => {
       const { ctx } = f;
+      ctx.globalCompositeOperation = 'lighter';
       for (const b of f.bodies) {
-        // The ion tail always points away from the "sun" at the center.
-        const len = f.base * (0.35 + b.i * 0.12);
-        const ux = (b.x - f.cx) / Math.max(1, Math.hypot(b.x - f.cx, b.y - f.cy));
-        const uy = (b.y - f.cy) / Math.max(1, Math.hypot(b.x - f.cx, b.y - f.cy));
-        const g = ctx.createLinearGradient(b.x, b.y, b.x + ux * len, b.y + uy * len);
-        g.addColorStop(0, 'rgba(191,219,254,0.4)');
-        g.addColorStop(1, 'rgba(191,219,254,0)');
+        // Dust tail: a tapered ribbon laid along the orbit behind the head.
+        const span = Math.min(1.6, (f.base * 1.3) / b.r);
+        const steps = 22;
+        const W0 = f.px * (2.2 - b.i * 0.35);
+        for (let k = 0; k < steps; k++) {
+          const k0 = k / steps;
+          const k1 = (k + 1) / steps;
+          const a0 = b.a - span * k0;
+          const a1 = b.a - span * k1;
+          const w0 = W0 * (1 - k0) ** 1.3;
+          const w1 = W0 * (1 - k1) ** 1.3;
+          const [x0o, y0o] = onOrbit(f, b.r + w0, a0);
+          const [x0i, y0i] = onOrbit(f, b.r - w0, a0);
+          const [x1o, y1o] = onOrbit(f, b.r + w1, a1);
+          const [x1i, y1i] = onOrbit(f, b.r - w1, a1);
+          ctx.globalAlpha = 0.5 * (1 - k0) ** 2;
+          ctx.fillStyle = b.color;
+          ctx.beginPath();
+          ctx.moveTo(x0o, y0o);
+          ctx.lineTo(x1o, y1o);
+          ctx.lineTo(x1i, y1i);
+          ctx.lineTo(x0i, y0i);
+          ctx.closePath();
+          ctx.fill();
+        }
+        // Ion tail: a straight, faint streak pointing away from the center.
+        const dx = b.x - f.cx;
+        const dy = b.y - f.cy;
+        const d = Math.hypot(dx, dy) || 1;
+        const L = f.base * 0.7;
+        const g = ctx.createLinearGradient(b.x, b.y, b.x + (dx / d) * L, b.y + (dy / d) * L);
+        g.addColorStop(0, hexA('#bfdbfe', 0.35));
+        g.addColorStop(1, hexA('#bfdbfe', 0));
         ctx.globalAlpha = 1;
         ctx.strokeStyle = g;
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(b.x, b.y);
-        ctx.lineTo(b.x + ux * len, b.y + uy * len);
+        ctx.lineTo(b.x + (dx / d) * L, b.y + (dy / d) * L);
         ctx.stroke();
-        const s = f.px * (1.3 - b.i * 0.15);
-        glow(ctx, b.x, b.y, s * 6, hexTint(b.color), 1);
-        dot(ctx, b.x, b.y, s * 0.9, '#fff');
       }
+      ctx.globalCompositeOperation = 'source-over';
+      for (const b of f.bodies) core(f, b, { halo: 5, size: 1.1 - b.i * 0.15 });
     },
   });
 };
 
 const lavaOrbit: SceneFactory = (w, h) => {
-  const satellites = Array.from({ length: 6 }, (_, i) => ({ ring: i % 3, th: rnd(0, TAU), sp: rnd(0.03, 0.08), size: rnd(0.35, 0.6), hue: [10, 330, 40, 25, 300, 350][i], ph: rnd(0, TAU) }));
-  const blob = (ctx: CanvasRenderingContext2D, x: number, y: number, r: number, hue: number, a: number) => {
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, `hsla(${hue}, 95%, 60%, ${0.42 * a})`);
-    g.addColorStop(0.55, `hsla(${hue}, 95%, 52%, ${0.14 * a})`);
-    g.addColorStop(1, `hsla(${hue}, 95%, 45%, 0)`);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = g;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
-  };
+  const blobs = Array.from({ length: 9 }, (_, i) => ({
+    ring: i % 3, th: rnd(0, TAU), sp: rnd(0.03, 0.08) * (i % 2 ? 1 : -1), ph: rnd(0, TAU), s: rnd(0.32, 0.55),
+    color: pick(['#f43f5e', '#f97316', '#d946ef', '#fb7185']),
+  }));
   return orbital(w, h, {
-    colors: ['#f97316', '#ec4899', '#facc15'],
+    colors: ['#fb7185', '#fb923c', '#fde68a'],
     back: (f) => {
       const { ctx } = f;
       ctx.globalCompositeOperation = 'lighter';
-      for (const s of satellites) {
-        s.th += s.sp * f.dt;
-        const b = f.bodies[s.ring];
-        const [x, y] = onOrbit(f, b.r + Math.sin(f.t * 0.3 + s.ph) * f.base * 0.12, s.th);
-        blob(ctx, x, y, f.base * s.size * (1 + 0.15 * Math.sin(f.t * 0.5 + s.ph)), s.hue, 0.7);
+      for (const p of blobs) {
+        p.th += p.sp * f.dt;
+        const b = f.bodies[p.ring];
+        const r = b.r + Math.sin(f.t * 0.2 + p.ph) * f.base * 0.25;
+        const [x, y] = onOrbit(f, r, p.th);
+        const R = f.base * p.s * (0.85 + 0.15 * Math.sin(f.t * 0.35 + p.ph));
+        glow(ctx, x, y, R, hexTint(p.color), 0.5);
       }
       ctx.globalCompositeOperation = 'source-over';
     },
+    rings: (f) => fineRings(f, { ring: 0.12, arc: 0.55, width: 1.5 }),
+    bodies: (f) => {
+      f.ctx.globalCompositeOperation = 'lighter';
+      for (const b of f.bodies) glow(f.ctx, b.x, b.y, f.base * 0.3, hexTint(b.color), 0.6);
+      f.ctx.globalCompositeOperation = 'source-over';
+      for (const b of f.bodies) core(f, b, { halo: 4 });
+    },
+  });
+};
+
+/** Almond leaf with a center vein, centered, pointing up, length s. */
+function leafShape(ctx: CanvasRenderingContext2D, s: number, color: string, alpha: number) {
+  ctx.beginPath();
+  ctx.moveTo(0, -s * 0.5);
+  ctx.bezierCurveTo(s * 0.36, -s * 0.3, s * 0.3, s * 0.25, 0, s * 0.5);
+  ctx.bezierCurveTo(-s * 0.3, s * 0.25, -s * 0.36, -s * 0.3, 0, -s * 0.5);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#451a03';
+  ctx.globalAlpha = alpha * 0.45;
+  ctx.lineWidth = Math.max(0.5, s * 0.05);
+  ctx.beginPath();
+  ctx.moveTo(0, -s * 0.4);
+  ctx.lineTo(0, s * 0.62);
+  ctx.stroke();
+}
+
+const autumnOrbit: SceneFactory = (w, h) => {
+  const COLORS = ['#d97706', '#b45309', '#ea580c', '#ca8a04', '#c2410c'];
+  const spawn = (init: boolean) => {
+    const z = Math.random();
+    return {
+      x: rnd(0, w), y: init ? rnd(0, h) : -14, z, s: 7 + z * 10, vy: 16 + z * 26, ph: rnd(0, TAU),
+      rock: rnd(0.8, 1.5), flip: rnd(0.4, 1.1), base: rnd(-0.6, 0.6), color: pick(COLORS),
+    };
+  };
+  const leaves = Array.from({ length: density(w, h, 18, 8, 34) }, () => spawn(true));
+  return orbital(w, h, {
+    colors: ['#f59e0b', '#ea580c', '#fde68a'],
+    back: (f) => {
+      const { ctx } = f;
+      for (const p of leaves) {
+        p.y += p.vy * f.dt;
+        p.x += Math.sin(f.t * 0.7 + p.ph) * 22 * f.dt;
+        if (p.y > h + 16) Object.assign(p, spawn(false));
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        // Rocking like a falling leaf, not spinning like a propeller.
+        ctx.rotate(p.base + Math.sin(f.t * p.rock + p.ph) * 0.8);
+        ctx.scale(Math.max(0.25, Math.abs(Math.cos(f.t * p.flip + p.ph))), 1);
+        leafShape(ctx, p.s, p.color, 0.3 + p.z * 0.4);
+        ctx.restore();
+      }
+    },
+    rings: (f) => fineRings(f, { ring: 0.13, arc: 0.55, width: 1.5 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 6 });
+    },
+  });
+};
+
+const warpOrbit: SceneFactory = (w, h) => {
+  const SPEED = 0.16;
+  const spawn = (init: boolean) => ({ x: rnd(-1, 1), y: rnd(-1, 1), z: init ? rnd(0.05, 1) : 1 });
+  const stars = Array.from({ length: density(w, h, 110, 60, 220) }, () => spawn(true));
+  return orbital(w, h, {
+    colors: ['#c7d2fe', '#a5b4fc', '#e0f2fe'],
+    back: (f) => {
+      const { ctx } = f;
+      const k = Math.max(w, h) * 0.5;
+      ctx.strokeStyle = '#dbeafe';
+      ctx.lineCap = 'round';
+      for (const s of stars) {
+        const z0 = s.z;
+        s.z -= SPEED * f.dt;
+        if (s.z <= 0.03) { Object.assign(s, spawn(false)); continue; }
+        const x1 = f.cx + (s.x / s.z) * k;
+        const y1 = f.cy + (s.y / s.z) * k;
+        if (x1 < -20 || x1 > w + 20 || y1 < -20 || y1 > h + 20) { Object.assign(s, spawn(false)); continue; }
+        // Streak length grows as the star nears, from the last few frames.
+        const zt = Math.min(1, z0 + SPEED * 0.25);
+        const x0 = f.cx + (s.x / zt) * k;
+        const y0 = f.cy + (s.y / zt) * k;
+        const near = 1 - s.z;
+        ctx.globalAlpha = 0.08 + near * 0.5;
+        ctx.lineWidth = 0.4 + near * 1.1;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+      ctx.lineCap = 'butt';
+    },
+    rings: (f) => fineRings(f, { ring: 0.14, arc: 0.6, width: 1.5 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 6 });
+    },
+  });
+};
+
+function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+/** Paper lantern: warm glow, translucent body, dark caps. */
+function lantern(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, alpha: number, flicker: number) {
+  glow(ctx, x, y, s * 2.6, hexTint('#f59e0b'), 0.55 * alpha * flicker);
+  const bw = s * 0.72;
+  roundedRect(ctx, x - bw / 2, y - s / 2, bw, s, bw * 0.38);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, s * 0.6);
+  g.addColorStop(0, hexA('#fef3c7', 0.95 * alpha * flicker));
+  g.addColorStop(1, hexA('#ea580c', 0.75 * alpha));
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.globalAlpha = 0.7 * alpha;
+  ctx.fillStyle = '#431407';
+  ctx.fillRect(x - bw * 0.3, y - s / 2 - s * 0.06, bw * 0.6, s * 0.08);
+  ctx.fillRect(x - bw * 0.3, y + s / 2 - s * 0.02, bw * 0.6, s * 0.08);
+}
+
+const lanternOrbit: SceneFactory = (w, h) => {
+  const spawn = (init: boolean) => {
+    const z = Math.random();
+    return { x: rnd(0, w), y: init ? rnd(0, h) : h + 30, z, s: 8 + z * 15, v: 5 + z * 13, ph: rnd(0, TAU) };
+  };
+  const lanterns = Array.from({ length: density(w, h, 9, 5, 16) }, () => spawn(true)).sort((a, b) => a.z - b.z);
+  return orbital(w, h, {
+    colors: ['#fbbf24', '#fb923c', '#fde68a'],
+    back: (f) => {
+      for (const p of lanterns) {
+        p.y -= p.v * f.dt;
+        p.x += Math.sin(f.t * 0.35 + p.ph) * 4 * f.dt;
+        if (p.y < -40) Object.assign(p, spawn(false));
+        const flicker = 0.88 + 0.12 * Math.sin(f.t * 5 + p.ph) * Math.sin(f.t * 1.7 + p.ph);
+        lantern(f.ctx, p.x, p.y, p.s, 0.35 + p.z * 0.5, flicker);
+      }
+    },
+    rings: (f) => fineRings(f, { ring: 0.13, arc: 0.55, width: 1.5 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 7, glowColor: '#f59e0b' });
+    },
+  });
+};
+
+const galacticOrbit: SceneFactory = (w, h) => {
+  // Face-on two-armed spiral; points keep their place on the arms and the
+  // whole disc turns slowly as one.
+  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+  const inner = [253, 230, 138];
+  const outer = [165, 180, 252];
+  const tone = (u: number) => `rgb(${inner.map((v, i) => Math.round(lerp(v, outer[i], u))).join(',')})`;
+  const stars = Array.from({ length: density(w, h, 900, 700, 1600) }, () => {
+    const u = Math.random() ** 0.75;
+    // A quarter of the points are disc haze; the rest sit tightly on the arms.
+    const haze = Math.random() < 0.25;
+    const arm = Math.random() < 0.5 ? 0 : Math.PI;
+    const th = haze ? rnd(0, TAU) : arm + u * 2.4 * Math.PI + gauss() * 0.22;
+    return { u, th, dr: gauss() * (haze ? 0.08 : 0.025), s: rnd(0.7, 1.6), a: haze ? rnd(0.12, 0.35) : rnd(0.35, 0.9), color: tone(u) };
+  });
+  return orbital(w, h, {
+    colors: ['#fde68a', '#c4b5fd', '#bfdbfe'],
+    back: (f) => {
+      const { ctx } = f;
+      const R = f.bodies[2].r * 1.4;
+      const spin = f.t * 0.012;
+      glow(ctx, f.cx, f.cy, R * 0.35, hexTint('#fde68a'), 0.55);
+      ctx.globalCompositeOperation = 'lighter';
+      for (const s of stars) {
+        const r = R * (0.06 + 0.94 * s.u + s.dr);
+        const a = s.th + spin;
+        ctx.globalAlpha = s.a * (1 - s.u * 0.55);
+        ctx.fillStyle = s.color;
+        ctx.fillRect(f.cx + Math.cos(a) * r, f.cy + Math.sin(a) * r, s.s, s.s);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    },
+    rings: (f) => fineRings(f, { ring: 0.14, arc: 0.6, width: 1.5 }),
+    bodies: (f) => {
+      for (const b of f.bodies) core(f, b, { halo: 6 });
+    },
+  });
+};
+
+const CODE_LINES = [
+  'const focus = await session.start();',
+  'for (const minute of hour) commit(minute);',
+  'if (streak > best) best = streak;',
+  'while (studying) knowledge++;',
+  'export function deepWork(hours) {',
+  'return notes.filter((n) => n.reviewed);',
+  'let progress = elapsed / target;',
+  'queue.push({ topic, minutes: 25 });',
+  'try { learn(next) } finally { rest() }',
+];
+
+const codeOrbit: SceneFactory = (w, h) => {
+  // Each orbit is a line of code wrapped around the dial and typed out as
+  // the hand advances; a caret blinks at the planet.
+  let texts: string[] | null = null;
+  return orbital(w, h, {
+    colors: ['#c4b5fd', '#93c5fd', '#86efac'],
     rings: (f) => {
       const { ctx } = f;
-      ctx.lineCap = 'round';
-      plainRings(f, { ring: 0.08, arc: 0.3, width: 3 });
-      ctx.lineCap = 'butt';
+      const fs = Math.max(8, f.px * 2.5);
+      const step = fs * 0.66;
+      if (!texts) {
+        texts = f.bodies.map((b, i) => {
+          const n = Math.max(16, Math.floor((TAU * b.r) / step));
+          let s = '';
+          let k = i * 3;
+          while (s.length < n) s += `${CODE_LINES[k++ % CODE_LINES.length]}  `;
+          return s.slice(0, n);
+        });
+      }
+      ctx.font = `${fs}px ${MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      f.bodies.forEach((b, i) => {
+        const text = texts![i];
+        const n = text.length;
+        for (let k = 0; k < n; k++) {
+          const ch = text[k];
+          if (ch === ' ') continue;
+          const p = k / n;
+          const a = p * TAU + TOP;
+          const [x, y] = onOrbit(f, b.r, a);
+          const typed = p <= b.frac;
+          const behind = (b.frac - p) * n;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(a + Math.PI / 2);
+          ctx.fillStyle = b.color;
+          ctx.globalAlpha = typed ? 0.3 + 0.55 * Math.exp(-behind / 10) : 0.06;
+          ctx.fillText(ch, 0, 0);
+          ctx.restore();
+        }
+      });
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     },
     bodies: (f) => {
       const { ctx } = f;
-      const hues = [25, 330, 48];
-      ctx.globalCompositeOperation = 'lighter';
+      const on = Math.floor(f.t * 1.6) % 2 === 0;
       for (const b of f.bodies) {
-        const r = f.base * [0.85, 0.65, 0.48][b.i] * (1 + 0.1 * Math.sin(f.t * (0.6 + b.i * 0.3) + b.i));
-        blob(ctx, b.x, b.y, r, hues[b.i], 1);
-        blob(ctx, b.x, b.y, r * 0.4, hues[b.i] + 15, 1);
+        glow(ctx, b.x, b.y, f.px * 5, hexTint(b.color), 0.6);
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.a + Math.PI / 2);
+        ctx.globalAlpha = on ? 0.95 : 0.35;
+        ctx.fillStyle = b.color;
+        const s = f.px * 2.4;
+        ctx.fillRect(-s * 0.3, -s * 0.6, s * 0.6, s * 1.2);
+        ctx.restore();
+      }
+    },
+  });
+};
+
+const prismOrbit: SceneFactory = (w, h) => {
+  const SPECTRUM = ['#ff4d6d', '#ff9f43', '#ffd93d', '#6bff95', '#4dd4ff', '#6c7bff', '#c06bff'];
+  return orbital(w, h, {
+    colors: ['#ffffff', '#ffffff', '#ffffff'],
+    rings: (f) => {
+      const { ctx } = f;
+      const segs = 96;
+      for (const b of f.bodies) {
+        for (let k = 0; k < segs; k++) {
+          const p0 = k / segs;
+          const hue = (p0 * 360 + f.t * 6 + b.i * 50) % 360;
+          const lit = p0 < b.frac;
+          ctx.strokeStyle = `hsl(${hue} 85% 72%)`;
+          ctx.lineWidth = lit ? 1.6 : 1;
+          ctx.globalAlpha = lit ? 0.25 + 0.55 * ((p0 / Math.max(b.frac, 0.001)) ** 2) : 0.1;
+          orbitPath(f, b.r, TOP + p0 * TAU, TOP + (p0 + 1 / segs) * TAU + 0.004);
+          ctx.stroke();
+        }
+      }
+    },
+    bodies: (f) => {
+      const { ctx } = f;
+      // White light from the center, split into a spectrum by the seconds planet.
+      const s = f.bodies[2];
+      const dx = s.x - f.cx;
+      const dy = s.y - f.cy;
+      const g = ctx.createLinearGradient(f.cx, f.cy, s.x, s.y);
+      g.addColorStop(0, 'rgba(255,255,255,0)');
+      g.addColorStop(1, 'rgba(255,255,255,0.22)');
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(f.cx, f.cy);
+      ctx.lineTo(s.x, s.y);
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      const base = Math.atan2(dy, dx);
+      const L = f.base * 0.9;
+      SPECTRUM.forEach((c, k) => {
+        const a = base + (k - 3) * 0.06;
+        const lg = ctx.createLinearGradient(s.x, s.y, s.x + Math.cos(a) * L, s.y + Math.sin(a) * L);
+        lg.addColorStop(0, hexA(c, 0.6));
+        lg.addColorStop(1, hexA(c, 0));
+        ctx.strokeStyle = lg;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x + Math.cos(a) * L, s.y + Math.sin(a) * L);
+        ctx.stroke();
+      });
+      // Slight chromatic fringe on every planet.
+      for (const b of f.bodies) {
+        const off = f.px * 0.45;
+        glow(ctx, b.x - off, b.y, f.px * 4.5, hexTint('#ff4d6d'), 0.35);
+        glow(ctx, b.x, b.y + off * 0.6, f.px * 4.5, hexTint('#6bff95'), 0.35);
+        glow(ctx, b.x + off, b.y, f.px * 4.5, hexTint('#4d7cff'), 0.35);
       }
       ctx.globalCompositeOperation = 'source-over';
-      for (const b of f.bodies) dot(ctx, b.x, b.y, f.px * (1.1 - b.i * 0.15), '#fff7ed', 0.85);
+      for (const b of f.bodies) dot(ctx, b.x, b.y, f.px * (1.1 - b.i * 0.15), '#ffffff', 0.95);
     },
   });
 };
@@ -1217,277 +1458,6 @@ const vectorScope: SceneFactory = (w, h) => {
   });
 };
 
-function leaf(ctx: CanvasRenderingContext2D, s: number, color: string) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(0, -s);
-  ctx.quadraticCurveTo(s * 0.8, 0, 0, s);
-  ctx.quadraticCurveTo(-s * 0.8, 0, 0, -s);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(0, -s * 0.85);
-  ctx.lineTo(0, s * 1.25);
-  ctx.stroke();
-}
-
-const autumnOrbit: SceneFactory = (w, h) => {
-  const palette = ['#f59e0b', '#ea580c', '#b45309', '#dc2626', '#facc15'];
-  const falling = Array.from({ length: density(w, h, 14, 6, 28) }, () => ({
-    x: rnd(0, w), y: rnd(-h, h), s: rnd(5, 9), v: rnd(22, 50), vx: rnd(12, 36), rot: rnd(0, TAU), vr: rnd(-1.4, 1.4), ph: rnd(0, TAU), c: pick(palette),
-  }));
-  return orbital(w, h, {
-    colors: ['#f59e0b', '#ea580c', '#dc2626'],
-    back: (f) => {
-      const { ctx } = f;
-      for (const p of falling) {
-        p.y += p.v * f.dt;
-        p.x += (p.vx + Math.sin(f.t + p.ph) * 22) * f.dt;
-        p.rot += p.vr * f.dt;
-        if (p.y > h + 20 || p.x > w + 20) { p.y = rnd(-40, -10); p.x = rnd(-w * 0.3, w); }
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.scale(1, 0.35 + 0.65 * Math.abs(Math.cos(f.t * 1.4 + p.ph)));
-        ctx.globalAlpha = 0.42;
-        leaf(ctx, p.s, p.c);
-        ctx.restore();
-      }
-    },
-    rings: (f) => plainRings(f, { ring: 0.14, arc: 0.45, width: 1.6 }),
-    bodies: (f) => {
-      const { ctx } = f;
-      for (const b of f.bodies) {
-        const s = f.px * (3 - b.i * 0.4);
-        glow(ctx, b.x, b.y, s * 3, hexTint(b.color), 0.6);
-        ctx.save();
-        ctx.translate(b.x, b.y);
-        // Leaves point along their orbit, rocking a little in the wind.
-        ctx.rotate(b.a + Math.sin(f.t * 1.3 + b.i) * 0.35);
-        ctx.globalAlpha = 0.95;
-        leaf(ctx, s, b.color);
-        ctx.restore();
-      }
-    },
-  });
-};
-
-const warpOrbit: SceneFactory = (w, h) => {
-  const reach = Math.hypot(w, h) / 2;
-  const spawn = () => ({ a: rnd(0, TAU), d: rnd(2, 40), v: rnd(40, 120) });
-  const streaks = Array.from({ length: density(w, h, 80, 50, 180) }, () => ({ ...spawn(), d: rnd(2, reach) }));
-  return orbital(w, h, {
-    colors: ['#a5b4fc', '#67e8f9', '#f5d0fe'],
-    back: (f) => {
-      const { ctx } = f;
-      ctx.strokeStyle = '#e0e7ff';
-      ctx.lineCap = 'round';
-      for (const s of streaks) {
-        const prev = s.d;
-        s.v *= 1 + 1.6 * f.dt;
-        s.d += s.v * f.dt;
-        if (s.d > reach) Object.assign(s, spawn());
-        const k = s.d / reach;
-        ctx.globalAlpha = Math.min(0.55, k * 1.1);
-        ctx.lineWidth = 0.5 + k * 1.6;
-        ctx.beginPath();
-        ctx.moveTo(f.cx + Math.cos(s.a) * prev, f.cy + Math.sin(s.a) * prev);
-        ctx.lineTo(f.cx + Math.cos(s.a) * s.d, f.cy + Math.sin(s.a) * s.d);
-        ctx.stroke();
-      }
-      ctx.lineCap = 'butt';
-    },
-    rings: (f) => {
-      plainRings(f, { ring: 0.2, arc: 0.6, width: 2 });
-      const spans = [0.2, 0.35, 0.75];
-      for (const b of f.bodies) trail(f, b, spans[b.i], f.px * 1.2, 0.5, '#fff');
-    },
-  });
-};
-
-const lanternOrbit: SceneFactory = (w, h) => {
-  const spawn = (y = h + rnd(20, 200)) => ({ x: rnd(0, w), y, s: rnd(0.4, 0.9), v: rnd(10, 24), ph: rnd(0, TAU) });
-  const rising = Array.from({ length: density(w, h, 9, 5, 16) }, () => spawn(rnd(0, h)));
-  const lantern = (ctx: CanvasRenderingContext2D, x: number, y: number, s: number, flicker: number, alpha: number) => {
-    const bw = s * 1.5;
-    const bh = s * 1.9;
-    glow(ctx, x, y, bh * 2.8, (a) => `rgba(255,170,60,${a})`, 0.9 * flicker * alpha);
-    const body = ctx.createLinearGradient(0, y - bh / 2, 0, y + bh / 2);
-    body.addColorStop(0, '#fb923c');
-    body.addColorStop(1, '#fde68a');
-    ctx.globalAlpha = 0.9 * flicker * alpha;
-    ctx.fillStyle = body;
-    ctx.beginPath();
-    ctx.moveTo(x - bw * 0.42, y - bh / 2);
-    ctx.lineTo(x + bw * 0.42, y - bh / 2);
-    ctx.lineTo(x + bw * 0.5, y + bh / 2);
-    ctx.lineTo(x - bw * 0.5, y + bh / 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 0.6 * alpha;
-    ctx.fillStyle = '#7c2d12';
-    ctx.fillRect(x - bw * 0.3, y - bh / 2 - Math.max(1, s * 0.18), bw * 0.6, Math.max(1, s * 0.18));
-  };
-  return orbital(w, h, {
-    colors: ['#fdba74', '#fb923c', '#fde68a'],
-    back: (f) => {
-      for (const l of rising) {
-        l.y -= l.v * l.s * f.dt;
-        if (l.y < -60) Object.assign(l, spawn());
-        lantern(f.ctx, l.x + Math.sin(f.t * 0.5 + l.ph) * 10, l.y, 9 * l.s, 0.85 + 0.15 * Math.sin(f.t * 7 + l.ph), 0.45);
-      }
-    },
-    rings: (f) => plainRings(f, { ring: 0.12, arc: 0.4, width: 1.6 }),
-    bodies: (f) => {
-      for (const b of f.bodies) {
-        const s = f.px * (2.6 - b.i * 0.35);
-        lantern(f.ctx, b.x, b.y + Math.sin(f.t * 0.9 + b.i) * s * 0.3, s, 0.85 + 0.15 * Math.sin(f.t * 7 + b.i * 2), 1);
-      }
-    },
-  });
-};
-
-const galacticOrbit: SceneFactory = (w, h) => {
-  const R = Math.min(w, h) * 0.6;
-  const arms = 3;
-  const stars = Array.from({ length: density(w, h, 380, 260, 700) }, () => {
-    const r = Math.pow(Math.random(), 0.6) * R;
-    const arm = Math.floor(Math.random() * arms);
-    const a = (arm / arms) * TAU + r * 0.012 + rnd(-0.35, 0.35) * (1 - r / R + 0.3);
-    return { r, a, hue: r < R * 0.2 ? rnd(30, 50) : pick([210, 230, 280, 320]), s: rnd(0.6, 1.5) };
-  });
-  return orbital(w, h, {
-    colors: ['#fde68a', '#f0abfc', '#93c5fd'],
-    tilt: 0.55,
-    scale: 1.3,
-    back: (f) => {
-      const { ctx } = f;
-      for (const p of stars) {
-        p.a += (0.22 / Math.sqrt(1 + p.r / 30)) * f.dt;
-        ctx.globalAlpha = 0.12 + 0.4 * (1 - p.r / R);
-        ctx.fillStyle = `hsl(${p.hue}, 80%, 80%)`;
-        ctx.fillRect(f.cx + Math.cos(p.a) * p.r, f.cy + Math.sin(p.a) * p.r * f.tilt, p.s, p.s);
-      }
-      glow(ctx, f.cx, f.cy, f.base * 0.7, (a) => `rgba(253,230,138,${a})`, 0.8);
-    },
-    rings: (f) => {
-      plainRings(f, { ring: 0.18, arc: 0.55, width: 1.8 });
-      const spans = [0.15, 0.3, 0.6];
-      for (const b of f.bodies) trail(f, b, spans[b.i], f.px * 0.9, 0.4);
-    },
-  });
-};
-
-const codeOrbit: SceneFactory = (w, h) => {
-  const pad2 = (n: number) => String(n).padStart(2, '0');
-  const texts = (now: Date) => [
-    `// HOUR ${pad2(now.getHours())} `,
-    'while (studying) { minutes++; } ',
-    `const t = "${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}"; focus.tick(); `,
-  ];
-  return orbital(w, h, {
-    colors: ['#f9a8d4', '#93c5fd', '#86efac'],
-    // Each orbit is a line of code wrapped around the circle; the typed part is lit.
-    rings: (f) => {
-      const { ctx } = f;
-      const lines = texts(f.now);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (const b of f.bodies) {
-        const size = Math.max(6, f.base * [0.13, 0.1, 0.1][b.i]);
-        ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-        const n = Math.max(12, Math.floor((TAU * b.r) / (size * 0.72)));
-        const head = Math.floor(b.frac * n);
-        const line = lines[b.i];
-        for (let k = 0; k < n; k++) {
-          if (k === head) continue;
-          const a = (k / n) * TAU + TOP;
-          const [x, y] = onOrbit(f, b.r, a);
-          ctx.save();
-          ctx.translate(x, y);
-          ctx.rotate(a + Math.PI / 2);
-          ctx.globalAlpha = k < head ? 0.55 : 0.1;
-          ctx.fillStyle = k < head ? b.color : '#d4d4d8';
-          ctx.fillText(line[k % line.length], 0, 0);
-          ctx.restore();
-        }
-      }
-    },
-    bodies: (f) => {
-      const { ctx } = f;
-      // A blinking block cursor marks where each line is being typed.
-      const on = f.now.getMilliseconds() < 550;
-      for (const b of f.bodies) {
-        const size = Math.max(6, f.base * [0.13, 0.1, 0.1][b.i]);
-        const n = Math.max(12, Math.floor((TAU * b.r) / (size * 0.72)));
-        const a = (Math.floor(b.frac * n) / n) * TAU + TOP;
-        const [x, y] = onOrbit(f, b.r, a);
-        glow(ctx, x, y, size * 1.6, hexTint(b.color), 0.8);
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(a + Math.PI / 2);
-        ctx.globalAlpha = on ? 0.95 : 0.35;
-        ctx.fillStyle = b.color;
-        ctx.fillRect(-size * 0.3, -size * 0.5, size * 0.6, size);
-        ctx.restore();
-      }
-    },
-  });
-};
-
-const prismOrbit: SceneFactory = (w, h) => {
-  const hue = (t: number, i: number) => (t * 18 + i * 120) % 360;
-  return orbital(w, h, {
-    colors: ['#ffffff', '#ffffff', '#ffffff'],
-    back: (f) => {
-      const { ctx } = f;
-      ctx.globalCompositeOperation = 'lighter';
-      // Each planet casts a beam of colored light out from the center.
-      for (const b of f.bodies) {
-        const reach = b.r * 2.4;
-        const hh = hue(f.t, b.i);
-        const g = ctx.createRadialGradient(f.cx, f.cy, 0, f.cx, f.cy, reach);
-        g.addColorStop(0, `hsla(${hh}, 95%, 65%, 0.2)`);
-        g.addColorStop(1, `hsla(${hh}, 95%, 65%, 0)`);
-        const spread = 0.07 + 0.025 * Math.sin(f.t * 0.4 + b.i);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.moveTo(f.cx, f.cy);
-        ctx.arc(f.cx, f.cy, reach, b.a - spread, b.a + spread);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.globalCompositeOperation = 'source-over';
-    },
-    rings: (f) => {
-      const { ctx } = f;
-      for (const b of f.bodies) {
-        const hh = hue(f.t, b.i);
-        ctx.strokeStyle = `hsl(${hh}, 95%, 70%)`;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.2;
-        orbitPath(f, b.r);
-        ctx.stroke();
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.6;
-        orbitPath(f, b.r, TOP, b.a);
-        ctx.stroke();
-      }
-      ctx.lineWidth = 1;
-    },
-    bodies: (f) => {
-      for (const b of f.bodies) {
-        const hh = hue(f.t, b.i);
-        const s = f.px * (1.3 - b.i * 0.15);
-        glow(f.ctx, b.x, b.y, s * 7, (a) => `hsla(${hh}, 95%, 70%, ${a})`, 1);
-        dot(f.ctx, b.x, b.y, s, '#fff');
-      }
-    },
-  });
-};
-
 const orbit: SceneFactory = (w, h) => {
   return (ctx) => {
     const cx = w / 2;
@@ -1534,28 +1504,28 @@ const FREE: ChronoUnlock = { type: 'default' };
 type Row = [id: string, name: string, scene: SceneFactory, unlock: ChronoUnlock, desc: string];
 const ROWS: Row[] = [
   ['dust', 'ACCRETION DISK', accretion, FREE, 'Dust grains circling the three orbits and gathering in the wake of each planet.'],
-  ['rain', 'RAIN ORBIT', rainOrbit, FREE, 'Night rain behind the orbits; every second lands as a ripple.'],
-  ['snow', 'FROST ORBIT', frost, FREE, 'Snowflake planets on icy orbits, the hours marked with crystals.'],
-  ['starfield', 'STAR CHART', starChart, { type: 'level', value: 20 }, 'A planisphere of dashed orbits, the three planets linked like a constellation.'],
-  ['fireflies', 'FIREFLY ORBIT', fireflyOrbit, { type: 'sessions', value: 10 }, 'Fireflies drifting along the orbits while the planets breathe green-gold.'],
-  ['bubbles', 'BUBBLE ORRERY', bubbleOrrery, { type: 'level', value: 50 }, 'Glassy bubble planets riding gently wobbling orbits.'],
-  ['sakura', 'SAKURA ORBIT', sakuraOrbit, { type: 'streak', value: 3 }, 'Blossom planets scattering petals along their orbits.'],
-  ['embers', 'EMBER ORBIT', emberOrbit, { type: 'hours', value: 10 }, 'Smouldering planets shedding sparks as they burn around the dial.'],
-  ['matrix', 'GLYPH ORBIT', glyphOrbit, { type: 'level', value: 120 }, 'Orbits made of digital-rain glyphs that light up as time fills them.'],
-  ['constellation', 'CONSTELLATION ORBIT', constellationOrbit, { type: 'sessions', value: 40 }, 'Planets, hour marks and drifting stars linking up whenever they pass close.'],
-  ['aurora', 'AURORA ORBIT', auroraOrbit, { type: 'streak', value: 7 }, 'Orbits painted in flowing polar light over soft auroral curtains.'],
+  ['rain', 'RAIN ORBIT', rainOrbit, FREE, 'Layered night rain behind fine orbits; every second lands as a ripple.'],
+  ['snow', 'FROST ORBIT', frost, FREE, 'Soft snowfall around icy orbits, each planet set in a slowly turning ice crystal.'],
+  ['starfield', 'STAR CHART', starChart, { type: 'level', value: 20 }, 'A planisphere with Roman hour marks and dashed orbits, the planets linked as one constellation.'],
+  ['fireflies', 'FIREFLY ORBIT', fireflyOrbit, { type: 'sessions', value: 10 }, 'Fireflies drifting and blinking in the dark while the planets breathe green-gold.'],
+  ['bubbles', 'BUBBLE ORRERY', bubbleOrrery, { type: 'level', value: 50 }, 'Glass-bubble planets with real highlights, more bubbles rising slowly behind them.'],
+  ['sakura', 'SAKURA ORBIT', sakuraOrbit, { type: 'streak', value: 3 }, 'Five-petal blossom planets as cherry petals tumble down the screen.'],
+  ['embers', 'EMBER ORBIT', emberOrbit, { type: 'hours', value: 10 }, 'Glowing coals for planets, shedding sparks that rise, curl and cool.'],
+  ['matrix', 'GLYPH ORBIT', glyphOrbit, { type: 'level', value: 120 }, 'Orbits made of hex digits that light up as the hands pass, with faint data columns behind.'],
+  ['constellation', 'CONSTELLATION ORBIT', constellationOrbit, { type: 'sessions', value: 40 }, 'Drifting stars that link up with each other and with the planets whenever they pass close.'],
+  ['aurora', 'AURORA ORBIT', auroraOrbit, { type: 'streak', value: 7 }, 'Fine orbits under rayed curtains of green and violet polar light.'],
   ['ripples', 'RIPPLE CLOCK', rippleClock, { type: 'level', value: 250 }, 'Each planet sends rings across still water as it moves.'],
-  ['synthwave', 'SYNTHWAVE ORBIT', synthwaveOrbit, { type: 'hours', value: 50 }, 'Tilted neon orbits around a striped sun above an endless grid.'],
-  ['meteors', 'COMET CLOCK', cometClock, { type: 'level', value: 400 }, 'Three comets with curved tails chasing the hour, minute and second.'],
+  ['synthwave', 'SYNTHWAVE ORBIT', synthwaveOrbit, { type: 'hours', value: 50 }, 'Neon orbits around a banded retro sunset, drawn flat like a poster.'],
+  ['meteors', 'COMET CLOCK', cometClock, { type: 'level', value: 400 }, 'Three comets with tapered dust tails and faint ion streaks.'],
   ['lava', 'LAVA ORBIT', lavaOrbit, { type: 'session', value: 90 }, 'Soft blobs of warm light orbiting and melting into each other.'],
   ['crt', 'VECTOR SCOPE', vectorScope, { type: 'level', value: 600 }, 'A phosphor radar scope sweeping the seconds, scanlines and all.'],
-  ['leaves', 'AUTUMN ORBIT', autumnOrbit, { type: 'sessions', value: 100 }, 'Leaf planets rocking around amber orbits as more leaves fall.'],
-  ['warp', 'WARP ORBIT', warpOrbit, { type: 'level', value: 900 }, 'Orbits holding steady while the stars stretch past at lightspeed.'],
-  ['lanterns', 'LANTERN ORBIT', lanternOrbit, { type: 'streak', value: 14 }, 'Paper-lantern planets glowing on warm orbits.'],
-  ['galaxy', 'GALACTIC ORBIT', galacticOrbit, { type: 'hours', value: 150 }, 'Tilted orbits set inside a slowly turning spiral galaxy.'],
-  ['code', 'CODE ORBIT', codeOrbit, { type: 'level', value: 1300 }, 'Lines of code wrapped around the orbits, typed out as time passes.'],
+  ['leaves', 'AUTUMN ORBIT', autumnOrbit, { type: 'sessions', value: 100 }, 'Leaves rocking as they fall past amber orbits.'],
+  ['warp', 'WARP ORBIT', warpOrbit, { type: 'level', value: 900 }, 'Orbits holding steady while the stars stream past at lightspeed.'],
+  ['lanterns', 'LANTERN ORBIT', lanternOrbit, { type: 'streak', value: 14 }, 'Paper lanterns floating upward around warm, glowing orbits.'],
+  ['galaxy', 'GALACTIC ORBIT', galacticOrbit, { type: 'hours', value: 150 }, 'Orbits laid over a slowly turning two-armed spiral galaxy.'],
+  ['code', 'CODE ORBIT', codeOrbit, { type: 'level', value: 1300 }, 'Lines of code wrapped around the orbits and typed out as time passes.'],
   ['orbit', 'ORBITAL CLOCK', orbit, { type: 'session', value: 180 }, 'Three orbits tracking the real hour, minute and second.'],
-  ['prism', 'PRISM ORBIT', prismOrbit, { type: 'ascension', value: 1 }, 'Color-shifting orbits casting beams of light. An Ascension reward.'],
+  ['prism', 'PRISM ORBIT', prismOrbit, { type: 'ascension', value: 1 }, 'Spectral orbits; the seconds planet splits a beam of white light into color. An Ascension reward.'],
 ];
 
 const SCENES = new Map<string, SceneFactory>(ROWS.map(([id, , scene]) => [id, scene]));

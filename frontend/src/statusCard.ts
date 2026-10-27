@@ -1,31 +1,17 @@
 /**
  * TYPBOX Status Card Renderer
- * Pure Canvas 2D drawing for the TELEMETRY STATUS CARD GENERATOR. Kept free
- * of React so every layout variant (wide / square / portrait / story) shares
- * the same building blocks and can be rendered off-screen.
+ * Pure Canvas 2D drawing for the STATUS CARD GENERATOR: one 1080×1080 card
+ * painted over the user's active Surface Theme (same palette, corner wash
+ * and PRESTIGE art as the dashboard). Kept free of React so it can render
+ * off-screen.
  */
 import type { Category, StudyLog } from './App';
-import type { UserClearanceStatus } from './telemetryFeatures';
+import type { SurfaceThemePair, UserClearanceStatus } from './telemetryFeatures';
 import { nowInActiveZone } from './i18n';
 import { getActiveWeekStart, weekdayPosition } from './week';
+import { ensureReadable } from './surfaceColor';
 
-export type StatusCardLayout = 'wide' | 'square' | 'portrait' | 'story';
-
-export interface StatusCardLayoutSpec {
-  id: StatusCardLayout;
-  label: string;
-  ratio: string;
-  width: number;
-  height: number;
-  hint: string;
-}
-
-export const STATUS_CARD_LAYOUTS: StatusCardLayoutSpec[] = [
-  { id: 'wide', label: 'WIDE', ratio: '16:9', width: 1200, height: 675, hint: 'Desktop / timeline' },
-  { id: 'square', label: 'SQUARE', ratio: '1:1', width: 1080, height: 1080, hint: 'Feeds & chat' },
-  { id: 'portrait', label: 'PORTRAIT', ratio: '4:5', width: 1080, height: 1350, hint: 'Mobile feed' },
-  { id: 'story', label: 'STORY', ratio: '9:16', width: 1080, height: 1920, hint: 'Stories / wallpaper' },
-];
+export const STATUS_CARD_SIZE = 1080;
 
 export interface StatusCardData {
   username: string;
@@ -37,39 +23,102 @@ export interface StatusCardData {
   monthlyHours: string;
   currentStreak: number;
   longestStreak: number;
-  activeDaysCount: number;
   categories: Category[];
   logs: StudyLog[];
-  theme: 'dark' | 'light';
+  surface: SurfaceThemePair;
+  isDark: boolean;
+  /** Decoded PRESTIGE backdrop for `surface`, if it has one. */
+  surfaceArt: CanvasImageSource | null;
   showCategories: boolean;
 }
 
 interface Palette {
   dark: boolean;
-  bg: string;
-  panelBg: string;
-  stroke: string;
-  textPrimary: string;
-  textSub: string;
-  track: string;
-  cellEmpty: string;
+  bgMain: string;
+  panel: string;
+  border: string;
+  text: string;
+  muted: string;
   accent: string;
+  /** Accent nudged until it reads as text on the panels. */
+  accentText: string;
+  track: string;
 }
 
 interface CategoryStat {
   code: string;
   name: string;
   color: string;
-  hours: string;
-  pct: number;
   min: number;
+  pct: number;
 }
 
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-const font = (px: number, bold = false) => `${bold ? 'bold ' : ''}${Math.round(px * 10) / 10}px ${MONO}`;
+const SANS = '"Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace';
+const sans = (px: number, weight = 400) => `${weight} ${px}px ${SANS}`;
+const mono = (px: number, weight = 400) => `${weight} ${px}px ${MONO}`;
 
-// Truncates `text` with an ellipsis so it fits within `maxWidth` using the
-// context's current font.
+const PAD = 72;
+
+// ------------------------------------------
+// Color helpers
+// ------------------------------------------
+
+function parseHex(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6);
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) || 0) as [number, number, number];
+}
+
+const rgba = (hex: string, a: number) => {
+  const [r, g, b] = parseHex(hex);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+function mix(a: string, b: string, t: number): string {
+  const pa = parseHex(a);
+  const pb = parseHex(b);
+  const out = pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0'));
+  return `#${out.join('')}`;
+}
+
+function buildPalette(data: StatusCardData): Palette {
+  const pal = data.isDark ? data.surface.dark : data.surface.light;
+  const accent = data.surface.accentHex;
+  return {
+    dark: data.isDark,
+    bgMain: pal.bgMain,
+    panel: pal.bgCard,
+    border: pal.border,
+    text: pal.textMain,
+    muted: pal.textMuted,
+    accent,
+    accentText: ensureReadable(accent, [pal.bgCard, pal.bgMain], 3),
+    track: mix(pal.bgCard, pal.textMain, data.isDark ? 0.1 : 0.08),
+  };
+}
+
+// ------------------------------------------
+// Drawing primitives
+// ------------------------------------------
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+// letterSpacing is not in every canvas implementation yet; tracking is a
+// nicety, so it silently falls back to none.
+function setTracking(ctx: CanvasRenderingContext2D, px: number) {
+  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${px}px`;
+}
+
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (maxWidth <= 0) return '';
   if (ctx.measureText(text).width <= maxWidth) return text;
@@ -83,616 +132,452 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
   return lo > 0 ? `${text.slice(0, lo)}…` : '';
 }
 
-const padLv = (lv: number) => String(lv).padStart(4, '0');
+// Small uppercase caption used for every section / metric label.
+function caption(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, maxW = 1e4) {
+  ctx.font = mono(15, 500);
+  setTracking(ctx, 2.4);
+  ctx.fillStyle = color;
+  ctx.fillText(fitText(ctx, text.toUpperCase(), maxW), x, y);
+  setTracking(ctx, 0);
+}
 
-function buildPalette(data: StatusCardData): Palette {
-  const dark = data.theme === 'dark';
-  return {
-    dark,
-    bg: dark ? '#09090b' : '#fafafa',
-    panelBg: dark ? '#111113' : '#ffffff',
-    stroke: dark ? '#27272a' : '#e4e4e7',
-    textPrimary: dark ? '#f4f4f5' : '#18181b',
-    textSub: '#71717a',
-    track: dark ? '#27272a' : '#e4e4e7',
-    cellEmpty: dark ? '#1f1f23' : '#e4e4e7',
-    accent: data.clearance.current.color || data.avatarColor || '#10b981',
+function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, pal: Palette) {
+  roundRect(ctx, x, y, w, h, 22);
+  ctx.fillStyle = rgba(pal.panel, 0.94);
+  ctx.fill();
+  ctx.strokeStyle = rgba(pal.border, 0.9);
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// ------------------------------------------
+// Backdrop: the active Surface Theme
+// ------------------------------------------
+
+function paintBackdrop(ctx: CanvasRenderingContext2D, S: number, data: StatusCardData, pal: Palette) {
+  ctx.fillStyle = pal.bgMain;
+  ctx.fillRect(0, 0, S, S);
+
+  if (data.surfaceArt) {
+    // `cover`, anchored top-center like the dashboard.
+    const img = data.surfaceArt as HTMLImageElement;
+    const iw = img.naturalWidth || img.width || S;
+    const ih = img.naturalHeight || img.height || S;
+    const scale = Math.max(S / iw, S / ih);
+    ctx.drawImage(img, (S - iw * scale) / 2, 0, iw * scale, ih * scale);
+    return;
+  }
+
+  // Mirrors getSurfaceBackgroundStyle(): accent corner washes in dark mode
+  // plus a soft glow from the top edge.
+  const radial = (cx: number, cy: number, r: number, color: string) => {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, rgba(pal.bgMain, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
   };
+  const wash = { classic: [0.34, 0.14], chroma: [0.16, 0.06], complement: [0.26, 0.1], prestige: [0, 0] }[
+    data.surface.series
+  ];
+  if (pal.dark) {
+    radial(S, 0, S * 1.1, mix(pal.bgMain, pal.accent, wash[0]));
+    radial(0, 0, S * 1.1, mix(pal.bgMain, pal.accent, wash[1]));
+  }
+  const glow = (data.isDark ? data.surface.dark : data.surface.light).glowTint;
+  const g = ctx.createRadialGradient(S / 2, 0, 0, S / 2, 0, S * 0.85);
+  g.addColorStop(0, glow);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+}
+
+// ------------------------------------------
+// Sections
+// ------------------------------------------
+
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const shortDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+
+function snapshotDate(): string {
+  return shortDate(nowInActiveZone());
+}
+
+function paintHeader(ctx: CanvasRenderingContext2D, S: number, pal: Palette) {
+  const y = PAD + 22;
+  // Brand mark: accent square + wordmark.
+  roundRect(ctx, PAD, y - 20, 24, 24, 6);
+  ctx.fillStyle = pal.accent;
+  ctx.fill();
+  ctx.font = sans(24, 700);
+  setTracking(ctx, 3);
+  ctx.fillStyle = pal.text;
+  ctx.fillText('TYPBOX', PAD + 38, y);
+  setTracking(ctx, 0);
+
+  ctx.textAlign = 'right';
+  caption(ctx, `Study Report · ${snapshotDate()}`, S - PAD, y - 2, pal.muted);
+  ctx.textAlign = 'left';
+}
+
+function paintAvatar(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, data: StatusCardData, pal: Palette) {
+  ctx.save();
+  roundRect(ctx, x, y, size, size, size * 0.24);
+  ctx.clip();
+  ctx.fillStyle = mix(pal.panel, data.avatarColor, 0.22);
+  ctx.fillRect(x, y, size, size);
+  if (data.avatarImg) {
+    ctx.drawImage(data.avatarImg, x, y, size, size);
+  } else {
+    ctx.fillStyle = data.avatarColor;
+    ctx.font = sans(size * 0.4, 700);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((data.username || 'U').slice(0, 2).toUpperCase(), x + size / 2, y + size / 2 + 2);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+  ctx.restore();
+  roundRect(ctx, x, y, size, size, size * 0.24);
+  ctx.strokeStyle = rgba(data.avatarColor, 0.9);
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
+// Identity row; returns the bottom edge.
+function paintIdentity(ctx: CanvasRenderingContext2D, S: number, top: number, data: StatusCardData, pal: Palette): number {
+  const c = data.clearance;
+  const size = 112;
+  paintAvatar(ctx, PAD, top, size, data, pal);
+
+  const x = PAD + size + 32;
+  const w = S - PAD - x;
+  ctx.fillStyle = pal.text;
+  ctx.font = sans(52, 700);
+  ctx.fillText(fitText(ctx, data.username || 'Operator', w), x, top + 54);
+
+  // Rank chip
+  const chip = `LV.${String(c.current.level).padStart(4, '0')}`;
+  ctx.font = mono(17, 700);
+  setTracking(ctx, 1.5);
+  const chipW = ctx.measureText(chip).width + 28;
+  roundRect(ctx, x, top + 74, chipW, 34, 17);
+  ctx.fillStyle = rgba(pal.accent, pal.dark ? 0.18 : 0.14);
+  ctx.fill();
+  ctx.strokeStyle = rgba(pal.accent, 0.55);
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = pal.accentText;
+  ctx.fillText(chip, x + 14, top + 97);
+  setTracking(ctx, 0);
+
+  ctx.font = sans(20, 500);
+  ctx.fillStyle = pal.muted;
+  const cycle = c.totalAscensions > 0 ? ` · Cycle ${c.cycleNumber} ✦${c.totalAscensions}` : '';
+  ctx.fillText(fitText(ctx, `${c.current.title}${cycle}`, w - chipW - 16), x + chipW + 16, top + 98);
+  return top + size;
+}
+
+// Hero: lifetime hours + clearance ring. Returns the bottom edge.
+function paintHero(ctx: CanvasRenderingContext2D, S: number, top: number, data: StatusCardData, pal: Palette): number {
+  const c = data.clearance;
+  const h = 220;
+  panel(ctx, PAD, top, S - PAD * 2, h, pal);
+
+  const ix = PAD + 44;
+  caption(ctx, 'Total focus time', ix, top + 58, pal.muted);
+  ctx.font = sans(132, 700);
+  setTracking(ctx, -4);
+  ctx.fillStyle = pal.text;
+  const ringR = 78;
+  const ringCx = S - PAD - 44 - ringR;
+  const numW = ringCx - ringR - 40 - ix;
+  const num = fitText(ctx, data.totalHours, numW - 90);
+  ctx.fillText(num, ix, top + 180);
+  const nw = ctx.measureText(num).width;
+  setTracking(ctx, 0);
+  ctx.font = sans(34, 600);
+  ctx.fillStyle = pal.accentText;
+  ctx.fillText('hrs', ix + nw + 14, top + 180);
+
+  // Clearance progress ring
+  const cy = top + h / 2;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = pal.track;
+  ctx.beginPath();
+  ctx.arc(ringCx, cy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  const pct = Math.floor(Math.max(0, Math.min(100, c.progressPct)));
+  if (pct > 0) {
+    ctx.strokeStyle = pal.accent;
+    ctx.beginPath();
+    ctx.arc(ringCx, cy, ringR, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * pct) / 100);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = pal.text;
+  ctx.font = sans(40, 700);
+  ctx.fillText(`${pct}%`, ringCx, cy + 6);
+  ctx.font = mono(13, 500);
+  setTracking(ctx, 1.6);
+  ctx.fillStyle = pal.muted;
+  const sub = c.ascensionAvailable ? 'ASCEND' : c.next ? `TO LV.${c.next.level}` : 'COMPLETE';
+  ctx.fillText(sub, ringCx, cy + 32);
+  setTracking(ctx, 0);
+  ctx.textAlign = 'left';
+  return top + h;
+}
+
+// Four evenly split metrics separated by hairlines. Returns the bottom edge.
+function paintMetrics(ctx: CanvasRenderingContext2D, S: number, top: number, data: StatusCardData, pal: Palette): number {
+  const h = 140;
+  const w = S - PAD * 2;
+  panel(ctx, PAD, top, w, h, pal);
+  const metrics = [
+    { label: 'This week', val: data.weeklyHours, unit: 'h' },
+    { label: 'This month', val: data.monthlyHours, unit: 'h' },
+    { label: 'Streak', val: String(data.currentStreak), unit: 'd' },
+    { label: 'Best streak', val: String(data.longestStreak), unit: 'd' },
+  ];
+  const colW = w / metrics.length;
+  metrics.forEach((m, i) => {
+    const x = PAD + i * colW;
+    if (i > 0) {
+      ctx.strokeStyle = rgba(pal.border, 0.9);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, top + 30);
+      ctx.lineTo(x, top + h - 30);
+      ctx.stroke();
+    }
+    const ix = x + 32;
+    caption(ctx, m.label, ix, top + 50, pal.muted, colW - 48);
+    ctx.font = sans(54, 700);
+    setTracking(ctx, -1.5);
+    ctx.fillStyle = pal.text;
+    const val = fitText(ctx, m.val, colW - 80);
+    ctx.fillText(val, ix, top + 110);
+    const vw = ctx.measureText(val).width;
+    setTracking(ctx, 0);
+    ctx.font = sans(24, 600);
+    ctx.fillStyle = pal.muted;
+    ctx.fillText(m.unit, ix + vw + 6, top + 110);
+  });
+  return top + h;
+}
+
+function minutesByDate(logs: StudyLog[]): Map<string, number> {
+  const out = new Map<string, number>();
+  logs.forEach((l) => {
+    if (l.durationMinutes > 0) out.set(l.date, (out.get(l.date) ?? 0) + l.durationMinutes);
+  });
+  return out;
+}
+
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Activity heatmap. Mirrors the dashboard's TELEMETRY CADENCE MATRIX: the
+// grid starts (top-left) at the user's first logged week and fills toward
+// the bottom-right; once a grid's worth of weeks is used up, the next block
+// starts fresh, so the current week is always on the card. Days not yet
+// reached are drawn as faint placeholders. Cell intensity follows minutes
+// logged that day.
+function paintActivity(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  data: StatusCardData,
+  pal: Palette
+) {
+  panel(ctx, x, y, w, h, pal);
+  const ix = x + 32;
+  const innerW = w - 64;
+  const gap = 5;
+  const gridTop = y + 76;
+  const cell = Math.floor((h - 76 - 28 - gap * 6) / 7);
+  const weeks = Math.max(1, Math.floor((innerW + gap) / (cell + gap)));
+  const gx = ix;
+
+  const perDay = minutesByDate(data.logs);
+  const now = nowInActiveZone();
+  const weekStart = getActiveWeekStart();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfWeek = (d: Date) => {
+    const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    out.setDate(out.getDate() - weekdayPosition(out.getDay(), weekStart));
+    return out;
+  };
+  const currentWeek = startOfWeek(today);
+  let origin = currentWeek;
+  if (data.logs.length > 0) {
+    const oldest = data.logs.reduce((acc, l) => (l.date < acc ? l.date : acc), data.logs[0].date);
+    const oldestDate = new Date(`${oldest}T00:00:00`);
+    if (!isNaN(oldestDate.getTime()) && oldestDate < currentWeek) origin = startOfWeek(oldestDate);
+  }
+  const weeksElapsed = Math.round((currentWeek.getTime() - origin.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const blockStart = new Date(origin);
+  blockStart.setDate(origin.getDate() + Math.floor(weeksElapsed / weeks) * weeks * 7);
+
+  caption(ctx, `Activity · from ${shortDate(blockStart)}`, ix, y + 52, pal.muted, innerW - 170);
+
+  // Legend: less → more
+  const levels = [0, 0.3, 0.55, 0.8, 1];
+  const lg = 14;
+  ctx.textAlign = 'right';
+  ctx.font = mono(13, 500);
+  ctx.fillStyle = pal.muted;
+  const legendRight = x + w - 32;
+  ctx.fillText('MORE', legendRight, y + 51);
+  const moreW = ctx.measureText('MORE').width;
+  let lx = legendRight - moreW - 10 - levels.length * (lg + 4) + 4;
+  ctx.fillText('LESS', lx - 10, y + 51);
+  ctx.textAlign = 'left';
+  levels.forEach((a) => {
+    roundRect(ctx, lx, y + 39, lg, lg, 3);
+    ctx.fillStyle = a === 0 ? pal.track : rgba(pal.accent, a);
+    ctx.fill();
+    lx += lg + 4;
+  });
+
+  for (let col = 0; col < weeks; col++) {
+    for (let row = 0; row < 7; row++) {
+      const d = new Date(blockStart);
+      d.setDate(blockStart.getDate() + col * 7 + row);
+      roundRect(ctx, gx + col * (cell + gap), gridTop + row * (cell + gap), cell, cell, Math.max(2, cell * 0.2));
+      if (d > today) {
+        ctx.fillStyle = rgba(pal.track, 0.4);
+        ctx.fill();
+        continue;
+      }
+      const min = perDay.get(ymd(d)) ?? 0;
+      const a = min === 0 ? 0 : min < 30 ? 0.3 : min < 60 ? 0.55 : min < 120 ? 0.8 : 1;
+      ctx.fillStyle = a === 0 ? pal.track : rgba(pal.accent, a);
+      ctx.fill();
+    }
+  }
 }
 
 function computeCategoryStats(data: StatusCardData): CategoryStat[] {
-  const totalMin = Math.max(
-    1,
-    data.logs.reduce((acc, l) => acc + l.durationMinutes, 0)
-  );
+  const totalMin = Math.max(1, data.logs.reduce((acc, l) => acc + l.durationMinutes, 0));
   return data.categories
     .map((cat) => {
       const min = data.logs
         .filter((l) => String(l.categoryId) === String(cat.id))
         .reduce((acc, l) => acc + l.durationMinutes, 0);
-      return {
-        code: cat.code,
-        name: cat.name,
-        color: cat.color,
-        hours: (min / 60).toFixed(1),
-        pct: Math.round((min / totalMin) * 100),
-        min,
-      };
+      return { code: cat.code, name: cat.name, color: cat.color, min, pct: Math.round((min / totalMin) * 100) };
     })
+    .filter((s) => s.min > 0)
     .sort((a, b) => b.min - a.min);
 }
 
-function buildMetrics(data: StatusCardData) {
-  return [
-    { label: '01 / TOTAL ARCHIVED', val: `${data.totalHours}`, unit: 'HRS' },
-    { label: '02 / CURRENT STREAK', val: `${data.currentStreak}`, unit: 'DAYS' },
-    { label: '03 / PEAK STREAK', val: `${data.longestStreak}`, unit: 'DAYS' },
-    { label: '04 / WK & MO OUTPUT', val: `${data.weeklyHours}h`, unit: `/ ${data.monthlyHours}h (MO)` },
-  ];
-}
-
-function cycleTag(c: UserClearanceStatus): string {
-  return c.totalAscensions > 0
-    ? `CYCLE ${String(c.cycleNumber).padStart(2, '0')} (✦${c.totalAscensions})`
-    : `CYCLE ${String(c.cycleNumber).padStart(2, '0')}`;
-}
-
-function progressLabel(c: UserClearanceStatus): string {
-  if (c.ascensionAvailable) return 'CLEARANCE PROGRESS // ASCENSION AVAILABLE';
-  if (c.next) return `CLEARANCE PROGRESS // NEXT: LV.${padLv(c.next.level)} (${c.next.requiredHours}H)`;
-  return 'CLEARANCE STATUS // CYCLE COMPLETE';
-}
-
-// ------------------------------------------
-// Shared building blocks
-// ------------------------------------------
-
-function paintBackdrop(ctx: CanvasRenderingContext2D, W: number, H: number, pal: Palette) {
-  ctx.fillStyle = pal.bg;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.strokeStyle = pal.dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.03)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < W; x += 40) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, H);
-    ctx.stroke();
-  }
-  for (let y = 0; y < H; y += 40) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-
-  ctx.strokeStyle = pal.stroke;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(28, 28, W - 56, H - 56);
-
-  ctx.fillStyle = pal.accent;
-  ctx.fillRect(28, 28, W - 56, 5);
-}
-
-function paintDivider(ctx: CanvasRenderingContext2D, W: number, y: number, pal: Palette) {
-  ctx.strokeStyle = pal.stroke;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(28, y);
-  ctx.lineTo(W - 28, y);
-  ctx.stroke();
-}
-
-function paintAvatar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  data: StatusCardData
-) {
-  ctx.fillStyle = `${data.avatarColor}22`;
-  ctx.fillRect(x, y, size, size);
-  ctx.strokeStyle = data.avatarColor;
-  ctx.lineWidth = 2.5;
-  ctx.strokeRect(x, y, size, size);
-
-  if (data.avatarImg) {
-    ctx.drawImage(data.avatarImg, x + 2, y + 2, size - 4, size - 4);
-    return;
-  }
-  ctx.fillStyle = data.avatarColor;
-  ctx.font = font(size * 0.447, true);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText((data.username || 'U').slice(0, 2).toUpperCase(), x + size / 2, y + size / 2 + 2);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-}
-
-// Accent pill with the current rank; returns its width.
-function paintLevelPill(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  s: number,
-  maxWidth: number,
-  data: StatusCardData,
-  pal: Palette
-): number {
-  const c = data.clearance;
-  ctx.font = font(14 * s, true);
-  const padX = 12 * s;
-  const tag = fitText(ctx, `LV.${padLv(c.current.level)} // ${c.current.title}`, maxWidth - padX * 2);
-  const pillWidth = ctx.measureText(tag).width + padX * 2;
-  ctx.fillStyle = pal.accent;
-  ctx.fillRect(x, y, pillWidth, 28 * s);
-  ctx.fillStyle = '#09090b';
-  ctx.fillText(tag, x + padX, y + 19 * s);
-  return pillWidth;
-}
-
-function paintProgress(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  s: number,
-  data: StatusCardData,
-  pal: Palette
-) {
-  const c = data.clearance;
-  ctx.font = font(13 * s, true);
-  const pctText = `${c.progressPct}%`;
-  const pctWidth = ctx.measureText(pctText).width;
-  ctx.textAlign = 'right';
-  ctx.fillStyle = pal.accent;
-  ctx.fillText(pctText, x + w, y);
-  ctx.textAlign = 'left';
-
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(12 * s);
-  ctx.fillText(fitText(ctx, progressLabel(c), w - pctWidth - 12 * s), x, y);
-
-  const barH = 10 * s;
-  ctx.fillStyle = pal.track;
-  ctx.fillRect(x, y + 12 * s, w, barH);
-  ctx.fillStyle = pal.accent;
-  ctx.fillRect(x, y + 12 * s, (w * c.progressPct) / 100, barH);
-
-  const pipGap = 4 * s;
-  const pipW = (w - pipGap * 4) / 5;
-  for (let p = 0; p < 5; p++) {
-    ctx.fillStyle = p < c.subPhase ? '#10b981' : pal.track;
-    ctx.fillRect(x + p * (pipW + pipGap), y + 28 * s, pipW, 4 * s);
-  }
-}
-
-function paintMetricCard(
+function paintCategories(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
   h: number,
-  s: number,
-  m: { label: string; val: string; unit: string },
-  pal: Palette
-) {
-  ctx.fillStyle = pal.panelBg;
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = pal.stroke;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(x, y, w, h);
-
-  const inset = 18 * s;
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(11 * s);
-  ctx.fillText(fitText(ctx, m.label, w - inset * 2), x + inset, y + 28 * s);
-
-  // Shrink the big value (never below ~55%) so value + unit always fit.
-  const unitGap = 6 * s;
-  ctx.font = font(13 * s, true);
-  const unitWidth = ctx.measureText(m.unit).width;
-  let valPx = 38 * s;
-  ctx.font = font(valPx, true);
-  const avail = w - inset * 2 - unitGap - unitWidth;
-  const valWidthAtFull = ctx.measureText(m.val).width;
-  if (valWidthAtFull > avail) {
-    valPx = Math.max(21 * s, (valPx * avail) / valWidthAtFull);
-    ctx.font = font(valPx, true);
-  }
-  const baseline = y + h - 36 * s;
-  ctx.fillStyle = pal.textPrimary;
-  ctx.fillText(m.val, x + inset, baseline);
-
-  const valWidth = ctx.measureText(m.val).width;
-  ctx.fillStyle = pal.accent;
-  ctx.font = font(13 * s, true);
-  ctx.fillText(fitText(ctx, m.unit, w - inset * 2 - valWidth - unitGap), x + inset + unitGap + valWidth, baseline);
-}
-
-// Cadence window. Mirrors the live dashboard's adaptive window: the grid
-// starts at the first day (Monday or Sunday, per the user's week-start
-// setting) of the user's FIRST logged week (not a fixed lookback
-// ending today), so a newer account's cadence visibly fills in from the
-// top-left instead of being squeezed into the right-hand columns of an
-// otherwise-empty fixed-size grid.
-function cadenceWindow(logs: StudyLog[]): { currentMon: Date; weeksOfHistory: number } {
-  const now = nowInActiveZone();
-  const weekStart = getActiveWeekStart();
-  const dayOfWeek = weekdayPosition(now.getDay(), weekStart);
-  const currentMon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
-
-  let originMon = new Date(currentMon);
-  if (logs.length > 0) {
-    const oldestStr = logs.reduce((acc, l) => (l.date < acc ? l.date : acc), logs[0].date);
-    const oldestDate = new Date(`${oldestStr}T00:00:00`);
-    if (!isNaN(oldestDate.getTime())) {
-      const oldestDow = weekdayPosition(oldestDate.getDay(), weekStart);
-      originMon = new Date(oldestDate.getFullYear(), oldestDate.getMonth(), oldestDate.getDate() - oldestDow);
-    }
-  }
-  const weeksOfHistory =
-    Math.round((currentMon.getTime() - originMon.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  return { currentMon, weeksOfHistory: Math.max(1, weeksOfHistory) };
-}
-
-// Weeks run left→right; on tall cards the timeline wraps into `bands`
-// stacked 7-row strips (oldest strip on top) to show more history.
-function paintCadenceMatrix(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  s: number,
-  grid: { cellSize: number; maxCols: number; bands?: number },
   data: StatusCardData,
   pal: Palette
 ) {
-  ctx.fillStyle = pal.panelBg;
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = pal.stroke;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(x, y, w, h);
+  panel(ctx, x, y, w, h, pal);
+  const ix = x + 32;
+  const innerW = w - 64;
+  caption(ctx, 'Focus split', ix, y + 52, pal.muted);
 
-  const inset = 20 * s;
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(12 * s, true);
-  ctx.fillText(
-    fitText(ctx, `TELEMETRY CADENCE MATRIX // ${data.activeDaysCount} ACTIVE DAYS LOGGED`, w - inset * 2),
-    x + inset,
-    y + 28 * s
-  );
-
-  const { logs } = data;
-  const activeDateSet = new Set(logs.filter((l) => l.durationMinutes > 0).map((l) => l.date));
-  const { cellSize } = grid;
-  const bands = Math.max(1, grid.bands ?? 1);
-  const cellGap = Math.max(3, cellSize / 4);
-  const bandGap = cellSize;
-  const bandH = 7 * (cellSize + cellGap) - cellGap;
-  const gridStartX = x + inset;
-  const gridStartY = y + 50 * s;
-
-  const { currentMon, weeksOfHistory } = cadenceWindow(logs);
-  const fitCols = Math.floor((w - inset * 2 + cellGap) / (cellSize + cellGap));
-  const cols = Math.max(1, Math.min(grid.maxCols, fitCols));
-  const totalWeeks = Math.min(cols * bands, weeksOfHistory);
-
-  for (let k = 0; k < totalWeeks; k++) {
-    const weekOffset = totalWeeks - 1 - k;
-    const band = Math.floor(k / cols);
-    const col = k % cols;
-    for (let r = 0; r < 7; r++) {
-      const cellDate = new Date(currentMon);
-      cellDate.setDate(currentMon.getDate() - weekOffset * 7 + r);
-      const yyyy = cellDate.getFullYear();
-      const mm = String(cellDate.getMonth() + 1).padStart(2, '0');
-      const dd = String(cellDate.getDate()).padStart(2, '0');
-      const dStr = `${yyyy}-${mm}-${dd}`;
-
-      ctx.fillStyle = activeDateSet.has(dStr) ? '#10b981' : pal.cellEmpty;
-      ctx.fillRect(
-        gridStartX + col * (cellSize + cellGap),
-        gridStartY + band * (bandH + bandGap) + r * (cellSize + cellGap),
-        cellSize,
-        cellSize
-      );
-    }
-  }
-}
-
-function paintCategoryPanel(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  s: number,
-  maxRows: number,
-  stats: CategoryStat[],
-  pal: Palette,
-  rowH = 40 * s
-) {
-  ctx.fillStyle = pal.panelBg;
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = pal.stroke;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(x, y, w, h);
-
-  const inset = 20 * s;
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(12 * s, true);
-  ctx.fillText('TOP CATEGORY ALLOCATION', x + inset, y + 28 * s);
-
-  const rows = stats.slice(0, maxRows);
-  if (rows.length === 0) {
-    ctx.font = font(12 * s);
-    ctx.fillText('No category telemetry recorded yet.', x + inset, y + 70 * s);
+  const stats = computeCategoryStats(data).slice(0, 4);
+  if (stats.length === 0) {
+    ctx.font = sans(18, 500);
+    ctx.fillStyle = pal.muted;
+    ctx.fillText('No sessions logged yet', ix, y + 110);
     return;
   }
 
-  rows.forEach((cs, idx) => {
-    const rowY = y + 58 * s + idx * rowH;
-    ctx.fillStyle = cs.color;
-    ctx.fillRect(x + inset, rowY - 10 * s, 8 * s, 8 * s);
+  const rowTop = y + 84;
+  const rowH = Math.min(62, (h - 84 - 28) / stats.length);
+  stats.forEach((s, i) => {
+    const ry = rowTop + i * rowH;
+    roundRect(ctx, ix, ry + 4, 12, 12, 3);
+    ctx.fillStyle = s.color;
+    ctx.fill();
 
-    ctx.font = font(12 * s);
-    const right = `${cs.hours}h (${cs.pct}%)`;
-    const rightWidth = ctx.measureText(right).width;
     ctx.textAlign = 'right';
-    ctx.fillStyle = pal.textSub;
-    ctx.fillText(right, x + w - inset, rowY - 2 * s);
+    ctx.font = sans(18, 600);
+    ctx.fillStyle = pal.text;
+    const pct = `${s.pct}%`;
+    ctx.fillText(pct, x + w - 32, ry + 16);
+    const pctW = ctx.measureText(pct).width;
     ctx.textAlign = 'left';
 
-    ctx.fillStyle = pal.textPrimary;
-    ctx.font = font(12 * s, true);
-    const labelX = x + inset + 16 * s;
-    ctx.fillText(fitText(ctx, `[${cs.code}] ${cs.name}`, x + w - inset - rightWidth - 12 * s - labelX), labelX, rowY - 2 * s);
+    ctx.font = sans(18, 500);
+    ctx.fillStyle = pal.text;
+    ctx.fillText(fitText(ctx, s.name || s.code, innerW - 24 - pctW - 12), ix + 22, ry + 16);
 
-    const barW = w - inset * 2;
+    roundRect(ctx, ix, ry + 28, innerW, 6, 3);
     ctx.fillStyle = pal.track;
-    ctx.fillRect(x + inset, rowY + 6 * s, barW, 6 * s);
-    ctx.fillStyle = cs.color;
-    ctx.fillRect(x + inset, rowY + 6 * s, Math.max(4, (barW * cs.pct) / 100), 6 * s);
+    ctx.fill();
+    roundRect(ctx, ix, ry + 28, Math.max(6, (innerW * s.pct) / 100), 6, 3);
+    ctx.fillStyle = s.color;
+    ctx.fill();
   });
 }
 
-// Title row + `rows` rows (the last one only needs its bar + padding).
-function categoryPanelHeight(s: number, rows: number, rowH = 40 * s): number {
-  return 58 * s + (Math.max(1, rows) - 1) * rowH + 40 * s;
-}
-
-function paintFooter(ctx: CanvasRenderingContext2D, W: number, H: number, s: number, data: StatusCardData, pal: Palette) {
-  const c = data.clearance;
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(11 * s);
-  const brand = 'typbox.me';
-  const brandWidth = ctx.measureText(brand).width;
-  ctx.fillText(
-    fitText(ctx, `VERIFIED TELEMETRY // CLEARANCE LV.${padLv(c.current.level)} (${c.current.title})`, W - 120 - brandWidth - 24),
-    60,
-    H - 42
-  );
+function paintFooter(ctx: CanvasRenderingContext2D, S: number, data: StatusCardData, pal: Palette) {
+  const y = S - PAD + 8;
+  caption(ctx, `${data.surface.name} · ${(data.isDark ? data.surface.dark : data.surface.light).label}`, PAD, y, pal.muted, S / 2);
   ctx.textAlign = 'right';
-  ctx.fillText(brand, W - 60, H - 42);
+  ctx.font = sans(18, 600);
+  setTracking(ctx, 1);
+  ctx.fillStyle = pal.text;
+  ctx.fillText('typbox.me', S - PAD, y);
+  setTracking(ctx, 0);
   ctx.textAlign = 'left';
-}
-
-const snapshotDate = () => {
-  const d = nowInActiveZone();
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-};
-
-// ------------------------------------------
-// Layout: WIDE 16:9 (original desktop card)
-// ------------------------------------------
-
-function drawWide(ctx: CanvasRenderingContext2D, W: number, H: number, data: StatusCardData, pal: Palette) {
-  const c = data.clearance;
-
-  ctx.fillStyle = pal.textPrimary;
-  ctx.font = font(22, true);
-  ctx.fillText('TYPBOX.ME', 60, 78);
-
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(13);
-  ctx.fillText('// QUANTIFIED STUDY & TELEMETRY ARCHIVE', 200, 78);
-  ctx.textAlign = 'right';
-  ctx.fillText(`SNAPSHOT // ${snapshotDate()}`, W - 60, 78);
-  ctx.textAlign = 'left';
-
-  paintDivider(ctx, W, 102, pal);
-  paintAvatar(ctx, 60, 130, 76, data);
-
-  const progX = 760;
-  ctx.fillStyle = pal.textPrimary;
-  ctx.font = font(32, true);
-  ctx.fillText(fitText(ctx, data.username || 'OPERATOR', progX - 20 - 156), 156, 162);
-
-  const pillWidth = paintLevelPill(ctx, 156, 176, 1, progX - 20 - 156, data, pal);
-
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(13);
-  const tagX = 156 + pillWidth + 16;
-  ctx.fillText(
-    fitText(ctx, `${cycleTag(c)}  •  DIVISION: ${c.current.division}  •  PHASE ${c.subPhase}/5`, W - 60 - tagX),
-    tagX,
-    195
-  );
-
-  paintProgress(ctx, progX, 142, W - 60 - progX, 1, data, pal);
-
-  const metricY = 232;
-  const metricH = 118;
-  const metricW = (W - 120 - 36) / 4;
-  buildMetrics(data).forEach((m, idx) => {
-    paintMetricCard(ctx, 60 + idx * (metricW + 12), metricY, metricW, metricH, 1, m, pal);
-  });
-
-  const bottomY = 374;
-  const bottomH = 228;
-  const matrixBoxW = data.showCategories ? 660 : W - 120;
-  paintCadenceMatrix(
-    ctx,
-    60,
-    bottomY,
-    matrixBoxW,
-    bottomH,
-    1,
-    { cellSize: 16, maxCols: data.showCategories ? 28 : 48 },
-    data,
-    pal
-  );
-
-  if (data.showCategories) {
-    const catBoxX = 60 + matrixBoxW + 16;
-    paintCategoryPanel(ctx, catBoxX, bottomY, W - 60 - catBoxX, bottomH, 1, 4, computeCategoryStats(data), pal);
-  }
-
-  paintFooter(ctx, W, H, 1, data, pal);
-}
-
-// ------------------------------------------
-// Layouts: SQUARE 1:1 / PORTRAIT 4:5 / STORY 9:16 (stacked, phone-first)
-// ------------------------------------------
-
-const STACKED_SCALE: Record<Exclude<StatusCardLayout, 'wide'>, number> = {
-  square: 1.05,
-  portrait: 1.15,
-  story: 1.3,
-};
-
-function drawStacked(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  H: number,
-  layout: Exclude<StatusCardLayout, 'wide'>,
-  data: StatusCardData,
-  pal: Palette
-) {
-  const s = STACKED_SCALE[layout];
-  const c = data.clearance;
-  const left = 60;
-  const innerW = W - 120;
-
-  // Header: brand + date on one line, tagline below (too narrow for both).
-  const headerY = 28 + 52 * s;
-  ctx.fillStyle = pal.textPrimary;
-  ctx.font = font(22 * s, true);
-  ctx.fillText('TYPBOX.ME', left, headerY);
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(13 * s);
-  ctx.textAlign = 'right';
-  ctx.fillText(`SNAPSHOT // ${snapshotDate()}`, W - 60, headerY);
-  ctx.textAlign = 'left';
-  ctx.font = font(12 * s);
-  ctx.fillText('// QUANTIFIED STUDY & TELEMETRY ARCHIVE', left, headerY + 26 * s);
-  const dividerY = headerY + 48 * s;
-  paintDivider(ctx, W, dividerY, pal);
-
-  // Identity block
-  const profileTop = dividerY + 32 * s;
-  const avatarSize = 104 * s;
-  paintAvatar(ctx, left, profileTop, avatarSize, data);
-  const idX = left + avatarSize + 24 * s;
-  const idW = W - 60 - idX;
-  ctx.fillStyle = pal.textPrimary;
-  ctx.font = font(34 * s, true);
-  ctx.fillText(fitText(ctx, data.username || 'OPERATOR', idW), idX, profileTop + 34 * s);
-  paintLevelPill(ctx, idX, profileTop + 50 * s, s, idW, data, pal);
-  ctx.fillStyle = pal.textSub;
-  ctx.font = font(12.5 * s);
-  ctx.fillText(
-    fitText(ctx, `${cycleTag(c)}  •  ${c.current.division}  •  PHASE ${c.subPhase}/5`, idW),
-    idX,
-    profileTop + 102 * s
-  );
-  let cursor = profileTop + Math.max(avatarSize, 102 * s) + 40 * s;
-
-  // Clearance progress
-  paintProgress(ctx, left, cursor, innerW, s, data, pal);
-  cursor += 32 * s + 34 * s;
-
-  // Metrics: 2 × 2 grid
-  const gap = 12 * s;
-  const metricW = (innerW - gap) / 2;
-  const metricH = (layout === 'story' ? 150 : 118) * s;
-  buildMetrics(data).forEach((m, idx) => {
-    const col = idx % 2;
-    const row = Math.floor(idx / 2);
-    paintMetricCard(ctx, left + col * (metricW + gap), cursor + row * (metricH + gap), metricW, metricH, s, m, pal);
-  });
-  cursor += metricH * 2 + gap + 20 * s;
-
-  // Remaining space (above the footer) goes to the cadence matrix and,
-  // optionally, the category breakdown. Cells and category rows grow to use
-  // the free height; whatever is still left becomes even spacing.
-  const bottomLimit = H - 76;
-  const avail = bottomLimit - cursor;
-  const stats = data.showCategories ? computeCategoryStats(data) : [];
-  const matrixInset = 20 * s;
-  const matrixChrome = 50 * s + 20 * s; // title row + bottom padding
-  const matrixHeightFor = (cell: number) => matrixChrome + cell * 1.25 * 7 - cell * 0.25;
-  const colsFor = (w: number, cell: number) => Math.floor((w - matrixInset * 2 + cell * 0.25) / (cell * 1.25));
-
-  if (data.showCategories && layout === 'square') {
-    const matrixW = Math.round(innerW * 0.56);
-    const catX = left + matrixW + 16;
-    const cellSize = Math.max(10, Math.min(26 * s, (avail - matrixChrome) / 7 / 1.25));
-    paintCadenceMatrix(ctx, left, cursor, matrixW, avail, s, { cellSize, maxCols: colsFor(matrixW, cellSize) }, data, pal);
-    const rows = Math.min(4, Math.max(1, stats.length));
-    const rowH = Math.min(54 * s, (avail - 58 * s - 40 * s) / Math.max(1, rows - 1));
-    paintCategoryPanel(ctx, catX, cursor, W - 60 - catX, avail, s, rows, stats, pal, rows > 1 ? rowH : 40 * s);
-    paintFooter(ctx, W, H, s, data, pal);
-    return;
-  }
-
-  const catRows = data.showCategories ? Math.min(layout === 'story' ? 6 : 4, Math.max(1, stats.length)) : 0;
-  const catMinH = catRows > 0 ? categoryPanelHeight(s, catRows) : 0;
-  const sectionGap = catRows > 0 ? gap : 0;
-  const cellCap = (layout === 'story' ? 30 : 22) * s;
-  const matrixAvail = avail - catMinH - sectionGap;
-  const cellSize = Math.max(10, Math.min(cellCap, (matrixAvail - matrixChrome) / 7 / 1.25));
-  const matrixCols = colsFor(innerW, cellSize);
-  const bandH = matrixHeightFor(cellSize) - matrixChrome;
-  const bandsFit = Math.max(1, Math.floor((matrixAvail - matrixChrome + cellSize) / (bandH + cellSize)));
-  const bands = Math.min(bandsFit, Math.ceil(cadenceWindow(data.logs).weeksOfHistory / matrixCols));
-  const matrixH = matrixChrome + bands * bandH + (bands - 1) * cellSize;
-
-  let slack = avail - matrixH - sectionGap - catMinH;
-  let catRowH = 40 * s;
-  if (catRows > 1 && slack > 0) {
-    catRowH = Math.min(56 * s, 40 * s + slack / (catRows - 1));
-  }
-  const catH = catRows > 0 ? categoryPanelHeight(s, catRows, catRowH) : 0;
-  slack = Math.max(0, avail - matrixH - sectionGap - catH);
-  const spacer = slack / (catRows > 0 ? 3 : 2);
-
-  const matrixY = cursor + spacer;
-  paintCadenceMatrix(ctx, left, matrixY, innerW, matrixH, s, { cellSize, maxCols: matrixCols, bands }, data, pal);
-  if (catRows > 0) {
-    paintCategoryPanel(ctx, left, matrixY + matrixH + sectionGap + spacer, innerW, catH, s, catRows, stats, pal, catRowH);
-  }
-
-  paintFooter(ctx, W, H, s, data, pal);
 }
 
 export function drawStatusCard(
   canvas: { width: number; height: number; getContext(id: '2d'): CanvasRenderingContext2D | null },
-  layout: StatusCardLayout,
   data: StatusCardData
 ) {
-  const spec = STATUS_CARD_LAYOUTS.find((l) => l.id === layout) ?? STATUS_CARD_LAYOUTS[0];
-  const W = spec.width;
-  const H = spec.height;
-  canvas.width = W;
-  canvas.height = H;
+  const S = STATUS_CARD_SIZE;
+  canvas.width = S;
+  canvas.height = S;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   const pal = buildPalette(data);
-  paintBackdrop(ctx, W, H, pal);
-  if (spec.id === 'wide') drawWide(ctx, W, H, data, pal);
-  else drawStacked(ctx, W, H, spec.id, data, pal);
+  paintBackdrop(ctx, S, data, pal);
+  paintHeader(ctx, S, pal);
+  let cursor = paintIdentity(ctx, S, PAD + 76, data, pal);
+  cursor = paintHero(ctx, S, cursor + 40, data, pal);
+  cursor = paintMetrics(ctx, S, cursor + 20, data, pal);
+
+  const top = cursor + 20;
+  const h = S - PAD - 44 - top;
+  const w = S - PAD * 2;
+  if (data.showCategories) {
+    const actW = Math.round(w * 0.6);
+    paintActivity(ctx, PAD, top, actW, h, data, pal);
+    paintCategories(ctx, PAD + actW + 20, top, w - actW - 20, h, data, pal);
+  } else {
+    paintActivity(ctx, PAD, top, w, h, data, pal);
+  }
+  paintFooter(ctx, S, data, pal);
+}
+
+/** Decodes a PRESTIGE `url("data:…")` backdrop so the card can paint it. */
+export function loadSurfaceArt(pair: SurfaceThemePair, isDark: boolean): Promise<HTMLImageElement | null> {
+  const css = pair.art ? (isDark ? pair.art.dark : pair.art.light) : '';
+  const m = /^url\("(.*)"\)$/.exec(css);
+  if (!m) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = m[1];
+  });
 }

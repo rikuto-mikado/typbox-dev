@@ -46,13 +46,19 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment Variables (Optional)
+### 3. Configure Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-> **Note**: Default values are embedded in `settings.py`, so copying `.env` is optional for initial local development.
+Then set `SECRET_KEY` in `.env` (the server refuses to start without it). Generate one with:
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+Every other variable has a working local default.
 
 ### 4. Run Migrations
 

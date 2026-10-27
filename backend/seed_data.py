@@ -17,7 +17,7 @@ import django
 
 # Setup Django environment
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'typbox_hub.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "typbox_hub.settings")
 django.setup()
 
 from django.contrib.auth import get_user_model
@@ -27,49 +27,66 @@ User = get_user_model()
 
 SAMPLE_TOPICS = [
     # Full-stack Development (DEV)
-    'React 19 Server Components and actions deep dive',
-    'Django REST Framework serialization and query optimization',
-    'PostgreSQL indexing strategies and EXPLAIN ANALYZE tuning',
-    'Tailwind CSS v4 arbitrary value optimization and JIT engine',
-    'JWT authentication refresh rotation and secure token storage',
-    'TypeScript strict type narrowing and discriminating unions',
-    'Zstandard compression algorithms and HTTP caching headers',
-    'Vite bundling chunk splitting and Rollup tree shaking',
-    'WebSockets telemetry data streaming architecture',
-    'Next.js 15 App Router caching semantics and revalidation',
-
+    "React 19 Server Components and actions deep dive",
+    "Django REST Framework serialization and query optimization",
+    "PostgreSQL indexing strategies and EXPLAIN ANALYZE tuning",
+    "Tailwind CSS v4 arbitrary value optimization and JIT engine",
+    "JWT authentication refresh rotation and secure token storage",
+    "TypeScript strict type narrowing and discriminating unions",
+    "Zstandard compression algorithms and HTTP caching headers",
+    "Vite bundling chunk splitting and Rollup tree shaking",
+    "WebSockets telemetry data streaming architecture",
+    "Next.js 15 App Router caching semantics and revalidation",
     # Network & Infrastructure (NET)
-    'BGP routing table optimization and route reflector design',
-    'WireGuard VPN mesh network architecture and MTU tuning',
-    'Docker multi-stage build optimization and layer caching',
-    'Kubernetes pod affinity, ingress controllers and TLS cert-manager',
-    'Linux kernel eBPF network packet tracing and security monitoring',
-    'Terraform module refactoring for multi-region cloud infrastructure',
-    'AWS VPC peering, transit gateways and route table policies',
-    'Nginx reverse proxy keep-alive connection tuning',
-    'Cloudflare DNSSEC and edge worker reverse routing',
-
+    "BGP routing table optimization and route reflector design",
+    "WireGuard VPN mesh network architecture and MTU tuning",
+    "Docker multi-stage build optimization and layer caching",
+    "Kubernetes pod affinity, ingress controllers and TLS cert-manager",
+    "Linux kernel eBPF network packet tracing and security monitoring",
+    "Terraform module refactoring for multi-region cloud infrastructure",
+    "AWS VPC peering, transit gateways and route table policies",
+    "Nginx reverse proxy keep-alive connection tuning",
+    "Cloudflare DNSSEC and edge worker reverse routing",
     # English & Academic Writing (LANG)
-    'Technical documentation writing: RFC structure and proposal patterns',
-    'Academic essay structure: persuasive argumentation and evidence synthesis',
-    'IELTS reading section timed practice and vocabulary drill',
-    'Engineering whitepaper drafting: distributed systems telemetry',
-    'Audio comprehension: ACM queue podcast on distributed consensus',
-    'Grammar and style guide polishing: Strunk & White principles',
-
+    "Technical documentation writing: RFC structure and proposal patterns",
+    "Academic essay structure: persuasive argumentation and evidence synthesis",
+    "IELTS reading section timed practice and vocabulary drill",
+    "Engineering whitepaper drafting: distributed systems telemetry",
+    "Audio comprehension: ACM queue podcast on distributed consensus",
+    "Grammar and style guide polishing: Strunk & White principles",
     # Systems & Architecture (SYS)
-    'Distributed systems: Paxos and Raft consensus algorithms',
-    'Linux cgroups v2 resource isolation and memory limit debugging',
-    'Database ACID transactions and repeatable read isolation anomalies',
-    'System design interview: Global metrics aggregator and rate limiter',
-    'ARM64 assembly language fundamentals and register calling conventions',
+    "Distributed systems: Paxos and Raft consensus algorithms",
+    "Linux cgroups v2 resource isolation and memory limit debugging",
+    "Database ACID transactions and repeatable read isolation anomalies",
+    "System design interview: Global metrics aggregator and rate limiter",
+    "ARM64 assembly language fundamentals and register calling conventions",
 ]
 
 DEFAULT_CATEGORIES_SPEC = [
-    {'name': 'Full-stack Development', 'code': 'DEV', 'color': '#10b981', 'weekly_target_hours': 9},
-    {'name': 'Network & Infrastructure', 'code': 'NET', 'color': '#f59e0b', 'weekly_target_hours': 7},
-    {'name': 'English / Academic Writing', 'code': 'LANG', 'color': '#a855f7', 'weekly_target_hours': 5},
-    {'name': 'Systems & Architecture', 'code': 'SYS', 'color': '#3b82f6', 'weekly_target_hours': 8},
+    {
+        "name": "Full-stack Development",
+        "code": "DEV",
+        "color": "#10b981",
+        "weekly_target_hours": 9,
+    },
+    {
+        "name": "Network & Infrastructure",
+        "code": "NET",
+        "color": "#f59e0b",
+        "weekly_target_hours": 7,
+    },
+    {
+        "name": "English / Academic Writing",
+        "code": "LANG",
+        "color": "#a855f7",
+        "weekly_target_hours": 5,
+    },
+    {
+        "name": "Systems & Architecture",
+        "code": "SYS",
+        "color": "#3b82f6",
+        "weekly_target_hours": 8,
+    },
 ]
 
 
@@ -86,13 +103,13 @@ def seed(username: str, count: int, days_span: int = 120):
     existing_codes = {c.code for c in existing_cats}
 
     for spec in DEFAULT_CATEGORIES_SPEC:
-        if spec['code'] not in existing_codes:
+        if spec["code"] not in existing_codes:
             cat = Category.objects.create(
                 user=user,
-                name=spec['name'],
-                code=spec['code'],
-                color=spec['color'],
-                weekly_target_hours=spec['weekly_target_hours'],
+                name=spec["name"],
+                code=spec["code"],
+                color=spec["color"],
+                weekly_target_hours=spec["weekly_target_hours"],
             )
             existing_cats.append(cat)
             print(f"[+] Created category: [{cat.code}] {cat.name}")
@@ -102,7 +119,9 @@ def seed(username: str, count: int, days_span: int = 120):
         sys.exit(1)
 
     print(f"[*] Available categories: {[c.code for c in existing_cats]}")
-    print(f"[*] Generating {count} synthetic study logs across the past {days_span} days...")
+    print(
+        f"[*] Generating {count} synthetic study logs across the past {days_span} days..."
+    )
 
     now = datetime.now()
     new_logs = []
@@ -135,8 +154,12 @@ def seed(username: str, count: int, days_span: int = 120):
     total_hours = round(total_minutes / 60, 1)
 
     print(f"[✓] Successfully inserted {len(created)} study logs!")
-    print(f"[*] Total injected study time: {total_hours} hours ({total_minutes} minutes)")
-    print(f"[*] Total user logs now in DB: {StudyLog.objects.filter(user=user).count()}")
+    print(
+        f"[*] Total injected study time: {total_hours} hours ({total_minutes} minutes)"
+    )
+    print(
+        f"[*] Total user logs now in DB: {StudyLog.objects.filter(user=user).count()}"
+    )
 
 
 def clear(username: str):
@@ -146,15 +169,23 @@ def clear(username: str):
         sys.exit(1)
 
     deleted_count, _ = StudyLog.objects.filter(user=user).delete()
-    print(f"[✓] Cleared {deleted_count} study logs for user '{username}'. Categories remain intact.")
+    print(
+        f"[✓] Cleared {deleted_count} study logs for user '{username}'. Categories remain intact."
+    )
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Seed synthetic study data for load testing')
-    parser.add_argument('--username', default='rikutomikado', help='Target username')
-    parser.add_argument('--count', type=int, default=500, help='Number of logs to generate')
-    parser.add_argument('--days', type=int, default=120, help='Span of days in the past')
-    parser.add_argument('--clear', action='store_true', help='Clear all logs for user')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Seed synthetic study data for load testing"
+    )
+    parser.add_argument("--username", default="rikutomikado", help="Target username")
+    parser.add_argument(
+        "--count", type=int, default=500, help="Number of logs to generate"
+    )
+    parser.add_argument(
+        "--days", type=int, default=120, help="Span of days in the past"
+    )
+    parser.add_argument("--clear", action="store_true", help="Clear all logs for user")
 
     args = parser.parse_args()
 

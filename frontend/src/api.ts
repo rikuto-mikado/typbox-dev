@@ -55,6 +55,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Flattens DRF field errors ({"email": ["..."]}) into a readable line. */
+function formatFieldErrors(errJson: unknown): string {
+  if (!errJson || typeof errJson !== 'object' || Array.isArray(errJson)) return JSON.stringify(errJson);
+  const parts = Object.entries(errJson as Record<string, unknown>).map(([field, msgs]) => {
+    const text = Array.isArray(msgs) ? msgs.join(' ') : String(msgs);
+    return field === 'non_field_errors' ? text : `${field}: ${text}`;
+  });
+  return parts.join(' / ') || JSON.stringify(errJson);
+}
+
 interface FetchOptions extends RequestInit {
   requiresAuth?: boolean;
 }
@@ -107,7 +117,7 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
     let errorDetail: string;
     try {
       const errJson = await response.json();
-      errorDetail = errJson.detail || errJson.message || JSON.stringify(errJson);
+      errorDetail = errJson.detail || errJson.message || formatFieldErrors(errJson);
     } catch {
       errorDetail = `HTTP ${response.status}: ${response.statusText}`;
     }
