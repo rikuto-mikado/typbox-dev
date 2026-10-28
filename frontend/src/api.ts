@@ -375,37 +375,5 @@ export const api = {
       });
     },
   },
-  planetary: {
-    // Public (no auth) proxy for USGS earthquakes + NASA DONKI space weather.
-    // Always the last `windowDays` days; the panel narrows it client-side.
-    signal: async () => {
-      return apiFetch<PlanetarySignal>('/planetary/signal/', { requiresAuth: false });
-    },
-  },
 };
-
-/** "ok" = fresh, "stale" = upstream down so the last good copy is served, "unavailable" = no data. */
-export type PlanetarySourceStatus = 'ok' | 'stale' | 'unavailable';
-
-export interface PlanetarySignal {
-  generatedAt: string;
-  windowDays: number;
-  seismic: {
-    status: PlanetarySourceStatus;
-    events: Array<{ id: string; time: string; mag: number; place: string; tsunami: boolean; url: string | null }>;
-  };
-  solar: {
-    status: PlanetarySourceStatus;
-    flares: Array<{ id: string; time: string; classType: string; region: number | null; url: string | null }>;
-    cmes: Array<{
-      id: string;
-      time: string;
-      speed: number | null;
-      earthArrival: string | null;
-      glancing: boolean;
-      url: string | null;
-    }>;
-    storms: Array<{ id: string; time: string; maxKp: number; url: string | null }>;
-  };
-}
 

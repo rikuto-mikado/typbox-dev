@@ -96,7 +96,7 @@ In practice:
 | COMMAND PALETTE          | Every action via ⌘K / Ctrl+K         | Fully keyboard-drivable                                                                                                                                                      |
 | STATUS CARD              | Shareable image                      | One 1:1 card painted over the active Surface Theme                                                                                                                           |
 | AMBIENT / NOISE          | Focus environment                    | Up to 5 layers across 8 noise families, sleep timer                                                                                                                          |
-| PLANETARY SIGNAL         | Earth and Sun since the last session | Four strips on one time axis (quakes, flares, CMEs, Kp meter); quiet unless something happened                                                                               |
+| ORRERY                   | Where the planets are today          | Schematic top-down solar system + geocentric sign / distance / retrograde list; ticker for the next station                                                                  |
 | SURFACE THEMES           | Background and palette               | 900 plain dark/light pairs (CLASSIC / CHROMA saturation contrast / COMPLEMENT hue contrast) + 12 illustrated prestige; art shows **only through gutters**, never behind text |
 
 ## 6. Motion

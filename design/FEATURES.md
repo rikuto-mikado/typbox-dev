@@ -25,8 +25,8 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 ---
 
 ### Workspace layout
-- **Desktop (lg+)**: two columns that end on the same line — left: chronometer, session logger, category registry, insights & vault, lunar calendar; right: analytics, cadence matrix, log stream, planetary signal. The last panel of the shorter column stretches (the lunar calendar's day cells absorb the height).
-- **Phones**: one column (chronometer, logger, cadence, analytics, insights, registry, lunar, planetary), with the log stream always last.
+- **Desktop (lg+)**: two columns that end on the same line — left: chronometer, session logger, category registry, insights & vault, lunar calendar; right: analytics, cadence matrix, log stream, orrery. The last panel of the shorter column stretches (the lunar calendar's day cells absorb the height).
+- **Phones**: one column (chronometer, logger, cadence, analytics, insights, registry, lunar, orrery), with the log stream always last.
 
 ## 1. Study logging
 
@@ -94,7 +94,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 
 ### Discovery panels
 - **Lunar Calendar**: the month's moon phases computed client-side, today's illumination, and the next full / new moon.
-- **Planetary Signal** (under the log stream on desktop; after the lunar calendar on phones): what the Earth and Sun did since the last study session (or the last 24h, minimum 24h, maximum 7 days). Four strips on one time axis: M2.5+ earthquakes (USGS), solar flares, coronal mass ejections with Earth-arrival ETA, and geomagnetic storms on a 9-cell Kp meter (NASA DONKI). A ticker rotates notable events with links. Each feed degrades on its own (`CACHED` / `FEED OFFLINE`).
+- **Orrery** (under the log stream on desktop; after the lunar calendar on phones): where the planets are today, computed client-side from JPL Keplerian elements (no API). A schematic top-down solar system (evenly spaced orbits, true angles) beside a list of the Sun and planets as seen from Earth: sign and degree, distance in AU, and ℞ when retrograde. Hovering or tapping a row draws the Earth-to-body sightline. A ticker rotates current retrogrades (days until they end) and the next planet to turn retrograde.
 
 ---
 
@@ -230,7 +230,6 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 |---|---|
 | `GET /api/hub/telemetry/` | Aggregate totals, per-category week/month hours and 5 recent logs, for logs with `is_public_to_hub` |
 | `GET /api/portfolio/feed/` | Read-only feed for rikutomikado.tech: only `PORTFOLIO_USERNAME`'s logs, last `PORTFOLIO_FEED_DAYS` days, `is_public_to_portfolio=True` |
-| `GET /api/planetary/signal/` | USGS + NASA DONKI proxy for Planetary Signal: 7-day window, per-source cache with stale fallback; DONKI key in `NASA_API_KEY` |
 
 ### Platform details
 - Frontend: React 19 + Vite + Tailwind 4 + lucide-react. Backend: Django + DRF + SimpleJWT, PostgreSQL in production.

@@ -143,7 +143,7 @@ import {
 import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
 import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
 import { useKeepAwake } from './keepAwake';
-import { PlanetarySignalPanel } from './PlanetarySignal';
+import { Orrery } from './Orrery';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 
 // ==========================================
@@ -943,22 +943,6 @@ export default function App() {
     return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
   }, [currentTime, timeZone]);
   const currentWeekStartStr = useMemo(() => startOfWeekStr(todayStr, weekStart), [todayStr, weekStart]);
-
-  // When the most recent log was committed: the left edge of the Planetary
-  // Signal panel's "since last session" window. Scanned rather than read off
-  // logs[0], since imported/backfilled logs aren't guaranteed to arrive in order.
-  const lastSessionAt = useMemo(() => {
-    let latest: string | null = null;
-    let latestMs = -Infinity;
-    for (const log of logs) {
-      const ms = Date.parse(log.createdAt);
-      if (ms > latestMs) {
-        latestMs = ms;
-        latest = log.createdAt;
-      }
-    }
-    return latest;
-  }, [logs]);
 
   // User Dropdown, Account Settings Modal & Account Deletion State
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
@@ -4568,7 +4552,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Planetary Signal */}
+          {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Orrery */}
           <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-7 lg:[&>*:last-child]:grow">
             {/* ANALYTICS MODULE */}
             <div className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
@@ -5686,9 +5670,9 @@ export default function App() {
               )}
             </div>
 
-            {/* PLANETARY SIGNAL PANEL (USGS + NASA DONKI, since the last session) */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative order-8 lg:order-none`}>
-              <PlanetarySignalPanel since={lastSessionAt} borderCol={borderCol} textMuted={textMuted} isDark={isDark} />
+            {/* ORRERY PANEL (planet positions, computed client-side) */}
+            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none`}>
+              <Orrery timeZone={timeZone} textMuted={textMuted} isDark={isDark} />
             </div>
           </div>
         </div>

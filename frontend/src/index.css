@@ -227,8 +227,8 @@ canvas {
   animation: log-row-flash 2.4s ease-out;
 }
 
-/* Planetary Signal ticker: each rotated event slides in from below */
-@keyframes planetary-ticker-in {
+/* Orrery ticker: each rotated event slides in from below */
+@keyframes orrery-ticker-in {
   0% {
     opacity: 0;
     transform: translateY(4px);
@@ -239,8 +239,8 @@ canvas {
   }
 }
 
-.planetary-ticker-in {
-  animation: planetary-ticker-in 380ms ease-out;
+.orrery-ticker-in {
+  animation: orrery-ticker-in 380ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -248,7 +248,7 @@ canvas {
   .typbox-toast-pop,
   .commit-success-flash,
   .log-row-flash,
-  .planetary-ticker-in {
+  .orrery-ticker-in {
     animation: none;
   }
 }

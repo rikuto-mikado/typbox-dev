@@ -9,7 +9,6 @@ from .views import (
     HubTelemetryView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
-    PlanetarySignalView,
     PortfolioFeedView,
     RegisterView,
     StudyLogViewSet,
@@ -43,8 +42,6 @@ urlpatterns = [
     path("hub/telemetry/", HubTelemetryView.as_view(), name="hub_telemetry"),
     # rikutomikado.tech read-only portfolio feed
     path("portfolio/feed/", PortfolioFeedView.as_view(), name="portfolio_feed"),
-    # Planetary Signal panel: USGS earthquakes + NASA DONKI space weather proxy
-    path("planetary/signal/", PlanetarySignalView.as_view(), name="planetary_signal"),
     # CRUD Router for categories and logs
     path("", include(router.urls)),
 ]

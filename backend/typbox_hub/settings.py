@@ -296,10 +296,6 @@ PORTFOLIO_USERNAME = os.getenv("PORTFOLIO_USERNAME", "").strip() or "rikuto_dev"
 # The feed covers the last N days including today, in that user's timezone.
 PORTFOLIO_FEED_DAYS = int(os.getenv("PORTFOLIO_FEED_DAYS", "").strip() or "30")
 
-# api.nasa.gov key for the Planetary Signal panel's DONKI proxy. DEMO_KEY
-# works but is heavily rate-limited (the proxy refreshes less often with it).
-NASA_API_KEY = os.getenv("NASA_API_KEY", "").strip() or "DEMO_KEY"
-
 # Password reset token validity in seconds (default: 1 hour)
 PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
 
