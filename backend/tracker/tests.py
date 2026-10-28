@@ -1081,3 +1081,98 @@ class RegistrationGateTests(APITestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertIn("access", res.data)
+
+
+@override_settings(PORTFOLIO_USERNAME="owner")
+class HubTelemetryAccessTests(APITestCase):
+    """The public hub only ever reports the portfolio account to anonymous callers."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username="owner", password="s3cure-pass-123"
+        )
+        self.other = User.objects.create_user(
+            username="other", password="s3cure-pass-123"
+        )
+        Category.objects.create(user=self.other, name="Private Plan", code="PRIV")
+        StudyLog.objects.create(
+            user=self.other, date=date(2026, 10, 1), duration_minutes=120
+        )
+
+    def test_anonymous_gets_portfolio_account(self):
+        res = self.client.get("/api/hub/telemetry/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["user"], "owner")
+
+    def test_username_parameter_cannot_read_another_account(self):
+        res = self.client.get("/api/hub/telemetry/", {"username": "other"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["user"], "owner")
+        self.assertEqual(res.data["categories"], [])
+        self.assertEqual(res.data["summary"]["total_hours"], 0)
+
+    def test_unknown_username_looks_the_same_as_a_real_one(self):
+        real = self.client.get("/api/hub/telemetry/", {"username": "other"})
+        fake = self.client.get("/api/hub/telemetry/", {"username": "nobody-here"})
+        self.assertEqual(set(real.data), set(fake.data))
+        self.assertEqual(real.data["user"], fake.data["user"])
+
+    def test_signed_in_user_gets_own_account(self):
+        self.client.force_authenticate(user=self.other)
+        res = self.client.get("/api/hub/telemetry/", {"username": "owner"})
+        self.assertEqual(res.data["user"], "other")
+        self.assertEqual(res.data["summary"]["total_hours"], 2.0)
+
+    @override_settings(PORTFOLIO_USERNAME="missing-user")
+    def test_missing_portfolio_account_returns_empty_payload(self):
+        res = self.client.get("/api/hub/telemetry/", {"username": "other"})
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("user", res.data)
+        self.assertEqual(res.data["categories"], [])
+
+
+class CorsCredentialsTests(APITestCase):
+    """Cross-origin requests are allowed where needed, but never with cookies."""
+
+    def test_portfolio_origin_still_allowed(self):
+        res = self.client.get(
+            "/api/portfolio/feed/", HTTP_ORIGIN="https://rikutomikado.tech"
+        )
+        self.assertEqual(
+            res["Access-Control-Allow-Origin"], "https://rikutomikado.tech"
+        )
+        self.assertNotIn("Access-Control-Allow-Credentials", res)
+
+    def test_frontend_origin_preflight_allows_bearer_header(self):
+        res = self.client.options(
+            "/api/auth/me/",
+            HTTP_ORIGIN="https://typbox.me",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="PATCH",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization, content-type",
+        )
+        self.assertEqual(res["Access-Control-Allow-Origin"], "https://typbox.me")
+        self.assertIn("authorization", res["Access-Control-Allow-Headers"].lower())
+
+    def test_shared_paas_origin_gets_no_credentials(self):
+        res = self.client.get(
+            "/api/portfolio/feed/", HTTP_ORIGIN="https://someone-else.onrender.com"
+        )
+        self.assertNotIn("Access-Control-Allow-Credentials", res)
+
+
+class PasswordResetConfirmThrottleTests(APITestCase):
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def test_confirm_is_rate_limited(self):
+        payload = {"uid": "bad", "token": "bad", "new_password": "s3cure-pass-123"}
+        codes = [
+            self.client.post(
+                "/api/auth/password-reset/confirm/", payload, format="json"
+            ).status_code
+            for _ in range(11)
+        ]
+        self.assertTrue(all(code == 400 for code in codes[:10]), codes)
+        self.assertEqual(codes[10], 429)

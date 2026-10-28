@@ -227,28 +227,11 @@ canvas {
   animation: log-row-flash 2.4s ease-out;
 }
 
-/* Orrery ticker: each rotated event slides in from below */
-@keyframes orrery-ticker-in {
-  0% {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.orrery-ticker-in {
-  animation: orrery-ticker-in 380ms ease-out;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .typbox-toast,
   .typbox-toast-pop,
   .commit-success-flash,
-  .log-row-flash,
-  .orrery-ticker-in {
+  .log-row-flash {
     animation: none;
   }
 }

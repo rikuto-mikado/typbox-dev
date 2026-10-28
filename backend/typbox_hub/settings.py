@@ -199,6 +199,7 @@ REST_FRAMEWORK = {
         "login": "10/minute",
         "register": "10/minute",
         "password_reset": "5/minute",
+        "password_reset_confirm": "10/minute",
     },
 }
 
@@ -231,7 +232,12 @@ for default_origin in (
     if default_origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(default_origin)
 
-CORS_ALLOW_CREDENTIALS = True
+# No cross-origin cookies: the frontend authenticates with a Bearer JWT and
+# the portfolio feed is anonymous, so neither needs them. Keeping this off
+# means the wide origin regexes below (any *.onrender.com, for instance,
+# which anyone can register) can never make a credentialed request, even
+# into an admin's session cookie.
+CORS_ALLOW_CREDENTIALS = False
 
 # Automatically allow all onrender.com, typbox.me domains, and local dev ports
 CORS_ALLOWED_ORIGIN_REGEXES = [

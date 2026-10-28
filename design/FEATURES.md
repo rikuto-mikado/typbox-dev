@@ -9,39 +9,43 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 
 ## 0. At a glance
 
-| System | Size |
-|---|---|
-| Clearance ranks | **3,000** per cycle, 10 divisions, 1,000 hours per cycle, repeatable via Ascension |
-| Surface Themes | **900** dark/light pairs in 3 series, plus **12** illustrated prestige themes |
-| Chronometer faces | **336** in 11 families |
-| UI fonts | **44** monospace faces in 4 kinds |
-| Ambient noise | **60** procedurally synthesized profiles in 8 families, mix up to 5 |
-| Ambient overlay scenes | **23** |
-| Weather display styles | **33** |
-| Profile statuses | **206** options in 9 groups, pick up to 12 |
-| Status card | 1 square card (1080×1080), painted over the active Surface Theme |
-| Avatar presets | 12 icons + initial, 36 accent colors, or uploaded image |
+| System                 | Size                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| Clearance ranks        | **3,000** per cycle, 10 divisions, 1,000 hours per cycle, repeatable via Ascension |
+| Surface Themes         | **900** dark/light pairs in 3 series, plus **12** illustrated prestige themes      |
+| Chronometer faces      | **336** in 11 families                                                             |
+| UI fonts               | **44** monospace faces in 4 kinds                                                  |
+| Ambient noise          | **60** procedurally synthesized profiles in 8 families, mix up to 5                |
+| Ambient overlay scenes | **23**                                                                             |
+| Weather display styles | **33**                                                                             |
+| Profile statuses       | **206** options in 9 groups, pick up to 12                                         |
+| Status card            | 1 square card (1080×1080), painted over the active Surface Theme                   |
+| Avatar presets         | 12 icons + initial, 36 accent colors, or uploaded image                            |
 
 ---
 
 ### Workspace layout
-- **Desktop (lg+)**: two columns that end on the same line — left: chronometer, session logger, category registry, insights & vault, lunar calendar; right: analytics, cadence matrix, log stream, orrery. The last panel of the shorter column stretches (the lunar calendar's day cells absorb the height).
-- **Phones**: one column (chronometer, logger, cadence, analytics, insights, registry, lunar, orrery), with the log stream always last.
+
+- **Desktop (lg+)**: two columns that end on the same line — left: chronometer, session logger, category registry, insights & vault, lunar calendar; right: analytics, cadence matrix, log stream, forecast. The last panel of the shorter column stretches (the lunar calendar's day cells absorb the height).
+- **Phones**: one column (chronometer, logger, cadence, analytics, insights, registry, lunar, forecast), with the log stream always last.
 
 ## 1. Study logging
 
 ### Session Logger
+
 - Two input modes: **MANUAL** (category, date, duration in minutes) and **TIMER** (stopwatch → commit).
 - Commit feedback: button state `idle → submitting → success`, an emerald ring flash on the button, a toast, and the new row flashing in the log stream.
 - Requires sign-in; guests see an auth prompt in place of the form.
 
 ### System Chronometer
+
 - Live clock in the user's timezone with `SYNC // <zone>` readout, plus the stopwatch used by TIMER mode.
 - Status dot: emerald pulse when idle, amber ping and `REC // ACTIVE` while recording.
 - 336 selectable faces (see §4.2) and an inline weather badge (see §6).
 - **Keep awake**: while the stopwatch runs (or an ambient preview is open) the screen is kept from sleeping — Screen Wake Lock API with re-acquire on return/tap/watchdog, falling back to a tiny muted looping video (`public/keep-awake.mp4/.webm`).
 
 ### Command Palette (⌘K / Ctrl+K)
+
 - Fuzzy search over every action; ↑ / ↓ / Enter / Esc.
 - **Natural-language quick log**: typing `log 90m math`, `45m cs`, `1h30m`, `1.5h` parses duration + category and commits directly. An unknown category name logs nothing (it never falls back to the default category), and a commit can't be fired twice by a double Enter.
 - Category quick-log presets for each active category.
@@ -53,6 +57,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - Sign in / register when logged out.
 
 ### Chronological Log Stream
+
 - Newest-first list, 5 rows initially, with load-more (+10) and collapse. On desktop the list keeps its 5-row height once expanded and scrolls inside it (jumping to the first newly shown row), so the page and the stretched left column don't grow with it.
 - Inline edit (category, date, duration) and delete per row.
 - Each log carries `is_public_to_hub` and `is_public_to_portfolio` flags (see §9).
@@ -73,14 +78,17 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 ## 3. Analytics and review
 
 ### Metrics strip
+
 `01 / TOTAL LOGGED`, `THIS WEEK`, `THIS MONTH` and more, followed by the Clearance bar.
 
 ### Analytics module
+
 - Four horizons: **7D** (daily bars), **12W** (weekly buckets), **12M** (monthly buckets), **CAL** (month calendar grid).
 - Averages per week / month, current-period totals.
 - **Timeline scrubber**: drag to rewind weeks/months, one-tap return to the present.
 
 ### Telemetry Cadence Matrix
+
 - 7 days (vertical) × N weeks (horizontal), fit to the available width.
 - Two shading modes: **SHADED** (intensity by volume) and **BINARY** (studied / not).
 - Span ×1 / ×2, paging to previous / next epochs.
@@ -88,34 +96,38 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - Respects the user's week start (Monday / Sunday).
 
 ### Study Insights & Vault
+
 - Current streak, longest streak, active days.
 - Primary focus (top category), average session, peak day, all-time record, habit patterns.
 - Data vault shortcuts: export JSON / CSV.
 
 ### Discovery panels
+
 - **Lunar Calendar**: the month's moon phases computed client-side, today's illumination, and the next full / new moon.
-- **Orrery** (under the log stream on desktop; after the lunar calendar on phones): where the planets are today, computed client-side from JPL Keplerian elements (no API). A schematic top-down solar system (evenly spaced orbits, true angles) beside a list of the Sun and planets as seen from Earth: sign and degree, distance in AU, and ℞ when retrograde. Hovering or tapping a row draws the Earth-to-body sightline. A ticker rotates current retrogrades (days until they end) and the next planet to turn retrograde.
+- **Lunar Calendar** styling: today's moon large with a lunation track (new → full → new) and its age in days; each day cell holds a shaded moon (full moons glow, past days dimmed), and the footer counts days to the next full / new moon.
+- **Forecast // Trajectory** (under the log stream on desktop; after the lunar calendar on phones): computed client-side from the logs. Readouts for 28-day pace (hours / week), trend vs the previous 28 days, and cycle hours. A chart of cycle hours over the last 8 weeks continues as a dashed projection inside a cone bounded by the slowest and fastest of the last four weeks, with the next division / milestone drawn as guide lines. Below it, an ETA (date, days, and fast–slow range) for the next rank, next named milestone, next division and cycle completion; when an Ascension is waiting it says so instead.
 
 ---
 
 ## 4. Progression and unlocks
 
 ### 4.1 Telemetry Clearance (rank system)
+
 - **3,000 ranks per cycle**, spanning **0 → 1,000 hours**.
 - **10 divisions** × 300 ranks, each with its own color:
 
-  | Div | Name | Hours (per cycle) | Color |
-  |---|---|---|---|
-  | 01 | INITIATE | 0–50 | `#a1a1aa` |
-  | 02 | CADET | 50–150 | `#38bdf8` |
-  | 03 | OPERATOR | 150–250 | `#10b981` |
-  | 04 | SPECIALIST | 250–350 | `#06b6d4` |
-  | 05 | VANGUARD | 350–450 | `#6366f1` |
-  | 06 | ARCHITECT | 450–550 | `#a855f7` |
-  | 07 | OVERSEER | 550–650 | `#ec4899` |
-  | 08 | SENTINEL | 650–750 | `#f97316` |
-  | 09 | SOVEREIGN | 750–875 | `#eab308` |
-  | 10 | MONOLITH | 875–1,000 | `#f43f5e` |
+  | Div | Name       | Hours (per cycle) | Color     |
+  | --- | ---------- | ----------------- | --------- |
+  | 01  | INITIATE   | 0–50              | `#a1a1aa` |
+  | 02  | CADET      | 50–150            | `#38bdf8` |
+  | 03  | OPERATOR   | 150–250           | `#10b981` |
+  | 04  | SPECIALIST | 250–350           | `#06b6d4` |
+  | 05  | VANGUARD   | 350–450           | `#6366f1` |
+  | 06  | ARCHITECT  | 450–550           | `#a855f7` |
+  | 07  | OVERSEER   | 550–650           | `#ec4899` |
+  | 08  | SENTINEL   | 650–750           | `#f97316` |
+  | 09  | SOVEREIGN  | 750–875           | `#eab308` |
+  | 10  | MONOLITH   | 875–1,000         | `#f43f5e` |
 
 - Each division has **15 archetypes × 20 grades (I–XX)** = 300 hand-authored titles (e.g. `BOOT NODE II`, `PULSE LISTENER I`, `CADET PROBATION I`).
 - **41 major milestones** override titles at exact hours (`ZERO-HOUR INITIALIZATION`, `CENTURY LOCK // 100H`, `HALF-CYCLE MERIDIAN // 500H`, each `<DIVISION> SUMMIT`, `OMEGA MONOLITH // CYCLE COMPLETE` at 1,000H).
@@ -126,29 +138,31 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 - ⚠ Claimed Ascensions are stored in `localStorage` per username (`typbox_ascension_<username>`), not on the server.
 
 ### 4.2 Unlock tracks
+
 Rewards unlock by **level**, **total hours**, **session count**, **longest single session**, **streak**, or **Ascension count**.
 
-| Track | Free at start | Unlocked by |
-|---|---|---|
-| Surface Themes | 1 (MONOLITH STANDARD) | Clearance level, spread across all 3,000 ranks; 12 prestige themes by Ascension count |
-| Chronometer faces | 6 | 330 gated: 258 by level, 25 by streak, 16 by session count, 16 by total hours, 10 by single-session length, 5 by Ascension |
-| Ambient noise | 4 (brown, pink, white, 40Hz drone) | ~1 new profile every ~50 ranks |
-| UI fonts | several code fonts | level, sessions, hours, streak, single session |
+| Track             | Free at start                      | Unlocked by                                                                                                                |
+| ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Surface Themes    | 1 (MONOLITH STANDARD)              | Clearance level, spread across all 3,000 ranks; 12 prestige themes by Ascension count                                      |
+| Chronometer faces | 6                                  | 330 gated: 258 by level, 25 by streak, 16 by session count, 16 by total hours, 10 by single-session length, 5 by Ascension |
+| Ambient noise     | 4 (brown, pink, white, 40Hz drone) | ~1 new profile every ~50 ranks                                                                                             |
+| UI fonts          | several code fonts                 | level, sessions, hours, streak, single session                                                                             |
 
 ---
 
 ## 5. Personalization
 
 ### 5.1 Surface Themes (900 pairs + 12 prestige)
+
 - Every theme is a **dark/light pair** (e.g. `CARBON BLACK ⇄ ALABASTER WHITE`) with a code, name, description, division, unlock level and accent color.
 - Three plain series (no background patterns; a soft top glow and, in dark mode, an accent wash in the top corners) plus prestige:
 
-  | Series | Code | Pairs | Character |
-  |---|---|---|---|
-  | CLASSIC | `CLS-001` | 300 | The most distinct palettes kept from the former archive and NEO SIGNAL waves |
-  | CHROMA | `CHR-001` | 300 | Saturation contrast: a saturated layer (cards, page field, or edges only) against near-grey layers of the same hue |
-  | COMPLEMENT | `HUE-001` | 300 | Hue contrast: a field hue answered by its opposite (180°) or near-opposite (±150°) hue, far apart in lightness |
-  | PRESTIGE | `PRS-01` | 12 | Hand-composed SVG backdrops per polarity (kintsugi, neon halo, eclipse, accretion disk, aurora, monolith…), gated by Ascension count |
+  | Series     | Code      | Pairs | Character                                                                                                                            |
+  | ---------- | --------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
+  | CLASSIC    | `CLS-001` | 300   | The most distinct palettes kept from the former archive and NEO SIGNAL waves                                                         |
+  | CHROMA     | `CHR-001` | 300   | Saturation contrast: a saturated layer (cards, page field, or edges only) against near-grey layers of the same hue                   |
+  | COMPLEMENT | `HUE-001` | 300   | Hue contrast: a field hue answered by its opposite (180°) or near-opposite (±150°) hue, far apart in lightness                       |
+  | PRESTIGE   | `PRS-01`  | 12    | Hand-composed SVG backdrops per polarity (kintsugi, neon halo, eclipse, accretion disk, aurora, monolith…), gated by Ascension count |
 
 - Distribution: 90 pairs per division (30 of each series, interleaved so the unlock track alternates series).
 - CHROMA / COMPLEMENT palettes are generated in OKLCH so every hue sits at the same perceived lightness; text is solved for contrast (main ≥ 8:1, muted ≥ 4.5:1 on every surface).
@@ -158,20 +172,24 @@ Rewards unlock by **level**, **total hours**, **session count**, **longest singl
 - Light/dark toggle switches polarity within the chosen pair.
 
 ### 5.2 Chronometer faces (336)
+
 Families: CORE 18, DEVICE 40, PIXEL 29, CYBER 41, CODE 24, SCRIPT 46, CLASSIC 59, SIGNAL 27, DIAL 14, HAND 30, PRESTIGE 8.
 Effects include neon, matrix, CRT scanlines, outline, glitch, nixie tubes, split-flap cells, sunset / holo / gold / quantum / chrome / fire / ice / aurora / ocean / rose-gold gradients, emboss, extrude, spray, ink, flicker, vapor, long shadow, pulse, chalk, stamp.
 Numeral systems also cover letter numerals (Hebrew, Armenian, Georgian, Geʽez, Coptic, Gothic, Church Slavonic, Aegean, Brahmi), one-glyph-per-value sets (Braille cells, I Ching hexagrams, Tai Xuan tetragrams), a 12-hour clock, UTC, Mars time, Julian date, sidereal time and more.
 Unlocks are spread across cycle 1 (LV.1–3000) and weighted toward the later divisions so new faces keep arriving all the way to LV.3000.
 
 ### 5.3 UI fonts (44)
+
 Kinds: CODE 19, HUMANIST 10, RETRO 7, DISPLAY 8. Default is the system monospace; others load from Google Fonts (JetBrains Mono, IBM Plex Mono, Fira Code, Geist Mono, Atkinson Hyperlegible Mono…). Display faces apply to readouts only, never to long prose.
 
 ### 5.4 Profile
+
 - Username, email, avatar: 12 icon presets (initial, terminal, cpu, code, zap, shield, globe, sparkles, flame, compass, layers, database) × 36 accent colors, or an uploaded image.
 - **Statuses** (STATUS // LEARNER PROFILE): up to 12 from 206 options in 9 groups (field of study, school & pathway, current mission, study rhythm & planning, study method & setting, learner archetype, study fuel, hobbies, sports). Ids are never renamed; a removed id is silently dropped from accounts. `tracker/tests.py` checks the backend allowlist matches `userStatus.ts`.
 - Timezone and week start (Mon/Sun); all week/month math follows them.
 
 ### 5.5 Settings modal tabs
+
 `PROFILE` · `THEMES` · `FONTS` · `AMBIENT` · `CLEARANCE` · `SECURITY` · `DATA`
 
 Preferences (theme, chronometer face, font, weather style/unit/visibility, surface FX, ambient scene/clock/dim, statuses) sync to the server via the user profile, so they follow the account across devices.
@@ -189,6 +207,7 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 ## 7. Focus environment
 
 ### 7.1 Ambient noise (60 profiles, Web Audio)
+
 - Fully synthesized in the browser (no audio files): colored noise + filters + optional LFO and oscillator drone layers.
 - 8 families: **Brown / Rumble** 10, **Pink / Rain** 10, **White / Static** 10, **Blue / Shimmer** 6, **Violet / Sizzle** 6, **Nature / LFO** 8, **Mechanical** 6, **Drone / Pad** 4. Examples: submarine engine hum, tin roof rainfall, server room, satellite uplink, ocean wave swell, coffee shop murmur, Tibetan singing bowl.
 - **Soundscape mixer**: up to 5 layers, each with its own fader, into one master.
@@ -196,6 +215,7 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 - Mobile hardening: iOS `audioSession = 'playback'`; Android audio wake-lock workaround so sound survives screen-off.
 
 ### 7.2 Ambient overlay (23 scenes)
+
 - Full-screen canvas scene with an optional clock and 5 dim levels (from NONE upward).
 - Every scene is a variation on **ORBITAL CLOCK**: three planets on concentric orbits tracking the real hour, minute and second, each with a progress arc from 12 o'clock. One orbital engine (`ambientThemes.ts`) owns the clock math and layout; the orbit center drifts slowly so a long session never burns the same pixels into an OLED panel.
 - Scenes: accretion disk, rain orbit, frost orbit, star chart, firefly orbit, bubble orrery, sakura orbit, ember orbit, glyph orbit, constellation orbit, aurora orbit, ripple clock, synthwave orbit, comet clock, lava orbit, vector scope, autumn orbit, warp orbit, lantern orbit, galactic orbit, code orbit, orbital clock, prism orbit.
@@ -206,6 +226,7 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 ## 8. Sharing
 
 ### Status Card generator
+
 - Renders one 1:1 share image (1080×1080) on a canvas: username, avatar, clearance rank and progress ring, total / week / month hours, current & longest streak, an activity heatmap shaded by minutes per day, optional category split.
 - The background and colors follow the user's active Surface Theme and polarity (palette, accent wash, PRESTIGE art).
 - Download PNG or copy to clipboard.
@@ -215,23 +236,27 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 ## 9. Data, account and public APIs
 
 ### Data archive
+
 - **Export** JSON (full backup) and CSV.
 - **Import** a JSON backup: merges categories by code and skips duplicate logs (matched on category, date, duration, created_at).
 - **Reset study logs & categories** (type `CLEAR` to confirm; only the account is kept, so a backup can be imported cleanly afterwards).
 - **Delete account** (type username to confirm).
 
 ### Account
+
 - Register, log in (JWT, 1-day access / 7-day refresh), password change, password reset by email.
 - Rate-limited register / login / reset endpoints.
 - Guest mode: a landing banner (`PUBLIC GUEST MODE // STANDBY`) with sign-in / create-account.
 
 ### Public endpoints (backend)
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/hub/telemetry/` | Aggregate totals, per-category week/month hours and 5 recent logs, for logs with `is_public_to_hub` |
-| `GET /api/portfolio/feed/` | Read-only feed for rikutomikado.tech: only `PORTFOLIO_USERNAME`'s logs, last `PORTFOLIO_FEED_DAYS` days, `is_public_to_portfolio=True` |
+
+| Endpoint                   | Purpose                                                                                                                                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/hub/telemetry/`  | Aggregate totals, per-category week/month hours and 5 recent logs, for logs with `is_public_to_hub`. Signed in: the caller's own account; anonymous: only `PORTFOLIO_USERNAME`'s (`?username=` is ignored) |
+| `GET /api/portfolio/feed/` | Read-only feed for rikutomikado.tech: only `PORTFOLIO_USERNAME`'s logs, last `PORTFOLIO_FEED_DAYS` days, `is_public_to_portfolio=True`                                                                     |
 
 ### Platform details
+
 - Frontend: React 19 + Vite + Tailwind 4 + lucide-react. Backend: Django + DRF + SimpleJWT, PostgreSQL in production.
 - Splash loader (geometric origami) on first load, toast system, `prefers-reduced-motion` respected throughout.
 - Logo is protected from casual copying (no select / drag / long-press save).

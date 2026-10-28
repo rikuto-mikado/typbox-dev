@@ -56,6 +56,10 @@ class PasswordResetThrottle(ScopedRateThrottle):
     scope = "password_reset"
 
 
+class PasswordResetConfirmThrottle(ScopedRateThrottle):
+    scope = "password_reset_confirm"
+
+
 class RegisterView(generics.CreateAPIView):
     """
     POST /api/auth/register/
@@ -231,6 +235,8 @@ class PasswordResetConfirmView(APIView):
     """
 
     permission_classes = (permissions.AllowAny,)
+    throttle_classes = (PasswordResetConfirmThrottle,)
+    throttle_scope = "password_reset_confirm"
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
@@ -537,21 +543,20 @@ class HubTelemetryView(APIView):
     """
     GET /api/hub/telemetry/
     Public aggregate telemetry endpoint matching typbox.me React payload format.
-    Accepts optional ?username=<username> query parameter (defaults to first superuser or active user).
+    Signed in, it reports the caller's own account; otherwise only
+    settings.PORTFOLIO_USERNAME's, the one account meant to be public (like
+    /api/portfolio/feed/). A ?username= parameter is ignored: honoring it let
+    anyone read any account's categories and recent logs, and tell which
+    usernames exist.
     """
 
     permission_classes = (permissions.AllowAny,)
 
     def get(self, request):
-        username = request.query_params.get("username")
-        if username:
-            user = User.objects.filter(username=username).first()
-        elif request.user.is_authenticated:
+        if request.user.is_authenticated:
             user = request.user
         else:
-            user = (
-                User.objects.filter(is_superuser=True).first() or User.objects.first()
-            )
+            user = User.objects.filter(username=settings.PORTFOLIO_USERNAME).first()
 
         if not user:
             return Response(

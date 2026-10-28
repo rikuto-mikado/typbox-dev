@@ -86,18 +86,18 @@ In practice:
 
 ## 5. Key components
 
-| Component                | Role                                 | What makes it TYPBOX                                                                                                                                                         |
-| ------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SYSTEM CHRONOMETER       | Clock and stopwatch                  | 336 faces (neon, nixie, split-flap, CRT…). Status dot: emerald pulse when idle, amber ping when recording                                                                    |
-| Metrics strip            | Totals at a glance                   | Numbered labels, large light digits, small units                                                                                                                             |
-| CLEARANCE                | 3,000 ranks over 1,000 hours         | Color shifts across 10 divisions; prism gradient after an Ascension                                                                                                          |
-| TELEMETRY CADENCE MATRIX | Daily volume grid                    | 7 days × weeks; only today's cell pulses, quietly                                                                                                                            |
-| LOG STREAM               | Session list                         | Rows separated by rules only; a new row flashes emerald and fades                                                                                                            |
-| COMMAND PALETTE          | Every action via ⌘K / Ctrl+K         | Fully keyboard-drivable                                                                                                                                                      |
-| STATUS CARD              | Shareable image                      | One 1:1 card painted over the active Surface Theme                                                                                                                           |
-| AMBIENT / NOISE          | Focus environment                    | Up to 5 layers across 8 noise families, sleep timer                                                                                                                          |
-| ORRERY                   | Where the planets are today          | Schematic top-down solar system + geocentric sign / distance / retrograde list; ticker for the next station                                                                  |
-| SURFACE THEMES           | Background and palette               | 900 plain dark/light pairs (CLASSIC / CHROMA saturation contrast / COMPLEMENT hue contrast) + 12 illustrated prestige; art shows **only through gutters**, never behind text |
+| Component                | Role                         | What makes it TYPBOX                                                                                                                                                         |
+| ------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SYSTEM CHRONOMETER       | Clock and stopwatch          | 336 faces (neon, nixie, split-flap, CRT…). Status dot: emerald pulse when idle, amber ping when recording                                                                    |
+| Metrics strip            | Totals at a glance           | Numbered labels, large light digits, small units                                                                                                                             |
+| CLEARANCE                | 3,000 ranks over 1,000 hours | Color shifts across 10 divisions; prism gradient after an Ascension                                                                                                          |
+| TELEMETRY CADENCE MATRIX | Daily volume grid            | 7 days × weeks; only today's cell pulses, quietly                                                                                                                            |
+| LOG STREAM               | Session list                 | Rows separated by rules only; a new row flashes emerald and fades                                                                                                            |
+| COMMAND PALETTE          | Every action via ⌘K / Ctrl+K | Fully keyboard-drivable                                                                                                                                                      |
+| STATUS CARD              | Shareable image              | One 1:1 card painted over the active Surface Theme                                                                                                                           |
+| AMBIENT / NOISE          | Focus environment            | Up to 5 layers across 8 noise families, sleep timer                                                                                                                          |
+| FORECAST                 | Where the current pace leads | 8-week cycle-hours line + projected cone (slowest–fastest week); ETAs for next rank, milestone, division, cycle                                                              |
+| SURFACE THEMES           | Background and palette       | 900 plain dark/light pairs (CLASSIC / CHROMA saturation contrast / COMPLEMENT hue contrast) + 12 illustrated prestige; art shows **only through gutters**, never behind text |
 
 ## 6. Motion
 

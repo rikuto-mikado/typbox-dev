@@ -106,15 +106,15 @@ python manage.py runserver
 
 ## API Endpoints Reference
 
-| Method                   | Path                    | Auth              | Description                                          |
-| ------------------------ | ----------------------- | ----------------- | ---------------------------------------------------- |
-| `POST`                   | `/api/auth/register/`   | Public            | Create new account (`username`, `email`, `password`) |
-| `POST`                   | `/api/auth/login/`      | Public            | Authenticate (`access` & `refresh` JWT returned)     |
-| `POST`                   | `/api/auth/refresh/`    | Public            | Refresh expired access token                         |
-| `GET`                    | `/api/auth/me/`         | Bearer JWT        | Current user profile                                 |
-| `DELETE`                 | `/api/auth/me/`         | Bearer JWT        | Permanently delete account and all data              |
-| `GET` / `POST`           | `/api/categories/`      | Bearer JWT        | List / Create categories                             |
-| `GET` / `PUT` / `DELETE` | `/api/categories/<id>/` | Bearer JWT        | Retrieve / Update / Delete category                  |
-| `GET` / `POST`           | `/api/logs/`            | Bearer JWT        | List / Create study logs                             |
-| `GET` / `PUT` / `DELETE` | `/api/logs/<id>/`       | Bearer JWT        | Retrieve / Update / Delete log                       |
-| `GET`                    | `/api/hub/telemetry/`   | Public / Optional | Telemetry summary payload for portfolio hub          |
+| Method                   | Path                    | Auth              | Description                                                                |
+| ------------------------ | ----------------------- | ----------------- | -------------------------------------------------------------------------- |
+| `POST`                   | `/api/auth/register/`   | Public            | Create new account (`username`, `email`, `password`)                       |
+| `POST`                   | `/api/auth/login/`      | Public            | Authenticate (`access` & `refresh` JWT returned)                           |
+| `POST`                   | `/api/auth/refresh/`    | Public            | Refresh expired access token                                               |
+| `GET`                    | `/api/auth/me/`         | Bearer JWT        | Current user profile                                                       |
+| `DELETE`                 | `/api/auth/me/`         | Bearer JWT        | Permanently delete account and all data                                    |
+| `GET` / `POST`           | `/api/categories/`      | Bearer JWT        | List / Create categories                                                   |
+| `GET` / `PUT` / `DELETE` | `/api/categories/<id>/` | Bearer JWT        | Retrieve / Update / Delete category                                        |
+| `GET` / `POST`           | `/api/logs/`            | Bearer JWT        | List / Create study logs                                                   |
+| `GET` / `PUT` / `DELETE` | `/api/logs/<id>/`       | Bearer JWT        | Retrieve / Update / Delete log                                             |
+| `GET`                    | `/api/hub/telemetry/`   | Public / Optional | Telemetry summary: own account when signed in, else `PORTFOLIO_USERNAME`'s |

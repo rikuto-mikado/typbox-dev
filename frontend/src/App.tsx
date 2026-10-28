@@ -143,7 +143,7 @@ import {
 import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
 import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
 import { useKeepAwake } from './keepAwake';
-import { Orrery } from './Orrery';
+import { Forecast } from './Forecast';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 
 // ==========================================
@@ -4552,7 +4552,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Orrery */}
+          {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Forecast */}
           <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-7 lg:[&>*:last-child]:grow">
             {/* ANALYTICS MODULE */}
             <div className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
@@ -5670,9 +5670,15 @@ export default function App() {
               )}
             </div>
 
-            {/* ORRERY PANEL (planet positions, computed client-side) */}
+            {/* FORECAST PANEL (Clearance projection from recent pace, computed client-side) */}
             <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none`}>
-              <Orrery timeZone={timeZone} textMuted={textMuted} isDark={isDark} />
+              <Forecast
+                logs={user ? logs : []}
+                todayStr={todayStr}
+                clearance={clearanceStatus}
+                textMuted={textMuted}
+                isDark={isDark}
+              />
             </div>
           </div>
         </div>

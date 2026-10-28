@@ -62,6 +62,7 @@ export interface ClearanceLevel {
   requiredHours: number;
   color: string;
   isMajorMilestone?: boolean;
+  isNamedMilestone?: boolean; // one of the exact-hour SPECIAL_HOUR_OVERRIDES titles
 }
 
 export interface ClearanceDivision {
@@ -376,6 +377,7 @@ function buildClearanceLevels(): ClearanceLevel[] {
         divisionIndex: divIdx,
         color: div.color,
         isMajorMilestone: Boolean(override) || (offset + 1) % 100 === 0,
+        isNamedMilestone: Boolean(override),
       });
     }
   }
