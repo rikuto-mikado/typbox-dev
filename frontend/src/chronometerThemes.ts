@@ -101,9 +101,12 @@ export interface ChronoRender {
     | 'rods'
     | 'tape'
     | 'pips'
-    | 'wordgrid';
+    | 'wordgrid'
+    | 'arc'
+    | 'pie'
+    | 'pendulum';
   /** Dial style for kind 'analog'. */
-  dial?: 'swiss' | 'minimal' | 'bauhaus' | 'radar';
+  dial?: 'swiss' | 'minimal' | 'bauhaus' | 'radar' | 'roman' | 'chrono' | 'regulator' | 'h24' | 'skeleton' | 'pilot' | 'arabic' | 'diver' | 'moonphase' | 'square' | 'single';
   numeral?: ChronoNumeral;
   digits?: string[];
   numberPrefix?: string;

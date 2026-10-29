@@ -1125,6 +1125,15 @@ export default function App() {
     };
   }, [isRunning]);
 
+  // Stop and zero the stopwatch. Clearing the start timestamp first keeps the
+  // effect cleanup above from writing the old elapsed time back.
+  const resetStopwatch = useCallback(() => {
+    timerStartTimestampRef.current = null;
+    accumulatedSecondsRef.current = 0;
+    setIsRunning(false);
+    setElapsedSeconds(0);
+  }, []);
+
   // Keep the display awake while the stopwatch runs (and during an Ambient
   // preview) so Ambient Mode stays visible instead of the OS dimming and
   // sleeping the screen; see keepAwake.ts for the Wake Lock / video fallback.
@@ -1799,6 +1808,10 @@ export default function App() {
     if (commitState === 'submitting') return;
 
     setCommitState('submitting');
+    // Freeze the stopwatch at the committed value while the request is in
+    // flight (a cold backend can take a while); a failed commit leaves it
+    // paused so the time can be resumed or committed again.
+    if (inputMode === 'timer') setIsRunning(false);
     if (commitResetTimerRef.current !== null) {
       window.clearTimeout(commitResetTimerRef.current);
       commitResetTimerRef.current = null;
@@ -1828,12 +1841,7 @@ export default function App() {
       };
 
       setLogs((prev) => [newLogItem, ...prev]);
-      if (inputMode === 'timer') {
-        setIsRunning(false);
-        setElapsedSeconds(0);
-        accumulatedSecondsRef.current = 0;
-        timerStartTimestampRef.current = null;
-      }
+      if (inputMode === 'timer') resetStopwatch();
       announceLogCommitted(newLogItem.id, cat?.code, Number(finalMinutes), logDate);
       setCommitState('success');
       commitResetTimerRef.current = window.setTimeout(() => {
@@ -3756,7 +3764,8 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setIsRunning(true)}
-                          className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
+                          disabled={commitState === 'submitting'}
+                          className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-wait"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>{t.start}</span>
@@ -3773,13 +3782,9 @@ export default function App() {
                       )}
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsRunning(false);
-                          setElapsedSeconds(0);
-                          accumulatedSecondsRef.current = 0;
-                          timerStartTimestampRef.current = null;
-                        }}
-                        className={`min-h-[42px] lg:min-h-0 px-4 py-2.5 lg:px-3 lg:py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer`}
+                        onClick={resetStopwatch}
+                        disabled={commitState === 'submitting'}
+                        className={`min-h-[42px] lg:min-h-0 px-4 py-2.5 lg:px-3 lg:py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer disabled:opacity-50 disabled:cursor-wait`}
                       >
                         {t.reset}
                       </button>
@@ -6936,11 +6941,11 @@ export default function App() {
         selectedCatId={selectedCatId}
         isRunning={isRunning}
         onQuickLog={handleQuickLogFromPalette}
-        onToggleTimer={() => setIsRunning((prev) => !prev)}
+        onToggleTimer={() => {
+          if (commitState !== 'submitting') setIsRunning((prev) => !prev);
+        }}
         onResetTimer={() => {
-          setIsRunning(false);
-          accumulatedSecondsRef.current = 0;
-          setElapsedSeconds(0);
+          if (commitState !== 'submitting') resetStopwatch();
         }}
         onSetInputMode={(mode) => setInputMode(mode)}
         onSetAnalyticsMode={handleSetAnalyticsModeFromPalette}

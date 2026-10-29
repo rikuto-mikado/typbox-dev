@@ -3036,6 +3036,195 @@
       "family": "DIAL",
       "render": { "kind": "analog", "dial": "minimal", "on": "#fda4af", "color": "#fecdd3", "colorLight": "#9f1239" },
       "unlock": { "type": "streak", "value": 75 }
+    },
+    {
+      "id": "roman-dial",
+      "code": "CHR-337",
+      "name": "ROMAN DIAL",
+      "desc": "A classic dial ringed with Roman numerals and a fine sweep seconds hand.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "roman" },
+      "unlock": { "type": "level", "value": 140 }
+    },
+    {
+      "id": "day-arc",
+      "code": "CHR-338",
+      "name": "DAY ARC",
+      "desc": "The sun climbs a dotted arc from 06:00 to 18:00; the moon crosses below the horizon at night.",
+      "family": "DIAL",
+      "render": { "kind": "arc", "on": "#fbbf24" },
+      "unlock": { "type": "level", "value": 300 }
+    },
+    {
+      "id": "chrono-dial",
+      "code": "CHR-339",
+      "name": "CHRONOGRAPH",
+      "desc": "A chronograph dial with running seconds and a 24-hour counter in two sub-dials.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "chrono" },
+      "unlock": { "type": "level", "value": 520 }
+    },
+    {
+      "id": "pilot-dial",
+      "code": "CHR-340",
+      "name": "PILOT DIAL",
+      "desc": "A flieger-style dial: the triangle at twelve, bold 3-6-9 and lume-tipped hands.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "pilot", "on": "#a3e635" },
+      "unlock": { "type": "level", "value": 700 }
+    },
+    {
+      "id": "regulator-dial",
+      "code": "CHR-341",
+      "name": "REGULATOR",
+      "desc": "A watchmaker's regulator: one long minute hand, hours and seconds in their own sub-dials.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "regulator" },
+      "unlock": { "type": "level", "value": 980 }
+    },
+    {
+      "id": "sector-clock",
+      "code": "CHR-342",
+      "name": "SECTOR CLOCK",
+      "desc": "Hour and minute fill the face as two growing pie sectors.",
+      "family": "DIAL",
+      "render": { "kind": "pie", "on": "#38bdf8" },
+      "unlock": { "type": "level", "value": 1120 }
+    },
+    {
+      "id": "skeleton-dial",
+      "code": "CHR-343",
+      "name": "SKELETON DIAL",
+      "desc": "An open-worked dial with the gear train turning beneath the hands.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "skeleton", "on": "#f59e0b" },
+      "unlock": { "type": "level", "value": 1480 }
+    },
+    {
+      "id": "h24-dial",
+      "code": "CHR-344",
+      "name": "24-HOUR DIAL",
+      "desc": "A single hand that circles once a day — noon at the top, the night half shaded — for two hundred hours.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "h24", "on": "#f97316" },
+      "unlock": { "type": "hours", "value": 200 }
+    },
+    {
+      "id": "pendulum-clock",
+      "code": "CHR-345",
+      "name": "PENDULUM CLOCK",
+      "desc": "A wall clock whose pendulum swings with every second — five hundred hours.",
+      "family": "DIAL",
+      "render": { "kind": "pendulum", "on": "#eab308" },
+      "unlock": { "type": "hours", "value": 500 }
+    },
+    {
+      "id": "roman-nocturne",
+      "code": "CHR-346",
+      "name": "ROMAN NOCTURNE",
+      "desc": "The Roman dial in violet night enamel.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "roman", "on": "#a78bfa", "color": "#ddd6fe", "colorLight": "#4c1d95" },
+      "unlock": { "type": "level", "value": 1880 }
+    },
+    {
+      "id": "racing-chrono",
+      "code": "CHR-347",
+      "name": "RACING CHRONO",
+      "desc": "The chronograph in motorsport colors with an amber counter hand.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "chrono", "on": "#f59e0b", "color": "#fca5a5", "colorLight": "#991b1b" },
+      "unlock": { "type": "level", "value": 2280 }
+    },
+    {
+      "id": "pilot-khaki",
+      "code": "CHR-348",
+      "name": "KHAKI FIELD PILOT",
+      "desc": "The pilot dial in field khaki with sand-colored lume.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "pilot", "on": "#ca8a04", "color": "#d6cfb4", "colorLight": "#57534e" },
+      "unlock": { "type": "level", "value": 1320 }
+    },
+    {
+      "id": "arc-polar",
+      "code": "CHR-349",
+      "name": "POLAR ARC",
+      "desc": "The day arc under a polar sky in ice and cyan — a hundred days in a row.",
+      "family": "DIAL",
+      "render": { "kind": "arc", "on": "#06b6d4", "color": "#e0f2fe", "colorLight": "#0c4a6e" },
+      "unlock": { "type": "streak", "value": 100 }
+    },
+    {
+      "id": "school-clock",
+      "code": "CHR-350",
+      "name": "SCHOOL CLOCK",
+      "desc": "The classroom wall clock: bold Arabic numerals and a red sweep seconds hand — thirty days in a row.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "arabic", "on": "#e11d48" },
+      "unlock": { "type": "streak", "value": 30 }
+    },
+    {
+      "id": "diver-bezel",
+      "code": "CHR-351",
+      "name": "DIVER BEZEL",
+      "desc": "A dive-watch face with a 60-minute bezel scale and round lume plots — fifty logs.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "diver", "on": "#a3e635" },
+      "unlock": { "type": "sessions", "value": 50 }
+    },
+    {
+      "id": "moonphase-dial",
+      "code": "CHR-352",
+      "name": "MOONPHASE",
+      "desc": "A dress dial with a window that follows the real phase of the Moon.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "moonphase", "on": "#fbbf24" },
+      "unlock": { "type": "level", "value": 1650 }
+    },
+    {
+      "id": "square-dial",
+      "code": "CHR-353",
+      "name": "SQUARE DIAL",
+      "desc": "A square case whose minute track runs out into the corners.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "square" },
+      "unlock": { "type": "level", "value": 2150 }
+    },
+    {
+      "id": "one-hand-dial",
+      "code": "CHR-354",
+      "name": "ONE-HAND WATCH",
+      "desc": "A single hour hand read against five-minute divisions — one unbroken 180-minute session.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "single", "on": "#f97316" },
+      "unlock": { "type": "session", "value": 180 }
+    },
+    {
+      "id": "emerald-diver",
+      "code": "CHR-355",
+      "name": "EMERALD DIVER",
+      "desc": "The diver bezel in deep emerald with mint lume.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "diver", "on": "#34d399", "color": "#a7f3d0", "colorLight": "#065f46" },
+      "unlock": { "type": "level", "value": 2440 }
+    },
+    {
+      "id": "midnight-moonphase",
+      "code": "CHR-356",
+      "name": "MIDNIGHT MOONPHASE",
+      "desc": "The moonphase dial in midnight blue with a gold moon — a single 240-minute session.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "moonphase", "on": "#eab308", "color": "#bfdbfe", "colorLight": "#1e3a8a" },
+      "unlock": { "type": "session", "value": 240 }
+    },
+    {
+      "id": "gilt-square",
+      "code": "CHR-357",
+      "name": "GILT SQUARE",
+      "desc": "The square dial in warm gilt — fifteen hundred hours.",
+      "family": "DIAL",
+      "render": { "kind": "analog", "dial": "square", "on": "#d97706", "color": "#fde68a", "colorLight": "#92400e" },
+      "unlock": { "type": "hours", "value": 1500 }
     }
   ]
 }

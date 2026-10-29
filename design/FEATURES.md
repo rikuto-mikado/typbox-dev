@@ -13,7 +13,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 | ---------------------- | ---------------------------------------------------------------------------------- |
 | Clearance ranks        | **3,000** per cycle, 10 divisions, 1,000 hours per cycle, repeatable via Ascension |
 | Surface Themes         | **900** dark/light pairs in 3 series, plus **12** illustrated prestige themes      |
-| Chronometer faces      | **336** in 11 families                                                             |
+| Chronometer faces      | **357** in 11 families                                                             |
 | UI fonts               | **44** monospace faces in 4 kinds                                                  |
 | Ambient noise          | **60** procedurally synthesized profiles in 8 families, mix up to 5                |
 | Ambient overlay scenes | **23**                                                                             |
@@ -41,7 +41,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 
 - Live clock in the user's timezone with `SYNC // <zone>` readout, plus the stopwatch used by TIMER mode.
 - Status dot: emerald pulse when idle, amber ping and `REC // ACTIVE` while recording.
-- 336 selectable faces (see §4.2) and an inline weather badge (see §6).
+- 357 selectable faces (see §4.2) and an inline weather badge (see §6).
 - **Keep awake**: while the stopwatch runs (or an ambient preview is open) the screen is kept from sleeping — Screen Wake Lock API with re-acquire on return/tap/watchdog, falling back to a tiny muted looping video (`public/keep-awake.mp4/.webm`).
 
 ### Command Palette (⌘K / Ctrl+K)
@@ -171,9 +171,9 @@ Rewards unlock by **level**, **total hours**, **session count**, **longest singl
 - Readability rules: art and FX sit behind everything (z-index −1), only visible through gutters; panels are always opaque. Prestige art is pinned to the viewport.
 - Light/dark toggle switches polarity within the chosen pair.
 
-### 5.2 Chronometer faces (336)
+### 5.2 Chronometer faces (357)
 
-Families: CORE 18, DEVICE 40, PIXEL 29, CYBER 41, CODE 24, SCRIPT 46, CLASSIC 59, SIGNAL 27, DIAL 14, HAND 30, PRESTIGE 8.
+Families: CORE 18, DEVICE 40, PIXEL 29, CYBER 41, CODE 24, SCRIPT 46, CLASSIC 59, SIGNAL 27, DIAL 35, HAND 30, PRESTIGE 8.
 Effects include neon, matrix, CRT scanlines, outline, glitch, nixie tubes, split-flap cells, sunset / holo / gold / quantum / chrome / fire / ice / aurora / ocean / rose-gold gradients, emboss, extrude, spray, ink, flicker, vapor, long shadow, pulse, chalk, stamp.
 Numeral systems also cover letter numerals (Hebrew, Armenian, Georgian, Geʽez, Coptic, Gothic, Church Slavonic, Aegean, Brahmi), one-glyph-per-value sets (Braille cells, I Ching hexagrams, Tai Xuan tetragrams), a 12-hour clock, UTC, Mars time, Julian date, sidereal time and more.
 Unlocks are spread across cycle 1 (LV.1–3000) and weighted toward the later divisions so new faces keep arriving all the way to LV.3000.

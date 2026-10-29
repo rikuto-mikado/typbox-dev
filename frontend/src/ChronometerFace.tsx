@@ -10,6 +10,7 @@ import {
   ensureChronoFont,
   formatChronoText,
   isChronoThemeUnlocked,
+  toRoman,
   type ChronoProgress,
   type ChronoRender,
   type ChronoUnlock,
@@ -261,20 +262,31 @@ const PipDigit: React.FC<{ d: number; r: ChronoRender }> = ({ d, r }) => {
 };
 
 // ==========================================
-// Instrument faces (analog dial, rings, gauges, word clock): one widget for
-// the whole time, shown with a small digital readout beside it.
+// Instrument faces (analog dials, rings, gauges, word clock, day arc, ...):
+// one widget for the whole time. The digital time is kept as the aria-label
+// and hover title rather than printed beside the face.
 // ==========================================
 
 const SECOND_RED = '#e11d48';
 
-const hand = (deg: number, from: number, to: number, width: number, color: string, cap: 'round' | 'butt' = 'round') => {
+// A hand (or tick) along `deg` (0 = twelve o'clock) around (cx, cy).
+const handAt = (
+  cx: number,
+  cy: number,
+  deg: number,
+  from: number,
+  to: number,
+  width: number,
+  color: string,
+  cap: 'round' | 'butt' = 'round'
+) => {
   const rad = ((deg - 90) * Math.PI) / 180;
   return (
     <line
-      x1={50 + Math.cos(rad) * from}
-      y1={50 + Math.sin(rad) * from}
-      x2={50 + Math.cos(rad) * to}
-      y2={50 + Math.sin(rad) * to}
+      x1={cx + Math.cos(rad) * from}
+      y1={cy + Math.sin(rad) * from}
+      x2={cx + Math.cos(rad) * to}
+      y2={cy + Math.sin(rad) * to}
       stroke={color}
       strokeWidth={width}
       strokeLinecap={cap}
@@ -282,7 +294,59 @@ const hand = (deg: number, from: number, to: number, width: number, color: strin
   );
 };
 
-const AnalogDial: React.FC<{ hh: number; mm: number; ss: number; r: ChronoRender; px: number; color: string }> = ({
+const hand = (deg: number, from: number, to: number, width: number, color: string, cap: 'round' | 'butt' = 'round') =>
+  handAt(50, 50, deg, from, to, width, color, cap);
+
+// The point at `deg` (0 = twelve o'clock), `radius` away from (cx, cy).
+const polar = (deg: number, radius: number, cx = 50, cy = 50): [number, number] => {
+  const rad = ((deg - 90) * Math.PI) / 180;
+  return [cx + Math.cos(rad) * radius, cy + Math.sin(rad) * radius];
+};
+
+const accentOf = (r: ChronoRender) => (r.on && r.on !== 'currentColor' ? r.on : '#10b981');
+
+// Gear outline: `teeth` flat-topped teeth between rIn and rOut.
+const gearPath = (cx: number, cy: number, rIn: number, rOut: number, teeth: number) => {
+  const steps = teeth * 4;
+  const pts = Array.from({ length: steps }, (_, i) => {
+    const [x, y] = polar((i / steps) * 360, i % 4 < 2 ? rOut : rIn, cx, cy);
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+  return `M${pts.join('L')}Z`;
+};
+
+// A pie slice from twelve o'clock covering `frac` of the circle.
+const sectorPath = (cx: number, cy: number, radius: number, frac: number) => {
+  if (frac <= 0) return '';
+  if (frac >= 1) return `M${cx - radius} ${cy}A${radius} ${radius} 0 1 1 ${cx + radius} ${cy}A${radius} ${radius} 0 1 1 ${cx - radius} ${cy}Z`;
+  const [x0, y0] = polar(0, radius, cx, cy);
+  const [x1, y1] = polar(frac * 360, radius, cx, cy);
+  return `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${frac > 0.5 ? 1 : 0} 1 ${x1} ${y1}Z`;
+};
+
+// Fraction of the mean synodic month elapsed (0 = new moon), counted from
+// the new moon of 2000-01-06 18:14 UTC.
+function moonAge(): number {
+  const SYNODIC = 29.530588853;
+  return (((Date.now() / 86400000 - 10962.76) / SYNODIC) % 1 + 1) % 1;
+}
+
+const InstrumentSvg: React.FC<{ px: number; children: React.ReactNode }> = ({ px, children }) => (
+  <svg viewBox="0 0 100 100" width={px} height={px} style={{ overflow: 'visible', flexShrink: 0 }} aria-hidden>
+    {children}
+  </svg>
+);
+
+interface InstrumentProps {
+  hh: number;
+  mm: number;
+  ss: number;
+  r: ChronoRender;
+  px: number;
+  color: string;
+}
+
+const AnalogDial: React.FC<InstrumentProps> = ({
   hh,
   mm,
   ss,
@@ -293,7 +357,7 @@ const AnalogDial: React.FC<{ hh: number; mm: number; ss: number; r: ChronoRender
   const hDeg = ((hh % 12) + mm / 60) * 30;
   const mDeg = (mm + ss / 60) * 6;
   const sDeg = ss * 6;
-  const accent = r.on && r.on !== 'currentColor' ? r.on : '#10b981';
+  const accent = accentOf(r);
   let body: React.ReactNode;
   switch (r.dial) {
     case 'swiss':
@@ -351,6 +415,305 @@ const AnalogDial: React.FC<{ hh: number; mm: number; ss: number; r: ChronoRender
       );
       break;
     }
+    case 'roman':
+      body = (
+        <>
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={1.2} opacity={0.7} />
+          {Array.from({ length: 60 }, (_, i) => (i % 5 === 0 ? null : <g key={i}>{hand(i * 6, 43, 45.5, 0.6, color, 'butt')}</g>))}
+          {Array.from({ length: 12 }, (_, i) => {
+            const [x, y] = polar(i * 30, 36);
+            return (
+              <text
+                key={`n${i}`}
+                x={x}
+                y={y}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={i % 3 === 0 ? 9 : 7}
+                fontFamily="Georgia, 'Times New Roman', serif"
+                fill={color}
+              >
+                {toRoman(i === 0 ? 12 : i)}
+              </text>
+            );
+          })}
+          {hand(hDeg, 0, 21, 3.4, color)}
+          {hand(mDeg, 0, 31, 2.2, color)}
+          {hand(sDeg, -8, 40, 0.8, accent)}
+          <circle cx={50} cy={50} r={2.2} fill={color} />
+          <circle cx={50} cy={50} r={1} fill={accent} />
+        </>
+      );
+      break;
+    case 'chrono':
+      body = (
+        <>
+          {Array.from({ length: 60 }, (_, i) => {
+            const major = i % 5 === 0;
+            return <g key={i}>{hand(i * 6, major ? 40 : 43, 46, major ? 2.2 : 0.8, color, 'butt')}</g>;
+          })}
+          {[30, 70].map((cx) => (
+            <circle key={cx} cx={cx} cy={50} r={11} fill="none" stroke={color} strokeWidth={0.9} opacity={0.45} />
+          ))}
+          {handAt(30, 50, sDeg, 0, 9, 1, accent)}
+          {handAt(70, 50, ((hh + mm / 60) / 24) * 360, 0, 9, 1.2, color)}
+          {hand(hDeg, -4, 24, 4, color)}
+          {hand(mDeg, -5, 38, 2.6, color)}
+          {hand(sDeg, -10, 44, 0.8, accent)}
+          <circle cx={50} cy={50} r={2.4} fill={color} />
+        </>
+      );
+      break;
+    case 'regulator':
+      body = (
+        <>
+          {Array.from({ length: 60 }, (_, i) => (
+            <g key={i}>{hand(i * 6, i % 5 ? 42 : 39, 46, i % 5 ? 0.7 : 1.6, color, 'butt')}</g>
+          ))}
+          <circle cx={50} cy={28} r={12} fill="none" stroke={color} strokeWidth={0.9} opacity={0.5} />
+          {Array.from({ length: 12 }, (_, i) => (
+            <g key={`h${i}`}>{handAt(50, 28, i * 30, 10, 12, 0.8, color, 'butt')}</g>
+          ))}
+          {handAt(50, 28, hDeg, 0, 8, 2, color)}
+          <circle cx={50} cy={72} r={12} fill="none" stroke={color} strokeWidth={0.9} opacity={0.5} />
+          {handAt(50, 72, sDeg, 0, 9, 1, accent)}
+          {hand(mDeg, -6, 43, 1.8, color)}
+          <circle cx={50} cy={50} r={2} fill={color} />
+        </>
+      );
+      break;
+    case 'h24': {
+      // Noon at the top, midnight at the bottom; the night half is shaded.
+      const dDeg = ((hh + mm / 60) / 24) * 360 + 180;
+      const [tipX, tipY] = polar(dDeg, 40);
+      const [secX, secY] = polar(sDeg, 46);
+      body = (
+        <>
+          <path d="M4 50A46 46 0 0 0 96 50Z" fill={color} opacity={0.08} />
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={1.2} opacity={0.7} />
+          {Array.from({ length: 24 }, (_, i) => (
+            <g key={i}>{hand(i * 15, i % 6 === 0 ? 37 : 41, 46, i % 6 === 0 ? 1.8 : 0.8, color, 'butt')}</g>
+          ))}
+          {(
+            [
+              ['12', 0],
+              ['18', 90],
+              ['00', 180],
+              ['06', 270],
+            ] as const
+          ).map(([text, deg]) => {
+            const [x, y] = polar(deg, 29);
+            return (
+              <text key={text} x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={7} fill={color} opacity={0.8}>
+                {text}
+              </text>
+            );
+          })}
+          {hand(dDeg, -8, 40, 2.4, accent)}
+          <circle cx={tipX} cy={tipY} r={2.6} fill={accent} />
+          <circle cx={secX} cy={secY} r={1.6} fill={color} />
+          <circle cx={50} cy={50} r={2.4} fill={color} />
+        </>
+      );
+      break;
+    }
+    case 'skeleton':
+      body = (
+        <>
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={2} />
+          <circle cx={50} cy={50} r={42} fill="none" stroke={color} strokeWidth={0.6} opacity={0.4} />
+          {Array.from({ length: 12 }, (_, i) => (
+            <g key={i}>{hand(i * 30, 38, 42, 1.4, color, 'butt')}</g>
+          ))}
+          <g transform={`rotate(${sDeg} 38 60)`} opacity={0.45}>
+            <path d={gearPath(38, 60, 12, 15.5, 10)} fill="none" stroke={color} strokeWidth={1} />
+            <circle cx={38} cy={60} r={4} fill="none" stroke={color} strokeWidth={1} />
+          </g>
+          <g transform={`rotate(${-sDeg * 1.25} 55 43)`} opacity={0.45}>
+            <path d={gearPath(55, 43, 8.5, 11.5, 8)} fill="none" stroke={color} strokeWidth={1} />
+            <circle cx={55} cy={43} r={2.6} fill="none" stroke={color} strokeWidth={1} />
+          </g>
+          <g transform={`rotate(${ss % 2 ? 40 : -40} 66 68)`}>
+            <circle cx={66} cy={68} r={7} fill="none" stroke={accent} strokeWidth={1} />
+            <path d="M59 68H73M66 61V75" stroke={accent} strokeWidth={0.6} />
+          </g>
+          {hand(hDeg, 0, 24, 3, color)}
+          {hand(mDeg, 0, 36, 2, color)}
+          {hand(sDeg, -8, 42, 0.8, accent)}
+          <circle cx={50} cy={50} r={2.2} fill={color} />
+        </>
+      );
+      break;
+    case 'pilot':
+      body = (
+        <>
+          {Array.from({ length: 60 }, (_, i) =>
+            i === 0 ? null : <g key={i}>{hand(i * 6, i % 5 ? 42 : 38, 46, i % 5 ? 0.8 : 2, color, 'butt')}</g>
+          )}
+          <polygon points="45,3 55,3 50,12" fill={accent} />
+          {(
+            [
+              ['3', 90],
+              ['6', 180],
+              ['9', 270],
+            ] as const
+          ).map(([text, deg]) => {
+            const [x, y] = polar(deg, 30);
+            return (
+              <text key={text} x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fontFamily="ui-sans-serif, system-ui, sans-serif" fill={color}>
+                {text}
+              </text>
+            );
+          })}
+          {hand(hDeg, 0, 22, 5, color, 'butt')}
+          {hand(hDeg, 13, 21, 2, accent, 'butt')}
+          {hand(mDeg, 0, 36, 3.4, color, 'butt')}
+          {hand(mDeg, 25, 35, 1.4, accent, 'butt')}
+          {hand(sDeg, -10, 42, 0.9, color)}
+          <circle cx={50} cy={50} r={2.6} fill={color} />
+        </>
+      );
+      break;
+    case 'arabic':
+      body = (
+        <>
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={2.4} />
+          {Array.from({ length: 60 }, (_, i) => (
+            <g key={i}>{hand(i * 6, i % 5 ? 42.5 : 40.5, 44.5, i % 5 ? 0.6 : 1.4, color, 'butt')}</g>
+          ))}
+          {Array.from({ length: 12 }, (_, i) => {
+            const [x, y] = polar(i * 30, 33);
+            return (
+              <text
+                key={`n${i}`}
+                x={x}
+                y={y}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={9}
+                fontWeight={600}
+                fontFamily="ui-sans-serif, system-ui, sans-serif"
+                fill={color}
+              >
+                {i === 0 ? 12 : i}
+              </text>
+            );
+          })}
+          {hand(hDeg, -4, 22, 3.6, color)}
+          {hand(mDeg, -5, 35, 2.4, color)}
+          {hand(sDeg, -9, 40, 0.9, accent)}
+          <circle cx={50} cy={50} r={2.4} fill={accent} />
+        </>
+      );
+      break;
+    case 'diver': {
+      // Rotating-bezel style: a 60-minute scale with the first quarter fully
+      // marked, round lume plots and bars at 3, 6 and 9.
+      const [lollX, lollY] = polar(sDeg, 27);
+      body = (
+        <>
+          <circle cx={50} cy={50} r={48} fill="none" stroke={color} strokeWidth={0.8} opacity={0.6} />
+          <circle cx={50} cy={50} r={39} fill="none" stroke={color} strokeWidth={0.8} opacity={0.6} />
+          {Array.from({ length: 60 }, (_, i) =>
+            i === 0 || (i % 5 && i > 15) ? null : (
+              <g key={i}>{hand(i * 6, i % 5 ? 44.5 : 41.5, 46.5, i % 5 ? 0.6 : 1.6, color, 'butt')}</g>
+            )
+          )}
+          <polygon points="46.5,2 53.5,2 50,8" fill={accent} />
+          {Array.from({ length: 12 }, (_, i) => {
+            if (i === 0) return <polygon key={i} points="46,14 54,14 50,21" fill={accent} />;
+            if (i % 3 === 0) return <g key={i}>{hand(i * 30, 27, 35, 3.6, accent, 'butt')}</g>;
+            const [x, y] = polar(i * 30, 32);
+            return <circle key={i} cx={x} cy={y} r={2.4} fill={accent} />;
+          })}
+          {hand(hDeg, 0, 20, 4.4, color)}
+          {hand(mDeg, 0, 31, 3, color)}
+          {hand(sDeg, -8, 36, 1, accent)}
+          <circle cx={lollX} cy={lollY} r={2} fill="none" stroke={accent} strokeWidth={1} />
+          <circle cx={50} cy={50} r={2.2} fill={accent} />
+        </>
+      );
+      break;
+    }
+    case 'moonphase': {
+      // Lit limb on the right while waxing (northern-hemisphere view).
+      const age = moonAge();
+      const R = 8;
+      const rx = R * Math.abs(Math.cos(age * 2 * Math.PI));
+      const outer = age < 0.5 ? 1 : 0;
+      const inner = age < 0.25 || (age >= 0.5 && age < 0.75) ? 0 : 1;
+      const lit = `M50 ${68 - R}A${R} ${R} 0 0 ${outer} 50 ${68 + R}A${rx} ${R} 0 0 ${inner} 50 ${68 - R}Z`;
+      body = (
+        <>
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={1.2} opacity={0.7} />
+          {Array.from({ length: 60 }, (_, i) => (
+            <g key={i}>{hand(i * 6, i % 5 ? 43 : 39, 45, i % 5 ? 0.6 : 1.6, color, 'butt')}</g>
+          ))}
+          <circle cx={50} cy={68} r={11.5} fill="none" stroke={color} strokeWidth={0.8} opacity={0.6} />
+          <circle cx={50} cy={68} r={R} fill={color} opacity={0.12} />
+          <path d={lit} fill={accent} />
+          {hand(hDeg, 0, 23, 3, color)}
+          {hand(mDeg, 0, 36, 2, color)}
+          {hand(sDeg, -8, 41, 0.8, accent)}
+          <circle cx={50} cy={50} r={2.2} fill={color} />
+        </>
+      );
+      break;
+    }
+    case 'square': {
+      // Square case: the minute track follows the square, so each tick's
+      // radius grows toward the corners.
+      const edge = (deg: number) => {
+        const rad = (deg * Math.PI) / 180;
+        return 40 / Math.max(Math.abs(Math.cos(rad)), Math.abs(Math.sin(rad)));
+      };
+      body = (
+        <>
+          <rect x={4} y={4} width={92} height={92} rx={14} fill="none" stroke={color} strokeWidth={2} />
+          <rect x={9} y={9} width={82} height={82} rx={9} fill="none" stroke={color} strokeWidth={0.5} opacity={0.4} />
+          {Array.from({ length: 60 }, (_, i) => {
+            const outerR = edge(i * 6);
+            return <g key={i}>{hand(i * 6, outerR - (i % 5 ? 2.5 : 6), outerR, i % 5 ? 0.6 : 1.8, color, 'butt')}</g>;
+          })}
+          {hand(hDeg, 0, 22, 3, color)}
+          {hand(mDeg, 0, 34, 2, color)}
+          {hand(sDeg, -8, 38, 0.8, accent)}
+          <circle cx={50} cy={50} r={2.2} fill={color} />
+          <circle cx={50} cy={50} r={1} fill={accent} />
+        </>
+      );
+      break;
+    }
+    case 'single':
+      // One-hand watch: a single hour hand read against five-minute divisions.
+      body = (
+        <>
+          <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={1.2} opacity={0.7} />
+          {Array.from({ length: 144 }, (_, i) => {
+            const major = i % 12 === 0;
+            const half = i % 6 === 0;
+            return <g key={i}>{hand(i * 2.5, major ? 37 : half ? 40.5 : 43, 45.5, major ? 1.8 : half ? 1 : 0.5, color, 'butt')}</g>;
+          })}
+          {(
+            [
+              ['12', 0],
+              ['3', 90],
+              ['6', 180],
+              ['9', 270],
+            ] as const
+          ).map(([text, deg]) => {
+            const [x, y] = polar(deg, 29);
+            return (
+              <text key={text} x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={8} fontFamily="ui-sans-serif, system-ui, sans-serif" fill={color}>
+                {text}
+              </text>
+            );
+          })}
+          {hand(hDeg + (ss / 3600) * 30, -10, 44, 1.6, accent)}
+          <circle cx={50} cy={50} r={3} fill={accent} />
+        </>
+      );
+      break;
     default:
       body = (
         <>
@@ -365,10 +728,92 @@ const AnalogDial: React.FC<{ hh: number; mm: number; ss: number; r: ChronoRender
         </>
       );
   }
+  return <InstrumentSvg px={px}>{body}</InstrumentSvg>;
+};
+
+// Day arc: the sun travels a dotted arc between 06:00 and 18:00, the moon a
+// shallow arc below the horizon at night; dots below count 5-minute steps.
+const DayArc: React.FC<InstrumentProps> = ({ hh, mm, ss, r, px, color }) => {
+  const accent = accentOf(r);
+  const t = hh + mm / 60 + ss / 3600;
+  const isDay = t >= 6 && t < 18;
+  let body: React.ReactNode;
+  if (isDay) {
+    const theta = Math.PI - ((t - 6) / 12) * Math.PI;
+    const x = 50 + Math.cos(theta) * 40;
+    const y = 66 - Math.sin(theta) * 40;
+    body = (
+      <g>
+        {Array.from({ length: 8 }, (_, i) => {
+          const a = (i / 8) * Math.PI * 2;
+          return (
+            <line key={i} x1={x + Math.cos(a) * 7} y1={y + Math.sin(a) * 7} x2={x + Math.cos(a) * 9.5} y2={y + Math.sin(a) * 9.5} stroke={accent} strokeWidth={1.2} strokeLinecap="round" />
+          );
+        })}
+        <circle cx={x} cy={y} r={5} fill={accent} />
+      </g>
+    );
+  } else {
+    const theta = (((t - 18 + 24) % 24) / 12) * Math.PI;
+    body = <circle cx={50 + Math.cos(theta) * 40} cy={66 + Math.sin(theta) * 20} r={4} fill={color} opacity={0.9} />;
+  }
   return (
-    <svg viewBox="0 0 100 100" width={px} height={px} style={{ overflow: 'visible', flexShrink: 0 }} aria-hidden>
+    <InstrumentSvg px={px}>
+      <path d="M10 66A40 40 0 0 1 90 66" fill="none" stroke={color} strokeWidth={1} strokeDasharray="2 3" opacity={0.5} />
+      <path d="M90 66A40 20 0 0 1 10 66" fill="none" stroke={color} strokeWidth={0.8} strokeDasharray="2 3" opacity={0.2} />
+      <line x1={6} y1={66} x2={94} y2={66} stroke={color} strokeWidth={1} opacity={0.6} />
+      {[6, 9, 12, 15, 18].map((h) => {
+        const theta = Math.PI - ((h - 6) / 12) * Math.PI;
+        return <circle key={h} cx={50 + Math.cos(theta) * 40} cy={66 - Math.sin(theta) * 40} r={1.2} fill={color} opacity={0.6} />;
+      })}
       {body}
-    </svg>
+      {Array.from({ length: 12 }, (_, i) => (
+        <circle key={`m${i}`} cx={17 + i * 6} cy={93} r={1.5} fill={i < Math.floor(mm / 5) ? accent : color} opacity={i < Math.floor(mm / 5) ? 1 : 0.18} />
+      ))}
+    </InstrumentSvg>
+  );
+};
+
+// Sector clock: the hour (12h) and the minute fill the face as pie slices.
+const SectorClock: React.FC<InstrumentProps> = ({ hh, mm, ss, r, px, color }) => {
+  const accent = accentOf(r);
+  const hourPath = sectorPath(50, 50, 46, ((hh % 12) + mm / 60) / 12);
+  const minutePath = sectorPath(50, 50, 32, (mm + ss / 60) / 60);
+  return (
+    <InstrumentSvg px={px}>
+      {hourPath && <path d={hourPath} fill={color} opacity={0.18} />}
+      {minutePath && <path d={minutePath} fill={accent} opacity={0.6} />}
+      <circle cx={50} cy={50} r={46} fill="none" stroke={color} strokeWidth={1} opacity={0.5} />
+      <circle cx={50} cy={50} r={32} fill="none" stroke={color} strokeWidth={0.6} opacity={0.3} />
+      {Array.from({ length: 12 }, (_, i) => (
+        <g key={i}>{hand(i * 30, 43, 46, 1, color, 'butt')}</g>
+      ))}
+      {hand(ss * 6, 34, 46, 1.2, accent)}
+    </InstrumentSvg>
+  );
+};
+
+// Pendulum wall clock: a small dial above a pendulum that swings each second.
+const PendulumClock: React.FC<InstrumentProps> = ({ hh, mm, ss, r, px, color }) => {
+  const accent = accentOf(r);
+  const hDeg = ((hh % 12) + mm / 60) * 30;
+  const mDeg = (mm + ss / 60) * 6;
+  return (
+    <InstrumentSvg px={px}>
+      <rect x={24} y={3} width={52} height={94} rx={6} fill="none" stroke={color} strokeWidth={1.2} opacity={0.6} />
+      <circle cx={50} cy={26} r={18} fill="none" stroke={color} strokeWidth={1.2} />
+      {Array.from({ length: 12 }, (_, i) => (
+        <g key={i}>{handAt(50, 26, i * 30, 14.5, 17, i % 3 ? 0.7 : 1.4, color, 'butt')}</g>
+      ))}
+      {handAt(50, 26, hDeg, 0, 9, 2.2, color)}
+      {handAt(50, 26, mDeg, 0, 13.5, 1.4, color)}
+      <circle cx={50} cy={26} r={1.6} fill={color} />
+      <g style={{ transform: `rotate(${ss % 2 ? 14 : -14}deg)`, transformOrigin: '50px 48px', transition: 'transform 0.9s ease-in-out' }}>
+        <line x1={50} y1={48} x2={50} y2={82} stroke={color} strokeWidth={1.2} />
+        <circle cx={50} cy={85} r={6} fill={accent} />
+      </g>
+      <circle cx={50} cy={48} r={1.6} fill={color} />
+    </InstrumentSvg>
   );
 };
 
@@ -517,7 +962,22 @@ const WordClock: React.FC<{ hh: number; mm: number; compact: boolean }> = ({ hh,
   );
 };
 
-const INSTRUMENT_KINDS = new Set(['analog', 'rings', 'gauges', 'wordgrid']);
+const INSTRUMENT_KINDS = new Set([
+  'analog',
+  'rings',
+  'gauges',
+  'wordgrid',
+  'arc',
+  'pie',
+  'pendulum',
+]);
+
+const INSTRUMENTS: Partial<Record<ChronoRender['kind'], React.FC<InstrumentProps>>> = {
+  analog: AnalogDial,
+  arc: DayArc,
+  pie: SectorClock,
+  pendulum: PendulumClock,
+};
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -629,9 +1089,10 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 
   if (INSTRUMENT_KINDS.has(r.kind)) {
     const ink = themeColor ?? 'currentColor';
-    const px = isMain ? 64 : 34;
+    const px = isMain ? 88 : 34;
+    const Instrument = INSTRUMENTS[r.kind];
     let instrument: React.ReactNode;
-    if (r.kind === 'analog') instrument = <AnalogDial hh={hh} mm={mm} ss={ss} r={r} px={px} color={ink} />;
+    if (Instrument) instrument = <Instrument hh={hh} mm={mm} ss={ss} r={r} px={px} color={ink} />;
     else if (r.kind === 'rings') instrument = <ActivityRings hh={hh} mm={mm} ss={ss} px={px} />;
     else if (r.kind === 'gauges') instrument = <Gauges hh={hh} mm={mm} ss={ss} compact={!isMain} />;
     else instrument = <WordClock hh={hh} mm={mm} compact={!isMain} />;
@@ -641,16 +1102,9 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
         style={{ color: themeColor }}
         role="img"
         aria-label={label}
+        title={isMain ? label : undefined}
       >
         {instrument}
-        {isMain && (
-          <span className="flex flex-col leading-none tabular-nums">
-            <span className="text-xl sm:text-2xl font-light">
-              {pad2(hh)}:{pad2(mm)}
-            </span>
-            <span className="text-xs text-emerald-500 mt-1">:{pad2(ss)}</span>
-          </span>
-        )}
       </div>
     );
   }
