@@ -243,7 +243,7 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
 
           {/* Trajectory: actual cycle hours for 8 weeks, then the projected cone */}
           <div>
-            <div className="relative h-32 sm:h-36" role="img" aria-label={t.forecastAria}>
+            <div className="relative h-28" role="img" aria-label={t.forecastAria}>
               <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full overflow-visible">
                 <line x1={chart.nowX} y1={0} x2={chart.nowX} y2={100} stroke="var(--tb-border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
                 {chart.guides.map((g) => (
@@ -315,7 +315,10 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
               {t.forecastAscensionReady}
             </div>
           ) : (
-            <ul className={`border-t ${divider}`}>
+            // Two across on desktop: stacked, the four ETAs made this the tallest
+            // panel of the right column, and the lunar calendar opposite had to
+            // stretch to match it.
+            <ul className={`grid lg:grid-cols-2 lg:gap-x-6 border-t ${divider}`}>
               {targets.map((tg) => {
                 const mean = daysToCover(tg.hoursLeft, pace.perDay);
                 const fast = daysToCover(tg.hoursLeft, pace.fastPerDay);
@@ -328,17 +331,21 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
                     ? `LV.${pad4(tg.level.level)} ${tg.level.title}`
                     : tg.level.title;
                 return (
-                  <li key={tg.kind} className={`grid grid-cols-[0.5rem_minmax(0,1fr)_auto] gap-x-2.5 gap-y-0.5 items-center py-2 border-b ${divider}`}>
+                  <li key={tg.kind} className={`grid grid-cols-[0.5rem_minmax(0,1fr)_auto] gap-x-2.5 gap-y-0.5 items-center py-1.5 border-b ${divider}`}>
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tg.level.color }} />
                     <span className={`text-[9px] uppercase tracking-widest ${textMuted}`}>{kindLabel[tg.kind]}</span>
                     <span className={`text-[11px] text-right tabular-nums font-semibold ${strongText}`}>
                       {reachable ? etaDate(mean) : t.forecastNoSignal}
                     </span>
+                    {/* The name gets a line of its own and the hours left drop beside the
+                        ETA range: sharing one line, the hours were the first thing cut off
+                        once the list went two across. */}
                     <span />
-                    <span className={`text-[11px] uppercase truncate ${strongText}`} title={tg.level.subtitle}>
+                    <span className={`col-span-2 text-[11px] uppercase truncate ${strongText}`} title={tg.level.subtitle}>
                       {name}
-                      <span className={`ml-2 normal-case ${textMuted}`}>{tf(t.forecastHoursLeft, { n: tg.hoursLeft })}</span>
                     </span>
+                    <span />
+                    <span className={`text-[10px] tabular-nums truncate ${textMuted}`}>{tf(t.forecastHoursLeft, { n: tg.hoursLeft })}</span>
                     <span className={`text-[10px] text-right uppercase tabular-nums whitespace-nowrap ${textMuted}`}>
                       {reachable
                         ? fast !== null && slow !== null && fast !== slow

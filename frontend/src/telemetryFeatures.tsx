@@ -26,6 +26,7 @@ import { useI18n, tf } from './i18n';
 import { drawStatusCard, loadSurfaceArt, STATUS_CARD_SIZE } from './statusCard';
 import { CHROMA_THEME_PAIRS, CLASSIC_THEME_PAIRS, COMPLEMENT_THEME_PAIRS, resolveSurfaceThemeId } from './surfaceThemes';
 import { PRESTIGE_THEME_PAIRS } from './surfacePrestige';
+import { buildHintRows, buildNamespaceRows, type PaletteCommandItem, type TerminalContext, type TerminalIO } from './terminalCommands';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -790,7 +791,7 @@ interface MixLayer {
 // and JS timers are throttled.
 const SLEEP_TIMER_PRESETS_MIN = [15, 30, 45, 60, 90, 120, 180];
 const SLEEP_FADE_SECONDS = 20;
-const MAX_SLEEP_TIMER_MIN = 12 * 60;
+export const MAX_SLEEP_TIMER_MIN = 12 * 60;
 
 function formatSleepRemaining(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
@@ -1335,11 +1336,24 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   // Command-palette quick actions ("Play Brown Noise" etc.) replace the
   // whole mix with just that one profile — a predictable "quick switch"
   // rather than silently layering onto whatever is already playing.
+  // "noise vol 40" / "noise sleep 30m" drive the master fader and the
+  // sleep timer the same way the popover's own controls do.
   useEffect(() => {
     const handleExternalSoundCmd = (e: Event) => {
-      const custom = e as CustomEvent<{ action: 'play' | 'stop' | 'toggle'; mode?: NoiseMode }>;
+      const custom = e as CustomEvent<{
+        action: 'play' | 'stop' | 'toggle' | 'volume' | 'sleep';
+        mode?: NoiseMode;
+        value?: number;
+      }>;
       if (!custom.detail) return;
-      if (custom.detail.action === 'stop') {
+      if (custom.detail.action === 'volume' && typeof custom.detail.value === 'number') {
+        const vol = Math.max(0, Math.min(1, custom.detail.value));
+        setMasterVolume(vol);
+        masterVolumeRef.current = vol;
+        applyMasterGain(vol, sleepEndsAtRef.current);
+      } else if (custom.detail.action === 'sleep' && typeof custom.detail.value === 'number') {
+        startSleepTimer(custom.detail.value);
+      } else if (custom.detail.action === 'stop') {
         stopAllLayers();
       } else if (custom.detail.action === 'toggle') {
         if (layers.length > 0) {
@@ -1366,7 +1380,16 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
     };
     window.addEventListener('typbox:ambient-sound', handleExternalSoundCmd);
     return () => window.removeEventListener('typbox:ambient-sound', handleExternalSoundCmd);
-  }, [buildLayerGraph, layers.length, startOutput, stopAllLayers, stopLayerNodes, userClearanceLevel]);
+  }, [
+    applyMasterGain,
+    buildLayerGraph,
+    layers.length,
+    startOutput,
+    startSleepTimer,
+    stopAllLayers,
+    stopLayerNodes,
+    userClearanceLevel,
+  ]);
 
   useEffect(() => {
     const nodesMap = layerNodesRef.current;
@@ -2403,17 +2426,8 @@ interface CommandPaletteModalProps {
   onToggleTheme: () => void;
   onExportJSON: () => void;
   onExportCSV: () => void;
-}
-
-interface PaletteCommandItem {
-  id: string;
-  group: string;
-  title: string;
-  subtitle: string;
-  badge: string;
-  accentColor?: string;
-  keywords: string;
-  action: () => void | Promise<void>;
+  /** Catalogs + apply callbacks behind the "font / noise / face / …" namespaces. */
+  terminal: TerminalContext;
 }
 
 /**
@@ -2520,13 +2534,22 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onToggleTheme,
   onExportJSON,
   onExportCSV,
+  terminal,
 }) => {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  // 'warn' is a refused terminal command (locked item, bad argument): the
+  // palette stays open so the line can be corrected.
+  const [bannerTone, setBannerTone] = useState<'ok' | 'warn'>('ok');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // Bumped by terminal autocomplete: a clicked hint row took focus from the input.
+  const [focusRequest, setFocusRequest] = useState(0);
+  useEffect(() => {
+    if (focusRequest > 0) inputRef.current?.focus();
+  }, [focusRequest]);
   // Blocks a second command (double Enter / key repeat) while a log commit
   // is in flight or its success banner is showing.
   const [committing, setCommitting] = useState(false);
@@ -2534,6 +2557,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   const updateQuery = (nextQuery: string) => {
     setQuery(nextQuery);
     setSelectedIndex(0);
+    // A refusal line belongs to the command that was just tried.
+    if (bannerTone === 'warn') setStatusBanner(null);
   };
 
   useEffect(() => {
@@ -2542,6 +2567,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       setQuery('');
       setSelectedIndex(0);
       setStatusBanner(null);
+      setBannerTone('ok');
       setCommitting(false);
       inputRef.current?.focus();
     }, 10);
@@ -2572,12 +2598,43 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     [onQuickLog, onClose, t]
   );
 
+  // How terminal rows talk back: print a line, then close (or stay open on a
+  // refusal), or autocomplete the input.
+  const terminalIO = useMemo<TerminalIO>(
+    () => ({
+      done: (message) => {
+        setCommitting(true);
+        setBannerTone('ok');
+        setStatusBanner(message);
+        setTimeout(() => {
+          onClose();
+        }, 450);
+      },
+      fail: (message) => {
+        setBannerTone('warn');
+        setStatusBanner(message);
+      },
+      complete: (text) => {
+        setQuery(text);
+        setSelectedIndex(0);
+        setStatusBanner(null);
+        setFocusRequest((n) => n + 1);
+      },
+      close: onClose,
+    }),
+    [onClose]
+  );
+
   const parsedQuickLog = useMemo(() => {
     if (!isAuthenticated) return null;
     return parseQuickLogQuery(query, categories, selectedCatId);
   }, [isAuthenticated, query, categories, selectedCatId]);
 
   const commands = useMemo<PaletteCommandItem[]>(() => {
+    // "font …", "noise …", "goto …": the namespace's own list replaces everything else.
+    const namespaceRows = buildNamespaceRows(query, terminal, terminalIO, t);
+    if (namespaceRows) return namespaceRows;
+
     const items: PaletteCommandItem[] = [];
 
     // 1. Dynamic CLI Quick Log Command (when user types e.g. "log 90m math" or "45m cs")
@@ -2627,6 +2684,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       });
     }
+
+    // Terminal namespaces: one hint row each; running it types "font " etc.
+    items.push(...buildHintRows(terminal, terminalIO, t));
 
     // 3. Acoustic Focus Engine (Ambient Noise)
     items.push(
@@ -2919,6 +2979,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onToggleMatrixSpan,
     onExportJSON,
     onExportCSV,
+    terminal,
+    terminalIO,
     t,
   ]);
 
@@ -2938,6 +3000,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       setSelectedIndex((prev) =>
         commands.length > 0 ? (prev - 1 + commands.length) % commands.length : 0
       );
+    } else if (e.key === 'Tab' && commands[selectedIndex]?.complete) {
+      e.preventDefault();
+      updateQuery(commands[selectedIndex].complete as string);
     } else if (e.key === 'Enter' && commands[selectedIndex]) {
       e.preventDefault();
       if (!committing) commands[selectedIndex].action();
@@ -3024,12 +3089,12 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                updateQuery('sound brown');
+                updateQuery('help');
                 inputRef.current?.focus();
               }}
               className={`px-1.5 py-0.5 border ${borderCol} hover:border-emerald-500/50 cursor-pointer`}
             >
-              sound brown
+              help
             </button>
           </div>
           <span className={`hidden sm:inline ${textMuted}`}>{t.pcNavigate}</span>
@@ -3037,8 +3102,13 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
         {/* Status Confirmation Banner */}
         {statusBanner && (
-          <div className="px-4 py-2.5 bg-emerald-500 text-zinc-950 text-xs font-bold flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <div
+            role="status"
+            className={`px-4 py-2.5 text-xs font-bold flex items-center space-x-2 ${
+              bannerTone === 'warn' ? 'bg-amber-500 text-zinc-950' : 'bg-emerald-500 text-zinc-950'
+            }`}
+          >
+            {bannerTone === 'warn' ? <Lock className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
             <span>{statusBanner}</span>
           </div>
         )}
@@ -3076,7 +3146,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                       : ''
                   }`}
                 >
-                  <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className={`min-w-0 flex-1 space-y-0.5 ${cmd.dim ? 'opacity-50' : ''}`}>
                     <div className="flex items-center space-x-2">
                       {cmd.accentColor ? (
                         <span

@@ -34,12 +34,26 @@ export interface CategoryTrendTableProps {
 // into a single OTHER row so column totals still add up.
 const COLLAPSED_ROW_LIMIT = 5;
 const EXPANDED_STORAGE_KEY = 'typbox_trend_expanded';
+// The legend lists every category, which with a dozen-plus of them ran to
+// six-odd lines and stretched the whole analytics panel (and, through the
+// column alignment, the lunar calendar beside it). Collapsed it keeps the
+// first few (about two lines); the rest fold behind a SHOW MORE row.
+const COLLAPSED_LEGEND_LIMIT = 4;
+const LEGEND_EXPANDED_STORAGE_KEY = 'typbox_trend_legend_expanded';
 
-const readExpanded = () => {
+const readFlag = (key: string) => {
   try {
-    return localStorage.getItem(EXPANDED_STORAGE_KEY) === '1';
+    return localStorage.getItem(key) === '1';
   } catch {
     return false;
+  }
+};
+
+const writeFlag = (key: string, value: boolean) => {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // storage unavailable — state still toggles for this session
   }
 };
 
@@ -64,15 +78,19 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
   onHighlight,
 }) => {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState<boolean>(readExpanded);
+  const [expanded, setExpanded] = useState<boolean>(() => readFlag(EXPANDED_STORAGE_KEY));
+  const [legendExpanded, setLegendExpanded] = useState<boolean>(() => readFlag(LEGEND_EXPANDED_STORAGE_KEY));
 
   const toggleExpanded = () => {
     setExpanded((prev) => {
-      try {
-        localStorage.setItem(EXPANDED_STORAGE_KEY, prev ? '0' : '1');
-      } catch {
-        // storage unavailable — state still toggles for this session
-      }
+      writeFlag(EXPANDED_STORAGE_KEY, !prev);
+      return !prev;
+    });
+  };
+
+  const toggleLegendExpanded = () => {
+    setLegendExpanded((prev) => {
+      writeFlag(LEGEND_EXPANDED_STORAGE_KEY, !prev);
       return !prev;
     });
   };
@@ -99,6 +117,18 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
   const foldedCells = columns.map((_, idx) => foldedRows.reduce((acc, row) => acc + row.cells[idx], 0));
   const foldedPeak = Math.max(0, ...foldedCells);
   const idleCount = categories.length - activeRows.length;
+
+  // Legend order: the categories drawn in this window's bars (busiest first,
+  // same as the table) lead, so the collapsed legend still decodes the chart;
+  // idle ones keep their registry order after them.
+  const legendCategories = useMemo(() => {
+    const activeIds = new Set(activeRows.map((row) => String(row.cat.id)));
+    return [...activeRows.map((row) => row.cat), ...categories.filter((cat) => !activeIds.has(String(cat.id)))];
+  }, [activeRows, categories]);
+  const canCollapseLegend = legendCategories.length > COLLAPSED_LEGEND_LIMIT + 1;
+  const visibleLegend =
+    canCollapseLegend && !legendExpanded ? legendCategories.slice(0, COLLAPSED_LEGEND_LIMIT) : legendCategories;
+  const hiddenLegend = canCollapseLegend && !legendExpanded ? legendCategories.slice(COLLAPSED_LEGEND_LIMIT) : [];
 
   const stickyBg = { backgroundColor: 'var(--tb-bg-card)' };
   const rowBorder = isDark ? 'border-zinc-800/60' : 'border-zinc-200';
@@ -129,21 +159,53 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
   return (
     <div className="space-y-4 pt-2">
       {/* Category Legend */}
-      <div className="flex flex-wrap gap-4">
-        {categories.map((cat) => {
-          const active = cat.isActive !== false;
-          return (
-            <div
-              key={cat.id}
-              className={`flex items-center space-x-1.5 text-xs font-mono ${active ? '' : 'opacity-50'}`}
-              title={active ? undefined : t.inactiveLegendTitle}
-            >
-              <span className="w-2.5 h-2.5 inline-block" style={swatchStyle(cat.color, active)} />
-              <span className={textMuted}>{cat.code}:</span>
-              <span className={active ? '' : 'line-through decoration-dotted'}>{cat.name}</span>
-            </div>
-          );
-        })}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {visibleLegend.map((cat) => {
+            const active = cat.isActive !== false;
+            return (
+              <div
+                key={cat.id}
+                className={`flex items-center space-x-1.5 text-xs font-mono ${active ? '' : 'opacity-50'}`}
+                title={active ? undefined : t.inactiveLegendTitle}
+              >
+                <span className="w-2.5 h-2.5 inline-block" style={swatchStyle(cat.color, active)} />
+                <span className={textMuted}>{cat.code}:</span>
+                <span className={active ? '' : 'line-through decoration-dotted'}>{cat.name}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {canCollapseLegend && (
+          <button
+            type="button"
+            onClick={toggleLegendExpanded}
+            aria-expanded={legendExpanded}
+            className={`w-full min-h-[38px] lg:min-h-0 flex items-center justify-between gap-3 px-2.5 py-1.5 border ${borderCol} font-mono text-[10px] uppercase tracking-wider ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 transition-colors cursor-pointer`}
+          >
+            <span className="flex items-center gap-1.5 shrink-0">
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${legendExpanded ? 'rotate-180' : ''}`} />
+              {legendExpanded ? t.showLessCategories : tf(t.showMoreCategories, { n: hiddenLegend.length })}
+            </span>
+            {legendExpanded ? (
+              <span className="tabular-nums">
+                {legendCategories.length} / {legendCategories.length}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 min-w-0 overflow-hidden">
+                {hiddenLegend.map((cat) => (
+                  <span
+                    key={cat.id}
+                    className="w-2 h-2 shrink-0"
+                    style={swatchStyle(cat.color, cat.isActive !== false)}
+                    title={`[${cat.code}] ${cat.name}`}
+                  />
+                ))}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">

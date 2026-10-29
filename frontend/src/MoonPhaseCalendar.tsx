@@ -171,10 +171,10 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
 
       {/* flex-1 down to the grid: when the panel is stretched to line up with the
           other column (desktop), the extra height goes into taller day cells. */}
-      <div className="pt-4 space-y-4 font-mono flex-1 flex flex-col">
+      <div className="pt-3 space-y-3 font-mono flex-1 flex flex-col">
         <div className="flex items-center gap-4">
-          <MoonIcon fraction={todayFraction} size={48} isDark={isDark} glow={illuminated >= 40} />
-          <div className="flex-1 min-w-0 space-y-2">
+          <MoonIcon fraction={todayFraction} size={40} isDark={isDark} glow={illuminated >= 40} />
+          <div className="flex-1 min-w-0 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className={`text-sm font-semibold truncate ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>{t[PHASE_KEYS[todayPhaseIdx]]}</span>
               <span className={`text-[10px] uppercase tracking-wider tabular-nums shrink-0 ${textMuted}`}>
@@ -203,14 +203,14 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
         </div>
 
         <div className="flex-1 flex flex-col">
-          <div className={`grid grid-cols-7 gap-1 mb-1.5 text-center text-[9px] uppercase tracking-widest ${textMuted}`}>
+          <div className={`grid grid-cols-7 gap-1 mb-1 text-center text-[9px] uppercase tracking-widest ${textMuted}`}>
             {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d) => (
               <span key={d}>{d}</span>
             ))}
           </div>
           <div className="flex-1 grid grid-cols-7 auto-rows-fr gap-1">
             {Array.from({ length: leadingBlanks }).map((_, idx) => (
-              <div key={`empty-lead-${idx}`} className="min-h-12 pointer-events-none" />
+              <div key={`empty-lead-${idx}`} className="min-h-8 pointer-events-none" />
             ))}
             {cells.map((cell) => {
               const isToday = cell.day === today;
@@ -220,7 +220,7 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
                 <div
                   key={cell.day}
                   title={`${t[PHASE_KEYS[cell.phaseIdx]]} · ${moonIllumination(cell.fraction)}%`}
-                  className={`relative flex items-center justify-center pt-2.5 pb-1 min-h-12 transition-colors ${
+                  className={`relative flex items-center justify-center pt-2 pb-0.5 min-h-8 transition-colors ${
                     isToday
                       ? 'bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/60'
                       : isDark
@@ -242,7 +242,7 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
                   }
                 >
                   <span
-                    className={`absolute top-1 left-1.5 text-[9px] leading-none tabular-nums ${
+                    className={`absolute top-0.5 left-1 text-[8px] leading-none tabular-nums ${
                       isToday
                         ? `font-semibold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`
                         : isPast
@@ -258,7 +258,7 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
                   </span>
                   <MoonIcon
                     fraction={cell.fraction}
-                    size={18}
+                    size={14}
                     isDark={isDark}
                     glow={isFull}
                     className={isPast && !isToday ? 'opacity-50' : undefined}
@@ -271,7 +271,7 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
       </div>
 
       <div
-        className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 pt-3 mt-3 border-t text-[10px] font-mono ${
+        className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 pt-2.5 mt-3 border-t text-[10px] font-mono ${
           isDark ? 'border-zinc-800/50' : 'border-zinc-200'
         }`}
       >

@@ -869,3 +869,62 @@ canvas {
     animation: none;
   }
 }
+
+/* ==========================================
+   Pixel cursors (mouse / trackpad only)
+   A pixel-art chess rook for the everyday cursor and a pointing hand
+   with a chessboard cuff for anything clickable (public/cursors, drawn
+   from the pixel maps inside each SVG). The rook points with its top-left
+   corner, marked by the emerald pixel. Black outline on a white fill
+   reads on both the light and dark surfaces, so one set covers every
+   theme. Touch devices never see a cursor and are left alone.
+   Unlayered on purpose: it has to win over Tailwind's cursor-pointer /
+   cursor-default utilities. Disabled controls are excluded so their
+   disabled:cursor-not-allowed / -wait still apply, and text fields keep
+   the I-beam.
+========================================== */
+@media (pointer: fine) {
+  :root {
+    --tb-cursor-default: url("/cursors/pixel-rook.svg") 1 1, default;
+    --tb-cursor-hand: url("/cursors/pixel-hand.svg") 5 0, pointer;
+  }
+
+  html,
+  .cursor-default,
+  .disabled\:cursor-default:disabled {
+    cursor: var(--tb-cursor-default);
+  }
+
+  a[href],
+  select:not(:disabled),
+  .cursor-pointer:not(:disabled) {
+    cursor: var(--tb-cursor-hand);
+  }
+
+  input:is(:not([type]), [type="text"], [type="email"], [type="password"], [type="number"], [type="search"], [type="url"], [type="tel"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
+  }
+}
+
+/* ==========================================
+   Terminal "goto <panel>" landing
+   The command palette's goto scrolls a panel under the sticky header and
+   briefly rings it emerald so the eye finds where it landed.
+========================================== */
+[data-panel] {
+  scroll-margin-top: 5.5rem;
+}
+.tb-panel-ping {
+  animation: tb-panel-ping 1.4s ease-out;
+}
+@keyframes tb-panel-ping {
+  0%, 35% { box-shadow: 0 0 0 2px rgb(16 185 129 / 0.85); }
+  100% { box-shadow: 0 0 0 2px rgb(16 185 129 / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-panel-ping {
+    animation: none;
+  }
+}

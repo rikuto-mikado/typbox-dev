@@ -145,6 +145,8 @@ import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFo
 import { useKeepAwake } from './keepAwake';
 import { Forecast } from './Forecast';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
+import { buildTerminalCatalogs } from './terminalCatalogs';
+import type { TerminalContext } from './terminalCommands';
 
 // ==========================================
 // Types & Interfaces
@@ -2886,6 +2888,44 @@ export default function App() {
   );
   const exitAmbientPreview = useCallback(() => setAmbientPreviewId(null), []);
 
+  // Command palette terminal: "font …", "face …", "surface …", "ambient …",
+  // "noise …" list these catalogs with the same unlock rules as Settings.
+  const terminalContext = useMemo<TerminalContext>(
+    () => ({
+      ...buildTerminalCatalogs(
+        {
+          progress: chronoProgress,
+          activeFontId: activeUiFont.id,
+          activeFaceId: activeChronoTheme.id,
+          activeSurfaceId: activeSurfacePair.id,
+          activeAmbientId: activeAmbientTheme.id,
+        },
+        t
+      ),
+      onSelectFont: handleSelectUiFont,
+      onSelectFace: handleSelectChronoTheme,
+      onSelectSurface: handleSelectSurfaceTheme,
+      onLaunchAmbient: (id) => {
+        if (id) handleSelectAmbientTheme(id);
+        // Once the palette has printed its line and closed, so the overlay
+        // isn't drawn under it.
+        window.setTimeout(() => setAmbientPreviewId(id ?? activeAmbientTheme.id), 500);
+      },
+    }),
+    [
+      chronoProgress,
+      activeUiFont.id,
+      activeChronoTheme.id,
+      activeSurfacePair.id,
+      activeAmbientTheme.id,
+      handleSelectUiFont,
+      handleSelectChronoTheme,
+      handleSelectSurfaceTheme,
+      handleSelectAmbientTheme,
+      t,
+    ]
+  );
+
   const handleExportCSV = () => {
     if (logs.length === 0) {
       alert(t.errNoLogsExport);
@@ -3587,7 +3627,7 @@ export default function App() {
           {/* LEFT COLUMN: Chronometer, Recording, Categories, Insights, Lunar Calendar */}
           <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-5 lg:[&>*:last-child]:grow">
             {/* SYSTEM CHRONOMETER (DIGITAL CLOCK PANEL) */}
-            <div className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
+            <div data-panel="chrono" className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
               {/* Wraps instead of overflowing on narrow phones: weather badges
                   can be wide (e.g. the CYBER HUD theme), so the right-hand
                   controls drop to a second line when they don't fit. From sm
@@ -3684,7 +3724,7 @@ export default function App() {
             </div>
 
             {/* SESSION LOGGER PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-6 relative order-2 lg:order-none`}>
+            <div data-panel="log" className={`border ${borderCol} ${bgCard} p-6 relative order-2 lg:order-none`}>
               {/* Overlay if not authenticated */}
               {!user && (
                 <div
@@ -3906,7 +3946,7 @@ export default function App() {
             </div>
 
             {/* CATEGORY REGISTRY PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none`}>
+            <div data-panel="registry" className={`border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none`}>
               {!user && (
                 <div
                   className={`absolute inset-0 z-20 backdrop-blur-[2px] ${
@@ -4439,7 +4479,7 @@ export default function App() {
             </div>
 
             {/* STUDY INSIGHTS & TELEMETRY VAULT PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 space-y-3 relative order-5 lg:order-none`}>
+            <div data-panel="insights" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 space-y-3 relative order-5 lg:order-none`}>
               {!user && (
                 <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
                   <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -4552,7 +4592,7 @@ export default function App() {
             </div>
 
             {/* LUNAR CALENDAR PANEL */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
+            <div data-panel="lunar" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
               <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
             </div>
           </div>
@@ -4560,7 +4600,7 @@ export default function App() {
           {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Forecast */}
           <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-7 lg:[&>*:last-child]:grow">
             {/* ANALYTICS MODULE */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
+            <div data-panel="analytics" className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
               <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-6 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <BarChart3 className="w-4 h-4 text-emerald-500" />
@@ -4661,7 +4701,7 @@ export default function App() {
                   </div>
 
                   {/* 7-Day Stacked Bar Chart */}
-                  <div className={`h-52 flex items-end justify-between gap-3 pt-6 px-2 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                  <div className={`h-44 flex items-end justify-between gap-3 pt-6 px-2 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                     {weeklyChartData.map((day, idx) => {
                       return (
                         <div
@@ -4676,7 +4716,7 @@ export default function App() {
                           </span>
 
                           <div
-                            className={`w-full max-w-[38px] h-36 flex flex-col-reverse justify-start overflow-hidden ${
+                            className={`w-full max-w-[38px] h-28 flex flex-col-reverse justify-start overflow-hidden ${
                               isDark ? 'bg-zinc-900/60' : 'bg-zinc-100'
                             }`}
                           >
@@ -4756,7 +4796,7 @@ export default function App() {
                   </div>
 
                   {/* 12-Week Stacked Bar Chart */}
-                  <div className={`h-52 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                  <div className={`h-44 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                     {weeklyAggBuckets.buckets.map((wk, idx) => (
                       <div
                         key={wk.id}
@@ -4769,7 +4809,7 @@ export default function App() {
                         </span>
 
                         <div
-                          className={`w-full max-w-[30px] h-36 flex flex-col-reverse justify-start overflow-hidden ${
+                          className={`w-full max-w-[30px] h-28 flex flex-col-reverse justify-start overflow-hidden ${
                             isDark ? 'bg-zinc-900/60' : 'bg-zinc-100'
                           }`}
                         >
@@ -4841,7 +4881,7 @@ export default function App() {
                   </div>
 
                   {/* 12-Month Stacked Bar Chart */}
-                  <div className={`h-52 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                  <div className={`h-44 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                     {monthlyAggBuckets.buckets.map((mo, idx) => (
                       <div
                         key={mo.id}
@@ -4854,7 +4894,7 @@ export default function App() {
                         </span>
 
                         <div
-                          className={`w-full max-w-[30px] h-36 flex flex-col-reverse justify-start overflow-hidden ${
+                          className={`w-full max-w-[30px] h-28 flex flex-col-reverse justify-start overflow-hidden ${
                             isDark ? 'bg-zinc-900/60' : 'bg-zinc-100'
                           }`}
                         >
@@ -5092,7 +5132,7 @@ export default function App() {
             </div>
 
             {/* TELEMETRY CADENCE MATRIX (7 DAYS VERTICAL x DYNAMIC WEEKS HORIZONTAL) */}
-            <div className={`border ${borderCol} ${bgCard} p-6 space-y-4 order-3 lg:order-none`}>
+            <div data-panel="cadence" className={`border ${borderCol} ${bgCard} p-6 space-y-4 order-3 lg:order-none`}>
               {/* Header & Mode Controls */}
               <div
                 className={`flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b ${
@@ -5424,7 +5464,7 @@ export default function App() {
             </div>
 
             {/* CHRONOLOGICAL LOG STREAM (always last on phones) */}
-            <div className={`border ${borderCol} ${bgCard} p-6 order-9 lg:order-none`}>
+            <div data-panel="stream" className={`border ${borderCol} ${bgCard} p-6 order-9 lg:order-none`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -5676,7 +5716,7 @@ export default function App() {
             </div>
 
             {/* FORECAST PANEL (Clearance projection from recent pace, computed client-side) */}
-            <div className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none`}>
+            <div data-panel="forecast" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none`}>
               <Forecast
                 logs={user ? logs : []}
                 todayStr={todayStr}
@@ -6974,6 +7014,7 @@ export default function App() {
         onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
         onExportJSON={handleExportJSON}
         onExportCSV={handleExportCSV}
+        terminal={terminalContext}
       />
 
       <ToastStack toasts={toasts} isDark={isDark} onDismiss={dismissToast} />
