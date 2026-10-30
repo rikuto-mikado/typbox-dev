@@ -1,12 +1,13 @@
 // Turns the settings catalogs (fonts, chronometer faces, surface themes,
-// ambient scenes, noise profiles) into terminal rows for the command palette,
-// applying the same unlock rules the Settings pickers use. Kept apart from
+// ambient scenes, cursors, noise profiles) into terminal rows for the command
+// palette, applying the same unlock rules the Settings pickers use. Kept apart from
 // terminalCommands.ts so the palette module doesn't import the catalogs back.
 import type { Dict } from './i18n';
 import { CHRONO_THEMES, isUnlockRuleMet, unlockRuleRank, type ChronoProgress, type ChronoUnlock } from './chronometerThemes';
 import { unlockLockedMessage, unlockRequirementLabel } from './ChronometerFace';
 import { UI_FONTS } from './uiFonts';
 import { AMBIENT_THEMES } from './ambientThemes';
+import { CURSOR_THEMES } from './cursorThemes';
 import { MAX_SLEEP_TIMER_MIN, NOISE_PROFILES, SURFACE_THEME_PAIRS, isRewardUnlocked, isThemeUnlocked } from './telemetryFeatures';
 import type { TerminalEntry } from './terminalCommands';
 
@@ -16,6 +17,7 @@ interface CatalogInputs {
   activeFaceId: string;
   activeSurfaceId: string;
   activeAmbientId: string;
+  activeCursorId: string;
 }
 
 const byUnlockRank = <T extends { unlock: ChronoUnlock }>(list: T[]) =>
@@ -41,12 +43,16 @@ function ruleEntry(
 
 const levelLabel = (lv: number) => `LV.${String(lv).padStart(4, '0')}`;
 
-export function buildTerminalCatalogs({ progress, activeFontId, activeFaceId, activeSurfaceId, activeAmbientId }: CatalogInputs, t: Dict) {
+export function buildTerminalCatalogs(
+  { progress, activeFontId, activeFaceId, activeSurfaceId, activeAmbientId, activeCursorId }: CatalogInputs,
+  t: Dict
+) {
   const status = { rewardUnlockLevel: progress.rewardUnlockLevel, totalAscensions: progress.totalAscensions };
   return {
     fonts: byUnlockRank(UI_FONTS).map((f) => ruleEntry(f, activeFontId, progress, t)),
     faces: byUnlockRank(CHRONO_THEMES).map((f) => ruleEntry(f, activeFaceId, progress, t)),
     ambients: byUnlockRank(AMBIENT_THEMES).map((a) => ruleEntry(a, activeAmbientId, progress, t)),
+    cursors: CURSOR_THEMES.map((c) => ruleEntry(c, activeCursorId, progress, t)),
     surfaces: SURFACE_THEME_PAIRS.map<TerminalEntry>((pair) => {
       const req = pair.requiredAscensions ? `ASCENSION ×${pair.requiredAscensions}` : levelLabel(pair.clearanceHintLv);
       return {

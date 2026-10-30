@@ -42,6 +42,7 @@ export interface TerminalContext {
   faces: TerminalEntry[];
   surfaces: TerminalEntry[];
   ambients: TerminalEntry[];
+  cursors: TerminalEntry[];
   noises: TerminalEntry[];
   /** The noise engine's sleep-timer cap; longer requests are refused, not clamped silently. */
   maxSleepMinutes: number;
@@ -50,6 +51,7 @@ export interface TerminalContext {
   onSelectSurface: (id: string) => void;
   /** Saves the ambient theme (when given) and starts it full-screen now. */
   onLaunchAmbient: (id: string | null) => void;
+  onSelectCursor: (id: string) => void;
 }
 
 /** What a terminal row can do to the palette around it. */
@@ -63,7 +65,7 @@ export interface TerminalIO {
   close: () => void;
 }
 
-type Namespace = 'font' | 'noise' | 'face' | 'surface' | 'ambient' | 'goto' | 'help';
+type Namespace = 'font' | 'noise' | 'face' | 'surface' | 'ambient' | 'cursor' | 'goto' | 'help';
 
 const ALIASES: Record<string, Namespace> = {
   font: 'font',
@@ -79,6 +81,9 @@ const ALIASES: Record<string, Namespace> = {
   skin: 'surface',
   ambient: 'ambient',
   screensaver: 'ambient',
+  cursor: 'cursor',
+  pointer: 'cursor',
+  piece: 'cursor',
   goto: 'goto',
   go: 'goto',
   cd: 'goto',
@@ -87,7 +92,7 @@ const ALIASES: Record<string, Namespace> = {
   '?': 'help',
 };
 
-const NAMESPACE_ORDER: Namespace[] = ['font', 'noise', 'face', 'surface', 'ambient', 'goto'];
+const NAMESPACE_ORDER: Namespace[] = ['font', 'noise', 'face', 'surface', 'ambient', 'cursor', 'goto'];
 
 /** "font jet" -> { ns: 'font', args: ['jet'] }; null when the line isn't a namespace. */
 export function resolveNamespace(query: string): { ns: Namespace; args: string[] } | null {
@@ -373,6 +378,22 @@ export function buildNamespaceRows(query: string, ctx: TerminalContext, io: Term
         ...rows,
       ];
     }
+    case 'cursor':
+      return catalogRows(
+        {
+          ns,
+          group: t.tmGroupCursor,
+          verb: 'cursor',
+          entries: ctx.cursors,
+          apply: (entry) => {
+            ctx.onSelectCursor(entry.id);
+            return tf(t.tmCursorDone, { name: entry.name });
+          },
+        },
+        args,
+        io,
+        t
+      );
     case 'noise':
       return noiseRows(args, ctx, io, t);
     case 'goto':
@@ -391,6 +412,7 @@ export function buildHintRows(ctx: TerminalContext, io: TerminalIO, t: Dict): Pa
     face: { usage: 'face <name>', desc: tf(t.tmHelpFace, { n: unlocked(ctx.faces) }) },
     surface: { usage: 'surface <name>', desc: tf(t.tmHelpSurface, { n: unlocked(ctx.surfaces) }) },
     ambient: { usage: 'ambient [name]', desc: tf(t.tmHelpAmbient, { n: unlocked(ctx.ambients) }) },
+    cursor: { usage: 'cursor <name>', desc: tf(t.tmHelpCursor, { n: unlocked(ctx.cursors) }) },
     goto: { usage: 'goto <panel>', desc: t.tmHelpGoto },
   };
   return NAMESPACE_ORDER.map((ns) => ({

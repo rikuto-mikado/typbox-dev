@@ -142,6 +142,19 @@ import {
 } from './ambientThemes';
 import { UiFontPicker, isUiFontUnlocked } from './UiFontPicker';
 import { DEFAULT_UI_FONT_ID, UI_FONTS, UI_FONT_STORAGE_KEY, applyUiFont, getUiFontById, isUiFontId } from './uiFonts';
+import { CursorPicker, isCursorThemeUnlocked } from './CursorPicker';
+import {
+  CURSOR_SIZE_STORAGE_KEY,
+  CURSOR_THEMES,
+  CURSOR_THEME_STORAGE_KEY,
+  DEFAULT_CURSOR_SIZE,
+  DEFAULT_CURSOR_THEME_ID,
+  applyCursorTheme,
+  getCursorThemeById,
+  isCursorSize,
+  isCursorThemeId,
+  type CursorSize,
+} from './cursorThemes';
 import { useKeepAwake } from './keepAwake';
 import { Forecast } from './Forecast';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
@@ -203,19 +216,26 @@ export interface AuthUser {
   ui_font?: string;
   ambient_theme?: string;
   ambient_clock?: boolean | null;
+  cursor_theme?: string;
 }
 
 /** Account-synced UI prefs that go through the debounced PATCH queue. */
-type UiPrefsPatch = SyncedWeatherPrefs & { surface_fx?: boolean; ui_font?: string; ambient_theme?: string; ambient_clock?: boolean };
+type UiPrefsPatch = SyncedWeatherPrefs & {
+  surface_fx?: boolean;
+  ui_font?: string;
+  ambient_theme?: string;
+  ambient_clock?: boolean;
+  cursor_theme?: string;
+};
 
 type Theme = 'dark' | 'light';
 type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
 // Sign-ups are closed unless the build opts in (mirrors the backend's ALLOW_REGISTRATION).
 const REGISTRATION_OPEN = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
-type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'clearance' | 'security' | 'data';
-// Surface themes, UI fonts and ambient overlays share the single 02 / APPEARANCE tab.
-const APPEARANCE_TABS: SettingsTab[] = ['themes', 'fonts', 'ambient'];
+type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'cursor' | 'clearance' | 'security' | 'data';
+// Surface themes, UI fonts, ambient overlays and cursors share the single 02 / APPEARANCE tab.
+const APPEARANCE_TABS: SettingsTab[] = ['themes', 'fonts', 'ambient', 'cursor'];
 const CATEGORY_PREVIEW_COUNT = 5;
 
 const AVATAR_PRESET_OPTIONS = [
@@ -486,6 +506,14 @@ const getInitialAmbientTheme = (): string => {
   const saved = readLocal(AMBIENT_THEME_STORAGE_KEY);
   return isAmbientThemeId(saved) ? saved : DEFAULT_AMBIENT_THEME_ID;
 };
+const getInitialCursorTheme = (): string => {
+  const saved = readLocal(CURSOR_THEME_STORAGE_KEY);
+  return isCursorThemeId(saved) ? saved : DEFAULT_CURSOR_THEME_ID;
+};
+const getInitialCursorSize = (): CursorSize => {
+  const saved = readLocal(CURSOR_SIZE_STORAGE_KEY);
+  return isCursorSize(saved) ? saved : DEFAULT_CURSOR_SIZE;
+};
 const getInitialAmbientDim = (): AmbientDim => {
   const saved = readLocal(AMBIENT_DIM_STORAGE_KEY);
   return isAmbientDim(saved) ? saved : DEFAULT_AMBIENT_DIM;
@@ -669,9 +697,12 @@ export default function App() {
   const [chronoThemeId, setChronoThemeId] = useState<string>(getInitialChronoTheme);
   const [showChronoPicker, setShowChronoPicker] = useState<boolean>(false);
   const [showWeatherPanel, setShowWeatherPanel] = useState<boolean>(false);
-  // UI font + Ambient overlay: account-synced through the UI prefs queue
-  // (dim level is a per-device comfort setting and stays local).
+  // UI font + Ambient overlay + cursor: account-synced through the UI prefs
+  // queue (dim level is a per-device comfort setting and stays local).
   const [uiFontId, setUiFontId] = useState<string>(getInitialUiFont);
+  const [cursorThemeId, setCursorThemeId] = useState<string>(getInitialCursorTheme);
+  // Cursor size is a per-device comfort setting (like dim) and stays local.
+  const [cursorSize, setCursorSize] = useState<CursorSize>(getInitialCursorSize);
   const [ambientThemeId, setAmbientThemeId] = useState<string>(getInitialAmbientTheme);
   const [ambientClock, setAmbientClock] = useState<boolean>(() => readLocal(AMBIENT_CLOCK_STORAGE_KEY) !== 'off');
   const [ambientDim, setAmbientDim] = useState<AmbientDim>(getInitialAmbientDim);
@@ -718,10 +749,12 @@ export default function App() {
       localStorage.setItem(AMBIENT_THEME_STORAGE_KEY, ambientThemeId);
       localStorage.setItem(AMBIENT_CLOCK_STORAGE_KEY, ambientClock ? 'on' : 'off');
       localStorage.setItem(AMBIENT_DIM_STORAGE_KEY, ambientDim);
+      localStorage.setItem(CURSOR_THEME_STORAGE_KEY, cursorThemeId);
+      localStorage.setItem(CURSOR_SIZE_STORAGE_KEY, cursorSize);
     } catch {
       // Storage unavailable (private mode): prefs last for this tab only.
     }
-  }, [uiFontId, ambientThemeId, ambientClock, ambientDim]);
+  }, [uiFontId, ambientThemeId, ambientClock, ambientDim, cursorThemeId, cursorSize]);
 
   useEffect(() => {
     // English-only now: drop the retired language setting from this device.
@@ -1309,6 +1342,10 @@ export default function App() {
     if (!('ambient_theme' in pendingUi) && me.ambient_theme !== undefined) {
       if (isAmbientThemeId(me.ambient_theme)) setAmbientThemeId(me.ambient_theme);
       else if (!me.ambient_theme) firstUiSync.ambient_theme = readLocal(AMBIENT_THEME_STORAGE_KEY) ?? DEFAULT_AMBIENT_THEME_ID;
+    }
+    if (!('cursor_theme' in pendingUi) && me.cursor_theme !== undefined) {
+      if (isCursorThemeId(me.cursor_theme)) setCursorThemeId(me.cursor_theme);
+      else if (!me.cursor_theme) firstUiSync.cursor_theme = readLocal(CURSOR_THEME_STORAGE_KEY) ?? DEFAULT_CURSOR_THEME_ID;
     }
     if (!('ambient_clock' in pendingUi) && me.ambient_clock !== undefined) {
       if (me.ambient_clock === null) firstUiSync.ambient_clock = readLocal(AMBIENT_CLOCK_STORAGE_KEY) !== 'off';
@@ -2864,6 +2901,18 @@ export default function App() {
     }
     return candidate;
   }, [ambientThemeId, authLoading, dataLoading, chronoProgress]);
+  // A locked cursor (e.g. a pick synced from a device with more progress)
+  // shows the rook without overwriting the saved choice.
+  const activeCursorTheme = useMemo(() => {
+    const candidate = getCursorThemeById(cursorThemeId);
+    if (!authLoading && !dataLoading && !isCursorThemeUnlocked(candidate, chronoProgress)) {
+      return getCursorThemeById(DEFAULT_CURSOR_THEME_ID);
+    }
+    return candidate;
+  }, [cursorThemeId, authLoading, dataLoading, chronoProgress]);
+  useEffect(() => {
+    applyCursorTheme(activeCursorTheme, cursorSize);
+  }, [activeCursorTheme, cursorSize]);
   const ambientDimAlpha = AMBIENT_DIM_LEVELS.find((d) => d.id === ambientDim)?.alpha ?? 0;
   const ambientClockReadout = ambientClock
     ? {
@@ -2886,10 +2935,17 @@ export default function App() {
     },
     [queueUiPrefsSave]
   );
+  const handleSelectCursorTheme = useCallback(
+    (id: string) => {
+      setCursorThemeId(id);
+      queueUiPrefsSave({ cursor_theme: id });
+    },
+    [queueUiPrefsSave]
+  );
   const exitAmbientPreview = useCallback(() => setAmbientPreviewId(null), []);
 
   // Command palette terminal: "font …", "face …", "surface …", "ambient …",
-  // "noise …" list these catalogs with the same unlock rules as Settings.
+  // "cursor …", "noise …" list these catalogs with the same unlock rules as Settings.
   const terminalContext = useMemo<TerminalContext>(
     () => ({
       ...buildTerminalCatalogs(
@@ -2899,6 +2955,7 @@ export default function App() {
           activeFaceId: activeChronoTheme.id,
           activeSurfaceId: activeSurfacePair.id,
           activeAmbientId: activeAmbientTheme.id,
+          activeCursorId: activeCursorTheme.id,
         },
         t
       ),
@@ -2911,6 +2968,7 @@ export default function App() {
         // isn't drawn under it.
         window.setTimeout(() => setAmbientPreviewId(id ?? activeAmbientTheme.id), 500);
       },
+      onSelectCursor: handleSelectCursorTheme,
     }),
     [
       chronoProgress,
@@ -2918,10 +2976,12 @@ export default function App() {
       activeChronoTheme.id,
       activeSurfacePair.id,
       activeAmbientTheme.id,
+      activeCursorTheme.id,
       handleSelectUiFont,
       handleSelectChronoTheme,
       handleSelectSurfaceTheme,
       handleSelectAmbientTheme,
+      handleSelectCursorTheme,
       t,
     ]
   );
@@ -6091,11 +6151,11 @@ export default function App() {
 
             {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
             <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1">
-              {/* TAB 2: APPEARANCE // SURFACE (900 PAIRS) · TYPE · AMBIENT */}
+              {/* TAB 2: APPEARANCE // SURFACE (900 PAIRS) · TYPE · AMBIENT · CURSOR */}
               {APPEARANCE_TABS.includes(settingsTab) && (
                 <div className={`flex flex-col gap-3 sm:gap-4 ${settingsTab === 'themes' ? 'h-full' : ''}`}>
                   <div
-                    className={`grid grid-cols-3 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
+                    className={`grid grid-cols-2 sm:grid-cols-4 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
                     role="tablist"
                     aria-label={t.tabAppearance}
                   >
@@ -6104,6 +6164,7 @@ export default function App() {
                         ['themes', t.appearanceSurface, SURFACE_THEME_PAIRS.length],
                         ['fonts', t.appearanceType, UI_FONTS.length],
                         ['ambient', t.appearanceAmbient, AMBIENT_THEMES.length],
+                        ['cursor', t.appearanceCursor, CURSOR_THEMES.length],
                       ] as Array<[SettingsTab, string, number]>
                     ).map(([tab, label, count], idx) => (
                       <button
@@ -6173,6 +6234,18 @@ export default function App() {
                         dim={ambientDim}
                         onChangeDim={setAmbientDim}
                         keepAwakeMode={keepAwakeMode}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+
+                    {settingsTab === 'cursor' && (
+                      <CursorPicker
+                        activeCursorId={activeCursorTheme.id}
+                        onSelect={handleSelectCursorTheme}
+                        size={cursorSize}
+                        onSelectSize={setCursorSize}
+                        progress={chronoProgress}
                         borderCol={borderCol}
                         textMuted={textMuted}
                       />

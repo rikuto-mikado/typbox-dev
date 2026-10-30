@@ -894,7 +894,7 @@ class UiPrefsSyncTests(APITestCase):
 
 
 class FontAndAmbientPrefsSyncTests(APITestCase):
-    """UI font + Ambient overlay prefs ride the same account sync as the weather widget."""
+    """UI font, Ambient overlay and cursor prefs ride the same account sync as the weather widget."""
 
     def setUp(self):
         self.user = User.objects.create_user(
@@ -906,7 +906,7 @@ class FontAndAmbientPrefsSyncTests(APITestCase):
 
     def test_defaults_mean_never_synced(self):
         data = self.client.get("/api/auth/me/").data
-        self.assertEqual((data["ui_font"], data["ambient_theme"]), ("", ""))
+        self.assertEqual((data["ui_font"], data["ambient_theme"], data["cursor_theme"]), ("", "", ""))
         self.assertIsNone(data["ambient_clock"])
 
     def test_patch_persists_normalized(self):
@@ -916,17 +916,18 @@ class FontAndAmbientPrefsSyncTests(APITestCase):
                 "ui_font": " JetBrains-Mono ",
                 "ambient_theme": "Rain",
                 "ambient_clock": False,
+                "cursor_theme": " Knight ",
             },
             format="json",
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(
-            (res.data["ui_font"], res.data["ambient_theme"], res.data["ambient_clock"]),
-            ("jetbrains-mono", "rain", False),
+            (res.data["ui_font"], res.data["ambient_theme"], res.data["ambient_clock"], res.data["cursor_theme"]),
+            ("jetbrains-mono", "rain", False, "knight"),
         )
         profile = UserProfile.objects.get(user=self.user)
         self.assertEqual(
-            (profile.ui_font, profile.ambient_theme), ("jetbrains-mono", "rain")
+            (profile.ui_font, profile.ambient_theme, profile.cursor_theme), ("jetbrains-mono", "rain", "knight")
         )
 
     def test_validation(self):
@@ -934,6 +935,8 @@ class FontAndAmbientPrefsSyncTests(APITestCase):
             {"ui_font": "<b>"},
             {"ambient_theme": "x" * 33},
             {"ui_font": "a b"},
+            {"cursor_theme": "<rook>"},
+            {"cursor_theme": "x" * 33},
         ):
             res = self.client.patch("/api/auth/me/", payload, format="json")
             self.assertEqual(res.status_code, 400, payload)

@@ -17,6 +17,7 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 | UI fonts               | **44** monospace faces in 4 kinds                                                  |
 | Ambient noise          | **60** procedurally synthesized profiles in 8 families, mix up to 5                |
 | Ambient overlay scenes | **23**                                                                             |
+| Mouse cursors          | **80** pixel-art designs in 7 kinds, 2 free, sizes S / M / L, one pointing hand    |
 | Weather display styles | **33**                                                                             |
 | Profile statuses       | **206** options in 9 groups, pick up to 12                                         |
 | Status card            | 1 square card (1080×1080), painted over the active Surface Theme                   |
@@ -182,17 +183,25 @@ Unlocks are spread across cycle 1 (LV.1–3000) and weighted toward the later di
 
 Kinds: CODE 19, HUMANIST 10, RETRO 7, DISPLAY 8. Default is the system monospace; others load from Google Fonts (JetBrains Mono, IBM Plex Mono, Fira Code, Geist Mono, Atkinson Hyperlegible Mono…). Display faces apply to readouts only, never to long prose.
 
-### 5.4 Profile
+### 5.4 Mouse cursors (80)
+
+Kinds: CHESS 12 (rook (default), pawn, knight, bishop, queen, king, plus a NOIR ink set of all six), ARROW 12 (pointer, emerald, nocturne, checker, amber, glacier, rose, iris, wireframe, prism, scanline, mini), TOOL 12 (sword, quill, pencil, wand, key, brush, fountain pen, wrench, hammer, pickaxe, match, screwdriver), SKY 12 (paper plane, rocket, comet, crescent, bolt, UFO, satellite, sun, planet, star, cloud, kite), SOLAR 8 (Mercury → Neptune), GLYPH 12 (reticle, sparkle, amethyst, leaf, heart, spade, club, diamond, block caret, target, sakura, snowflake), CREATURE 12 (black cat, ghost, bat, goldfish, bluebird, butterfly, mouse, bee, snail, jellyfish, slime, owl). Pixel-art SVGs in `public/cursors`, each generated from the pixel map in its own comment; the emerald pixel marks the hotspot (arrows click with their tip).
+
+- **Unlocks** work like the Surface Themes: ROOK (default) and POINTER are free, NOIR KING is an Ascension reward, and the other 77 open on reaching a Clearance level, spaced evenly to LV.3000 with every kind spread across the whole range (the solar system runs outward: Mercury LV.0273 → Neptune LV.2766). Locked tiles show `LV.xxxx (nnH)`; a locked pick synced from another device shows the rook without overwriting the saved choice.
+- **Size** S / M / L (1×, 1.5×, 2×; per device). M and L redraw the SVG larger as a data URL, the pointing hand included.
+- Picked in Appearance > Cursor (filterable by kind) or with `cursor <name>` in the command palette. Only the everyday cursor changes: clickable elements always show the pixel hand, text fields keep the I-beam, and touch devices are untouched.
+
+### 5.5 Profile
 
 - Username, email, avatar: 12 icon presets (initial, terminal, cpu, code, zap, shield, globe, sparkles, flame, compass, layers, database) × 36 accent colors, or an uploaded image.
 - **Statuses** (STATUS // LEARNER PROFILE): up to 12 from 206 options in 9 groups (field of study, school & pathway, current mission, study rhythm & planning, study method & setting, learner archetype, study fuel, hobbies, sports). Ids are never renamed; a removed id is silently dropped from accounts. `tracker/tests.py` checks the backend allowlist matches `userStatus.ts`.
 - Timezone and week start (Mon/Sun); all week/month math follows them.
 
-### 5.5 Settings modal tabs
+### 5.6 Settings modal tabs
 
-`PROFILE` · `THEMES` · `FONTS` · `AMBIENT` · `CLEARANCE` · `SECURITY` · `DATA`
+`PROFILE` · `APPEARANCE` (02.1 SURFACE · 02.2 TYPE · 02.3 AMBIENT · 02.4 CURSOR) · `CLEARANCE` · `SECURITY` · `DATA`
 
-Preferences (theme, chronometer face, font, weather style/unit/visibility, surface FX, ambient scene/clock/dim, statuses) sync to the server via the user profile, so they follow the account across devices.
+Preferences (theme, chronometer face, font, weather style/unit/visibility, surface FX, ambient scene/clock/dim, cursor, statuses) sync to the server via the user profile, so they follow the account across devices.
 
 ---
 

@@ -60,6 +60,9 @@ class UserProfile(models.Model):
     ambient_theme = models.CharField(max_length=32, blank=True, default="")
     # Elapsed-time readout on the Ambient overlay. null = never chosen.
     ambient_clock = models.BooleanField(null=True, blank=True, default=None)
+    # Mouse cursor id (frontend catalog; unlocks decided client-side like
+    # chrono_theme). Blank = never synced yet.
+    cursor_theme = models.CharField(max_length=32, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

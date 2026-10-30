@@ -44,10 +44,11 @@ SUPPORTED_WEEK_STARTS = {'mon', 'sun'}
 WEATHER_THEME_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
 SUPPORTED_WEATHER_UNITS = {'', 'c', 'f'}
 
-# UI font / Ambient overlay ids are slugs from frontend/src/uiFonts.ts and
-# frontend/src/ambientThemes.ts.
+# UI font / Ambient overlay / cursor ids are slugs from frontend/src/uiFonts.ts,
+# frontend/src/ambientThemes.ts and frontend/src/cursorThemes.ts.
 UI_FONT_ID_RE = WEATHER_THEME_ID_RE
 AMBIENT_THEME_ID_RE = WEATHER_THEME_ID_RE
+CURSOR_THEME_ID_RE = WEATHER_THEME_ID_RE
 
 # Chronometer Theme ids follow the same slug shape as Surface Themes; the
 # catalog (and its unlock rules) lives in the frontend.
@@ -295,6 +296,7 @@ class UserSerializer(serializers.ModelSerializer):
     ui_font = serializers.CharField(required=False, allow_blank=True, max_length=32)
     ambient_theme = serializers.CharField(required=False, allow_blank=True, max_length=32)
     ambient_clock = serializers.BooleanField(required=False, allow_null=True)
+    cursor_theme = serializers.CharField(required=False, allow_blank=True, max_length=32)
 
     class Meta:
         model = User
@@ -318,6 +320,7 @@ class UserSerializer(serializers.ModelSerializer):
             'ui_font',
             'ambient_theme',
             'ambient_clock',
+            'cursor_theme',
         )
         read_only_fields = ('id',)
 
@@ -340,6 +343,7 @@ class UserSerializer(serializers.ModelSerializer):
         data['ui_font'] = profile.ui_font
         data['ambient_theme'] = profile.ambient_theme
         data['ambient_clock'] = profile.ambient_clock
+        data['cursor_theme'] = profile.cursor_theme
         return data
 
     def validate_username(self, value):
@@ -458,6 +462,12 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Invalid ambient theme id.')
         return cleaned
 
+    def validate_cursor_theme(self, value):
+        cleaned = value.strip().lower()
+        if cleaned and not CURSOR_THEME_ID_RE.match(cleaned):
+            raise serializers.ValidationError('Invalid cursor theme id.')
+        return cleaned
+
     def validate_weather_unit(self, value):
         cleaned = value.strip().lower()
         if cleaned not in SUPPORTED_WEATHER_UNITS:
@@ -479,7 +489,7 @@ class UserSerializer(serializers.ModelSerializer):
             key: validated_data.pop(key)
             for key in (
                 'weather_theme', 'weather_unit', 'weather_hidden', 'surface_fx',
-                'ui_font', 'ambient_theme', 'ambient_clock',
+                'ui_font', 'ambient_theme', 'ambient_clock', 'cursor_theme',
             )
             if key in validated_data
         }
