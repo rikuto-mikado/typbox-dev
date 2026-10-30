@@ -931,3 +931,89 @@ canvas {
     animation: none;
   }
 }
+
+/* ==========================================
+   Segmented controls (SegmentIndicator.tsx): MANUAL / STOPWATCH, the
+   analytics horizon selector and the cadence matrix toggles. A sliding
+   block marks the selection, every button presses in by a pixel, and the
+   chart of a newly picked horizon rises in.
+========================================== */
+.seg-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.seg-indicator-glide {
+  transition:
+    transform 240ms cubic-bezier(0.34, 1.3, 0.64, 1),
+    width 240ms cubic-bezier(0.34, 1.3, 0.64, 1),
+    height 240ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+/* one-shot emerald scanline across the block after a mode switch */
+.seg-scan {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgb(16 185 129 / 0.55) 45%, rgb(16 185 129 / 0.85) 50%, rgb(16 185 129 / 0.55) 55%, transparent 100%);
+  transform: translateX(-100%);
+  animation: seg-scan 520ms ease-out 140ms both;
+}
+@keyframes seg-scan {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.seg-btn {
+  position: relative;
+  transition:
+    color 200ms ease,
+    transform 80ms ease-out,
+    box-shadow 80ms ease-out;
+}
+/* Every enabled button presses in by a pixel while held (segmented buttons
+   included, with the short transition above). The inset shadow is layered
+   over Tailwind's ring / shadow variables so focus rings and selection
+   rings stay visible during the press, and `transform` composes with
+   Tailwind v4's separate translate / scale / rotate properties, so
+   positioned buttons keep their offsets. */
+button:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 4px rgb(0 0 0 / 0.28),
+    var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow, 0 0 #0000);
+}
+/* newly shown analytics view: fade up, and its bar row reveals bottom-up */
+.seg-view-enter {
+  animation: seg-view-enter 220ms ease-out;
+}
+@keyframes seg-view-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.seg-bars-rise {
+  animation: seg-bars-rise 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes seg-bars-rise {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seg-indicator-glide,
+  .seg-btn {
+    transition: none;
+  }
+  button:not(:disabled):active {
+    transform: none;
+  }
+  .seg-scan,
+  .seg-view-enter,
+  .seg-bars-rise {
+    animation: none;
+  }
+  .seg-scan {
+    display: none;
+  }
+}

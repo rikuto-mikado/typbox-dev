@@ -90,9 +90,9 @@ Counts below were measured by running the catalogs in `frontend/src` on 2026-10-
 
 ### Telemetry Cadence Matrix
 
-- 7 days (vertical) × N weeks (horizontal), fit to the available width.
+- 7 days (vertical) × N weeks (horizontal); one epoch is as many weeks as fit the available width.
 - Two shading modes: **SHADED** (intensity by volume) and **BINARY** (studied / not).
-- Span ×1 / ×2, paging to previous / next epochs.
+- The whole history is one horizontally scrolled strip (swipe / scroll sideways), opening on the latest weeks; the EPOCH badge follows the block in view, while SPAN / ACTIVE DAYS / BLOCK VOLUME cover the whole history.
 - Hover/tap a cell to inspect that day; today's cell pulses in ambient mode.
 - Respects the user's week start (Monday / Sunday).
 

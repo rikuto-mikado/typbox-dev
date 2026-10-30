@@ -2418,7 +2418,6 @@ interface CommandPaletteModalProps {
   onSetInputMode: (mode: 'manual' | 'timer') => void;
   onSetAnalyticsMode: (mode: AnalyticsHorizonMode) => void;
   onToggleMatrixColorMode: () => void;
-  onToggleMatrixSpan: () => void;
   onOpenStatusCard: () => void;
   onOpenClearance: () => void;
   onOpenSettings: () => void;
@@ -2526,7 +2525,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onSetInputMode,
   onSetAnalyticsMode,
   onToggleMatrixColorMode,
-  onToggleMatrixSpan,
   onOpenStatusCard,
   onOpenClearance,
   onOpenSettings,
@@ -2900,18 +2898,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
-        id: 'matrix-span',
-        group: t.pgSystem,
-        title: t.pcMatrixSpan,
-        subtitle: t.pcMatrixSpanSub,
-        badge: '1X / 2X',
-        keywords: 'matrix cadence 1x 2x span horizon weeks',
-        action: () => {
-          onToggleMatrixSpan();
-          onClose();
-        },
-      },
-      {
         id: 'vault-json',
         group: t.pgSystem,
         title: t.pcJson,
@@ -2976,7 +2962,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onOpenSettings,
     onToggleTheme,
     onToggleMatrixColorMode,
-    onToggleMatrixSpan,
     onExportJSON,
     onExportCSV,
     terminal,

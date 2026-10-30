@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import {
   Clock,
   Plus,
@@ -124,6 +124,7 @@ import {
 } from './chronometerThemes';
 import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
 import { SurfaceFxLayer } from './SurfaceFx';
+import { SegmentIndicator } from './SegmentIndicator';
 import { WeatherBadge, WeatherPanel, isWeatherThemeUnlocked, useWeather, type SyncedWeatherPrefs } from './Weather';
 import { DEFAULT_WEATHER_THEME, WEATHER_THEMES, type WeatherThemeId } from './weatherThemes';
 import { AmbientOverlay, AmbientSettingsPanel, isAmbientThemeUnlocked } from './AmbientOverlay';
@@ -903,10 +904,12 @@ export default function App() {
   const [weeklyOffset, setWeeklyOffset] = useState<number>(0); // weeks ago (0 = current week)
   const [monthlyOffset, setMonthlyOffset] = useState<number>(0); // months ago (0 = current month)
 
-  // Telemetry Cadence Matrix State (7 rows x dynamic W columns, auto-expanding in 1x/2x blocks)
+  // Telemetry Cadence Matrix State (7 rows x the whole history as one horizontally scrolled strip)
   const [matrixColorMode, setMatrixColorMode] = useState<'intensity' | 'binary'>('intensity');
-  const [matrixSpanMultiplier, setMatrixSpanMultiplier] = useState<1 | 2>(1);
-  const [matrixPageOffset, setMatrixPageOffset] = useState<number>(0); // 0 = latest block
+  // Block (epoch) under the right edge of the scrolled strip, 1-based; null
+  // until first measured, which reads as "scrolled to the latest end". Only
+  // the epoch is kept so scrolling re-renders when it crosses a block edge.
+  const [matrixViewEpoch, setMatrixViewEpoch] = useState<number | null>(null);
   const [baseFitWeeks, setBaseFitWeeks] = useState<number>(28);
   const [hoveredMatrixCell, setHoveredMatrixCell] = useState<{
     date: string;
@@ -915,6 +918,22 @@ export default function App() {
     topics: string[];
   } | null>(null);
   const matrixGridContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Reads which block the scroll strip shows at its right edge. The column
+  // pitch is measured (scrollWidth / columns) rather than assumed, since the
+  // row spreads its columns when it is narrower than the container; the
+  // strip's week and block counts come from its data attributes.
+  const measureMatrixViewport = useCallback(() => {
+    const el = matrixGridContainerRef.current;
+    const columns = Number(el?.dataset.weeks ?? 0);
+    const unit = Number(el?.dataset.unitWeeks ?? 0);
+    const epochs = Number(el?.dataset.epochs ?? 0);
+    if (!el || columns === 0 || unit === 0 || epochs === 0) return;
+    const pitch = (el.scrollWidth + 4) / columns;
+    const count = Math.max(1, Math.min(columns, Math.floor((el.clientWidth + 4) / pitch)));
+    const first = Math.max(0, Math.min(columns - count, Math.round(el.scrollLeft / pitch)));
+    setMatrixViewEpoch(Math.min(epochs, Math.floor((first + count - 1) / unit) + 1));
+  }, []);
 
   useEffect(() => {
     const el = matrixGridContainerRef.current;
@@ -928,10 +947,11 @@ export default function App() {
           setBaseFitWeeks(cols);
         }
       }
+      measureMatrixViewport();
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [measureMatrixViewport]);
 
   // System Chronometer (Real-Time Digital Clock) State
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
@@ -2630,21 +2650,15 @@ export default function App() {
     );
     const totalActiveWeeks = weeksElapsed + 1;
 
-    // 1 screen capacity = baseFitWeeks; when filled, auto-unlocks next block (or displays 2x capacity when toggled)
+    // 1 screen capacity = baseFitWeeks; when filled, auto-unlocks the next block.
+    // The strip holds every block from the first logged week, so older ones
+    // are reached by scrolling left; the current block's unfilled weeks show
+    // as future slots.
     const unitWeeks = Math.max(12, baseFitWeeks);
     const totalEpochs = Math.max(1, Math.ceil(totalActiveWeeks / unitWeeks));
-    const displayWeeksCount = unitWeeks * matrixSpanMultiplier;
-
-    const clampedOffset = Math.min(matrixPageOffset, Math.max(0, totalEpochs - 1));
-    const targetEpochIndex = Math.max(0, totalEpochs - 1 - clampedOffset);
-
-    const startWeekIndex =
-      matrixSpanMultiplier === 2
-        ? Math.max(0, (targetEpochIndex - 1) * unitWeeks)
-        : targetEpochIndex * unitWeeks;
+    const displayWeeksCount = totalEpochs * unitWeeks;
 
     const blockStartDate = new Date(originWeekStart);
-    blockStartDate.setDate(blockStartDate.getDate() + startWeekIndex * 7);
 
     const weeks: Array<{
       weekIndex: number;
@@ -2662,8 +2676,6 @@ export default function App() {
     }> = [];
 
     let lastMonth = -1;
-    let activeDaysInBlock = 0;
-    let totalMinutesInBlock = 0;
 
     for (let w = 0; w < displayWeeksCount; w++) {
       const weekFirstDay = new Date(blockStartDate);
@@ -2689,11 +2701,6 @@ export default function App() {
         const isFuture = dateStr > todayStr;
         const isToday = dateStr === todayStr;
 
-        if (minutes > 0) {
-          activeDaysInBlock += 1;
-          totalMinutesInBlock += minutes;
-        }
-
         days.push({
           date: dateStr,
           dayOfWeek: d,
@@ -2706,30 +2713,56 @@ export default function App() {
       }
 
       weeks.push({
-        weekIndex: startWeekIndex + w,
+        weekIndex: w,
         weekStartDate: toDateStr(weekFirstDay),
         monthLabel,
         days,
       });
     }
 
-    const startLabel = weeks[0]?.days[0]?.date || todayStr;
-    const endLabel = weeks[weeks.length - 1]?.days[6]?.date || todayStr;
-
     return {
       weeks,
       totalEpochs,
-      targetEpochIndex: targetEpochIndex + 1,
-      clampedOffset,
       unitWeeks,
       displayWeeksCount,
       totalActiveWeeks,
-      activeDaysInBlock,
-      totalMinutesInBlock,
-      startLabel,
-      endLabel,
     };
-  }, [logs, baseFitWeeks, matrixSpanMultiplier, matrixPageOffset, locale, todayStr, currentWeekStartStr, weekStart]);
+  }, [logs, baseFitWeeks, locale, todayStr, currentWeekStartStr, weekStart]);
+
+  // Readout: span, active days and volume cover the whole strip; the epoch
+  // badge follows the block under the right edge of the scrolled view.
+  const cadenceMatrixView = useMemo(() => {
+    const { weeks, totalEpochs } = cadenceMatrixData;
+    let activeDays = 0;
+    let totalMinutes = 0;
+    weeks.forEach((wk) =>
+      wk.days.forEach((d) => {
+        if (d.minutes > 0) {
+          activeDays += 1;
+          totalMinutes += d.minutes;
+        }
+      })
+    );
+    return {
+      startLabel: weeks[0]?.days[0]?.date || todayStr,
+      endLabel: weeks[weeks.length - 1]?.days[6]?.date || todayStr,
+      activeDays,
+      totalMinutes,
+      epochIndex: Math.min(totalEpochs, matrixViewEpoch ?? totalEpochs),
+    };
+  }, [cadenceMatrixData, matrixViewEpoch, todayStr]);
+
+  // Open the strip on the latest weeks whenever its length changes (first
+  // data load, a new week, a resize that re-blocks it). The scroll
+  // event that follows re-measures the viewport.
+  const matrixWeekCount = cadenceMatrixData.weeks.length;
+  useLayoutEffect(() => {
+    const el = matrixGridContainerRef.current;
+    if (!el) return;
+    el.scrollLeft = el.scrollWidth;
+    const id = requestAnimationFrame(measureMatrixViewport);
+    return () => cancelAnimationFrame(id);
+  }, [matrixWeekCount, measureMatrixViewport]);
 
   // ==========================================
   // Study Insights & Streak Calculations
@@ -3823,15 +3856,17 @@ export default function App() {
                     {t.recordSession}
                   </h2>
                 </div>
-                <div className={`flex border ${borderCol} text-xs lg:text-[11px] font-mono`}>
+                <div className={`relative flex border ${borderCol} text-xs lg:text-[11px] font-mono`}>
+                  <SegmentIndicator activeKey={inputMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} scan />
                   <button
                     type="button"
                     onClick={() => setInputMode('manual')}
-                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
+                    data-seg-active={inputMode === 'manual'}
+                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
                       inputMode === 'manual'
                         ? isDark
-                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
-                          : 'bg-zinc-900 text-white font-semibold'
+                          ? 'text-zinc-900 font-semibold'
+                          : 'text-white font-semibold'
                         : textMuted
                     }`}
                   >
@@ -3840,11 +3875,12 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setInputMode('timer')}
-                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
+                    data-seg-active={inputMode === 'timer'}
+                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
                       inputMode === 'timer'
                         ? isDark
-                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
-                          : 'bg-zinc-900 text-white font-semibold'
+                          ? 'text-zinc-900 font-semibold'
+                          : 'text-white font-semibold'
                         : textMuted
                     }`}
                   >
@@ -4670,16 +4706,18 @@ export default function App() {
                 </div>
 
                 {/* 4-Mode Analytics Horizon Selector (Day Breakdown vs Week/Month Bucket Aggregation) */}
-                <div className={`grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-xs lg:text-[11px] font-mono w-full sm:w-auto`}>
+                <div className={`relative grid grid-cols-2 sm:grid-cols-4 border ${borderCol} text-xs lg:text-[11px] font-mono w-full sm:w-auto`}>
+                  <SegmentIndicator activeKey={periodView} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
                   <button
                     type="button"
                     onClick={() => setPeriodView('weekly')}
+                    data-seg-active={periodView === 'weekly'}
                     title={t.hzDaysTitle}
-                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 flex items-center justify-center space-x-1.5 seg-btn cursor-pointer ${
                       periodView === 'weekly'
                         ? isDark
-                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
-                          : 'bg-zinc-900 text-white font-semibold'
+                          ? 'text-zinc-900 font-semibold'
+                          : 'text-white font-semibold'
                         : textMuted
                     }`}
                   >
@@ -4689,12 +4727,13 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setPeriodView('weekly_agg')}
+                    data-seg-active={periodView === 'weekly_agg'}
                     title={t.hzWeeksTitle}
-                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-l ${borderCol} flex items-center justify-center space-x-1.5 seg-btn cursor-pointer ${
                       periodView === 'weekly_agg'
                         ? isDark
-                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
-                          : 'bg-zinc-900 text-white font-semibold'
+                          ? 'text-zinc-900 font-semibold'
+                          : 'text-white font-semibold'
                         : textMuted
                     }`}
                   >
@@ -4704,12 +4743,13 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setPeriodView('monthly_agg')}
+                    data-seg-active={periodView === 'monthly_agg'}
                     title={t.hzMonthsTitle}
-                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 sm:border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 sm:border-l ${borderCol} flex items-center justify-center space-x-1.5 seg-btn cursor-pointer ${
                       periodView === 'monthly_agg'
                         ? isDark
-                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
-                          : 'bg-zinc-900 text-white font-semibold'
+                          ? 'text-zinc-900 font-semibold'
+                          : 'text-white font-semibold'
                         : textMuted
                     }`}
                   >
@@ -4719,12 +4759,13 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setPeriodView('monthly')}
+                    data-seg-active={periodView === 'monthly'}
                     title={t.hzCalTitle}
-                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 border-l ${borderCol} flex items-center justify-center space-x-1.5 cursor-pointer transition-colors ${
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 py-2 lg:py-1 border-t sm:border-t-0 border-l ${borderCol} flex items-center justify-center space-x-1.5 seg-btn cursor-pointer ${
                       periodView === 'monthly'
                         ? isDark
-                          ? 'bg-zinc-100 text-zinc-900 font-semibold'
-                          : 'bg-zinc-900 text-white font-semibold'
+                          ? 'text-zinc-900 font-semibold'
+                          : 'text-white font-semibold'
                         : textMuted
                     }`}
                   >
@@ -4736,7 +4777,7 @@ export default function App() {
 
               {/* View A: 7D Daily Chart (1 Bar = 1 Day) */}
               {periodView === 'weekly' && (
-                <div className="space-y-4">
+                <div className="space-y-4 seg-view-enter">
                   {/* Active Window Info Banner */}
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                     <div className="flex flex-wrap items-center gap-2">
@@ -4761,7 +4802,7 @@ export default function App() {
                   </div>
 
                   {/* 7-Day Stacked Bar Chart */}
-                  <div className={`h-44 flex items-end justify-between gap-3 pt-6 px-2 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                  <div className={`seg-bars-rise h-44 flex items-end justify-between gap-3 pt-6 px-2 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                     {weeklyChartData.map((day, idx) => {
                       return (
                         <div
@@ -4831,7 +4872,7 @@ export default function App() {
 
               {/* View B: 12-Week Bucket Aggregation (1 Bar = 1 Full Week) */}
               {periodView === 'weekly_agg' && (
-                <div className="space-y-4">
+                <div className="space-y-4 seg-view-enter">
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={textMuted}>{t.window12w}</span>
@@ -4856,7 +4897,7 @@ export default function App() {
                   </div>
 
                   {/* 12-Week Stacked Bar Chart */}
-                  <div className={`h-44 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                  <div className={`seg-bars-rise h-44 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                     {weeklyAggBuckets.buckets.map((wk, idx) => (
                       <div
                         key={wk.id}
@@ -4916,7 +4957,7 @@ export default function App() {
 
               {/* View C: 12-Month Bucket Aggregation (1 Bar = 1 Full Month) */}
               {periodView === 'monthly_agg' && (
-                <div className="space-y-4">
+                <div className="space-y-4 seg-view-enter">
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={textMuted}>{t.window12m}</span>
@@ -4941,7 +4982,7 @@ export default function App() {
                   </div>
 
                   {/* 12-Month Stacked Bar Chart */}
-                  <div className={`h-44 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
+                  <div className={`seg-bars-rise h-44 flex items-end justify-between gap-1.5 sm:gap-2.5 pt-6 px-1 border-b ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
                     {monthlyAggBuckets.buckets.map((mo, idx) => (
                       <div
                         key={mo.id}
@@ -5001,7 +5042,7 @@ export default function App() {
 
               {/* View D: Monthly Activity Calendar Matrix (1 Cell = 1 Day) */}
               {periodView === 'monthly' && (
-                <div className="space-y-6">
+                <div className="space-y-6 seg-view-enter">
                   <div>
                     {/* Active Month Info Banner */}
                     <div className={`flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-2 mb-3 border-b ${isDark ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
@@ -5211,21 +5252,23 @@ export default function App() {
                         : 'border-emerald-600/40 text-emerald-700 bg-emerald-500/10'
                     }`}
                   >
-                    {tf(t.epochN, { a: cadenceMatrixData.targetEpochIndex, b: cadenceMatrixData.totalEpochs })}
+                    {tf(t.epochN, { a: cadenceMatrixView.epochIndex, b: cadenceMatrixData.totalEpochs })}
                   </span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 font-mono text-xs lg:text-[11px]">
                   {/* Color Mode Toggle: INTENSITY (Shaded) vs BINARY (Single Signal) */}
-                  <div className={`flex border ${borderCol}`}>
+                  <div className={`relative flex border ${borderCol}`}>
+                    <SegmentIndicator activeKey={matrixColorMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
                     <button
                       type="button"
                       onClick={() => setMatrixColorMode('intensity')}
-                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
+                      data-seg-active={matrixColorMode === 'intensity'}
+                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
                         matrixColorMode === 'intensity'
                           ? isDark
-                            ? 'bg-zinc-100 text-zinc-950 font-semibold'
-                            : 'bg-zinc-900 text-white font-semibold'
+                            ? 'text-zinc-950 font-semibold'
+                            : 'text-white font-semibold'
                           : textMuted
                       }`}
                       title={t.shadedTitle}
@@ -5235,11 +5278,12 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setMatrixColorMode('binary')}
-                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 cursor-pointer transition-colors ${
+                      data-seg-active={matrixColorMode === 'binary'}
+                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
                         matrixColorMode === 'binary'
                           ? isDark
-                            ? 'bg-zinc-100 text-zinc-950 font-semibold'
-                            : 'bg-zinc-900 text-white font-semibold'
+                            ? 'text-zinc-950 font-semibold'
+                            : 'text-white font-semibold'
                           : textMuted
                       }`}
                       title={t.binaryTitle}
@@ -5247,64 +5291,6 @@ export default function App() {
                       {t.binary}
                     </button>
                   </div>
-
-                  {/* Capacity Span Toggle: 1X (Fit Screen) vs 2X (Double Capacity Expansion) */}
-                  <div className={`flex border ${borderCol}`}>
-                    <button
-                      type="button"
-                      onClick={() => setMatrixSpanMultiplier(1)}
-                      className={`min-h-[36px] lg:min-h-0 px-2.5 py-1.5 lg:px-2 lg:py-1 cursor-pointer transition-colors ${
-                        matrixSpanMultiplier === 1
-                          ? isDark
-                            ? 'bg-emerald-500 text-zinc-950 font-semibold'
-                            : 'bg-emerald-600 text-white font-semibold'
-                          : textMuted
-                      }`}
-                      title={t.span1xTitle}
-                    >
-                      1X ({cadenceMatrixData.unitWeeks}W)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMatrixSpanMultiplier(2)}
-                      className={`min-h-[36px] lg:min-h-0 px-2.5 py-1.5 lg:px-2 lg:py-1 cursor-pointer transition-colors ${
-                        matrixSpanMultiplier === 2
-                          ? isDark
-                            ? 'bg-emerald-500 text-zinc-950 font-semibold'
-                            : 'bg-emerald-600 text-white font-semibold'
-                          : textMuted
-                      }`}
-                      title={t.span2xTitle}
-                    >
-                      2X ({cadenceMatrixData.unitWeeks * 2}W)
-                    </button>
-                  </div>
-
-                  {/* Epoch Pagination when history spans multiple blocks */}
-                  {cadenceMatrixData.totalEpochs > 1 && (
-                    <div className="flex items-center space-x-1">
-                      <button
-                        type="button"
-                        disabled={cadenceMatrixData.clampedOffset >= cadenceMatrixData.totalEpochs - 1}
-                        onClick={() =>
-                          setMatrixPageOffset((p) => Math.min(p + 1, cadenceMatrixData.totalEpochs - 1))
-                        }
-                        className={`min-h-[36px] min-w-[36px] lg:min-h-0 lg:min-w-0 p-1.5 lg:p-1 border ${borderCol} flex items-center justify-center disabled:opacity-30 cursor-pointer`}
-                        title={t.prevEpoch}
-                      >
-                        <ChevronLeft className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={cadenceMatrixData.clampedOffset === 0}
-                        onClick={() => setMatrixPageOffset((p) => Math.max(0, p - 1))}
-                        className={`min-h-[36px] min-w-[36px] lg:min-h-0 lg:min-w-0 p-1.5 lg:p-1 border ${borderCol} flex items-center justify-center disabled:opacity-30 cursor-pointer`}
-                        title={t.nextEpoch}
-                      >
-                        <ChevronRight className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -5313,20 +5299,20 @@ export default function App() {
                 <div className="flex items-center space-x-2">
                   <span className={textMuted}>{t.spanLabel}</span>
                   <span className="font-semibold">
-                    {cadenceMatrixData.startLabel} — {cadenceMatrixData.endLabel}
+                    {cadenceMatrixView.startLabel} — {cadenceMatrixView.endLabel}
                   </span>
                 </div>
                 <div className="flex items-center space-x-4">
                   <div>
                     <span className={textMuted}>{t.activeDaysLabel}</span>
                     <span className="font-semibold text-emerald-400">
-                      {cadenceMatrixData.activeDaysInBlock}D
+                      {cadenceMatrixView.activeDays}D
                     </span>
                   </div>
                   <div>
                     <span className={textMuted}>{t.blockVolume}</span>
                     <span className="font-semibold">
-                      {(cadenceMatrixData.totalMinutesInBlock / 60).toFixed(1)}H
+                      {(cadenceMatrixView.totalMinutes / 60).toFixed(1)}H
                     </span>
                   </div>
                 </div>
@@ -5345,10 +5331,14 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Auto-Measured Horizontal Weeks Stream */}
+                {/* Auto-Measured Horizontal Weeks Stream (whole history; swipe / scroll sideways) */}
                 <div
                   ref={matrixGridContainerRef}
+                  data-weeks={matrixWeekCount}
+                  data-unit-weeks={cadenceMatrixData.unitWeeks}
+                  data-epochs={cadenceMatrixData.totalEpochs}
                   className="flex-1 min-w-0 overflow-x-auto pb-1"
+                  onScroll={() => requestAnimationFrame(measureMatrixViewport)}
                   onMouseLeave={() => setHoveredMatrixCell(null)}
                 >
                   <div className="inline-flex flex-col min-w-full">
@@ -7064,9 +7054,6 @@ export default function App() {
         onSetAnalyticsMode={handleSetAnalyticsModeFromPalette}
         onToggleMatrixColorMode={() =>
           setMatrixColorMode((prev) => (prev === 'intensity' ? 'binary' : 'intensity'))
-        }
-        onToggleMatrixSpan={() =>
-          setMatrixSpanMultiplier((prev) => (prev === 1 ? 2 : 1))
         }
         onOpenStatusCard={() => setShowStatusCardModal(true)}
         onOpenClearance={() => {
