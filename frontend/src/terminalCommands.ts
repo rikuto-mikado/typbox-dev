@@ -34,7 +34,7 @@ export interface TerminalEntry {
   color?: string;
 }
 
-export const PANEL_IDS = ['chrono', 'log', 'registry', 'insights', 'lunar', 'analytics', 'cadence', 'stream', 'forecast'] as const;
+export const PANEL_IDS = ['chrono', 'log', 'registry', 'insights', 'lunar', 'analytics', 'cadence', 'stream', 'forecast', 'rhythm'] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
 
 export interface TerminalContext {
@@ -266,6 +266,7 @@ function gotoRows(args: string[], io: TerminalIO, t: Dict): PaletteCommandItem[]
     cadence: t.tmPanelCadence,
     stream: t.tmPanelStream,
     forecast: t.tmPanelForecast,
+    rhythm: t.tmPanelRhythm,
   };
   return PANEL_IDS.filter((id) => args.every((tok) => `${id} ${labels[id]}`.toLowerCase().includes(tok))).map((id) => ({
     id: `goto-${id}`,

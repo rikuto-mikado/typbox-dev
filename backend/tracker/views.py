@@ -23,7 +23,15 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .economy import PurchaseError, apply_buff_to_new_log, buy, cancel_buff, scale_bonus_on_edit, shop_state
+from .economy import (
+    PurchaseError,
+    apply_buff_to_new_log,
+    buy,
+    cancel_buff,
+    reset_economy,
+    scale_bonus_on_edit,
+    shop_state,
+)
 from .furniture import CATALOG_VERSION, LayoutError, inventory, room_state, validate_layout
 from .models import BitPurchase, Category, StudyLog, UserProfile
 from .serializers import (
@@ -611,6 +619,23 @@ class BitsCancelView(APIView):
         except PurchaseError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({**shop_state(request.user), "refunded": refunded})
+
+
+class BitsResetView(APIView):
+    """
+    POST /api/bits/reset/ - Start BITS and MY ROOM over but keep the study
+    logs and categories: every purchase is dropped, buff bonuses come off
+    the logs and the room goes back to the starter layout. The balance is
+    then the base rate for the hours already logged.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        deleted, cleared = reset_economy(request.user)
+        return Response(
+            {**shop_state(request.user), "deleted_purchases": deleted, "cleared_bonus_logs": cleared}
+        )
 
 
 class RoomView(APIView):

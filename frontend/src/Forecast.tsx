@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Telescope } from 'lucide-react';
+import { Info, Telescope } from 'lucide-react';
 import { tf, useI18n } from './i18n';
 import { addDays, parseDateStr } from './week';
 import { CLEARANCE_LEVELS, CYCLE_HOURS, type ClearanceLevel, type UserClearanceStatus } from './telemetryFeatures';
@@ -93,7 +93,14 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
       after += minutesOn(i);
     }
 
-    return { perDay, slowPerDay, fastPerDay, trendPct, history, hasLogs: logs.length > 0 };
+    // Hours studied on each of the past PAST_DAYS days (oldest first), drawn
+    // as faint bars under the trajectory.
+    const daily: number[] = [];
+    for (let i = PAST_DAYS - 1; i >= 0; i--) daily.push(minutesOn(i) / 60);
+    const recentHours = recentMin / 60;
+    const bestWeek = weekRates.length ? Math.max(...weekRates) * 7 : 0;
+
+    return { perDay, slowPerDay, fastPerDay, trendPct, history, daily, recentHours, bestWeek, hasLogs: logs.length > 0 };
   }, [logs, todayStr, clearance.cycleNumber]);
 
   const targets = useMemo(() => {
@@ -151,29 +158,41 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
     const y = (h: number) => 100 - ((h - yMin) / (yMax - yMin)) * 100;
 
     const pastPts = pace.history.map((h, i) => `${x(i - PAST_DAYS).toFixed(1)},${y(h).toFixed(2)}`);
-    const allGuides = targets
-      .filter((tg) => tg.kind !== 'rank' && tg.level.requiredHours < yMax && tg.level.requiredHours > yMin)
-      .map((tg) => ({ key: tg.kind, top: y(tg.level.requiredHours), level: tg.level, kind: tg.kind }))
-      .sort((a, b) => a.top - b.top);
-    // A milestone within an hour of a division / cycle line (250H and DIV-04
-    // at 250.3H) would only repeat it in grey, so the colored line stands alone.
-    // What's left doubles as the legend, top to bottom in line order.
-    const guides = allGuides.filter(
-      (g) =>
-        g.kind !== 'milestone' ||
-        !allGuides.some((o) => o.kind !== 'milestone' && Math.abs(o.level.requiredHours - g.level.requiredHours) < 1)
-    );
+
+    // Gridlines on a "nice" step (1/2/5 x 10^n), two or three of them (the
+    // chart is short).
+    const rawStep = (yMax - yMin) / 2;
+    const mag = Math.pow(10, Math.floor(Math.log10(Math.max(rawStep, 0.1))));
+    const step = [1, 2, 5, 10].map((m) => m * mag).find((v) => v >= rawStep) ?? 10 * mag;
+    const ticks: Array<{ value: number; top: number }> = [];
+    for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) ticks.push({ value: v, top: y(v) });
+
+    // Daily bars along the bottom (up to a quarter of the height), scaled to
+    // the busiest day in the window.
+    const dayMax = Math.max(1, ...pace.daily);
+    const barW = (1000 / totalDays) * 0.62;
+    const bars = pace.daily.map((h, i) => {
+      const height = (h / dayMax) * 24;
+      return { key: i, x: x(i - PAST_DAYS + 1) - barW / 2, y: 100 - height, h: height, w: barW };
+    });
+    const weekLines = Array.from({ length: PAST_DAYS / 7 - 1 }, (_, i) => x(-PAST_DAYS + (i + 1) * 7));
 
     return {
       futureDays,
       showCone,
+      ticks,
+      bars,
+      weekLines,
+      nowValue: now,
+      meanEnd,
+      slowEnd,
+      fastEnd,
       nowX: x(0),
       nowY: y(now),
       line: pastPts.join(' '),
       area: `${x(-PAST_DAYS)},100 ${pastPts.join(' ')} ${x(0)},100`,
       cone: `${x(0)},${y(now)} ${x(futureDays)},${y(fastEnd)} ${x(futureDays)},${y(slowEnd)}`,
       mean: { x2: x(futureDays), y2: y(meanEnd) },
-      guides,
     };
   }, [pace, targets, clearance.ascensionAvailable]);
 
@@ -199,8 +218,12 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
           <Telescope className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
           <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">{t.forecastTitle}</h2>
         </div>
-        <span className={`font-mono text-[10px] uppercase ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+        <span className={`flex items-center gap-2 font-mono text-[10px] uppercase ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
           {tf(t.forecastCycle, { n: clearance.cycleNumber })}
+          {/* How the projection is made, on hover / focus */}
+          <Info tabIndex={0} role="img" aria-label={t.forecastSource} className={`w-3.5 h-3.5 cursor-help outline-none ${textMuted} hover:text-emerald-400 focus:text-emerald-400`}>
+            <title>{`${t.forecastSource} · ${etaDate(0)}`}</title>
+          </Info>
         </span>
       </div>
 
@@ -209,9 +232,9 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
           {t.forecastEmpty}
         </div>
       ) : (
-        <div className="pt-4 flex-1 flex flex-col gap-4 font-mono min-w-0">
+        <div className="pt-3 flex-1 flex flex-col gap-3 font-mono min-w-0">
           {/* Pace readouts */}
-          <div className={`grid grid-cols-3 border ${isDark ? 'border-zinc-800/80' : 'border-zinc-200'}`}>
+          <div className={`grid grid-cols-2 sm:grid-cols-4 border ${isDark ? 'border-zinc-800/80' : 'border-zinc-200'}`}>
             {[
               { label: t.forecastPace, value: `${weekly.toFixed(1)}H`, unit: t.forecastPerWeek },
               {
@@ -229,9 +252,13 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
                     ? 'text-amber-400'
                     : 'text-amber-600',
               },
+              { label: t.forecastLast28, value: `${pace.recentHours.toFixed(1)}H`, unit: tf(t.forecastBestWeek, { h: pace.bestWeek.toFixed(1) }) },
               { label: t.forecastCycleHours, value: `${Math.floor(clearance.cycleHours)}`, unit: `/ ${CYCLE_HOURS}H` },
             ].map((cell, i) => (
-              <div key={cell.label} className={`px-3 py-2 min-w-0 ${i > 0 ? `border-l ${isDark ? 'border-zinc-800/80' : 'border-zinc-200'}` : ''}`}>
+              <div
+                key={cell.label}
+                className={`px-3 py-1.5 min-w-0 ${isDark ? 'border-zinc-800/80' : 'border-zinc-200'} ${i % 2 === 1 ? 'border-l' : ''} ${i >= 2 ? 'border-t sm:border-t-0' : ''} ${i === 2 ? 'sm:border-l' : ''}`}
+              >
                 <div className={`text-[9px] uppercase tracking-widest truncate ${textMuted}`}>{cell.label}</div>
                 <div className="flex items-baseline gap-1 mt-0.5 min-w-0">
                   <span className={`shrink-0 text-base font-semibold tabular-nums whitespace-nowrap ${cell.tone ?? strongText}`}>{cell.value}</span>
@@ -242,24 +269,23 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
           </div>
 
           {/* Trajectory: actual cycle hours for 8 weeks, then the projected cone */}
+          {/* Compact, fixed-height chart (the panel no longer stretches; the
+              STUDY RHYTHM panel below takes the column's slack). */}
           <div>
-            <div className="relative h-28" role="img" aria-label={t.forecastAria}>
+            <div className="relative h-20" role="img" aria-label={t.forecastAria}>
               <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full overflow-visible">
-                <line x1={chart.nowX} y1={0} x2={chart.nowX} y2={100} stroke="var(--tb-border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-                {chart.guides.map((g) => (
-                  <line
-                    key={g.key}
-                    x1={0}
-                    x2={1000}
-                    y1={g.top}
-                    y2={g.top}
-                    stroke={g.kind === 'division' || g.kind === 'cycle' ? g.level.color : 'var(--tb-border)'}
-                    strokeOpacity={g.kind === 'milestone' ? 1 : 0.7}
-                    strokeWidth={1}
-                    strokeDasharray="4 4"
-                    vectorEffect="non-scaling-stroke"
-                  />
+                {/* The future half is tinted so past and projection read apart */}
+                <rect x={chart.nowX} y={0} width={1000 - chart.nowX} height={100} fill={accent} fillOpacity={0.035} />
+                {chart.ticks.map((tk) => (
+                  <line key={`tick-${tk.value}`} x1={0} x2={1000} y1={tk.top} y2={tk.top} stroke="var(--tb-border)" strokeOpacity={0.45} strokeWidth={1} vectorEffect="non-scaling-stroke" />
                 ))}
+                {chart.weekLines.map((wx) => (
+                  <line key={`wk-${wx}`} x1={wx} x2={wx} y1={0} y2={100} stroke="var(--tb-border)" strokeOpacity={0.3} strokeWidth={1} strokeDasharray="1 3" vectorEffect="non-scaling-stroke" />
+                ))}
+                {chart.bars.map((b) => (
+                  <rect key={`bar-${b.key}`} x={b.x} y={b.y} width={b.w} height={b.h} fill={accent} fillOpacity={0.28} />
+                ))}
+                <line x1={chart.nowX} y1={0} x2={chart.nowX} y2={100} stroke="var(--tb-border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
                 <polygon points={chart.area} fill={accent} fillOpacity={0.08} />
                 <polyline points={chart.line} fill="none" stroke={accent} strokeWidth={1.75} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
                 {chart.showCone && (
@@ -278,27 +304,38 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
                   </>
                 )}
               </svg>
-              {/* Labels and the "now" marker live in HTML so the stretched SVG doesn't distort them.
-                  The guide legend is pinned top-left, which the data never reaches: the past
-                  line starts at its lowest point there and the projection runs off to the right.
-                  Pinned rather than riding each line, it can't collide however close the lines are. */}
-              {chart.guides.length > 0 && (
-                <div className={`absolute left-0 top-0 flex flex-col gap-1 pb-1 pr-2 bg-[var(--tb-bg-card)] ${textMuted}`}>
-                  {chart.guides.map((g) => (
-                    <span key={g.key} className="flex items-center gap-1.5 text-[9px] leading-none uppercase tracking-wider whitespace-nowrap">
-                      <span
-                        className="w-2.5 h-px shrink-0"
-                        style={{ backgroundColor: g.kind === 'milestone' ? 'currentColor' : g.level.color }}
-                      />
-                      {g.kind === 'milestone' ? `${g.level.requiredHours}H` : `${g.level.division} · ${Math.floor(g.level.requiredHours)}H`}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {/* Labels and the "now" marker live in HTML so the stretched SVG doesn't distort them. */}
+              {chart.ticks.map((tk) => (
+                <span
+                  key={`tl-${tk.value}`}
+                  className={`absolute left-0 -translate-y-full pb-0.5 text-[9px] leading-none tabular-nums ${textMuted}`}
+                  style={{ top: `${tk.top}%` }}
+                >
+                  {Math.round(tk.value)}H
+                </span>
+              ))}
               <span
                 className="absolute w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
                 style={{ left: `${chart.nowX / 10}%`, top: `${chart.nowY}%`, backgroundColor: accent, boxShadow: `0 0 0 3px ${accent}33` }}
               />
+              {/* Where you are now, and where the mean pace lands at the right edge */}
+              <span
+                className={`absolute -translate-x-full -translate-y-1/2 pr-2.5 text-[10px] font-semibold tabular-nums whitespace-nowrap ${strongText}`}
+                style={{ left: `${chart.nowX / 10}%`, top: `${chart.nowY}%` }}
+              >
+                {chart.nowValue.toFixed(1)}H
+              </span>
+              {chart.showCone && (
+                <span
+                  className="absolute right-0 -translate-y-1/2 px-1.5 py-0.5 border text-[9px] leading-tight text-right tabular-nums whitespace-nowrap bg-[var(--tb-bg-card)]"
+                  style={{ top: `${chart.mean.y2}%`, borderColor: `${accent}66`, color: accent }}
+                >
+                  <span className="block font-bold">≈ {chart.meanEnd.toFixed(0)}H</span>
+                  <span className={`block ${textMuted}`}>
+                    {chart.slowEnd.toFixed(0)}–{chart.fastEnd.toFixed(0)}H
+                  </span>
+                </span>
+              )}
             </div>
             <div className={`relative h-4 mt-1.5 text-[9px] uppercase tracking-wider ${textMuted}`}>
               <span className="absolute left-0">{tf(t.forecastWeeksAgo, { n: PAST_DAYS / 7 })}</span>
@@ -331,18 +368,17 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
                     ? `LV.${pad4(tg.level.level)} ${tg.level.title}`
                     : tg.level.title;
                 return (
-                  <li key={tg.kind} className={`grid grid-cols-[0.5rem_minmax(0,1fr)_auto] gap-x-2.5 gap-y-0.5 items-center py-1.5 border-b ${divider}`}>
+                  <li key={tg.kind} className={`grid grid-cols-[0.5rem_minmax(0,1fr)_auto] gap-x-2.5 items-center py-1 border-b ${divider}`}>
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tg.level.color }} />
-                    <span className={`text-[9px] uppercase tracking-widest ${textMuted}`}>{kindLabel[tg.kind]}</span>
+                    {/* Line 1: what and when. Line 2: how far and the ETA range. */}
+                    <span className="min-w-0 flex items-baseline gap-2">
+                      <span className={`shrink-0 text-[9px] uppercase tracking-widest ${textMuted}`}>{kindLabel[tg.kind]}</span>
+                      <span className={`text-[11px] uppercase truncate ${strongText}`} title={tg.level.subtitle}>
+                        {name}
+                      </span>
+                    </span>
                     <span className={`text-[11px] text-right tabular-nums font-semibold ${strongText}`}>
                       {reachable ? etaDate(mean) : t.forecastNoSignal}
-                    </span>
-                    {/* The name gets a line of its own and the hours left drop beside the
-                        ETA range: sharing one line, the hours were the first thing cut off
-                        once the list went two across. */}
-                    <span />
-                    <span className={`col-span-2 text-[11px] uppercase truncate ${strongText}`} title={tg.level.subtitle}>
-                      {name}
                     </span>
                     <span />
                     <span className={`text-[10px] tabular-nums truncate ${textMuted}`}>{tf(t.forecastHoursLeft, { n: tg.hoursLeft })}</span>
@@ -363,10 +399,6 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
         </div>
       )}
 
-      <div className={`flex items-center justify-between gap-2 pt-3 mt-4 border-t font-mono text-[10px] uppercase tracking-wider ${textMuted} ${divider}`}>
-        <span className="truncate">{t.forecastSource}</span>
-        <span className="shrink-0 tabular-nums">{etaDate(0)}</span>
-      </div>
     </>
   );
 };

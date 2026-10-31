@@ -16,9 +16,12 @@ import { SegmentIndicator } from './SegmentIndicator';
 import { StatusRankList } from './StatusRankList';
 import { CLEARANCE_LEVELS, NOISE_PROFILES, SURFACE_THEME_PAIRS } from './telemetryFeatures';
 import { ThemeToggleIcon } from './ThemeToggleIcon';
-import { tf, useI18n } from './i18n';
+import { getZonedParts, tf, useI18n } from './i18n';
 import { getUserStatusOption } from './userStatus';
-import type { WeekStart } from './week';
+import { startOfWeekStr, type WeekStart } from './week';
+import { DashboardKpis } from './DashboardKpis';
+import { StudyRhythm } from './StudyRhythm';
+import { segmentStyle } from './categoryStyle';
 
 // Lead images for NEWS articles, drawn live from the app's own parts and
 // assets (real cursors, real chronometer faces, real theme colours, the
@@ -26,6 +29,9 @@ import type { WeekStart } from './week';
 // app. Motion pauses under prefers-reduced-motion.
 
 export type FigureKind =
+  | 'kpis'
+  | 'rhythm'
+  | 'bitsreset'
   | 'bitsbutton'
   | 'furniture'
   | 'buffs'
@@ -62,6 +68,133 @@ const useTicker = (ms: number) => {
     return () => window.clearInterval(id);
   }, [ms]);
   return tick;
+};
+
+// ------------------------------------------------------------ dashboard
+// The redesigned dashboard's own panels (DashboardKpis, StudyRhythm), fed a
+// made-up but plausible six weeks of study so the figure always has data.
+const SAMPLE_CATS = [
+  { id: 'dev', code: 'DEV', name: 'Development', color: '#10b981', isActive: true },
+  { id: 'math', code: 'MATH', name: 'Mathematics', color: '#3b82f6', isActive: true },
+  { id: 'lang', code: 'LANG', name: 'English', color: '#f59e0b', isActive: true },
+];
+const zonedToday = (timeZone: string) => {
+  const p = getZonedParts(new Date(), timeZone);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+};
+const sampleLogs = (todayStr: string) => {
+  const [y, m, d] = todayStr.split('-').map(Number);
+  const logs: Array<{ date: string; createdAt: string; durationMinutes: number; categoryId: string }> = [];
+  for (let i = 0; i < 42; i++) {
+    if (i % 6 === 5) continue; // a rest day now and then
+    const day = new Date(y, m - 1, d - i);
+    const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    // Evenings mostly, an early start every few days.
+    const hours = i % 4 === 0 ? [6, 21] : i % 3 === 0 ? [23] : [20, 22];
+    hours.forEach((hour, k) => {
+      const stamp = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, 30);
+      logs.push({
+        date,
+        createdAt: stamp.toISOString(),
+        durationMinutes: 45 + ((i * 37 + k * 23) % 100),
+        categoryId: SAMPLE_CATS[(i + k) % SAMPLE_CATS.length].id,
+      });
+    });
+  }
+  return logs;
+};
+
+const KpisFigure: React.FC<FigureContext> = ({ borderCol, bgCard, textMuted, isDark, timeZone, weekStart }) => {
+  const todayStr = useMemo(() => zonedToday(timeZone), [timeZone]);
+  const logs = useMemo(() => sampleLogs(todayStr), [todayStr]);
+  const total = logs.reduce((a, l) => a + l.durationMinutes, 0) / 60;
+  return (
+    <div className="p-3 pointer-events-none select-none" aria-hidden>
+      <DashboardKpis
+        signedIn
+        logs={logs}
+        openCategories={SAMPLE_CATS}
+        activeCategoryCount={SAMPLE_CATS.length}
+        todayStr={todayStr}
+        weekStartStr={startOfWeekStr(todayStr, weekStart)}
+        monthPrefix={todayStr.slice(0, 7)}
+        cycleNumber={1}
+        cycleHours={total}
+        cycleSpan={1000}
+        liveSeconds={1500}
+        borderCol={borderCol}
+        bgCard={bgCard}
+        textMuted={textMuted}
+        isDark={isDark}
+        categoryFill={(c) => segmentStyle(c.color, c.isActive)}
+      />
+    </div>
+  );
+};
+
+const RhythmFigure: React.FC<FigureContext> = ({ borderCol, textMuted, isDark, timeZone, weekStart }) => {
+  const todayStr = useMemo(() => zonedToday(timeZone), [timeZone]);
+  const logs = useMemo(() => sampleLogs(todayStr), [todayStr]);
+  return (
+    <div className="p-4 sm:h-72 flex flex-col pointer-events-none select-none" aria-hidden>
+      <StudyRhythm logs={logs} todayStr={todayStr} timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} borderCol={borderCol} />
+    </div>
+  );
+};
+
+// ------------------------------------------------------------- bitsreset
+// The ledger before and after RESET BITS & MY ROOM: bonuses and purchases
+// go, the hours (and the BITS they pay) stay.
+const RESET_SAMPLE = { hours: 102, bonus: 1350, spent: 4800, pieces: 14, logs: 128, cats: 6 };
+const BitsResetFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => {
+  const after = useTicker(1900) % 2 === 1;
+  const s = RESET_SAMPLE;
+  const base = s.hours * 100;
+  const n = (v: number) => v.toLocaleString('en-US');
+  const row = (label: string, detail: string, before: string, now: string, kept = false) => (
+    <div className={`flex items-baseline justify-between gap-3 py-1 border-b ${borderCol}`}>
+      <span className="min-w-0">
+        <span className="font-bold">{label}</span> <span className={textMuted}>{detail}</span>
+      </span>
+      <span className="shrink-0 tabular-nums flex items-center gap-1.5">
+        {kept ? (
+          <>
+            {before}
+            <span className="text-[9px] px-1 border border-emerald-500/60 text-emerald-400">KEPT</span>
+          </>
+        ) : (
+          <span className={`transition-colors duration-500 ${after ? 'text-sky-400 font-bold' : ''}`}>{after ? now : before}</span>
+        )}
+      </span>
+    </div>
+  );
+  return (
+    <div className="p-4 flex justify-center pointer-events-none select-none" aria-hidden>
+      <div className="w-full max-w-sm font-mono text-[11px]">
+        <div className="flex items-center justify-between gap-2 pb-1.5 text-[10px] tracking-wider">
+          <span className="text-sky-400 font-bold">RESET BITS &amp; MY ROOM</span>
+          <span className={`px-1.5 border transition-colors duration-500 ${after ? 'border-sky-500/60 text-sky-400' : `${borderCol} ${textMuted}`}`}>
+            {after ? 'AFTER' : 'BEFORE'}
+          </span>
+        </div>
+        {row('STUDY', `${s.hours}h`, `+${n(base)}`, `+${n(base)}`, true)}
+        {row('BUFF BONUSES', '', `+${n(s.bonus)}`, '+0')}
+        {row('PURCHASES', '', `\u2212${n(s.spent)}`, '0')}
+        {row('MY ROOM', '', `${s.pieces} PIECES`, 'STARTER')}
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <span className="font-bold">BALANCE</span>
+          <span className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-amber-400">
+            <BitShard className="w-3 h-3" />
+            {n(after ? base : base + s.bonus - s.spent)}
+          </span>
+        </div>
+        <div className={`pt-1.5 flex items-center gap-1.5 text-[10px] ${textMuted}`}>
+          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+          {s.logs} LOGS · {s.cats} CATEGORIES KEPT
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // ------------------------------------------------------------ bitsbutton
@@ -548,6 +681,12 @@ const LaunchFigure: React.FC<FigureContext> = ({ textMuted }) => {
 export const NewsFigure: React.FC<{ kind: FigureKind; caption?: string } & FigureContext> = ({ kind, caption, ...ctx }) => {
   const body = (() => {
     switch (kind) {
+      case 'kpis':
+        return <KpisFigure {...ctx} />;
+      case 'rhythm':
+        return <RhythmFigure {...ctx} />;
+      case 'bitsreset':
+        return <BitsResetFigure {...ctx} />;
       case 'bitsbutton':
         return <BitsButtonFigure {...ctx} />;
       case 'furniture':

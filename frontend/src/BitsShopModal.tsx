@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, Home, Loader2, Zap } from 'lucide-react';
 import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState } from './api';
 import { BITS_PER_HOUR } from './bits';
-import { BitShard } from './BitsBadge';
+import { BitShard, StudyTime } from './BitsBadge';
 import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
@@ -521,9 +521,12 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                             {TIER_LABEL[spec.tier]} · {spec.w}×{spec.h}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 font-bold tabular-nums text-[11px]">
-                          <BitShard className="w-2.5 h-2.5" />
-                          {fmt(spec.price)}
+                        <div className="flex flex-wrap items-baseline gap-x-1 tabular-nums text-[11px]">
+                          <span className="flex items-center gap-1 font-bold self-center">
+                            <BitShard className="w-2.5 h-2.5" />
+                            {fmt(spec.price)}
+                          </span>
+                          <StudyTime bits={spec.price} className={textMuted} />
                         </div>
                         {/* One of each piece: owned ones can't be bought again. */}
                         {buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)}
@@ -599,9 +602,10 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="font-bold tracking-wider truncate">{buff.name}</div>
-                                <span className="shrink-0 flex items-center gap-1 font-bold tabular-nums">
+                                <span className="shrink-0 flex items-center gap-1 tabular-nums">
                                   <BitShard className="w-2.5 h-2.5" />
-                                  {fmt(buff.price)}
+                                  <span className="font-bold">{fmt(buff.price)}</span>
+                                  <StudyTime bits={buff.price} className={textMuted} />
                                 </span>
                               </div>
                               <div className="text-[10px] font-bold mt-0.5" style={{ color: ink }}>

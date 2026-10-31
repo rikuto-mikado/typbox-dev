@@ -26,7 +26,7 @@ from django.db.models import F, Q, Sum
 from django.utils import timezone
 
 from .furniture import FURNITURE, weekly_shop
-from .models import BitPurchase, Category, UserProfile
+from .models import BitPurchase, Category, StudyLog, UserProfile
 from .timezones import get_user_zone
 
 BITS_PER_HOUR = 100
@@ -418,6 +418,29 @@ def cancel_buff(user, now=None):
         buff.expires_at = now
         buff.save(update_fields=['refunded', 'expires_at'])
         return refund
+
+
+def reset_economy(user):
+    """Starts the BITS economy over while keeping every study log and
+    category: all purchases (buffs and furniture, so a running buff too) are
+    dropped, buff bonuses are taken off the logs and MY ROOM goes back to
+    the starter room. The balance falls back to the base rate for the hours
+    already logged. Returns (purchases deleted, logs whose bonus was cleared).
+    """
+    with transaction.atomic():
+        # Same lock as a purchase or a log commit, so neither can land on
+        # the far side of the reset.
+        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
+        deleted, _ = BitPurchase.objects.filter(user=user).delete()
+        cleared = (
+            StudyLog.objects.filter(user=user)
+            .filter(Q(bonus_bits__gt=0) | ~Q(bonus_item=''))
+            .update(bonus_bits=0, bonus_item='')
+        )
+        if profile.room_layout:
+            profile.room_layout = {}
+            profile.save(update_fields=['room_layout'])
+    return deleted, cleared
 
 
 def roll_crate(spec):

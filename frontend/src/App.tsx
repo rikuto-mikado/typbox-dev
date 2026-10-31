@@ -23,7 +23,6 @@ import {
   ChevronRight,
   RotateCcw,
   Flame,
-  Activity,
   Grid3x3,
   Download,
   Pencil,
@@ -47,6 +46,7 @@ import {
   CheckCheck,
   Undo2,
   ArrowUpRight,
+  Info,
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken, type BitsActiveBuff } from './api';
 import { TypboxLogo } from './TypboxLogo';
@@ -60,6 +60,11 @@ import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { BitsShopModal, type ShopTab } from './BitsShopModal';
 import { MyRoomPanel } from './MyRoomPanel';
+import { DashboardKpis } from './DashboardKpis';
+import { CategoryEditor } from './CategoryEditor';
+import { ColorSwatchGrid } from './ColorSwatchGrid';
+import { StudyRhythm } from './StudyRhythm';
+import { ResetReceipt, type ResetReceiptData } from './ResetReceipt';
 import { NewsPanel } from './NewsPanel';
 import { BITS_PER_HOUR, bitsForMinutes, type BitsSummary } from './bits';
 import { SaveButton, useSaveState } from './SaveButton';
@@ -96,6 +101,7 @@ import {
   getPrestigeBadge,
   Award,
   type AnalyticsHorizonMode,
+  CYCLE_HOURS,
 } from './telemetryFeatures';
 import {
   DEFAULT_WEEK_START,
@@ -248,27 +254,7 @@ const REGISTRATION_OPEN = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
 type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'cursor' | 'clearance' | 'room' | 'account' | 'news';
 // Surface themes, UI fonts, ambient overlays and cursors share the single 02 / APPEARANCE tab.
 const APPEARANCE_TABS: SettingsTab[] = ['themes', 'fonts', 'ambient', 'cursor'];
-const CATEGORY_PREVIEW_COUNT = 5;
-// Tailwind's lg breakpoint, where the dashboard becomes two columns.
-const DESKTOP_QUERY = '(min-width: 1024px)';
-
-/** Live result of a CSS media query (false where matchMedia is missing). */
-const useMediaQuery = (query: string): boolean => {
-  // Stable per query, so the store subscribes once instead of on every render.
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      const mq = window.matchMedia?.(query);
-      mq?.addEventListener('change', onChange);
-      return () => mq?.removeEventListener('change', onChange);
-    },
-    [query]
-  );
-  return React.useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia?.(query).matches ?? false,
-    () => false
-  );
-};
+const CATEGORY_PREVIEW_COUNT = 4;
 
 const AVATAR_PRESET_OPTIONS = [
   { id: 'initial', label: 'Initial' },
@@ -889,10 +875,12 @@ export default function App() {
   // Data State (Directly synchronized with Django Backend)
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<StudyLog[]>([]);
-  // The log stream starts with 5 logs; SHOW MORE adds 10 at a time on top of that.
-  const INITIAL_VISIBLE_LOGS = 5;
+  // The log stream shows 4 logs (a short list doesn't leave a big empty
+  // box); SHOW MORE adds 10 at a time on top of that.
+  const INITIAL_VISIBLE_LOGS = 4;
+  const baseVisibleLogs = INITIAL_VISIBLE_LOGS;
   const [extraVisibleLogs, setExtraVisibleLogs] = useState<number>(0);
-  const visibleLogCount = INITIAL_VISIBLE_LOGS + extraVisibleLogs;
+  const visibleLogCount = baseVisibleLogs + extraVisibleLogs;
 
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   // Earned BITS follow the loaded logs so the header moves the instant a log
@@ -906,34 +894,20 @@ export default function App() {
   );
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // On desktop the log list stays as tall as its collapsed (5-log) height:
-  // SHOW MORE / SHOW ALL scroll inside it, so the right column (and the lunar
-  // calendar stretched to match it) doesn't grow with every expansion. The cap
-  // is measured, not fixed, since rows change height (e.g. the inline editor).
+  // The log list is a fixed-height box at every width (four rows):
+  // SHOW MORE / SHOW ALL add rows inside it and it scrolls, so the panel
+  // never grows. After either, bring the first newly shown row into view.
   const logListRef = React.useRef<HTMLDivElement>(null);
-  const [logListCap, setLogListCap] = useState<number | null>(null);
-  const logStreamExpanded = extraVisibleLogs > 0;
-  useEffect(() => {
-    const el = logListRef.current;
-    if (!el || logStreamExpanded || typeof ResizeObserver === 'undefined') return;
-    // Fires once on observe, then on every content resize while collapsed.
-    const observer = new ResizeObserver(() => setLogListCap(el.scrollHeight));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [logStreamExpanded, logs.length, dataLoading]);
-
-  // After SHOW MORE / SHOW ALL, bring the first newly shown row into view
-  // inside the capped list (a no-op on phones, where the list isn't capped).
   const prevExtraVisibleLogsRef = React.useRef(0);
   useEffect(() => {
     const el = logListRef.current;
-    const firstNewRow = INITIAL_VISIBLE_LOGS + prevExtraVisibleLogsRef.current;
+    const firstNewRow = baseVisibleLogs + prevExtraVisibleLogsRef.current;
     const grew = extraVisibleLogs > prevExtraVisibleLogsRef.current;
     prevExtraVisibleLogsRef.current = extraVisibleLogs;
     if (!el || !grew || el.scrollHeight <= el.clientHeight) return;
     const row = el.children[firstNewRow] as HTMLElement | undefined;
     if (row) el.scrollTo({ top: row.offsetTop, behavior: 'smooth' });
-  }, [extraVisibleLogs]);
+  }, [extraVisibleLogs, baseVisibleLogs]);
 
   // Timeline Navigation State for Analytics Module
   const [weeklyOffset, setWeeklyOffset] = useState<number>(0); // weeks ago (0 = current week)
@@ -1061,6 +1035,13 @@ export default function App() {
 
   const [clearLogsConfirmText, setClearLogsConfirmText] = useState<string>('');
   const [clearingLogs, setClearingLogs] = useState<boolean>(false);
+  const [resetBitsConfirmText, setResetBitsConfirmText] = useState<string>('');
+  const [resettingBits, setResettingBits] = useState<boolean>(false);
+  // Reset feedback, like a log commit: the button flips to DONE for a
+  // moment, a toast pops and a receipt stays under the button.
+  const [bitsReceipt, setBitsReceipt] = useState<(ResetReceiptData & { at: number }) | null>(null);
+  const [clearReceipt, setClearReceipt] = useState<(ResetReceiptData & { at: number }) | null>(null);
+  const [resetDone, setResetDone] = useState<'bits' | 'logs' | null>(null);
   const [importingBackup, setImportingBackup] = useState<boolean>(false);
   const [dataStatus, setDataStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -1131,6 +1112,8 @@ export default function App() {
         setProfileStatuses(statuses);
       }
       setStatusLimitHit(false);
+      setBitsReceipt(null);
+      setClearReceipt(null);
       setProfileStatus(null);
       setProfileSaveError(null);
       setRegionStatus(null);
@@ -1139,6 +1122,7 @@ export default function App() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
+      setResetBitsConfirmText('');
       setClearLogsConfirmText('');
       setSettingsTab(tab);
       setShowUserMenu(false);
@@ -1301,6 +1285,32 @@ export default function App() {
   const [editingCatId, setEditingCatId] = useState<string | number | null>(null);
   const [showAllCategories, setShowAllCategories] = useState<boolean>(false);
   const [showDoneCategories, setShowDoneCategories] = useState<boolean>(false);
+  // Registry list box: SHOW ALL / DONE reveal rows inside it (it never
+  // grows), so bring what was just revealed into view.
+  const categoryListRef = React.useRef<HTMLDivElement>(null);
+  const [revealCatId, setRevealCatId] = useState<string | number | null>(null);
+  useEffect(() => {
+    const box = categoryListRef.current;
+    if (revealCatId === null || !box) return;
+    const row = box.querySelector<HTMLElement>(`[data-cat-id="${CSS.escape(String(revealCatId))}"]`);
+    if (row) box.scrollTo({ top: row.offsetTop - box.offsetTop, behavior: 'smooth' });
+    const id = window.setTimeout(() => setRevealCatId(null), 2400);
+    return () => window.clearTimeout(id);
+  }, [revealCatId, categories]);
+  const doneListRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = categoryListRef.current;
+    // A just-created row scrolls itself into view (revealCatId) instead.
+    if (!box || !showAllCategories || revealCatId !== null) return;
+    const row = box.children[CATEGORY_PREVIEW_COUNT] as HTMLElement | undefined;
+    if (row) box.scrollTo({ top: row.offsetTop - box.offsetTop, behavior: 'smooth' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on toggle
+  }, [showAllCategories]);
+  useEffect(() => {
+    const box = categoryListRef.current;
+    const done = doneListRef.current;
+    if (box && done && showDoneCategories) box.scrollTo({ top: done.offsetTop - box.offsetTop, behavior: 'smooth' });
+  }, [showDoneCategories]);
   const [editCatName, setEditCatName] = useState<string>('');
   const [editCatCode, setEditCatCode] = useState<string>('');
   const [editCatColor, setEditCatColor] = useState<string>(ACCENT_PALETTE[0].hex);
@@ -1855,10 +1865,22 @@ export default function App() {
     }
   };
 
+  const stampNow = () => {
+    try {
+      return new Date().toLocaleTimeString('en-GB', { timeZone, hour12: false });
+    } catch {
+      return new Date().toLocaleTimeString('en-GB', { hour12: false });
+    }
+  };
+  const flashResetDone = (which: 'bits' | 'logs') => {
+    setResetDone(which);
+    window.setTimeout(() => setResetDone((cur) => (cur === which ? null : cur)), 2400);
+  };
+
   const handleClearAllLogs = async () => {
     if (clearLogsConfirmText !== 'CLEAR') return;
     setClearingLogs(true);
-    setDataStatus(null);
+    setClearReceipt(null);
     try {
       const res = await api.logs.clearAll();
       setLogs([]);
@@ -1869,19 +1891,87 @@ export default function App() {
       setUser((prev) =>
         prev ? { ...prev, bits: { ...(prev.bits ?? { per_hour: BITS_PER_HOUR }), balance: 0, earned: 0, spent: 0 } } : prev
       );
-      setDataStatus({
-        type: 'success',
-        text: tf(t.msgCleared, {
-          n: res.deleted,
-          cats: res.deleted_categories ?? 0,
-          items: res.deleted_purchases ?? 0,
-        }),
+      if (user) setBuffState({ userId: user.id, buff: null });
+      const n = (v: number) => v.toLocaleString('en-US');
+      setClearReceipt({
+        at: Date.now(),
+        ok: true,
+        command: 'reset logs --categories --bits --keep-account',
+        lines: [
+          [t.rcLogsDeleted, n(res.deleted), 'gone'],
+          [t.rcCatsDeleted, n(res.deleted_categories ?? 0), 'gone'],
+          [t.rcPurchases, n(res.deleted_purchases ?? 0), 'gone'],
+          [t.rcBalance, tf(t.rcBitsN, { n: 0 }), 'gone'],
+          [t.rcRoom, t.rcRoomStarter, 'gone'],
+          [t.rcAccount, t.rcKept, 'kept'],
+        ],
+        footer: tf(t.rcOk, { time: stampNow() }),
       });
+      flashResetDone('logs');
+      pushToast(
+        'success',
+        t.toastLogsCleared,
+        tf(t.toastLogsClearedMsg, { n: res.deleted, cats: res.deleted_categories ?? 0, items: res.deleted_purchases ?? 0 })
+      );
     } catch (err: unknown) {
-      const error = err as Error;
-      setDataStatus({ type: 'error', text: error.message || t.errClearLogs });
+      const msg = (err as Error).message || t.errClearLogs;
+      setClearReceipt({
+        at: Date.now(),
+        ok: false,
+        command: 'reset logs --categories --bits --keep-account',
+        lines: [],
+        footer: tf(t.rcFailed, { time: stampNow(), msg }),
+      });
+      pushToast('error', t.toastResetFailed, msg);
     } finally {
       setClearingLogs(false);
+    }
+  };
+
+  const handleResetBits = async () => {
+    if (resetBitsConfirmText !== 'RESET') return;
+    setResettingBits(true);
+    setBitsReceipt(null);
+    try {
+      const res = await api.bits.reset();
+      // Logs and categories stay; only the buff bonuses come off them.
+      setLogs((prev) => prev.map((l) => (l.bonusBits || l.bonusItem ? { ...l, bonusBits: 0, bonusItem: '' } : l)));
+      setUser((prev) => (prev ? { ...prev, bits: res.bits } : prev));
+      if (user) setBuffState({ userId: user.id, buff: res.active_buff });
+      setResetBitsConfirmText('');
+      const n = (v: number) => v.toLocaleString('en-US');
+      setBitsReceipt({
+        at: Date.now(),
+        ok: true,
+        command: 'reset bits --room --keep-logs',
+        lines: [
+          [t.rcPurchases, n(res.deleted_purchases), 'gone'],
+          [t.rcBonus, tf(t.rcLogsN, { n: n(res.cleared_bonus_logs) }), 'gone'],
+          [t.rcRoom, t.rcRoomStarter, 'gone'],
+          [t.rcBalance, tf(t.rcBitsN, { n: n(res.bits.balance) })],
+          [t.rcLogsKept, tf(t.rcKeptN, { n: n(logs.length) }), 'kept'],
+          [t.rcCatsKept, tf(t.rcKeptN, { n: n(categories.length) }), 'kept'],
+        ],
+        footer: tf(t.rcOk, { time: stampNow() }),
+      });
+      flashResetDone('bits');
+      pushToast(
+        'success',
+        t.toastBitsReset,
+        tf(t.toastBitsResetMsg, { items: res.deleted_purchases, bits: n(res.bits.balance), logs: n(logs.length) })
+      );
+    } catch (err: unknown) {
+      const msg = (err as Error).message || t.errBitsReset;
+      setBitsReceipt({
+        at: Date.now(),
+        ok: false,
+        command: 'reset bits --room --keep-logs',
+        lines: [],
+        footer: tf(t.rcFailed, { time: stampNow(), msg }),
+      });
+      pushToast('error', t.toastResetFailed, msg);
+    } finally {
+      setResettingBits(false);
     }
   };
 
@@ -2114,6 +2204,9 @@ export default function App() {
       setNewCatName('');
       setNewCatCode('');
       setShowCatForm(false);
+      // Show the new row even when it lands past the first four, and flash it.
+      setShowAllCategories(true);
+      setRevealCatId(newCat.id);
     } catch (err: unknown) {
       const error = err as Error;
       alert(tf(t.errCreateCategory, { msg: error.message }));
@@ -2303,6 +2396,17 @@ export default function App() {
   }, [logs, timeZone]);
 
   const currentMonthPrefix = todayStr.slice(0, 7); // YYYY-MM in the user's zone
+  // ISO week number and day of the year for the console's date readout.
+  const calendarStamp = useMemo(() => {
+    const [y, m, d] = todayStr.split('-').map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    const day = Math.round((date.getTime() - Date.UTC(y, 0, 1)) / 86_400_000) + 1;
+    const days = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 366 : 365;
+    const thursday = new Date(date);
+    thursday.setUTCDate(date.getUTCDate() + 3 - ((date.getUTCDay() + 6) % 7));
+    const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
+    return { week: String(week).padStart(2, '0'), day, days };
+  }, [todayStr]);
 
   const stats = useMemo(() => {
     const totalMin = logs.reduce((acc, l) => acc + l.durationMinutes, 0);
@@ -2367,6 +2471,8 @@ export default function App() {
     root.style.setProperty('--tb-border', pal.border);
     root.style.setProperty('--tb-text-main', pal.textMain);
     root.style.setProperty('--tb-text-muted', pal.textMuted);
+    // The surface's accent: drives the panel corner brackets (index.css).
+    root.style.setProperty('--tb-accent', activeSurfacePair.accentHex);
 
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     localStorage.setItem(SURFACE_THEME_STORAGE_KEY, surfaceThemeId);
@@ -2513,17 +2619,15 @@ export default function App() {
     [categories, logs]
   );
 
-  // On phones the registry lists the first CATEGORY_PREVIEW_COUNT rows and
-  // folds the rest behind SHOW MORE (a row being edited always stays
-  // visible). On desktop it is the stretched last panel of its column, so
-  // it lists every row and the list scrolls inside the panel.
-  const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  // The registry is a fixed-size panel: it lists the first
+  // CATEGORY_PREVIEW_COUNT rows, and SHOW ALL lists every row in the same
+  // box, which then scrolls (a row being edited always stays visible).
   const hiddenCategories = useMemo(
     () =>
-      showAllCategories || isDesktop
+      showAllCategories
         ? []
         : weeklyBreakdown.slice(CATEGORY_PREVIEW_COUNT).filter((c) => String(c.id) !== String(editingCatId)),
-    [weeklyBreakdown, showAllCategories, isDesktop, editingCatId]
+    [weeklyBreakdown, showAllCategories, editingCatId]
   );
   const visibleCategories = useMemo(
     () => weeklyBreakdown.filter((c) => !hiddenCategories.includes(c)),
@@ -3592,85 +3696,25 @@ export default function App() {
         )}
 
         {/* 1. TOP METRICS STRIP + TELEMETRY CLEARANCE BAR */}
-        <section className="space-y-0">
-          <div className={`grid grid-cols-2 lg:grid-cols-4 border-t border-l ${borderCol}`}>
-            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard}`}>
-              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
-                01 / {t.totalHours}
-              </div>
-              <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
-                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
-                  {user ? stats.totalHours : '0.0'}
-                </span>
-                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs}</span>
-              </div>
-            </div>
-
-            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard}`}>
-              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
-                02 / {t.weeklyHours}
-              </div>
-              <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
-                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
-                  {user ? stats.weeklyHours : '0.0'}
-                </span>
-                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs7d}</span>
-              </div>
-            </div>
-
-            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard}`}>
-              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
-                03 / {t.monthlyHours}
-              </div>
-              <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
-                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
-                  {user ? stats.monthlyHours : '0.0'}
-                </span>
-                <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs} ({currentMonthPrefix})</span>
-              </div>
-            </div>
-
-            <div className={`p-3.5 sm:p-5 border-r border-b ${borderCol} ${bgCard} flex flex-col justify-between`}>
-              <div className={`font-mono text-[10px] sm:text-[11px] uppercase tracking-wider truncate ${textMuted}`}>
-                04 / {t.activeCategories}
-              </div>
-              <div className="mt-1 sm:mt-2 flex items-baseline justify-between gap-2 min-w-0">
-                <div className="flex items-baseline space-x-1.5 sm:space-x-2 shrink-0">
-                  <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
-                    {user ? activeCategoryCount : '0'}
-                  </span>
-                  <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>
-                    {user && activeCategoryCount !== openCategories.length
-                      ? tf(t.unitActiveOf, { n: openCategories.length })
-                      : t.unitUnits}
-                  </span>
-                </div>
-                {user && openCategories.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-end gap-1 max-w-[84px] sm:max-w-[148px]">
-                    {openCategories.slice(0, 12).map((c) => (
-                      <span
-                        key={c.id}
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={swatchStyle(c.color, c.isActive)}
-                        title={`[${c.code}] ${c.name}${c.isActive ? '' : ` (${t.inactive})`}`}
-                      />
-                    ))}
-                    {openCategories.length > 12 && (
-                      <span
-                        className={`font-mono text-[9px] leading-none px-1 py-0.5 border ${borderCol} ${textMuted} shrink-0`}
-                        title={openCategories
-                          .slice(12)
-                          .map((c) => `[${c.code}] ${c.name}`)
-                          .join(', ')}
-                      >
-                        +{openCategories.length - 12}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+        <section className="tb-corners space-y-0">
+          <DashboardKpis
+            signedIn={Boolean(user)}
+            logs={logs}
+            openCategories={openCategories}
+            activeCategoryCount={activeCategoryCount}
+            todayStr={todayStr}
+            weekStartStr={currentWeekStartStr}
+            monthPrefix={currentMonthPrefix}
+            cycleNumber={clearanceStatus.cycleNumber}
+            cycleHours={clearanceStatus.cycleHours}
+            cycleSpan={CYCLE_HOURS}
+            liveSeconds={user && inputMode === 'timer' ? elapsedSeconds : 0}
+            borderCol={borderCol}
+            bgCard={bgCard}
+            textMuted={textMuted}
+            isDark={isDark}
+            categoryFill={(c) => segmentStyle(c.color, c.isActive)}
+          />
 
           {/* TELEMETRY CLEARANCE LEVEL BAR (3,000 RANKS // 0H-1,000H PER CYCLE) */}
           <div className={`border-x border-b ${borderCol} ${bgCard} px-3.5 sm:px-5 py-2.5 sm:py-3.5 font-mono text-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-3`}>
@@ -3772,6 +3816,29 @@ export default function App() {
                   <Share2 className="w-3.5 h-3.5 text-emerald-400" />
                   <span>{t.shareCard}</span>
                 </button>
+                {/* Data vault exports (formerly in STUDY INSIGHTS & VAULT). */}
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  disabled={logs.length === 0}
+                  title={t.exportCsvTitle}
+                  aria-label={t.exportCsv}
+                  className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportJSON}
+                  disabled={logs.length === 0}
+                  title={t.exportJsonTitle}
+                  aria-label={t.exportJson}
+                  className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1.5 border ${borderCol} hover:border-emerald-500/60 text-xs lg:text-[10px] font-semibold flex items-center justify-center space-x-1.5 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>JSON</span>
+                </button>
               </div>
             </div>
           </div>
@@ -3782,12 +3849,17 @@ export default function App() {
             phones both wrappers are `contents`, so the panels form one column in their
             order-N sequence, log stream last. */}
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
-          {/* LEFT COLUMN: Chronometer, Recording, Insights, Lunar Calendar, Categories.
-              The last panel stretches to line the column up with the right one, so it
-              is the category registry, whose list simply shows more rows when taller. */}
-          <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-5 lg:[&>*:last-child]:grow">
-            {/* SYSTEM CHRONOMETER (DIGITAL CLOCK PANEL) */}
-            <div data-panel="chrono" className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
+          {/* LEFT COLUMN: Console (chronometer + session logger), Cadence (with
+              the streak numbers), Lunar Calendar, Category Registry. Every panel
+              here is fixed-size; the right column's study rhythm absorbs the
+              difference so the columns end on the same line. */}
+          <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-5">
+            {/* CONSOLE: the system chronometer and the session logger in one
+                panel. The clock face stays a clock; in STOPWATCH mode the
+                readout beside it becomes the running session. goto chrono /
+                goto log both still land here (data-panel on each part). */}
+            <div data-panel="chrono" className={`tb-corners border ${borderCol} ${bgCard} relative order-1 lg:order-none`}>
+            <div className="p-5 relative overflow-hidden">
               {/* Wraps instead of overflowing on narrow phones: weather badges
                   can be wide (e.g. the CYBER HUD theme), so the right-hand
                   controls drop to a second line when they don't fit. From sm
@@ -3839,7 +3911,9 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex items-baseline justify-between gap-3">
+              {/* One fixed-height row (faces differ in height): the face sits
+                  bottom-left and the date / session readout bottom-right. */}
+              <div className="flex items-end justify-between gap-3 min-h-[128px]">
                 <ChronoDisplay
                   theme={activeChronoTheme}
                   hh={clockReadout.hour}
@@ -3848,43 +3922,42 @@ export default function App() {
                   isDark={isDark}
                 />
 
-                <div className="text-right font-mono shrink-0">
-                  <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums">
-                    {clockReadout.dateDot}
+                {inputMode === 'timer' && user ? (
+                  <div className="text-right font-mono shrink-0 h-[72px] flex flex-col justify-end tb-fade-in" aria-live="off">
+                    <div
+                      className={`flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-widest font-bold ${
+                        isRunning ? 'text-emerald-400' : elapsedSeconds > 0 ? 'text-amber-400' : textMuted
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : elapsedSeconds > 0 ? 'bg-amber-400' : 'bg-zinc-500'}`} />
+                      {isRunning ? t.consoleElapsed : elapsedSeconds > 0 ? t.consolePaused : t.consoleReady}
+                    </div>
+                    <div className={`text-2xl sm:text-3xl font-light tracking-wider tabular-nums ${isRunning ? '' : textMuted}`}>
+                      {formatTimer(elapsedSeconds)}
+                    </div>
+                    <div className={`text-[10px] uppercase tracking-widest tabular-nums ${textMuted}`}>
+                      {clockReadout.dateDot} {clockReadout.dayStr}
+                    </div>
                   </div>
-                  <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
-                    {clockReadout.dayStr} // {clockReadout.tzLabel}
+                ) : (
+                  <div className="text-right font-mono shrink-0 h-[72px] flex flex-col justify-end tb-fade-in">
+                    <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums">
+                      {clockReadout.dateDot}
+                    </div>
+                    <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
+                      {clockReadout.dayStr} // {clockReadout.tzLabel}
+                    </div>
+                    <div className={`text-[10px] uppercase tracking-widest tabular-nums ${textMuted}`}>
+                      {tf(t.consoleCalendar, { w: calendarStamp.week, d: calendarStamp.day, n: calendarStamp.days })}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
-              {showWeatherPanel && (
-                <WeatherPanel
-                  wx={weather}
-                  theme={activeWeatherTheme}
-                  progress={chronoProgress}
-                  isDark={isDark}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                />
-              )}
-
-              {showChronoPicker && (
-                <ChronometerThemePicker
-                  activeThemeId={activeChronoTheme.id}
-                  onSelect={handleSelectChronoTheme}
-                  progress={chronoProgress}
-                  hh={clockReadout.hour}
-                  mm={clockReadout.minute}
-                  isDark={isDark}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                />
-              )}
             </div>
 
-            {/* SESSION LOGGER PANEL */}
-            <div data-panel="log" className={`border ${borderCol} ${bgCard} p-6 relative order-2 lg:order-none`}>
+            {/* SESSION LOGGER (lower half of the console) */}
+            <div data-panel="log" className={`relative p-5 border-t ${borderCol}`}>
               {/* Overlay if not authenticated */}
               {!user && (
                 <div
@@ -3916,7 +3989,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className={`flex items-center justify-between pb-4 mb-5 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
+              <div className={`flex items-center justify-between pb-3 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Clock className="w-4 h-4 text-emerald-500" />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
@@ -3956,52 +4029,14 @@ export default function App() {
                 </div>
               </div>
 
-              <form onSubmit={handleAddLog} className="space-y-4">
-                {inputMode === 'timer' && (
-                  <div className={`p-5 border ${borderCol} text-center space-y-4`}>
-                    <div className="font-mono text-4xl font-light tracking-widest">
-                      {formatTimer(elapsedSeconds)}
-                    </div>
-                    <div className="flex justify-center space-x-3">
-                      {!isRunning ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsRunning(true)}
-                          disabled={commitState === 'submitting'}
-                          className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-wait"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>{t.start}</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setIsRunning(false)}
-                          className="min-h-[42px] lg:min-h-0 flex items-center space-x-1.5 px-5 py-2.5 lg:px-4 lg:py-1.5 bg-amber-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
-                        >
-                          <Square className="w-3.5 h-3.5 fill-current" />
-                          <span>{t.pause}</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={resetStopwatch}
-                        disabled={commitState === 'submitting'}
-                        className={`min-h-[42px] lg:min-h-0 px-4 py-2.5 lg:px-3 lg:py-1.5 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer disabled:opacity-50 disabled:cursor-wait`}
-                      >
-                        {t.reset}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
+              <form onSubmit={handleAddLog} className="flex flex-col gap-4">
                 {/* Category Selection */}
                 <div>
                   <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
                     {t.category}
                   </label>
                   {openCategories.length === 0 ? (
-                    <div className={`p-2.5 text-xs font-mono border ${borderCol} ${textMuted}`}>
+                    <div className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border truncate ${borderCol} ${textMuted}`}>
                       {t.noCategoriesYet}
                     </div>
                   ) : (
@@ -4016,63 +4051,124 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Duration & Date */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {inputMode === 'manual' && (
-                    <div>
-                      <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
-                        {t.durationMin}
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={1440}
-                        value={durationMinutes}
-                        onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                        className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
-                      />
+                {/* MANUAL and STOPWATCH share one grid cell, so switching
+                    crossfades in place and the console never changes height. */}
+                <div className="grid [&>*]:[grid-area:1/1]">
+                  <div
+                    inert={inputMode !== 'manual'}
+                    aria-hidden={inputMode !== 'manual'}
+                    className={`flex flex-col gap-4 transition-[opacity,transform] duration-300 ease-out ${
+                      inputMode === 'manual' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1 pointer-events-none'
+                    }`}
+                  >
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
+                          {t.durationMin}
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={1440}
+                          value={durationMinutes}
+                          onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                          className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
+                        />
+                      </div>
+                      <div>
+                        <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
+                          {t.date}
+                        </label>
+                        <input
+                          type="date"
+                          value={logDate}
+                          onChange={(e) => setLogDate(e.target.value)}
+                          className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
+                        />
+                      </div>
                     </div>
-                  )}
-                  <div className={inputMode === 'timer' ? 'sm:col-span-2' : ''}>
-                    <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
-                      {t.date}
-                    </label>
-                    <input
-                      type="date"
-                      value={logDate}
-                      onChange={(e) => setLogDate(e.target.value)}
-                      className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
-                    />
+                      <div className="grid grid-cols-6 gap-1.5 font-mono text-[11px]">
+                      {[15, 30, 60, 90, 120].map((presetMin) => (
+                        <button
+                          key={presetMin}
+                          type="button"
+                          onClick={() => setDurationMinutes(presetMin)}
+                          className={`min-h-[36px] lg:min-h-0 py-1.5 border transition-colors cursor-pointer ${
+                            durationMinutes === presetMin
+                              ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                              : `${borderCol} ${textMuted} hover:border-zinc-500`
+                          }`}
+                        >
+                          {presetMin}m
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setDurationMinutes((prev) => Math.min(1440, (Number(prev) || 0) + 15))}
+                        className={`min-h-[36px] lg:min-h-0 py-1.5 border ${borderCol} text-emerald-400 hover:bg-emerald-500/10 font-bold transition-colors cursor-pointer`}
+                        title={t.add15m}
+                      >
+                        +15m
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    inert={inputMode !== 'timer'}
+                    aria-hidden={inputMode !== 'timer'}
+                    className={`flex flex-col gap-4 transition-[opacity,transform] duration-300 ease-out ${
+                      inputMode === 'timer' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1 pointer-events-none'
+                    }`}
+                  >
+                    {/* Controls and date share one row, so STOPWATCH is no taller
+                        than MANUAL (the shared cell takes the taller of the two). */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                      <div>
+                        <span className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>{t.timerMode}</span>
+                        <div className="flex gap-2">
+                          {!isRunning ? (
+                            <button
+                              type="button"
+                              onClick={() => setIsRunning(true)}
+                              disabled={commitState === 'submitting'}
+                              className="flex-1 min-h-[42px] lg:min-h-0 lg:h-[38px] flex items-center justify-center gap-1.5 px-4 bg-emerald-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>{t.start}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsRunning(false)}
+                              className="flex-1 min-h-[42px] lg:min-h-0 lg:h-[38px] flex items-center justify-center gap-1.5 px-4 bg-amber-500 text-zinc-950 font-mono text-xs font-semibold cursor-pointer"
+                            >
+                              <Square className="w-3.5 h-3.5 fill-current" />
+                              <span>{t.pause}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={resetStopwatch}
+                            disabled={commitState === 'submitting'}
+                            className={`min-h-[42px] lg:min-h-0 lg:h-[38px] px-3 border ${borderCol} font-mono text-xs ${textMuted} cursor-pointer disabled:opacity-50 disabled:cursor-wait`}
+                          >
+                            {t.reset}
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
+                          {t.date}
+                        </label>
+                        <input
+                          type="date"
+                          value={logDate}
+                          onChange={(e) => setLogDate(e.target.value)}
+                          className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Touch-Friendly Quick Duration Preset Chips (Manual Mode) */}
-                {inputMode === 'manual' && (
-                  <div className="grid grid-cols-6 gap-1.5 font-mono text-[11px]">
-                    {[15, 30, 60, 90, 120].map((presetMin) => (
-                      <button
-                        key={presetMin}
-                        type="button"
-                        onClick={() => setDurationMinutes(presetMin)}
-                        className={`min-h-[36px] lg:min-h-0 py-1.5 border transition-colors cursor-pointer ${
-                          durationMinutes === presetMin
-                            ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                            : `${borderCol} ${textMuted} hover:border-zinc-500`
-                        }`}
-                      >
-                        {presetMin}m
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setDurationMinutes((prev) => Math.min(1440, (Number(prev) || 0) + 15))}
-                      className={`min-h-[36px] lg:min-h-0 py-1.5 border ${borderCol} text-emerald-400 hover:bg-emerald-500/10 font-bold transition-colors cursor-pointer`}
-                      title={t.add15m}
-                    >
-                      +15m
-                    </button>
-                  </div>
-                )}
 
                 <button
                   type="submit"
@@ -4107,127 +4203,384 @@ export default function App() {
                 </button>
               </form>
             </div>
-
-            {/* STUDY INSIGHTS & TELEMETRY VAULT PANEL */}
-            <div data-panel="insights" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 space-y-3 relative order-5 lg:order-none`}>
-              {!user && (
-                <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
-                  <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <p className="font-mono text-xs uppercase tracking-wider font-semibold">
-                    {t.signInInsights}
-                  </p>
+            {/* Faces and weather open over the console instead of pushing it
+                taller; the panel scrolls inside and CLOSE (or Esc) returns. */}
+            {(showWeatherPanel || showChronoPicker) && (
+              <div
+                className={`absolute inset-0 z-30 flex flex-col ${bgCard} tb-overlay-in`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowWeatherPanel(false);
+                    setShowChronoPicker(false);
+                  }
+                }}
+              >
+                <div className={`flex items-center justify-between gap-3 px-5 py-3 border-b ${borderCol} font-mono text-[10px] uppercase tracking-widest`}>
+                  <span className="font-semibold truncate">
+                    {showChronoPicker ? `${t.chronoThemesOpen} — ${activeChronoTheme.name}` : t.chronometer}
+                  </span>
+                  <button
+                    type="button"
+                    autoFocus
+                    onClick={() => {
+                      setShowWeatherPanel(false);
+                      setShowChronoPicker(false);
+                    }}
+                    className={`shrink-0 min-h-[28px] px-2 border ${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 cursor-pointer`}
+                  >
+                    {t.closeBracket}
+                  </button>
                 </div>
-              )}
+                <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 [scrollbar-width:thin]">
+                  {showWeatherPanel && (
+                    <WeatherPanel
+                      wx={weather}
+                      theme={activeWeatherTheme}
+                      progress={chronoProgress}
+                      isDark={isDark}
+                      borderCol={borderCol}
+                      textMuted={textMuted}
+                    />
+                  )}
+                  {showChronoPicker && (
+                    <ChronometerThemePicker
+                      activeThemeId={activeChronoTheme.id}
+                      onSelect={handleSelectChronoTheme}
+                      progress={chronoProgress}
+                      hh={clockReadout.hour}
+                      mm={clockReadout.minute}
+                      isDark={isDark}
+                      borderCol={borderCol}
+                      textMuted={textMuted}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+            </div>
 
-              {/* Panel Header */}
-              <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
-                <div className="flex items-center space-x-2">
-                  <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+            {/* TELEMETRY CADENCE MATRIX (7 DAYS VERTICAL x DYNAMIC WEEKS HORIZONTAL) */}
+            <div data-panel="cadence" className={`tb-corners border ${borderCol} ${bgCard} p-6 space-y-4 order-3 lg:order-none`}>
+              {/* Header & Mode Controls */}
+              <div
+                className={`flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b ${
+                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Grid3x3 className="w-4 h-4 text-emerald-500" />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                    {t.insightsTitle}
+                    {t.cadenceTitle}
                   </h2>
                 </div>
-                <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'} flex items-center space-x-1`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>{t.liveArchive}</span>
-                </span>
+
+                <div className="flex flex-wrap items-center gap-2 font-mono text-xs lg:text-[11px]">
+                  {/* Color Mode Toggle: INTENSITY (Shaded) vs BINARY (Single Signal) */}
+                  <div className={`relative flex border ${borderCol}`}>
+                    <SegmentIndicator activeKey={matrixColorMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
+                    <button
+                      type="button"
+                      onClick={() => setMatrixColorMode('intensity')}
+                      data-seg-active={matrixColorMode === 'intensity'}
+                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
+                        matrixColorMode === 'intensity'
+                          ? isDark
+                            ? 'text-zinc-950 font-semibold'
+                            : 'text-white font-semibold'
+                          : textMuted
+                      }`}
+                      title={t.shadedTitle}
+                    >
+                      {t.shaded}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatrixColorMode('binary')}
+                      data-seg-active={matrixColorMode === 'binary'}
+                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
+                        matrixColorMode === 'binary'
+                          ? isDark
+                            ? 'text-zinc-950 font-semibold'
+                            : 'text-white font-semibold'
+                          : textMuted
+                      }`}
+                      title={t.binaryTitle}
+                    >
+                      {t.binary}
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              {/* Section 1: Streak & Consistency (stat strip + 30-day cell strip) */}
-              <div className="space-y-2.5 font-mono">
+              {/* Streak & consistency (from the former STUDY INSIGHTS panel): the
+                  numbers that belong with the day matrix below. goto insights
+                  lands here. */}
+              <div data-panel="insights" className="font-mono flex flex-col gap-1.5">
                 <div className={`flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider ${textMuted}`}>
                   <span className="flex items-center gap-1.5 whitespace-nowrap">
                     <Flame className={`w-3.5 h-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
                     <span>{t.streakTitle}</span>
                   </span>
                   <span className="tabular-nums">
-                    {tf(t.activeDaysOf30, { n: streakStats.activeDaysInLast30, pct: streakStats.activeDayRatio })}
+                    {tf(t.activeDaysOf30, { n: user ? streakStats.activeDaysInLast30 : 0, pct: user ? streakStats.activeDayRatio : 0 })}
                   </span>
                 </div>
-
-                <div className={`grid grid-cols-2 sm:grid-cols-4 border-t border-l ${borderCol}`}>
+                <div className={`grid grid-cols-4 border-t border-l ${borderCol}`}>
                   {(
                     [
-                      [t.currentStreak, streakStats.currentStreak, t.unitDaysShort, isDark ? 'text-amber-400' : 'text-amber-600'],
-                      [t.allTimeRecord, streakStats.longestStreak, t.unitDaysShort, isDark ? 'text-emerald-400' : 'text-emerald-600'],
-                      [t.peakDay, logs.length ? habitInsights.peakDayName.slice(0, 3) : '—', '', ''],
-                      [t.avgSession, habitInsights.avgSessionMin, t.unitMin, ''],
+                      [t.currentStreak, user ? streakStats.currentStreak : 0, t.unitDaysShort, isDark ? 'text-amber-400' : 'text-amber-600'],
+                      [t.allTimeRecord, user ? streakStats.longestStreak : 0, t.unitDaysShort, isDark ? 'text-emerald-400' : 'text-emerald-600'],
+                      [t.peakDay, user && logs.length ? habitInsights.peakDayName.slice(0, 3) : '—', '', ''],
+                      [t.avgSession, user ? habitInsights.avgSessionMin : 0, t.unitMin, ''],
                     ] as Array<[string, string | number, string, string]>
                   ).map(([label, value, unit, tone]) => (
-                    <div key={label} className={`px-2.5 py-2 border-r border-b ${borderCol} min-w-0`}>
+                    <div key={label} className={`px-2.5 py-1.5 border-r border-b ${borderCol} min-w-0`}>
                       <span className={`block text-[9px] uppercase tracking-wider truncate ${textMuted}`}>{label}</span>
-                      <span className="mt-0.5 flex items-baseline gap-1">
-                        <span className={`text-lg leading-tight font-light tabular-nums ${tone}`}>{value}</span>
+                      <span className="flex items-baseline gap-1">
+                        <span className={`text-base leading-tight font-light tabular-nums ${tone}`}>{value}</span>
                         {unit && <span className={`text-[9px] ${textMuted}`}>{unit}</span>}
                       </span>
                     </div>
                   ))}
                 </div>
+              </div>
 
-                <div>
-                  {/* 30 segments filling left -> right: one per active day in the last 30. */}
-                  <div
-                    className="flex gap-[2px] h-3.5"
-                    role="progressbar"
-                    aria-label={t.streakTitle}
-                    aria-valuemin={0}
-                    aria-valuemax={30}
-                    aria-valuenow={streakStats.activeDaysInLast30}
+              {/* Sub-header Telemetry Readout: always two lines (span, then
+                  totals) so the panel height doesn't depend on how long they are. */}
+              <div className="flex flex-col gap-1 font-mono text-[11px] [&>*]:truncate">
+                <div className="flex items-center space-x-2">
+                  <span
+                    className={`shrink-0 px-1.5 py-px font-mono text-[10px] border ${
+                      isDark
+                        ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                        : 'border-emerald-600/40 text-emerald-700 bg-emerald-500/10'
+                    }`}
                   >
-                    {Array.from({ length: 30 }, (_, idx) => (
-                      <span
-                        key={idx}
-                        className={`flex-1 transition-colors duration-500 ${
-                          idx < streakStats.activeDaysInLast30 ? 'bg-emerald-500' : isDark ? 'bg-zinc-800/70' : 'bg-zinc-200'
-                        }`}
-                      />
-                    ))}
+                    {tf(t.epochN, { a: cadenceMatrixView.epochIndex, b: cadenceMatrixData.totalEpochs })}
+                  </span>
+                  <span className={textMuted}>{t.spanLabel}</span>
+                  <span className="font-semibold">
+                    {cadenceMatrixView.startLabel} — {cadenceMatrixView.endLabel}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <div>
+                    <span className={textMuted}>{t.activeDaysLabel}</span>
+                    <span className="font-semibold text-emerald-400">
+                      {cadenceMatrixView.activeDays}D
+                    </span>
                   </div>
-                  <div className={`mt-0.5 flex justify-between text-[9px] uppercase tracking-wider ${textMuted}`}>
-                    <span>0</span>
-                    <span>{t.strip30d}</span>
+                  <div>
+                    <span className={textMuted}>{t.blockVolume}</span>
+                    <span className="font-semibold">
+                      {(cadenceMatrixView.totalMinutes / 60).toFixed(1)}H
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Section 2: Data Vault & Export Actions */}
-              <div className={`flex flex-wrap items-center justify-between gap-2 pt-3 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'} font-mono`}>
-                <span className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${textMuted}`}>
-                  <Download className="w-3.5 h-3.5" />
-                  <span>{t.dataVault}</span>
-                </span>
-                <div className={`grid grid-cols-2 border ${borderCol} text-[10px] uppercase tracking-wider`}>
-                  <button
-                    type="button"
-                    onClick={handleExportCSV}
-                    disabled={logs.length === 0}
-                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title={t.exportCsvTitle}
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>{t.exportCsv}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportJSON}
-                    disabled={logs.length === 0}
-                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 border-l ${borderCol} flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title={t.exportJsonTitle}
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>{t.exportJson}</span>
-                  </button>
+              {/* Matrix Grid Container (7 Vertical Days x Dynamic Horizontal Weeks) */}
+              <div className="flex items-start space-x-2.5 pt-1">
+                {/* 7-Day Vertical Axis Labels (first day of week at the top) */}
+                <div
+                  className={`flex flex-col justify-between pt-[18px] font-mono text-[9px] leading-none select-none shrink-0 h-[133px] ${textMuted}`}
+                >
+                  {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d, i) => (
+                    <span key={d} className={`h-[13px] flex items-center ${i % 2 === 1 ? 'opacity-50' : ''}`}>
+                      {d}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Auto-Measured Horizontal Weeks Stream (whole history; swipe / scroll sideways) */}
+                <div
+                  ref={matrixGridContainerRef}
+                  data-weeks={matrixWeekCount}
+                  data-unit-weeks={cadenceMatrixData.unitWeeks}
+                  data-epochs={cadenceMatrixData.totalEpochs}
+                  className="flex-1 min-w-0 overflow-x-auto pb-1"
+                  onScroll={() => requestAnimationFrame(measureMatrixViewport)}
+                  onMouseLeave={() => setHoveredMatrixCell(null)}
+                >
+                  <div className="inline-flex flex-col min-w-full">
+                    {/* Month Markers Row */}
+                    <div className="flex gap-[4px] h-[14px] mb-[4px] font-mono text-[9px] leading-none select-none">
+                      {cadenceMatrixData.weeks.map((wk) => (
+                        <div key={`month-${wk.weekStartDate}`} className="w-[13px] shrink-0 relative">
+                          {wk.monthLabel && (
+                            <span className={`absolute left-0 top-0 whitespace-nowrap ${textMuted}`}>
+                              {wk.monthLabel}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Week Columns x 7 Day Cells */}
+                    <div className="flex gap-[4px] justify-between">
+                      {cadenceMatrixData.weeks.map((wk) => (
+                        <div key={wk.weekStartDate} className="flex flex-col gap-[4px] shrink-0">
+                          {wk.days.map((cell) => {
+                            const hasCommit = cell.minutes > 0;
+                            let cellStyle: string;
+
+                            if (!hasCommit) {
+                              if (cell.isFuture) {
+                                // Unfilled future capacity slot (dashed/subtle architectural blueprint)
+                                cellStyle = isDark
+                                  ? 'bg-[#0c0c0c] border-zinc-800/50 border-dashed opacity-65'
+                                  : 'bg-zinc-50/70 border-zinc-200/80 border-dashed opacity-75';
+                              } else {
+                                cellStyle = isDark
+                                  ? 'bg-zinc-900/70 border-zinc-800/90'
+                                  : 'bg-zinc-100 border-zinc-200';
+                              }
+                            } else if (matrixColorMode === 'binary') {
+                              // Binary mode: uniform crisp signal whenever any commit log is recorded
+                              cellStyle = isDark
+                                ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.25)]'
+                                : 'bg-emerald-600 border-emerald-700';
+                            } else {
+                              // Shaded intensity mode: 4 architectural telemetry tiers
+                              if (cell.minutes < 45) {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-500/30 border-emerald-500/50'
+                                  : 'bg-emerald-200 border-emerald-300';
+                              } else if (cell.minutes < 90) {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-500/55 border-emerald-500/70'
+                                  : 'bg-emerald-400 border-emerald-500';
+                              } else if (cell.minutes < 180) {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-500/80 border-emerald-400'
+                                  : 'bg-emerald-500 border-emerald-600';
+                              } else {
+                                cellStyle = isDark
+                                  ? 'bg-emerald-400 border-emerald-200 shadow-[0_0_6px_rgba(52,211,153,0.35)]'
+                                  : 'bg-emerald-700 border-emerald-900';
+                              }
+                            }
+
+                            const todayHighlight = cell.isToday
+                              ? isDark
+                                ? 'ring-1 ring-amber-400 ring-offset-1 ring-offset-[#111111]'
+                                : 'ring-1 ring-amber-600 ring-offset-1 ring-offset-white'
+                              : '';
+                            // Ambient Mode: the cell actively being recorded
+                            // into breathes slowly instead of sitting static.
+                            const ambientPulse = cell.isToday && isAmbientMode ? 'cadence-cell-pulse' : '';
+
+                            return (
+                              <div
+                                key={cell.date}
+                                onMouseEnter={() =>
+                                  setHoveredMatrixCell({
+                                    date: cell.date,
+                                    minutes: cell.minutes,
+                                    count: cell.count,
+                                    topics: cell.topics,
+                                  })
+                                }
+                                onClick={() => {
+                                  setLogDate(cell.date);
+                                }}
+                                className={`w-[13px] h-[13px] border rounded-none transition-all duration-150 cursor-pointer hover:scale-125 hover:z-10 ${cellStyle} ${todayHighlight} ${ambientPulse}`}
+                                title={`${cell.date}: ${
+                                  cell.minutes > 0
+                                    ? tf(t.cellCommits, { min: cell.minutes, h: (cell.minutes / 60).toFixed(1), n: cell.count })
+                                    : cell.isFuture
+                                    ? t.cellFuture
+                                    : t.cellEmpty
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Matrix Footer: Live Inspector Readout & Scale Key */}
+              <div
+                className={`pt-3 border-t ${
+                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
+                } flex items-center justify-between gap-3 font-mono text-[10px]`}
+              >
+                <div className="min-w-0 flex-1 truncate">
+                  {hoveredMatrixCell ? (
+                    <div className="flex items-center space-x-2">
+                      <span className="text-emerald-400 font-semibold">[{hoveredMatrixCell.date}]</span>
+                      {hoveredMatrixCell.minutes > 0 ? (
+                        <span>
+                          {tf(t.inspectCommits, {
+                            min: hoveredMatrixCell.minutes,
+                            h: (hoveredMatrixCell.minutes / 60).toFixed(1),
+                            n: hoveredMatrixCell.count,
+                          })}
+                        </span>
+                      ) : (
+                        <span className={textMuted}>{t.inspectEmpty}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className={textMuted}>
+                      {t.inspectHint}
+                    </span>
+                  )}
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center space-x-2 shrink-0 select-none">
+                  <span className={textMuted}>{t.idle}</span>
+                  <span
+                    className={`w-2.5 h-2.5 border inline-block ${
+                      isDark ? 'bg-zinc-900/70 border-zinc-800' : 'bg-zinc-100 border-zinc-200'
+                    }`}
+                  />
+                  {matrixColorMode === 'intensity' ? (
+                    <>
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-500/30 border-emerald-500/50' : 'bg-emerald-200 border-emerald-300'
+                        }`}
+                      />
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-500/55 border-emerald-500/70' : 'bg-emerald-400 border-emerald-500'
+                        }`}
+                      />
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-500/80 border-emerald-400' : 'bg-emerald-500 border-emerald-600'
+                        }`}
+                      />
+                      <span
+                        className={`w-2.5 h-2.5 border inline-block ${
+                          isDark ? 'bg-emerald-400 border-emerald-200' : 'bg-emerald-700 border-emerald-900'
+                        }`}
+                      />
+                    </>
+                  ) : (
+                    <span
+                      className={`w-2.5 h-2.5 border inline-block ${
+                        isDark ? 'bg-emerald-500 border-emerald-400' : 'bg-emerald-600 border-emerald-700'
+                      }`}
+                    />
+                  )}
+                  <span className={textMuted}>{t.committed}</span>
                 </div>
               </div>
             </div>
 
             {/* LUNAR CALENDAR PANEL */}
-            <div data-panel="lunar" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
+            <div data-panel="lunar" className={`tb-corners border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
               <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
             </div>
 
             {/* CATEGORY REGISTRY PANEL */}
-            <div data-panel="registry" className={`border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none lg:flex lg:flex-col`}>
+            <div data-panel="registry" className={`tb-corners border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none flex flex-col lg:grow`}>
               {!user && (
                 <div
                   className={`absolute inset-0 z-20 backdrop-blur-[2px] ${
@@ -4241,7 +4594,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className={`flex items-center justify-between pb-4 mb-5 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
+              <div className={`flex items-center justify-between pb-3 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <FolderPlus className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
                   <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
@@ -4260,95 +4613,56 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Add Category Form */}
-              {showCatForm && (
-                <form onSubmit={handleAddCategory} className={`mb-6 p-4 border ${borderCol} space-y-3`}>
-                  <div>
-                    <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                      {t.catName}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder={t.catNamePlaceholder}
-                      value={newCatName}
-                      onChange={(e) => setNewCatName(e.target.value)}
-                      className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                        {t.catCode}
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        maxLength={4}
-                        placeholder="MATH"
-                        value={newCatCode}
-                        onChange={(e) => setNewCatCode(e.target.value)}
-                        className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono uppercase border outline-none ${inputBg}`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                        {t.catTarget}
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={168}
-                        value={newCatTarget}
-                        onChange={(e) => setNewCatTarget(Number(e.target.value))}
-                        className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg}`}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className={`block font-mono text-[10px] uppercase ${textMuted}`}>
-                        {t.indicatorAccent}
-                      </label>
-                      <span className="font-mono text-[10px] text-zinc-400">
-                        {ACCENT_PALETTE.find((c) => c.hex === newCatColor)?.name} ({newCatColor})
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-6 gap-2.5 pt-0.5">
-                      {ACCENT_PALETTE.map((col) => (
-                        <button
-                          key={col.hex}
-                          type="button"
-                          onClick={() => setNewCatColor(col.hex)}
-                          title={`${col.name} (${col.hex})`}
-                          aria-label={tf(t.selectColor, { name: col.name })}
-                          className={`w-7 h-7 lg:w-6 lg:h-6 rounded-full border transition-all cursor-pointer ${
-                            newCatColor === col.hex
-                              ? isDark
-                                ? 'ring-2 ring-offset-2 ring-offset-[#111111] ring-zinc-200 scale-110 border-white/40'
-                                : 'ring-2 ring-offset-2 ring-offset-white ring-zinc-800 scale-110 border-black/20'
-                              : 'opacity-65 hover:opacity-100 hover:scale-105 border-transparent'
-                          }`}
-                          style={{ backgroundColor: col.hex }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <button
-                    type="submit"
-                    className={`w-full min-h-[42px] lg:min-h-0 py-2.5 lg:py-2 font-mono text-xs uppercase font-semibold cursor-pointer ${
-                      isDark ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-900 text-white'
-                    }`}
-                  >
-                    {t.create}
-                  </button>
-                </form>
-              )}
+              {/* Category editor (create + edit): opens over the registry, which keeps its size */}
+              {(showCatForm || editingCatId !== null) && (() => {
+                const editing = editingCatId !== null ? weeklyBreakdown.find((c) => String(c.id) === String(editingCatId)) : undefined;
+                const takenCodes = categories
+                  .filter((c) => editingCatId === null || String(c.id) !== String(editingCatId))
+                  .map((c) => c.code.toUpperCase());
+                const common = { takenCodes, palette: ACCENT_PALETTE, borderCol, bgCard, textMuted, inputBg, isDark };
+                return editingCatId !== null ? (
+                  <CategoryEditor
+                    key={`edit-${editingCatId}`}
+                    mode="edit"
+                    originalCode={editing?.code}
+                    name={editCatName}
+                    setName={setEditCatName}
+                    code={editCatCode}
+                    setCode={setEditCatCode}
+                    color={editCatColor}
+                    setColor={setEditCatColor}
+                    target={editCatTarget}
+                    setTarget={setEditCatTarget}
+                    active={editCatActive}
+                    setActive={setEditCatActive}
+                    weekHours={Number(editing?.hours ?? 0)}
+                    onSubmit={handleUpdateCategory}
+                    onClose={handleCancelEditCategory}
+                    {...common}
+                  />
+                ) : (
+                  <CategoryEditor
+                    key="create"
+                    mode="create"
+                    name={newCatName}
+                    setName={setNewCatName}
+                    code={newCatCode}
+                    setCode={setNewCatCode}
+                    color={newCatColor}
+                    setColor={setNewCatColor}
+                    target={newCatTarget}
+                    setTarget={setNewCatTarget}
+                    onSubmit={handleAddCategory}
+                    onClose={() => setShowCatForm(false)}
+                    {...common}
+                  />
+                );
+              })()}
 
               {/* Category List: on desktop it takes the panel's remaining height
                   (basis-0, so it never makes the column taller) and scrolls. */}
-              <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
-                {categories.length > 0 && (
+              <div className="flex-1 flex flex-col gap-3 min-h-0">
+                {(
                   <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-wider ${textMuted}`}>
                     <span>
                       {t.thisWeek} //{' '}
@@ -4359,33 +4673,41 @@ export default function App() {
                     <span className="tabular-nums">
                       {tf(t.weekResetsOn, { date: addDays(currentWeekStartStr, 7).slice(5).replace('-', '.') })}
                     </span>
-                    <span>
+                    <span className="flex items-center gap-1.5">
                       {tf(t.activeOfTotal, { a: activeCategoryCount, b: openCategories.length })}
-                    </span>
-                    <span className="basis-full normal-case tracking-normal">
-                      {tf(t.weekWindowHint, {
-                        tz: timeZone,
-                        day: t.weekdaysLong.split(',')[weekStart === 'sun' ? 0 : 1],
-                      })}
+                      {/* How the week window works, on hover / focus instead of three lines of text. */}
+                      <Info
+                        tabIndex={0}
+                        role="img"
+                        aria-label={tf(t.weekWindowHint, { tz: timeZone, day: t.weekdaysLong.split(',')[weekStart === 'sun' ? 0 : 1] })}
+                        className="w-3.5 h-3.5 shrink-0 cursor-help hover:text-emerald-400 focus:text-emerald-400 outline-none"
+                      >
+                        <title>{tf(t.weekWindowHint, { tz: timeZone, day: t.weekdaysLong.split(',')[weekStart === 'sun' ? 0 : 1] })}</title>
+                      </Info>
                     </span>
                   </div>
                 )}
+                {/* Fixed-height list box: four rows; SHOW ALL scrolls inside it.
+                    -mx-2/px-2 leaves room for the rows' hover bleed. */}
+                <div
+                  ref={categoryListRef}
+                  className="h-[var(--registry-box)] lg:h-auto lg:min-h-[var(--registry-box)] lg:flex-1 lg:basis-0 shrink-0 -mx-2 px-2 overflow-y-auto [scrollbar-width:thin] [--registry-box:286px] lg:[--registry-box:262px] space-y-3"
+                >
                 {openCategories.length === 0 ? (
-                  <div className={`py-6 text-center font-mono text-xs ${textMuted}`}>
+                  <div className={`h-full flex items-center justify-center text-center font-mono text-xs ${textMuted}`}>
                     {t.noCategoriesConfigured}
                   </div>
                 ) : (
-                  // -mx-2/px-2 leaves room for the rows' hover bleed once
-                  // the expanded list becomes a scroll box (desktop).
-                  <div
-                    className="space-y-3 -mx-2 px-2 lg:flex-1 lg:basis-0 lg:min-h-60 lg:overflow-y-auto lg:[scrollbar-width:thin]"
-                  >
+                  <>
                   {visibleCategories.map((cat) => {
                     const isEditing = String(editingCatId) === String(cat.id);
                     return (
                       <div
                         key={cat.id}
-                        className="group space-y-2 p-2 -mx-2 rounded transition-colors hover:bg-zinc-500/5"
+                        data-cat-id={String(cat.id)}
+                        className={`group space-y-2 p-2 -mx-2 rounded transition-colors hover:bg-zinc-500/5 ${
+                          String(revealCatId) === String(cat.id) ? 'log-row-flash' : ''
+                        }`}
                       >
                         <div className="flex items-center justify-between text-xs">
                           <div className={`flex items-center space-x-2 min-w-0 ${cat.isActive ? '' : 'opacity-60'}`}>
@@ -4491,270 +4813,108 @@ export default function App() {
                           <div className="w-full h-1.5 opacity-35" style={{ backgroundImage: inactiveHatch(cat.color) }} />
                         )}
 
-                        {/* Inline Category Edit Form */}
-                        {isEditing && (
-                          <form
-                            onSubmit={handleUpdateCategory}
-                            className={`mt-2 p-3.5 border ${borderCol} ${
-                              isDark ? 'bg-[#0a0a0a]/90' : 'bg-zinc-50/90'
-                            } space-y-3`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
-                                {tf(t.editCategoryHeader, { code: cat.code })}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={handleCancelEditCategory}
-                                className={`font-mono text-xs lg:text-[10px] py-1 px-2 uppercase ${textMuted} hover:underline cursor-pointer`}
-                              >
-                                {t.cancelBracket}
-                              </button>
-                            </div>
-
-                            {/* Status: active categories carry a weekly target; inactive ones are parked. */}
-                            <div>
-                              <span className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                                {t.catStatus}
-                              </span>
-                              <div className={`grid grid-cols-2 border ${borderCol} font-mono text-xs`} role="radiogroup" aria-label={t.catStatus}>
-                                {([true, false] as const).map((active) => (
-                                  <button
-                                    key={String(active)}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={editCatActive === active}
-                                    onClick={() => setEditCatActive(active)}
-                                    className={`min-h-[38px] lg:min-h-0 py-2 lg:py-1.5 flex items-center justify-center gap-1.5 uppercase tracking-wider transition-colors cursor-pointer ${
-                                      active ? '' : `border-l ${borderCol}`
-                                    } ${
-                                      editCatActive === active
-                                        ? active
-                                          ? 'bg-emerald-500 text-zinc-950 font-bold'
-                                          : `${isDark ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-300 text-zinc-900'} font-bold`
-                                        : `${textMuted} hover:opacity-100`
-                                    }`}
-                                  >
-                                    <span
-                                      className="w-2 h-2 rounded-full"
-                                      style={swatchStyle(active ? '#10b981' : '#a1a1aa', active)}
-                                    />
-                                    {active ? t.active : t.inactive}
-                                  </button>
-                                ))}
-                              </div>
-                              {!editCatActive && (
-                                <p className={`mt-1.5 text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.inactiveHint}</p>
-                              )}
-                            </div>
-
-                            <div>
-                              <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                                {t.catName}
-                              </label>
-                              <input
-                                type="text"
-                                required
-                                value={editCatName}
-                                onChange={(e) => setEditCatName(e.target.value)}
-                                className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
-                              />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                                  {t.catCode}
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  maxLength={4}
-                                  value={editCatCode}
-                                  onChange={(e) => setEditCatCode(e.target.value)}
-                                  className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono uppercase border outline-none ${inputBg}`}
-                                />
-                              </div>
-                              <div>
-                                <label className={`block font-mono text-[10px] uppercase mb-1 ${textMuted}`}>
-                                  {t.catTarget}
-                                </label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={168}
-                                  required={editCatActive}
-                                  disabled={!editCatActive}
-                                  title={editCatActive ? undefined : t.targetLockedTitle}
-                                  value={editCatTarget}
-                                  onChange={(e) => setEditCatTarget(Number(e.target.value))}
-                                  className={`w-full min-h-[40px] lg:min-h-0 px-2.5 py-2 lg:py-1.5 text-base sm:text-xs font-mono border outline-none ${inputBg} disabled:opacity-35 disabled:cursor-not-allowed disabled:line-through`}
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <label className={`block font-mono text-[10px] uppercase ${textMuted}`}>
-                                  {t.indicatorAccent}
-                                </label>
-                                <span className="font-mono text-[10px] text-zinc-400">
-                                  {ACCENT_PALETTE.find((c) => c.hex === editCatColor)?.name || t.custom} ({editCatColor})
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-6 gap-2.5 pt-0.5">
-                                {ACCENT_PALETTE.map((col) => (
-                                  <button
-                                    key={col.hex}
-                                    type="button"
-                                    onClick={() => setEditCatColor(col.hex)}
-                                    title={`${col.name} (${col.hex})`}
-                                    aria-label={tf(t.selectColor, { name: col.name })}
-                                    className={`w-7 h-7 lg:w-6 lg:h-6 rounded-full border transition-all cursor-pointer ${
-                                      editCatColor === col.hex
-                                        ? isDark
-                                          ? 'ring-2 ring-offset-2 ring-offset-[#0a0a0a] ring-zinc-200 scale-110 border-white/40'
-                                          : 'ring-2 ring-offset-2 ring-offset-zinc-50 ring-zinc-800 scale-110 border-black/20'
-                                        : 'opacity-65 hover:opacity-100 hover:scale-105 border-transparent'
-                                    }`}
-                                    style={{ backgroundColor: col.hex }}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center space-x-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={handleCancelEditCategory}
-                                className={`flex-1 min-h-[40px] lg:min-h-0 py-2 lg:py-1.5 font-mono text-xs uppercase border ${borderCol} hover:opacity-80 cursor-pointer`}
-                              >
-                                {t.cancel}
-                              </button>
-                              <button
-                                type="submit"
-                                className={`flex-1 min-h-[40px] lg:min-h-0 py-2 lg:py-1.5 font-mono text-xs uppercase font-semibold cursor-pointer ${
-                                  isDark ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300' : 'bg-zinc-900 text-white hover:bg-zinc-800'
-                                }`}
-                              >
-                                {t.saveChanges}
-                              </button>
-                            </div>
-                          </form>
-                        )}
                       </div>
                     );
                   })}
-                  </div>
+                  {showDoneCategories && doneCategories.length > 0 && (
+                    <div ref={doneListRef} className={`tb-fade-in border-t border-dashed ${borderCol} pt-1`}>
+                      <div className={`py-1 font-mono text-[10px] uppercase tracking-wider ${textMuted}`}>
+                        {tf(t.doneCategoriesFold, { n: doneCategories.length })}
+                      </div>
+                      {doneCategories.map((cat) => (
+                        <div key={cat.id} className="group flex items-center justify-between gap-2 py-1.5 text-xs">
+                          <div className="flex items-center space-x-2 min-w-0 opacity-70">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(cat.color, false)} />
+                            <span className="font-mono font-semibold text-[11px] shrink-0">[{cat.code}]</span>
+                            <span className="truncate max-w-[100px] sm:max-w-[140px] font-medium" title={cat.name}>
+                              {cat.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0">
+                            <span
+                              className={`font-mono text-[10px] tabular-nums ${textMuted}`}
+                              title={tf(t.doneAtTitle, { stamp: formatDateTime(cat.completedAt ?? '') })}
+                            >
+                              {+(cat.minutes / 60).toFixed(1)}h · {formatDateTimeInZone(cat.completedAt ?? '', timeZone).slice(0, 10).replace(/-/g, '.')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleSetCategoryDone(cat, false)}
+                              className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50 transition-all cursor-pointer`}
+                              title={tf(t.restoreCategoryCode, { code: cat.code })}
+                              aria-label={tf(t.restoreCategoryName, { name: cat.name })}
+                            >
+                              <Undo2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                              disabled={categories.length <= 1}
+                              className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 transition-all cursor-pointer`}
+                              title={tf(t.deleteCategoryCode, { code: cat.code })}
+                              aria-label={tf(t.deleteCategoryName, { name: cat.name })}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  </>
                 )}
+                </div>
 
-                {weeklyBreakdown.length > CATEGORY_PREVIEW_COUNT && !isDesktop && (
+                {/* Footer: always shown (disabled when there is nothing to
+                    reveal) so the panel keeps the same height. */}
+                <div className="grid grid-cols-2 gap-2 shrink-0 font-mono text-[10px] uppercase tracking-wider">
                   <button
                     type="button"
                     onClick={() => setShowAllCategories((v) => !v)}
+                    disabled={weeklyBreakdown.length <= CATEGORY_PREVIEW_COUNT}
                     aria-expanded={showAllCategories}
-                    className={`group w-full min-h-[38px] lg:min-h-0 flex items-center justify-between gap-3 px-2.5 py-2 border ${borderCol} font-mono text-[10px] uppercase tracking-wider ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 transition-colors cursor-pointer`}
+                    className={`min-h-[36px] flex items-center justify-between gap-2 px-2.5 py-2 border ${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:text-inherit`}
                   >
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllCategories ? 'rotate-180' : ''}`} />
-                      {showAllCategories
-                        ? t.showLessCategories
-                        : tf(t.showMoreCategories, { n: hiddenCategories.length })}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${showAllCategories ? 'rotate-180' : ''}`} />
+                      <span className="truncate">
+                        {showAllCategories
+                          ? t.showLessCategories
+                          : weeklyBreakdown.length > CATEGORY_PREVIEW_COUNT
+                          ? tf(t.showMoreCategories, { n: weeklyBreakdown.length - CATEGORY_PREVIEW_COUNT })
+                          : t.registryAllShown}
+                      </span>
                     </span>
-                    {showAllCategories ? (
-                      <span className="tabular-nums">
-                        {weeklyBreakdown.length} / {weeklyBreakdown.length}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span className="flex items-center gap-1 min-w-0 overflow-hidden">
-                          {hiddenCategories.map((cat) => (
-                            <span
-                              key={cat.id}
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={swatchStyle(cat.color, cat.isActive)}
-                              title={`[${cat.code}] ${cat.name}`}
-                            />
-                          ))}
-                        </span>
-                        <span className="tabular-nums normal-case shrink-0">
-                          {+(hiddenCategories.reduce((acc, c) => acc + c.minutes, 0) / 60).toFixed(1)}h
-                        </span>
-                      </span>
-                    )}
+                    <span className="tabular-nums shrink-0">
+                      {Math.min(weeklyBreakdown.length, showAllCategories ? weeklyBreakdown.length : CATEGORY_PREVIEW_COUNT)} / {weeklyBreakdown.length}
+                    </span>
                   </button>
-                )}
-
-                {/* DONE fold: finished one-off categories, out of the way but restorable */}
-                {doneCategories.length > 0 && (
-                  <div className={`border border-dashed ${borderCol}`}>
-                    <button
-                      type="button"
-                      onClick={() => setShowDoneCategories((v) => !v)}
-                      aria-expanded={showDoneCategories}
-                      className={`w-full min-h-[38px] lg:min-h-0 flex items-center justify-between gap-3 px-2.5 py-2 font-mono text-[10px] uppercase tracking-wider ${textMuted} hover:text-emerald-400 transition-colors cursor-pointer`}
-                    >
-                      <span className="flex items-center gap-1.5 shrink-0">
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDoneCategories ? 'rotate-180' : ''}`} />
-                        {tf(t.doneCategoriesFold, { n: doneCategories.length })}
-                      </span>
-                      <span className="tabular-nums normal-case shrink-0">
-                        {+(doneCategories.reduce((acc, c) => acc + c.minutes, 0) / 60).toFixed(1)}h
-                      </span>
-                    </button>
-
-                    {showDoneCategories && (
-                      <div className={`border-t border-dashed ${borderCol} px-2.5 py-1`}>
-                        {doneCategories.map((cat) => (
-                          <div key={cat.id} className="group flex items-center justify-between gap-2 py-1.5 text-xs">
-                            <div className="flex items-center space-x-2 min-w-0 opacity-70">
-                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={swatchStyle(cat.color, false)} />
-                              <span className="font-mono font-semibold text-[11px] shrink-0">[{cat.code}]</span>
-                              <span className="truncate max-w-[100px] sm:max-w-[140px] font-medium" title={cat.name}>
-                                {cat.name}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0">
-                              <span
-                                className={`font-mono text-[10px] tabular-nums ${textMuted}`}
-                                title={tf(t.doneAtTitle, { stamp: formatDateTime(cat.completedAt ?? '') })}
-                              >
-                                {+(cat.minutes / 60).toFixed(1)}h · {formatDateTimeInZone(cat.completedAt ?? '', timeZone).slice(0, 10).replace(/-/g, '.')}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleSetCategoryDone(cat, false)}
-                                className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-emerald-400 hover:border-emerald-500/50 transition-all cursor-pointer`}
-                                title={tf(t.restoreCategoryCode, { code: cat.code })}
-                                aria-label={tf(t.restoreCategoryName, { name: cat.name })}
-                              >
-                                <Undo2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                                disabled={categories.length <= 1}
-                                className={`p-2 lg:p-1.5 border ${borderCol} ${textMuted} opacity-80 lg:opacity-45 lg:group-hover:opacity-100 hover:text-rose-500 hover:border-rose-500/50 transition-all cursor-pointer`}
-                                title={tf(t.deleteCategoryCode, { code: cat.code })}
-                                aria-label={tf(t.deleteCategoryName, { name: cat.name })}
-                              >
-                                <Trash2 className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => setShowDoneCategories((v) => !v)}
+                    disabled={doneCategories.length === 0}
+                    aria-expanded={showDoneCategories}
+                    className={`min-h-[36px] flex items-center justify-between gap-2 px-2.5 py-2 border border-dashed ${borderCol} ${textMuted} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:text-inherit`}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${showDoneCategories ? 'rotate-180' : ''}`} />
+                      <span className="truncate">{tf(t.doneCategoriesFold, { n: doneCategories.length })}</span>
+                    </span>
+                    <span className="tabular-nums normal-case shrink-0">
+                      {+(doneCategories.reduce((acc, c) => acc + c.minutes, 0) / 60).toFixed(1)}h
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Analytics, Cadence, Chronological Stream, Forecast */}
-          <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-7 lg:[&>*:last-child]:grow">
+          {/* RIGHT COLUMN: Analytics, Chronological Stream, Forecast, Study
+              Rhythm. Study Rhythm is the one panel that grows to line the
+              columns up: its charts simply get taller. */}
+          <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-7">
             {/* ANALYTICS MODULE */}
-            <div data-panel="analytics" className={`border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
+            <div data-panel="analytics" className={`tb-corners border ${borderCol} ${bgCard} p-6 order-4 lg:order-none`}>
               <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-6 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <BarChart3 className="w-4 h-4 text-emerald-500" />
@@ -4833,6 +4993,9 @@ export default function App() {
                 </div>
               </div>
 
+              {/* The four views share one fixed-height area and fade in on
+                  switch, so the panel never jumps between WEEK / 12W / 12M / CAL. */}
+              <div key={periodView} className="tb-fade-in min-h-[var(--analytics-views)] [--analytics-views:580px] lg:[--analytics-views:513px]">
               {/* View A: 7D Daily Chart (1 Bar = 1 Day) */}
               {periodView === 'weekly' && (
                 <div className="space-y-4 seg-view-enter">
@@ -5187,6 +5350,8 @@ export default function App() {
                 </div>
               )}
 
+              </div>
+
               {/* TIMELINE SCRUBBER & SLIDER (BOTTOM NAVIGATION) */}
               <div className={`mt-6 pt-5 border-t ${borderCol} space-y-3`}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
@@ -5290,289 +5455,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* TELEMETRY CADENCE MATRIX (7 DAYS VERTICAL x DYNAMIC WEEKS HORIZONTAL) */}
-            <div data-panel="cadence" className={`border ${borderCol} ${bgCard} p-6 space-y-4 order-3 lg:order-none`}>
-              {/* Header & Mode Controls */}
-              <div
-                className={`flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b ${
-                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
-                }`}
-              >
-                <div className="flex items-center space-x-2.5">
-                  <Grid3x3 className="w-4 h-4 text-emerald-500" />
-                  <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                    {t.cadenceTitle}
-                  </h2>
-                  <span
-                    className={`px-1.5 py-0.5 font-mono text-[10px] border ${
-                      isDark
-                        ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
-                        : 'border-emerald-600/40 text-emerald-700 bg-emerald-500/10'
-                    }`}
-                  >
-                    {tf(t.epochN, { a: cadenceMatrixView.epochIndex, b: cadenceMatrixData.totalEpochs })}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 font-mono text-xs lg:text-[11px]">
-                  {/* Color Mode Toggle: INTENSITY (Shaded) vs BINARY (Single Signal) */}
-                  <div className={`relative flex border ${borderCol}`}>
-                    <SegmentIndicator activeKey={matrixColorMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
-                    <button
-                      type="button"
-                      onClick={() => setMatrixColorMode('intensity')}
-                      data-seg-active={matrixColorMode === 'intensity'}
-                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
-                        matrixColorMode === 'intensity'
-                          ? isDark
-                            ? 'text-zinc-950 font-semibold'
-                            : 'text-white font-semibold'
-                          : textMuted
-                      }`}
-                      title={t.shadedTitle}
-                    >
-                      {t.shaded}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMatrixColorMode('binary')}
-                      data-seg-active={matrixColorMode === 'binary'}
-                      className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
-                        matrixColorMode === 'binary'
-                          ? isDark
-                            ? 'text-zinc-950 font-semibold'
-                            : 'text-white font-semibold'
-                          : textMuted
-                      }`}
-                      title={t.binaryTitle}
-                    >
-                      {t.binary}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sub-header Telemetry Readout */}
-              <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
-                <div className="flex items-center space-x-2">
-                  <span className={textMuted}>{t.spanLabel}</span>
-                  <span className="font-semibold">
-                    {cadenceMatrixView.startLabel} — {cadenceMatrixView.endLabel}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-4">
-                  <div>
-                    <span className={textMuted}>{t.activeDaysLabel}</span>
-                    <span className="font-semibold text-emerald-400">
-                      {cadenceMatrixView.activeDays}D
-                    </span>
-                  </div>
-                  <div>
-                    <span className={textMuted}>{t.blockVolume}</span>
-                    <span className="font-semibold">
-                      {(cadenceMatrixView.totalMinutes / 60).toFixed(1)}H
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Matrix Grid Container (7 Vertical Days x Dynamic Horizontal Weeks) */}
-              <div className="flex items-start space-x-2.5 pt-1">
-                {/* 7-Day Vertical Axis Labels (first day of week at the top) */}
-                <div
-                  className={`flex flex-col justify-between pt-[18px] font-mono text-[9px] leading-none select-none shrink-0 h-[133px] ${textMuted}`}
-                >
-                  {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d, i) => (
-                    <span key={d} className={`h-[13px] flex items-center ${i % 2 === 1 ? 'opacity-50' : ''}`}>
-                      {d}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Auto-Measured Horizontal Weeks Stream (whole history; swipe / scroll sideways) */}
-                <div
-                  ref={matrixGridContainerRef}
-                  data-weeks={matrixWeekCount}
-                  data-unit-weeks={cadenceMatrixData.unitWeeks}
-                  data-epochs={cadenceMatrixData.totalEpochs}
-                  className="flex-1 min-w-0 overflow-x-auto pb-1"
-                  onScroll={() => requestAnimationFrame(measureMatrixViewport)}
-                  onMouseLeave={() => setHoveredMatrixCell(null)}
-                >
-                  <div className="inline-flex flex-col min-w-full">
-                    {/* Month Markers Row */}
-                    <div className="flex gap-[4px] h-[14px] mb-[4px] font-mono text-[9px] leading-none select-none">
-                      {cadenceMatrixData.weeks.map((wk) => (
-                        <div key={`month-${wk.weekStartDate}`} className="w-[13px] shrink-0 relative">
-                          {wk.monthLabel && (
-                            <span className={`absolute left-0 top-0 whitespace-nowrap ${textMuted}`}>
-                              {wk.monthLabel}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Week Columns x 7 Day Cells */}
-                    <div className="flex gap-[4px] justify-between">
-                      {cadenceMatrixData.weeks.map((wk) => (
-                        <div key={wk.weekStartDate} className="flex flex-col gap-[4px] shrink-0">
-                          {wk.days.map((cell) => {
-                            const hasCommit = cell.minutes > 0;
-                            let cellStyle: string;
-
-                            if (!hasCommit) {
-                              if (cell.isFuture) {
-                                // Unfilled future capacity slot (dashed/subtle architectural blueprint)
-                                cellStyle = isDark
-                                  ? 'bg-[#0c0c0c] border-zinc-800/50 border-dashed opacity-65'
-                                  : 'bg-zinc-50/70 border-zinc-200/80 border-dashed opacity-75';
-                              } else {
-                                cellStyle = isDark
-                                  ? 'bg-zinc-900/70 border-zinc-800/90'
-                                  : 'bg-zinc-100 border-zinc-200';
-                              }
-                            } else if (matrixColorMode === 'binary') {
-                              // Binary mode: uniform crisp signal whenever any commit log is recorded
-                              cellStyle = isDark
-                                ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.25)]'
-                                : 'bg-emerald-600 border-emerald-700';
-                            } else {
-                              // Shaded intensity mode: 4 architectural telemetry tiers
-                              if (cell.minutes < 45) {
-                                cellStyle = isDark
-                                  ? 'bg-emerald-500/30 border-emerald-500/50'
-                                  : 'bg-emerald-200 border-emerald-300';
-                              } else if (cell.minutes < 90) {
-                                cellStyle = isDark
-                                  ? 'bg-emerald-500/55 border-emerald-500/70'
-                                  : 'bg-emerald-400 border-emerald-500';
-                              } else if (cell.minutes < 180) {
-                                cellStyle = isDark
-                                  ? 'bg-emerald-500/80 border-emerald-400'
-                                  : 'bg-emerald-500 border-emerald-600';
-                              } else {
-                                cellStyle = isDark
-                                  ? 'bg-emerald-400 border-emerald-200 shadow-[0_0_6px_rgba(52,211,153,0.35)]'
-                                  : 'bg-emerald-700 border-emerald-900';
-                              }
-                            }
-
-                            const todayHighlight = cell.isToday
-                              ? isDark
-                                ? 'ring-1 ring-amber-400 ring-offset-1 ring-offset-[#111111]'
-                                : 'ring-1 ring-amber-600 ring-offset-1 ring-offset-white'
-                              : '';
-                            // Ambient Mode: the cell actively being recorded
-                            // into breathes slowly instead of sitting static.
-                            const ambientPulse = cell.isToday && isAmbientMode ? 'cadence-cell-pulse' : '';
-
-                            return (
-                              <div
-                                key={cell.date}
-                                onMouseEnter={() =>
-                                  setHoveredMatrixCell({
-                                    date: cell.date,
-                                    minutes: cell.minutes,
-                                    count: cell.count,
-                                    topics: cell.topics,
-                                  })
-                                }
-                                onClick={() => {
-                                  setLogDate(cell.date);
-                                }}
-                                className={`w-[13px] h-[13px] border rounded-none transition-all duration-150 cursor-pointer hover:scale-125 hover:z-10 ${cellStyle} ${todayHighlight} ${ambientPulse}`}
-                                title={`${cell.date}: ${
-                                  cell.minutes > 0
-                                    ? tf(t.cellCommits, { min: cell.minutes, h: (cell.minutes / 60).toFixed(1), n: cell.count })
-                                    : cell.isFuture
-                                    ? t.cellFuture
-                                    : t.cellEmpty
-                                }`}
-                              />
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Matrix Footer: Live Inspector Readout & Scale Key */}
-              <div
-                className={`pt-3 border-t ${
-                  isDark ? 'border-zinc-800/60' : 'border-zinc-200'
-                } flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]`}
-              >
-                <div className="truncate max-w-md">
-                  {hoveredMatrixCell ? (
-                    <div className="flex items-center space-x-2">
-                      <span className="text-emerald-400 font-semibold">[{hoveredMatrixCell.date}]</span>
-                      {hoveredMatrixCell.minutes > 0 ? (
-                        <span>
-                          {tf(t.inspectCommits, {
-                            min: hoveredMatrixCell.minutes,
-                            h: (hoveredMatrixCell.minutes / 60).toFixed(1),
-                            n: hoveredMatrixCell.count,
-                          })}
-                        </span>
-                      ) : (
-                        <span className={textMuted}>{t.inspectEmpty}</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className={textMuted}>
-                      {t.inspectHint}
-                    </span>
-                  )}
-                </div>
-
-                {/* Legend */}
-                <div className="flex items-center space-x-2 shrink-0 select-none">
-                  <span className={textMuted}>{t.idle}</span>
-                  <span
-                    className={`w-2.5 h-2.5 border inline-block ${
-                      isDark ? 'bg-zinc-900/70 border-zinc-800' : 'bg-zinc-100 border-zinc-200'
-                    }`}
-                  />
-                  {matrixColorMode === 'intensity' ? (
-                    <>
-                      <span
-                        className={`w-2.5 h-2.5 border inline-block ${
-                          isDark ? 'bg-emerald-500/30 border-emerald-500/50' : 'bg-emerald-200 border-emerald-300'
-                        }`}
-                      />
-                      <span
-                        className={`w-2.5 h-2.5 border inline-block ${
-                          isDark ? 'bg-emerald-500/55 border-emerald-500/70' : 'bg-emerald-400 border-emerald-500'
-                        }`}
-                      />
-                      <span
-                        className={`w-2.5 h-2.5 border inline-block ${
-                          isDark ? 'bg-emerald-500/80 border-emerald-400' : 'bg-emerald-500 border-emerald-600'
-                        }`}
-                      />
-                      <span
-                        className={`w-2.5 h-2.5 border inline-block ${
-                          isDark ? 'bg-emerald-400 border-emerald-200' : 'bg-emerald-700 border-emerald-900'
-                        }`}
-                      />
-                    </>
-                  ) : (
-                    <span
-                      className={`w-2.5 h-2.5 border inline-block ${
-                        isDark ? 'bg-emerald-500 border-emerald-400' : 'bg-emerald-600 border-emerald-700'
-                      }`}
-                    />
-                  )}
-                  <span className={textMuted}>{t.committed}</span>
-                </div>
-              </div>
-            </div>
-
             {/* CHRONOLOGICAL LOG STREAM (always last on phones) */}
-            <div data-panel="stream" className={`border ${borderCol} ${bgCard} p-6 order-9 lg:order-none`}>
+            <div data-panel="stream" className={`tb-corners border ${borderCol} ${bgCard} p-6 order-9 lg:order-none flex flex-col`}>
               <div className={`flex items-center justify-between pb-4 mb-4 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                 <div className="flex items-center space-x-2">
                   <Terminal className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -5585,31 +5469,24 @@ export default function App() {
                 </span>
               </div>
 
-              {dataLoading ? (
-                <div className="py-12 flex items-center justify-center space-x-2 font-mono text-xs text-zinc-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t.loadingRecords}</span>
-                </div>
-              ) : logs.length === 0 ? (
-                <div className={`py-12 text-center font-mono text-xs ${textMuted}`}>
-                  {user ? t.noLogs : t.authToViewLogs}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div
-                    ref={logListRef}
-                    className={`relative divide-y ${isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'} ${
-                      logStreamExpanded && logListCap
-                        ? 'lg:max-h-[var(--log-list-cap)] lg:overflow-y-auto lg:pr-2 lg:[scrollbar-width:thin]'
-                        : ''
-                    }`}
-                    style={
-                      logStreamExpanded && logListCap
-                        ? ({ '--log-list-cap': `${logListCap}px` } as React.CSSProperties)
-                        : undefined
-                    }
-                  >
-                    {logs.slice(0, visibleLogCount).map((log) => {
+              <div className="flex flex-col gap-4">
+                <div
+                  ref={logListRef}
+                  className={`relative h-[var(--stream-box)] overflow-y-auto pr-1 [scrollbar-width:thin] [--stream-box:416px] sm:[--stream-box:268px] divide-y ${
+                    isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'
+                  }`}
+                >
+                  {dataLoading ? (
+                    <div className="h-full flex items-center justify-center space-x-2 font-mono text-xs text-zinc-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{t.loadingRecords}</span>
+                    </div>
+                  ) : logs.length === 0 ? (
+                    <div className={`h-full flex items-center justify-center text-center font-mono text-xs ${textMuted}`}>
+                      {user ? t.noLogs : t.authToViewLogs}
+                    </div>
+                  ) : (
+                    logs.slice(0, visibleLogCount).map((log, logIdx) => {
                       const cat = categories.find((c) => String(c.id) === String(log.categoryId));
                       const isEditingLog = String(editingLogId) === String(log.id);
                       return (
@@ -5617,7 +5494,7 @@ export default function App() {
                           key={log.id}
                           className={`py-3 space-y-3 group ${
                             String(flashLogId) === String(log.id) ? 'log-row-flash' : ''
-                          }`}
+                          } ${logIdx >= baseVisibleLogs ? 'tb-fade-in' : ''}`}
                         >
                           <div className="flex items-center justify-between gap-4">
                             {/* Line 1: category identity. Line 2: when + how long. */}
@@ -5778,71 +5655,79 @@ export default function App() {
                           )}
                         </div>
                       );
-                    })}
-                  </div>
-
-                  {logs.length > INITIAL_VISIBLE_LOGS && (
-                    <div className={`pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 border-t ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'} font-mono text-xs`}>
-                      <span className={`text-[11px] ${textMuted}`}>
-                        {tf(t.displayingOf, { a: Math.min(visibleLogCount, logs.length), b: logs.length })}
-                      </span>
-                      <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
-                        {visibleLogCount < logs.length && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setExtraVisibleLogs((prev) => prev + Math.min(10, logs.length - visibleLogCount))}
-                              className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-4 py-2 lg:px-3.5 lg:py-1.5 border ${borderCol} ${
-                                isDark
-                                  ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
-                                  : 'text-emerald-700 border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100'
-                              } font-bold transition-colors cursor-pointer`}
-                            >
-                              {tf(t.showMore, { n: Math.min(10, logs.length - visibleLogCount) })}
-                            </button>
-                            {logs.length - visibleLogCount > 10 && (
-                              <button
-                                type="button"
-                                onClick={() => setExtraVisibleLogs(logs.length - INITIAL_VISIBLE_LOGS)}
-                                className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 border ${borderCol} ${
-                                  isDark
-                                    ? 'text-zinc-300 hover:text-white hover:bg-zinc-800/40'
-                                    : 'text-black hover:bg-zinc-100 hover:border-zinc-800'
-                                } hover:border-zinc-500 transition-colors cursor-pointer`}
-                              >
-                                {tf(t.showAll, { n: logs.length })}
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {visibleLogCount > INITIAL_VISIBLE_LOGS && (
-                          <button
-                            type="button"
-                            onClick={() => setExtraVisibleLogs(0)}
-                            className={`flex-1 sm:flex-initial min-h-[40px] lg:min-h-0 px-3.5 py-2 lg:px-3 lg:py-1.5 border ${borderCol} ${
-                              isDark
-                                ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-                                : 'text-zinc-700 hover:text-black hover:bg-zinc-100'
-                            } transition-colors cursor-pointer`}
-                          >
-                            {t.collapse}
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    })
                   )}
                 </div>
-              )}
+
+                {/* Footer: always shown (buttons disabled when there is
+                    nothing to reveal) so the panel keeps its height. */}
+                <div className={`pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 border-t ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'} font-mono text-xs`}>
+                  <span className={`text-[11px] ${textMuted}`}>
+                    {tf(t.displayingOf, { a: Math.min(visibleLogCount, logs.length), b: logs.length })}
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      disabled={visibleLogCount >= logs.length}
+                      onClick={() => setExtraVisibleLogs((prev) => prev + Math.min(10, logs.length - visibleLogCount))}
+                      className={`col-span-2 sm:col-span-1 min-h-[40px] lg:min-h-0 px-3 py-2 lg:py-1.5 border whitespace-nowrap ${
+                        isDark
+                          ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
+                          : 'text-emerald-700 border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100'
+                      } font-bold transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-default`}
+                    >
+                      {tf(t.showMore, { n: Math.max(0, Math.min(10, logs.length - visibleLogCount)) })}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={visibleLogCount >= logs.length}
+                      onClick={() => setExtraVisibleLogs(Math.max(0, logs.length - baseVisibleLogs))}
+                      className={`min-h-[40px] lg:min-h-0 px-3 py-2 lg:py-1.5 border ${borderCol} whitespace-nowrap ${
+                        isDark ? 'text-zinc-300 hover:text-white hover:bg-zinc-800/40' : 'text-black hover:bg-zinc-100 hover:border-zinc-800'
+                      } transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-default`}
+                    >
+                      {tf(t.showAll, { n: logs.length })}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={visibleLogCount <= baseVisibleLogs}
+                      onClick={() => {
+                        setExtraVisibleLogs(0);
+                        logListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className={`min-h-[40px] lg:min-h-0 px-3 py-2 lg:py-1.5 border ${borderCol} whitespace-nowrap ${
+                        isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40' : 'text-zinc-700 hover:text-black hover:bg-zinc-100'
+                      } transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-default`}
+                    >
+                      {t.collapse}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* FORECAST PANEL (Clearance projection from recent pace, computed client-side) */}
-            <div data-panel="forecast" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none`}>
+            <div data-panel="forecast" className={`tb-corners border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none min-h-[var(--forecast-h)] [--forecast-h:478px] lg:[--forecast-h:353px]`}>
               <Forecast
                 logs={user ? logs : []}
                 todayStr={todayStr}
                 clearance={clearanceStatus}
                 textMuted={textMuted}
                 isDark={isDark}
+              />
+            </div>
+
+            {/* STUDY RHYTHM: when you study (hour of day, weekday). On desktop it
+                takes the right column's slack, so its charts just get taller. */}
+            <div data-panel="rhythm" className={`tb-corners border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-8 lg:order-none lg:grow`}>
+              <StudyRhythm
+                logs={user ? logs : []}
+                todayStr={todayStr}
+                timeZone={timeZone}
+                weekStart={weekStart}
+                textMuted={textMuted}
+                isDark={isDark}
+                borderCol={borderCol}
               />
             </div>
           </div>
@@ -6547,22 +6432,14 @@ export default function App() {
                       </label>
                       <span className="text-[10px] text-zinc-400">{profileAvatarColor}</span>
                     </div>
-                    <div className="grid grid-cols-9 sm:grid-cols-12 gap-2 pt-0.5">
-                      {ACCENT_PALETTE.map((col) => (
-                        <button
-                          key={`avatar-col-${col.hex}`}
-                          type="button"
-                          onClick={() => setProfileAvatarColor(col.hex)}
-                          title={`${col.name} (${col.hex})`}
-                          className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
-                            profileAvatarColor === col.hex
-                              ? 'ring-2 ring-offset-2 ring-offset-zinc-900 ring-white scale-110'
-                              : 'opacity-65 hover:opacity-100 hover:scale-105 border-transparent'
-                          }`}
-                          style={{ backgroundColor: col.hex }}
-                        />
-                      ))}
-                    </div>
+                    <ColorSwatchGrid
+                      palette={ACCENT_PALETTE}
+                      value={profileAvatarColor}
+                      onChange={setProfileAvatarColor}
+                      isDark={isDark}
+                      label={t.avatarColor}
+                      className="max-w-md"
+                    />
                   </div>
                 </div>
 
@@ -6882,6 +6759,61 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Reset BITS & MY ROOM only (keep logs and categories) */}
+                <div className="p-4 border border-sky-500/30 bg-sky-500/5 space-y-3">
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-sky-400 uppercase tracking-wider">
+                    <BitShard className="w-3 h-3 shrink-0" />
+                    <span>{t.resetBitsTitle}</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.resetBitsBody, { n: logs.length })}{' '}
+                    <span className="font-mono font-bold text-sky-400">RESET</span> {t.resetBitsBodyTail}
+                  </p>
+                  <p className="text-[11px] font-sans leading-relaxed text-sky-400/90">
+                    {tf(t.resetBitsAfter, {
+                      bits: bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)).toLocaleString('en-US'),
+                      rate: BITS_PER_HOUR,
+                    })}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder={t.typeReset}
+                      value={resetBitsConfirmText}
+                      onChange={(e) => setResetBitsConfirmText(e.target.value)}
+                      className={`flex-1 min-w-0 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
+                    />
+                    <button
+                      type="button"
+                      disabled={resetBitsConfirmText !== 'RESET' || resettingBits || resetDone === 'bits'}
+                      aria-busy={resettingBits}
+                      onClick={handleResetBits}
+                      className={`px-3.5 py-1.5 bg-sky-500 text-zinc-950 font-bold uppercase whitespace-nowrap flex items-center gap-1.5 ${
+                        resetDone === 'bits'
+                          ? 'reset-done-sky cursor-default'
+                          : resettingBits
+                          ? 'opacity-70 cursor-wait'
+                          : 'disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed'
+                      }`}
+                    >
+                      {resettingBits ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {t.resettingBits}
+                        </>
+                      ) : resetDone === 'bits' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 typbox-toast-pop" />
+                          {t.resetDone}
+                        </>
+                      ) : (
+                        t.resetBitsButton
+                      )}
+                    </button>
+                  </div>
+                  {bitsReceipt && <ResetReceipt key={bitsReceipt.at} receipt={bitsReceipt} tone="sky" textMuted={textMuted} />}
+                </div>
+
                 {/* Reset All Study Logs & Categories (Keep Account) */}
                 <div className="p-4 border border-amber-500/30 bg-amber-500/5 space-y-3">
                   <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
@@ -6895,27 +6827,48 @@ export default function App() {
                     <BitShard className="w-3 h-3 shrink-0 mt-0.5" />
                     <span>{tf(t.resetLogsBits, { rate: BITS_PER_HOUR })}</span>
                   </p>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-2">
                     <input
                       type="text"
                       placeholder={t.typeClear}
                       value={clearLogsConfirmText}
                       onChange={(e) => setClearLogsConfirmText(e.target.value)}
-                      className={`flex-1 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
+                      className={`flex-1 min-w-0 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
                     />
                     <button
                       type="button"
                       disabled={
                         clearLogsConfirmText !== 'CLEAR' ||
                         clearingLogs ||
+                        resetDone === 'logs' ||
                         (logs.length === 0 && categories.length === 0 && !(user?.bits?.spent ?? 0))
                       }
+                      aria-busy={clearingLogs}
                       onClick={handleClearAllLogs}
-                      className="px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                      className={`px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase whitespace-nowrap flex items-center gap-1.5 ${
+                        resetDone === 'logs'
+                          ? 'reset-done-amber cursor-default'
+                          : clearingLogs
+                          ? 'opacity-70 cursor-wait'
+                          : 'disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed'
+                      }`}
                     >
-                      {clearingLogs ? t.clearing : t.clearLogs}
+                      {clearingLogs ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {t.clearing}
+                        </>
+                      ) : resetDone === 'logs' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 typbox-toast-pop" />
+                          {t.resetDone}
+                        </>
+                      ) : (
+                        t.clearLogs
+                      )}
                     </button>
                   </div>
+                  {clearReceipt && <ResetReceipt key={clearReceipt.at} receipt={clearReceipt} tone="amber" textMuted={textMuted} />}
                 </div>
 
                 {/* Danger Zone: Permanent Account Deletion */}

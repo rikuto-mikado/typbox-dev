@@ -284,13 +284,19 @@ export const api = {
   },
   bits: {
     get: async () => apiFetch<BitsShopState>('/bits/'),
-    /** `category`: CATEGORY LOCK's target (ignored by every other item). */
     /** Ends the running buff early; `refunded` is what came back. */
     cancel: async () =>
       apiFetch<BitsShopState & { refunded: number }>('/bits/cancel/', {
         method: 'POST',
         body: JSON.stringify({}),
       }),
+    /** Starts BITS and MY ROOM over; study logs and categories stay. */
+    reset: async () =>
+      apiFetch<BitsShopState & { deleted_purchases: number; cleared_bonus_logs: number }>('/bits/reset/', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    /** `category`: CATEGORY LOCK's target (ignored by every other item). */
     buy: async (item_id: string, category?: string | number) =>
       apiFetch<BitsShopState>('/bits/buy/', {
         method: 'POST',

@@ -227,11 +227,88 @@ canvas {
   animation: log-row-flash 2.4s ease-out;
 }
 
+/* Reset receipts (ResetReceipt.tsx): the card flashes once, then the
+   lines print one after another like a terminal. */
+@keyframes reset-receipt-sky {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.55);
+    background-color: rgba(14, 165, 233, 0.18);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(14, 165, 233, 0);
+  }
+}
+
+@keyframes reset-receipt-amber {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.55);
+    background-color: rgba(245, 158, 11, 0.18);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes reset-done-sky {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.65);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(14, 165, 233, 0);
+  }
+}
+
+@keyframes reset-done-amber {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.65);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+  }
+}
+
+/* The button itself keeps its fill; only a ring pulses out (like COMMITTED). */
+.reset-done-sky {
+  animation: reset-done-sky 700ms ease-out;
+}
+
+.reset-done-amber {
+  animation: reset-done-amber 700ms ease-out;
+}
+
+.reset-receipt-sky {
+  animation: reset-receipt-sky 900ms ease-out;
+}
+
+.reset-receipt-amber {
+  animation: reset-receipt-amber 900ms ease-out;
+}
+
+@keyframes reset-receipt-line {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.reset-receipt-line {
+  animation: reset-receipt-line 220ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .typbox-toast,
   .typbox-toast-pop,
   .commit-success-flash,
-  .log-row-flash {
+  .log-row-flash,
+  .reset-receipt-sky,
+  .reset-receipt-amber,
+  .reset-done-sky,
+  .reset-done-amber,
+  .reset-receipt-line {
     animation: none;
   }
 }
@@ -918,6 +995,84 @@ canvas {
 ========================================== */
 [data-panel] {
   scroll-margin-top: 5.5rem;
+}
+
+/* ==========================================
+   Fixed-size panels: content that swaps or opens inside a panel fades in
+   instead of the panel growing (console overlays, analytics views, rows
+   revealed by SHOW MORE / SHOW ALL).
+========================================== */
+@keyframes tb-overlay-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.tb-overlay-in {
+  animation: tb-overlay-in 220ms ease-out both;
+}
+@keyframes tb-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tb-fade-in {
+  animation: tb-fade-in 260ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-overlay-in,
+  .tb-fade-in {
+    animation: none;
+  }
+}
+
+/* ==========================================
+   Panel corner brackets: each dashboard panel carries a short bracket in
+   the surface theme's accent colour on its four corners (an
+   instrument-panel frame) that reaches a little further while the pointer
+   is over the panel. Layered so a Tailwind utility on the panel still wins.
+========================================== */
+@property --tb-corner-len {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 10px;
+}
+@layer components {
+  .tb-corners {
+    position: relative;
+  }
+  .tb-corners::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: 1;
+    pointer-events: none;
+    /* The active surface theme's accent (App sets --tb-accent; emerald until
+       it loads), pulled a little toward the text colour so a pale accent
+       (e-ink, chalk) still shows on a light card and a deep one on a dark card. */
+    --tb-corner: color-mix(in srgb, var(--tb-accent, rgb(16 185 129)) 90%, var(--tb-text-main, currentColor));
+    --tb-corner-w: 2px;
+    background:
+      linear-gradient(var(--tb-corner), var(--tb-corner)) top left / var(--tb-corner-len) var(--tb-corner-w),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) top left / var(--tb-corner-w) var(--tb-corner-len),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) top right / var(--tb-corner-len) var(--tb-corner-w),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) top right / var(--tb-corner-w) var(--tb-corner-len),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) bottom left / var(--tb-corner-len) var(--tb-corner-w),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) bottom left / var(--tb-corner-w) var(--tb-corner-len),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) bottom right / var(--tb-corner-len) var(--tb-corner-w),
+      linear-gradient(var(--tb-corner), var(--tb-corner)) bottom right / var(--tb-corner-w) var(--tb-corner-len);
+    background-repeat: no-repeat;
+    transition: --tb-corner-len 260ms ease-out;
+  }
+  /* Light surfaces: lean further toward the (dark) text so pale accents read. */
+  :root:not(.dark) .tb-corners::before {
+    --tb-corner: color-mix(in srgb, var(--tb-accent, rgb(16 185 129)) 70%, var(--tb-text-main, currentColor));
+  }
+  .tb-corners:hover::before {
+    --tb-corner-len: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-corners::before {
+    transition: none;
+  }
 }
 .tb-panel-ping {
   animation: tb-panel-ping 1.4s ease-out;

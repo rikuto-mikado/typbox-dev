@@ -30,16 +30,16 @@ export interface CategoryTrendTableProps {
   onHighlight: (idx: number | null) => void;
 }
 
-// Collapsed view shows this many top categories; the remainder is folded
-// into a single OTHER row so column totals still add up.
+// The table is a fixed-size block: TOP 5 rows, a "+N" row for the rest (it
+// reads +0 when there is nothing to fold) and TOTAL, always, so switching
+// windows, adding categories or signing out never changes its height.
+// Fewer than five busy categories leave blank rows; SHOW ALL scrolls the
+// full list inside the same box instead of growing it.
 const COLLAPSED_ROW_LIMIT = 5;
 const EXPANDED_STORAGE_KEY = 'typbox_trend_expanded';
-// The legend lists every category, which with a dozen-plus of them ran to
-// six-odd lines and stretched the whole analytics panel (and, through the
-// column alignment, the lunar calendar beside it). Collapsed it keeps the
-// first few (about two lines); the rest fold behind a SHOW MORE row.
-const COLLAPSED_LEGEND_LIMIT = 4;
-const LEGEND_EXPANDED_STORAGE_KEY = 'typbox_trend_legend_expanded';
+/** One body row; header + 6 rows + total fit the box exactly. */
+const ROW_PX = 26;
+const BOX_PX = ROW_PX * 8 + 2;
 
 const readFlag = (key: string) => {
   try {
@@ -79,18 +79,10 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
 }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<boolean>(() => readFlag(EXPANDED_STORAGE_KEY));
-  const [legendExpanded, setLegendExpanded] = useState<boolean>(() => readFlag(LEGEND_EXPANDED_STORAGE_KEY));
 
   const toggleExpanded = () => {
     setExpanded((prev) => {
       writeFlag(EXPANDED_STORAGE_KEY, !prev);
-      return !prev;
-    });
-  };
-
-  const toggleLegendExpanded = () => {
-    setLegendExpanded((prev) => {
-      writeFlag(LEGEND_EXPANDED_STORAGE_KEY, !prev);
       return !prev;
     });
   };
@@ -111,24 +103,23 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
       .sort((a, b) => b.total - a.total);
   }, [categories, columns]);
 
-  const canCollapse = activeRows.length > COLLAPSED_ROW_LIMIT + 1;
-  const visibleRows = canCollapse && !expanded ? activeRows.slice(0, COLLAPSED_ROW_LIMIT) : activeRows;
-  const foldedRows = canCollapse && !expanded ? activeRows.slice(COLLAPSED_ROW_LIMIT) : [];
+  const canCollapse = activeRows.length > COLLAPSED_ROW_LIMIT;
+  const showAll = canCollapse && expanded;
+  const visibleRows = showAll ? activeRows : activeRows.slice(0, COLLAPSED_ROW_LIMIT);
+  const foldedRows = showAll ? [] : activeRows.slice(COLLAPSED_ROW_LIMIT);
   const foldedCells = columns.map((_, idx) => foldedRows.reduce((acc, row) => acc + row.cells[idx], 0));
   const foldedPeak = Math.max(0, ...foldedCells);
   const idleCount = categories.length - activeRows.length;
+  // Blank rows keep the box at five rows when fewer categories were busy.
+  const blankRows = showAll ? 0 : Math.max(0, COLLAPSED_ROW_LIMIT - visibleRows.length);
 
   // Legend order: the categories drawn in this window's bars (busiest first,
-  // same as the table) lead, so the collapsed legend still decodes the chart;
-  // idle ones keep their registry order after them.
+  // same as the table) lead; idle ones keep their registry order after them.
+  // One line that scrolls sideways, so it never adds height.
   const legendCategories = useMemo(() => {
     const activeIds = new Set(activeRows.map((row) => String(row.cat.id)));
     return [...activeRows.map((row) => row.cat), ...categories.filter((cat) => !activeIds.has(String(cat.id)))];
   }, [activeRows, categories]);
-  const canCollapseLegend = legendCategories.length > COLLAPSED_LEGEND_LIMIT + 1;
-  const visibleLegend =
-    canCollapseLegend && !legendExpanded ? legendCategories.slice(0, COLLAPSED_LEGEND_LIMIT) : legendCategories;
-  const hiddenLegend = canCollapseLegend && !legendExpanded ? legendCategories.slice(COLLAPSED_LEGEND_LIMIT) : [];
 
   const stickyBg = { backgroundColor: 'var(--tb-bg-card)' };
   const rowBorder = isDark ? 'border-zinc-800/60' : 'border-zinc-200';
@@ -158,15 +149,17 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
 
   return (
     <div className="space-y-4 pt-2">
-      {/* Category Legend */}
-      <div className="space-y-2.5">
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {visibleLegend.map((cat) => {
+      {/* Category Legend: one line, scrolls sideways */}
+      <div className="h-5 flex items-center gap-x-4 overflow-x-auto overflow-y-hidden whitespace-nowrap [scrollbar-width:none]">
+        {legendCategories.length === 0 ? (
+          <span className={`font-mono text-[10px] uppercase tracking-wider ${textMuted}`}>{t.trendNoActivity}</span>
+        ) : (
+          legendCategories.map((cat) => {
             const active = cat.isActive !== false;
             return (
               <div
                 key={cat.id}
-                className={`flex items-center space-x-1.5 text-xs font-mono ${active ? '' : 'opacity-50'}`}
+                className={`flex items-center space-x-1.5 text-xs font-mono shrink-0 ${active ? '' : 'opacity-50'}`}
                 title={active ? undefined : t.inactiveLegendTitle}
               >
                 <span className="w-2.5 h-2.5 inline-block" style={swatchStyle(cat.color, active)} />
@@ -174,37 +167,7 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
                 <span className={active ? '' : 'line-through decoration-dotted'}>{cat.name}</span>
               </div>
             );
-          })}
-        </div>
-
-        {canCollapseLegend && (
-          <button
-            type="button"
-            onClick={toggleLegendExpanded}
-            aria-expanded={legendExpanded}
-            className={`w-full min-h-[38px] lg:min-h-0 flex items-center justify-between gap-3 px-2.5 py-1.5 border ${borderCol} font-mono text-[10px] uppercase tracking-wider ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 transition-colors cursor-pointer`}
-          >
-            <span className="flex items-center gap-1.5 shrink-0">
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${legendExpanded ? 'rotate-180' : ''}`} />
-              {legendExpanded ? t.showLessCategories : tf(t.showMoreCategories, { n: hiddenLegend.length })}
-            </span>
-            {legendExpanded ? (
-              <span className="tabular-nums">
-                {legendCategories.length} / {legendCategories.length}
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 min-w-0 overflow-hidden">
-                {hiddenLegend.map((cat) => (
-                  <span
-                    key={cat.id}
-                    className="w-2 h-2 shrink-0"
-                    style={swatchStyle(cat.color, cat.isActive !== false)}
-                    title={`[${cat.code}] ${cat.name}`}
-                  />
-                ))}
-              </span>
-            )}
-          </button>
+          })
         )}
       </div>
 
@@ -224,22 +187,21 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
                 onClick={toggleExpanded}
                 className={`flex items-center gap-1 px-1.5 py-0.5 border ${borderCol} hover:border-emerald-500/60 hover:text-emerald-400 transition-colors cursor-pointer`}
               >
-                {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                <span>{expanded ? tf(t.trendTop, { n: COLLAPSED_ROW_LIMIT }) : tf(t.trendAll, { n: activeRows.length })}</span>
+                {showAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                <span>{showAll ? tf(t.trendTop, { n: COLLAPSED_ROW_LIMIT }) : tf(t.trendAll, { n: activeRows.length })}</span>
               </button>
             )}
           </span>
         </div>
 
-        {activeRows.length === 0 ? (
-          <div className={`border border-dashed ${borderCol} px-3 py-4 text-center font-mono text-[10px] uppercase tracking-widest ${textMuted}`}>
-            {t.trendNoActivity}
-          </div>
-        ) : (
-          <div className={`overflow-x-auto border ${borderCol}`} onMouseLeave={() => onHighlight(null)}>
+        <div
+          className={`overflow-auto border ${borderCol} [scrollbar-width:thin]`}
+          style={{ height: BOX_PX }}
+          onMouseLeave={() => onHighlight(null)}
+        >
             <table className="w-full border-collapse font-mono text-[10px] sm:text-[11px] tabular-nums">
               <thead>
-                <tr className={`border-b ${rowBorder}`}>
+                <tr className={`border-b ${rowBorder} sticky top-0 z-20`} style={{ ...stickyBg, height: ROW_PX }}>
                   <th
                     scope="col"
                     style={stickyBg}
@@ -265,7 +227,7 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
               </thead>
               <tbody>
                 {visibleRows.map(({ cat, cells, peak }) => (
-                  <tr key={cat.id} className={`border-b ${rowBorder}`}>
+                  <tr key={cat.id} className={`border-b ${rowBorder}`} style={{ height: ROW_PX }}>
                     <th
                       scope="row"
                       style={stickyBg}
@@ -280,11 +242,28 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
                     {renderCells(cells, peak, cat.color, cat.code)}
                   </tr>
                 ))}
-                {foldedRows.length > 0 && (
+                {Array.from({ length: blankRows }, (_, i) => (
+                  <tr key={`blank-${i}`} className={`border-b ${rowBorder}`} style={{ height: ROW_PX }} aria-hidden>
+                    <th scope="row" style={stickyBg} className={`sticky left-0 z-10 px-2 py-1 text-left font-normal ${textMuted} opacity-40`}>
+                      —
+                    </th>
+                    {columns.map((col) => (
+                      <td key={col.id} className={`px-1.5 py-1 text-right ${textMuted} opacity-40`}>
+                        ·
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {!showAll && (
                   <tr
-                    className={`border-b ${rowBorder} cursor-pointer`}
-                    onClick={toggleExpanded}
-                    title={tf(t.trendClickExpand, { codes: foldedRows.map((r) => r.cat.code).join(', ') })}
+                    className={`border-b ${rowBorder} ${foldedRows.length > 0 ? 'cursor-pointer' : ''}`}
+                    style={{ height: ROW_PX }}
+                    onClick={foldedRows.length > 0 ? toggleExpanded : undefined}
+                    title={
+                      foldedRows.length > 0
+                        ? tf(t.trendClickExpand, { codes: foldedRows.map((r) => r.cat.code).join(', ') })
+                        : undefined
+                    }
                   >
                     <th
                       scope="row"
@@ -292,7 +271,7 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
                       className={`sticky left-0 z-10 px-2 py-1 text-left font-normal ${textMuted}`}
                     >
                       <span className="flex items-center gap-1.5 whitespace-nowrap">
-                        <span className="flex w-2 h-2 shrink-0">
+                        <span className="flex w-2 h-2 shrink-0 border border-zinc-500/40">
                           {foldedRows.slice(0, 4).map((r) => (
                             <span key={r.cat.id} className="flex-1" style={{ backgroundColor: r.cat.color }} />
                           ))}
@@ -304,8 +283,8 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
                   </tr>
                 )}
               </tbody>
-              <tfoot>
-                <tr className="font-semibold">
+              <tfoot className="sticky bottom-0 z-20" style={stickyBg}>
+                <tr className={`font-semibold border-t ${rowBorder}`} style={{ height: ROW_PX }}>
                   <th
                     scope="row"
                     style={stickyBg}
@@ -327,8 +306,7 @@ export const CategoryTrendTable: React.FC<CategoryTrendTableProps> = ({
                 </tr>
               </tfoot>
             </table>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

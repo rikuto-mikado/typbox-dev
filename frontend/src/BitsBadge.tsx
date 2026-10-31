@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { BitsActiveBuff } from './api';
-import { BITS_PER_HOUR } from './bits';
+import { BITS_PER_HOUR, studyTimeFor } from './bits';
 import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
@@ -27,6 +27,17 @@ interface BitsBadgeProps {
   /** The running buff, shown as a corner badge with a glow in its colour. */
   activeBuff?: Pick<BitsActiveBuff, 'item_id' | 'name' | 'expires_at'> | null;
 }
+
+/** "(~12h)": what a price costs in study at the base rate. */
+export const StudyTime: React.FC<{ bits: number; className?: string }> = ({ bits, className = '' }) => {
+  const { t } = useI18n();
+  const time = studyTimeFor(bits);
+  return (
+    <span className={`text-[9px] font-normal whitespace-nowrap ${className}`} title={tf(t.bitsStudyTime, { time, rate: BITS_PER_HOUR })}>
+      ({time})
+    </span>
+  );
+};
 
 export const BitsBadge: React.FC<BitsBadgeProps> = ({ balance, ready, borderCol, onOpen, activeBuff }) => {
   const { t } = useI18n();

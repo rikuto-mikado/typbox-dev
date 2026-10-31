@@ -1069,8 +1069,8 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 
   const label = `${pad2(hh)}:${pad2(mm)}${isMain ? `:${pad2(ss)}` : ''}`;
   const themeColor = isDark ? r.color : (r.colorLight ?? r.color);
-  const mainSize = isMain ? 'text-3xl sm:text-4xl' : 'text-xl';
-  const secSize = 'text-lg sm:text-xl';
+  const mainSize = isMain ? 'text-4xl sm:text-5xl' : 'text-xl';
+  const secSize = 'text-xl sm:text-2xl';
 
   let mainNode: React.ReactNode;
   let secNode: React.ReactNode;
@@ -1089,7 +1089,7 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 
   if (INSTRUMENT_KINDS.has(r.kind)) {
     const ink = themeColor ?? 'currentColor';
-    const px = isMain ? 88 : 34;
+    const px = isMain ? 120 : 34;
     const Instrument = INSTRUMENTS[r.kind];
     let instrument: React.ReactNode;
     if (Instrument) instrument = <Instrument hh={hh} mm={mm} ss={ss} r={r} px={px} color={ink} />;

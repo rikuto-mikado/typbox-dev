@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from './api';
-import { useI18n } from './i18n';
+import { BitShard, StudyTime } from './BitsBadge';
+import { tf, useI18n } from './i18n';
 import { NewsFigure, type FigureContext } from './NewsFigures';
-import { NEWS_ARTICLES, type NewsArticle, type NewsBlock, type ShowcaseRoom } from './news';
+import { NEWS_ARTICLES, type NewsArticle, type NewsBlock, type ShowcaseRoom, type TourRoom } from './news';
 import { renderRoom, type FurnitureSpec } from './roomRender';
 
 // 06 / NEWS: the list of articles (news.ts), newest first; tapping one
@@ -11,15 +12,22 @@ import { renderRoom, type FurnitureSpec } from './roomRender';
 // from the server's furniture catalog, with a day / night switch.
 
 type NewsPanelProps = FigureContext;
+type Catalog = Record<string, FurnitureSpec>;
 
 const ShowcaseRoomCard: React.FC<{
   room: ShowcaseRoom;
-  catalog: Record<string, FurnitureSpec>;
+  catalog: Catalog;
   borderCol: string;
   textMuted: string;
-}> = ({ room, catalog, borderCol, textMuted }) => {
+  /** Controlled day / night (the tour keeps it while paging). */
+  night?: boolean;
+  onNight?: (night: boolean) => void;
+  footer?: React.ReactNode;
+}> = ({ room, catalog, borderCol, textMuted, night: nightProp, onNight, footer }) => {
   const { t } = useI18n();
-  const [night, setNight] = useState(false);
+  const [ownNight, setOwnNight] = useState(false);
+  const night = nightProp ?? ownNight;
+  const setNight = onNight ?? setOwnNight;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -54,27 +62,23 @@ const ShowcaseRoomCard: React.FC<{
           </span>
         </div>
         <p className={`m-0 text-[10px] font-sans leading-relaxed ${textMuted}`}>{room.desc}</p>
+        {footer}
       </figcaption>
     </figure>
   );
 };
 
-const RoomGallery: React.FC<{ rooms: ShowcaseRoom[]; borderCol: string; textMuted: string }> = ({
-  rooms,
-  borderCol,
-  textMuted,
-}) => {
-  const { t } = useI18n();
-  const [catalog, setCatalog] = useState<Record<string, FurnitureSpec> | null>(null);
+// The live furniture catalog for the galleries (one fetch per gallery).
+const useShowcaseCatalog = () => {
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     api.room
       .get()
       .then((state) => {
         if (cancelled) return;
-        const map: Record<string, FurnitureSpec> = {};
+        const map: Catalog = {};
         state.catalog.forEach((spec) => {
           map[spec.id] = spec;
         });
@@ -85,15 +89,26 @@ const RoomGallery: React.FC<{ rooms: ShowcaseRoom[]; borderCol: string; textMute
       cancelled = true;
     };
   }, []);
+  return { catalog, error };
+};
 
-  if (error) return <p className={`text-[10px] ${textMuted}`}>{t.newsRoomsUnavailable}</p>;
-  if (!catalog) {
-    return (
-      <div className={`p-6 flex justify-center ${textMuted}`}>
-        <Loader2 className="w-4 h-4 animate-spin" />
-      </div>
-    );
-  }
+const GalleryFallback: React.FC<{ error: boolean; textMuted: string }> = ({ error, textMuted }) => {
+  const { t } = useI18n();
+  if (error) return <p className={`m-0 text-[10px] ${textMuted}`}>{t.newsRoomsUnavailable}</p>;
+  return (
+    <div className={`p-6 flex justify-center ${textMuted}`}>
+      <Loader2 className="w-4 h-4 animate-spin" />
+    </div>
+  );
+};
+
+const RoomGallery: React.FC<{ rooms: ShowcaseRoom[]; borderCol: string; textMuted: string }> = ({
+  rooms,
+  borderCol,
+  textMuted,
+}) => {
+  const { catalog, error } = useShowcaseCatalog();
+  if (!catalog) return <GalleryFallback error={error} textMuted={textMuted} />;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
       {rooms.map((room) => (
@@ -103,7 +118,113 @@ const RoomGallery: React.FC<{ rooms: ShowcaseRoom[]; borderCol: string; textMute
   );
 };
 
-const Block: React.FC<{ block: NewsBlock; ctx: FigureContext }> = ({ block, ctx }) => {
+const SWIPE_PX = 40;
+
+// ROOM TOUR: one room at a time, paged with the arrows, the dots, a swipe
+// or ← / → while the tour has focus. Day / night carries across rooms.
+const RoomTour: React.FC<{ rooms: TourRoom[]; borderCol: string; textMuted: string }> = ({ rooms, borderCol, textMuted }) => {
+  const { t } = useI18n();
+  const { catalog, error } = useShowcaseCatalog();
+  const [index, setIndex] = useState(0);
+  const [night, setNight] = useState(false);
+  const swipeFrom = useRef<number | null>(null);
+  const go = (step: number) => setIndex((i) => (i + step + rooms.length) % rooms.length);
+
+  if (!catalog) return <GalleryFallback error={error} textMuted={textMuted} />;
+  const room = rooms[index];
+  const value =
+    room.layout.items.reduce((sum, it) => sum + (catalog[it.id]?.price ?? 0), 0) +
+    (catalog[room.layout.wall]?.price ?? 0) +
+    (catalog[room.layout.floor]?.price ?? 0);
+  const arrow = `w-7 h-7 shrink-0 border ${borderCol} flex items-center justify-center ${textMuted} hover:text-emerald-400 hover:border-emerald-500/60 cursor-pointer`;
+
+  return (
+    <section
+      tabIndex={0}
+      aria-roledescription="carousel"
+      aria-label="ROOM TOUR"
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft') go(-1);
+        else if (e.key === 'ArrowRight') go(1);
+        else return;
+        e.preventDefault();
+      }}
+      className="flex flex-col gap-2 outline-none focus-visible:ring-1 focus-visible:ring-emerald-500/60"
+    >
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => go(-1)} className={arrow} aria-label={t.newsTourPrev}>
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div className="min-w-0 flex-1 flex items-center justify-center gap-2 text-[10px] tracking-wider" aria-live="polite">
+          <span className="px-1.5 py-0.5 border border-emerald-500/60 text-emerald-400 font-bold truncate">{room.pack}</span>
+          <span className={`tabular-nums shrink-0 ${textMuted}`}>
+            {String(index + 1).padStart(2, '0')} / {String(rooms.length).padStart(2, '0')}
+          </span>
+        </div>
+        <button type="button" onClick={() => go(1)} className={arrow} aria-label={t.newsTourNext}>
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+      <div
+        className="touch-pan-y select-none"
+        onPointerDown={(e) => {
+          swipeFrom.current = e.clientX;
+        }}
+        onPointerUp={(e) => {
+          if (swipeFrom.current === null) return;
+          const dx = e.clientX - swipeFrom.current;
+          swipeFrom.current = null;
+          if (Math.abs(dx) >= SWIPE_PX) go(dx < 0 ? 1 : -1);
+        }}
+        onPointerCancel={() => {
+          swipeFrom.current = null;
+        }}
+      >
+        <ShowcaseRoomCard
+          key={room.name}
+          room={room}
+          catalog={catalog}
+          borderCol={borderCol}
+          textMuted={textMuted}
+          night={night}
+          onNight={setNight}
+          footer={
+            <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] tabular-nums ${textMuted}`}>
+              <span>{tf(t.newsTourPieces, { n: room.layout.items.length })}</span>
+              <span className="flex items-center gap-1" title={t.newsTourValue}>
+                <BitShard className="w-2.5 h-2.5" />
+                <span className="font-bold text-amber-400">{value.toLocaleString('en-US')}</span>
+                <StudyTime bits={value} />
+              </span>
+            </div>
+          }
+        />
+      </div>
+      <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="ROOM TOUR">
+        {rooms.map((r, i) => (
+          <button
+            key={r.name}
+            type="button"
+            onClick={() => setIndex(i)}
+            aria-label={tf(t.newsTourGoto, { n: i + 1, name: r.name })}
+            aria-current={i === index}
+            title={r.pack}
+            className="p-1 cursor-pointer group"
+          >
+            <span
+              className={`block w-2 h-2 rotate-45 transition-colors ${
+                i === index ? 'bg-emerald-400' : 'bg-zinc-500/40 group-hover:bg-emerald-400/60'
+              }`}
+            />
+          </button>
+        ))}
+      </div>
+      <p className={`m-0 text-center text-[9px] ${textMuted}`}>{t.newsTourHint}</p>
+    </section>
+  );
+};
+
+const Block: React.FC<{ block: NewsBlock; ctx: FigureContext; onOpen: (id: string) => void }> = ({ block, ctx, onOpen }) => {
   const { borderCol, textMuted } = ctx;
   switch (block.type) {
     case 'figure':
@@ -138,14 +259,28 @@ const Block: React.FC<{ block: NewsBlock; ctx: FigureContext }> = ({ block, ctx 
       );
     case 'rooms':
       return <RoomGallery rooms={block.rooms} borderCol={borderCol} textMuted={textMuted} />;
+    case 'tour':
+      return <RoomTour rooms={block.rooms} borderCol={borderCol} textMuted={textMuted} />;
+    case 'link':
+      return (
+        <button
+          type="button"
+          onClick={() => onOpen(block.article)}
+          className={`self-start inline-flex items-center gap-1.5 px-2.5 py-1.5 border ${borderCol} text-[11px] font-bold text-emerald-400 hover:border-emerald-500/60 hover:bg-emerald-500/5 cursor-pointer text-left`}
+        >
+          {block.text}
+          <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+        </button>
+      );
   }
 };
 
 const ArticleView: React.FC<{
   article: NewsArticle;
   onBack: () => void;
+  onOpen: (id: string) => void;
   ctx: FigureContext;
-}> = ({ article, onBack, ctx }) => {
+}> = ({ article, onBack, onOpen, ctx }) => {
   const { borderCol, textMuted } = ctx;
   const { t } = useI18n();
   const ref = useRef<HTMLElement>(null);
@@ -174,7 +309,7 @@ const ArticleView: React.FC<{
       </header>
       <div className="flex flex-col gap-3.5">
         {article.blocks.map((block, i) => (
-          <Block key={i} block={block} ctx={ctx} />
+          <Block key={`${article.id}-${i}`} block={block} ctx={ctx} onOpen={onOpen} />
         ))}
       </div>
     </article>
@@ -190,7 +325,7 @@ export const NewsPanel: React.FC<NewsPanelProps> = (ctx) => {
   if (article) {
     return (
       <div className="font-mono text-xs">
-        <ArticleView article={article} onBack={() => setOpenId(null)} ctx={ctx} />
+        <ArticleView key={article.id} article={article} onBack={() => setOpenId(null)} onOpen={setOpenId} ctx={ctx} />
       </div>
     );
   }

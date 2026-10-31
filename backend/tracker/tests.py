@@ -329,6 +329,56 @@ class ResetAndImportTests(APITestCase):
         self.assertEqual(room["layout"], DEFAULT_LAYOUT)
         self.assertNotIn(piece, room["inventory"])
 
+    def test_bits_reset_keeps_logs_and_categories(self):
+        # 100h + a buff paid out + a furniture piece placed: BITS and the
+        # room start over, but every log and category stays.
+        StudyLog.objects.filter(user=self.user).update(duration_minutes=6000)
+        self.client.post("/api/bits/buy/", {"item_id": "overclock"}, format="json")
+        self.client.post(
+            "/api/logs/",
+            {"category": self.category.pk, "date": "2026-10-30", "duration_minutes": 120, "topic": ""},
+            format="json",
+        )
+        self.assertTrue(StudyLog.objects.filter(user=self.user, bonus_bits__gt=0).exists())
+        piece = next(i for i, s in FURNITURE.items() if s["tier"] == 1)
+        BitPurchase.objects.create(user=self.user, item_id=piece, price=FURNITURE[piece]["price"])
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.room_layout = {**DEFAULT_LAYOUT, "items": []}
+        profile.save()
+
+        res = self.client.post("/api/bits/reset/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["deleted_purchases"], 2)
+        self.assertEqual(res.data["cleared_bonus_logs"], 1)
+        # 6,120 min = 10,200 BITS at the base rate, nothing spent.
+        self.assertEqual(res.data["bits"], {"balance": 10200, "earned": 10200, "spent": 0, "per_hour": 100})
+        self.assertIsNone(res.data["active_buff"])
+        self.assertEqual(StudyLog.objects.filter(user=self.user).count(), 2)
+        self.assertFalse(StudyLog.objects.filter(user=self.user, bonus_bits__gt=0).exists())
+        self.assertFalse(StudyLog.objects.exclude(bonus_item="").filter(user=self.user).exists())
+        self.assertTrue(Category.objects.filter(pk=self.category.pk).exists())
+        profile.refresh_from_db()
+        self.assertEqual(profile.room_layout, {})
+        room = self.client.get("/api/room/").data
+        self.assertEqual(room["layout"], DEFAULT_LAYOUT)
+        self.assertNotIn(piece, room["inventory"])
+        # The shop works again straight away.
+        self.assertEqual(
+            self.client.post("/api/bits/buy/", {"item_id": "overclock"}, format="json").status_code, 201
+        )
+
+    def test_bits_reset_only_touches_the_caller(self):
+        other = User.objects.create_user(username="other", email="o@example.com", password="s3cure-pass-123")
+        StudyLog.objects.create(user=other, duration_minutes=600, bonus_bits=50, bonus_item="overclock")
+        BitPurchase.objects.create(user=other, item_id="overclock", price=800)
+        self.client.post("/api/bits/reset/")
+        self.assertTrue(BitPurchase.objects.filter(user=other).exists())
+        self.assertTrue(StudyLog.objects.filter(user=other, bonus_bits=50).exists())
+
+    def test_bits_reset_needs_login(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.post("/api/bits/reset/").status_code, 401)
+
     def test_import_after_reset_pays_base_bits_only(self):
         StudyLog.objects.filter(user=self.user).update(bonus_bits=500, bonus_item="overclock")
         self.client.delete("/api/logs/clear-all/")

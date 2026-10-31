@@ -12,12 +12,11 @@ import {
   Redo2,
   ShoppingBag,
   Sun,
-  SunMoon,
   Trash2,
   Undo2,
 } from 'lucide-react';
 import { api, type RoomState } from './api';
-import { BitShard } from './BitsBadge';
+import { BitShard, StudyTime } from './BitsBadge';
 import { tf, useI18n } from './i18n';
 import {
   anchorAt,
@@ -46,7 +45,7 @@ const HISTORY_LIMIT = 50;
 const MAX_PLACED = 64;
 const CATEGORIES = ['all', 'desk', 'seating', 'storage', 'decor', 'lighting', 'tech', 'wall', 'surfaces'] as const;
 type Category = (typeof CATEGORIES)[number];
-type Scene = 'auto' | 'day' | 'night';
+type Scene = 'day' | 'night';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -75,12 +74,18 @@ const localHour = (timeZone: string) => {
 
 // View preferences are per-device conveniences: storage may be unavailable.
 const PREF_KEY = 'typbox.room.view';
-const readPrefs = (): { scene: Scene; lamps: boolean; grid: boolean } => {
-  const fallback = { scene: 'auto' as Scene, lamps: false, grid: false };
+// Before the operator picks DAY or NIGHT (or for a stored "auto" from older
+// builds) the scene starts from the local clock once, then stays put.
+const clockScene = (timeZone: string): Scene => {
+  const h = localHour(timeZone);
+  return h >= 19 || h < 6 ? 'night' : 'day';
+};
+const readPrefs = (timeZone: string): { scene: Scene; lamps: boolean; grid: boolean } => {
+  const fallback = { scene: clockScene(timeZone), lamps: false, grid: false };
   try {
     const raw = JSON.parse(window.localStorage.getItem(PREF_KEY) ?? '{}');
     return {
-      scene: raw.scene === 'day' || raw.scene === 'night' ? raw.scene : 'auto',
+      scene: raw.scene === 'day' || raw.scene === 'night' ? raw.scene : fallback.scene,
       lamps: raw.lamps === true,
       grid: raw.grid === true,
     };
@@ -130,11 +135,7 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
   const [category, setCategory] = useState<Category>('all');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [prefs, setPrefs] = useState(readPrefs);
-  const [autoNight, setAutoNight] = useState(() => {
-    const h = localHour(timeZone);
-    return h >= 19 || h < 6;
-  });
+  const [prefs, setPrefs] = useState(() => readPrefs(timeZone));
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const savedJson = useRef<string>('');
   const pressed = useRef(false);
@@ -154,15 +155,6 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
       cancelled = true;
     };
   }, [t.roomLoadFailed]);
-
-  useEffect(() => {
-    const tick = () => {
-      const h = localHour(timeZone);
-      setAutoNight(h >= 19 || h < 6);
-    };
-    const id = window.setInterval(tick, 60_000);
-    return () => window.clearInterval(id);
-  }, [timeZone]);
 
   useEffect(() => {
     try {
@@ -209,7 +201,7 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
     return counts;
   }, [layout]);
 
-  const night = prefs.scene === 'auto' ? autoNight : prefs.scene === 'night';
+  const night = prefs.scene === 'night';
   const lit = isRunning || prefs.lamps;
   const showGrid = prefs.grid || Boolean(armed) || Boolean(drag?.moved);
 
@@ -441,9 +433,21 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
       active ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold' : `${borderCol} ${textMuted} hover:text-emerald-400`
     }`;
 
-  const SceneIcon = prefs.scene === 'day' ? Sun : prefs.scene === 'night' ? Moon : SunMoon;
-  const nextScene: Record<Scene, Scene> = { auto: 'day', day: 'night', night: 'auto' };
-  const sceneLabel = { auto: t.roomSceneAuto, day: t.roomSceneDay, night: t.roomSceneNight }[prefs.scene];
+  const sceneBtn = (scene: Scene, Icon: typeof Sun, label: string) => (
+    <button
+      type="button"
+      onClick={() => setPrefs((p) => ({ ...p, scene }))}
+      className={`h-full px-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
+        prefs.scene === scene ? 'bg-emerald-500/15 text-emerald-400 font-bold' : `${textMuted} hover:text-emerald-400`
+      }`}
+      aria-pressed={prefs.scene === scene}
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
 
   return (
     <div className="space-y-3 font-mono text-xs" onKeyDown={handleKey}>
@@ -469,15 +473,14 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
             <Grid3x3 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{t.roomGrid}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setPrefs((p) => ({ ...p, scene: nextScene[p.scene] }))}
-            className={toolBtn(prefs.scene !== 'auto')}
-            title={t.roomSceneTitle}
+          <div
+            role="group"
+            aria-label={t.roomSceneTitle}
+            className={`h-7 border ${borderCol} flex items-stretch text-[10px] uppercase tracking-wider divide-x divide-zinc-500/30`}
           >
-            <SceneIcon className="w-3.5 h-3.5" />
-            {sceneLabel}
-          </button>
+            {sceneBtn('day', Sun, t.roomSceneDay)}
+            {sceneBtn('night', Moon, t.roomSceneNight)}
+          </div>
           <button
             type="button"
             onClick={() => setPrefs((p) => ({ ...p, lamps: !p.lamps }))}
@@ -685,6 +688,7 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
             <div className="flex items-center gap-1.5 text-sm font-bold tabular-nums">
               <BitShard className="w-3 h-3" />
               {fmt(roomValue)}
+              <StudyTime bits={roomValue} className={textMuted} />
             </div>
           </div>
         </div>
