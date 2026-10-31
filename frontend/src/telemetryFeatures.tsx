@@ -1858,7 +1858,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
   }, [selectedDiv, filterMode, searchQuery, clearance.totalHours]);
 
   return (
-    <div className="space-y-3.5 font-mono text-xs flex flex-col h-full">
+    <div className="space-y-3.5 font-mono text-xs flex flex-col">
       {/* Current Clearance Summary Card */}
       <div
         className={`p-3.5 border ${borderCol} ${
@@ -1956,180 +1956,191 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
         </div>
       </div>
 
-      {/* Search & Mode Filter */}
-      <div className="space-y-2 shrink-0">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className={`flex items-center border ${borderCol} px-2.5 py-1 flex-1 min-w-[170px]`}>
-            <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
-            <input
-              type="text"
-              placeholder={tf(t.searchRanks, { n: CLEARANCE_LEVELS.length.toLocaleString() })}
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                if (e.target.value.trim()) setSelectedDiv(null);
-              }}
-              className="w-full bg-transparent text-xs outline-none"
-            />
+      {/* Search/filter chrome + ranks list form one block exactly as tall as the
+          settings viewport (100cqh): scrolling the outer body down past the summary
+          card leaves the filters pinned above a list that fills the rest. */}
+      <div className="flex flex-col gap-3.5 h-[100cqh] shrink-0">
+        {/* Search & Mode Filter */}
+        <div className="space-y-2 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className={`flex items-center border ${borderCol} px-2.5 py-1 flex-1 min-w-[170px]`}>
+              <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
+              <input
+                type="text"
+                placeholder={tf(t.searchRanks, { n: CLEARANCE_LEVELS.length.toLocaleString() })}
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (e.target.value.trim()) setSelectedDiv(null);
+                }}
+                className="w-full bg-transparent text-xs outline-none"
+              />
+            </div>
+
+            <div className={`flex flex-wrap border ${borderCol} text-[10px]`}>
+              {(
+                [
+                  { id: 'all', label: t.all },
+                  { id: 'rewards', label: tf(t.filterRewards, { n: SURFACE_THEME_PAIRS.length }) },
+                  { id: 'milestones', label: t.filterMilestones },
+                  { id: 'unlocked', label: t.filterUnlocked },
+                  { id: 'locked', label: t.filterLocked },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    setFilterMode(m.id);
+                    if (m.id === 'rewards') setSelectedDiv(null);
+                  }}
+                  className={`px-2 py-1 uppercase cursor-pointer ${
+                    filterMode === m.id
+                      ? isDark
+                        ? 'bg-zinc-100 text-zinc-950 font-bold'
+                        : 'bg-zinc-900 text-white font-bold'
+                      : textMuted
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className={`flex flex-wrap border ${borderCol} text-[10px]`}>
-            {(
-              [
-                { id: 'all', label: t.all },
-                { id: 'rewards', label: tf(t.filterRewards, { n: SURFACE_THEME_PAIRS.length }) },
-                { id: 'milestones', label: t.filterMilestones },
-                { id: 'unlocked', label: t.filterUnlocked },
-                { id: 'locked', label: t.filterLocked },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  setFilterMode(m.id);
-                  if (m.id === 'rewards') setSelectedDiv(null);
-                }}
-                className={`px-2 py-1 uppercase cursor-pointer ${
-                  filterMode === m.id
-                    ? isDark
-                      ? 'bg-zinc-100 text-zinc-950 font-bold'
-                      : 'bg-zinc-900 text-white font-bold'
-                    : textMuted
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
+          {/* 10 Division Tabs (300 Ranks per Division = 3,000 Total). Horizontally
+              scrollable on mobile so the row never eats multiple vertical lines. */}
+          <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
+            <button
+              type="button"
+              onClick={() => setSelectedDiv(null)}
+              className={`shrink-0 px-2 py-0.5 text-[10px] border cursor-pointer ${
+                selectedDiv === null
+                  ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                  : `${borderCol} ${textMuted}`
+              }`}
+            >
+              {t.all} ({CLEARANCE_LEVELS.length.toLocaleString()})
+            </button>
+            {CLEARANCE_DIVISIONS.map((div) => {
+              const isSelected = selectedDiv === div.index;
+              return (
+                <button
+                  key={div.code}
+                  type="button"
+                  onClick={() => setSelectedDiv(isSelected ? null : div.index)}
+                  title={`${div.sectorName} (LV.${div.minLevel}–${div.maxLevel} // ${div.minHours}H–${div.maxHours}H)`}
+                  className={`shrink-0 px-2 py-0.5 text-[10px] border flex items-center space-x-1 cursor-pointer ${
+                    isSelected
+                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                      : `${borderCol} ${textMuted} hover:opacity-100`
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: div.color }} />
+                  <span>{div.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* 10 Division Tabs (300 Ranks per Division = 3,000 Total). Horizontally
-            scrollable on mobile so the row never eats multiple vertical lines. */}
-        <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
-          <button
-            type="button"
-            onClick={() => setSelectedDiv(null)}
-            className={`shrink-0 px-2 py-0.5 text-[10px] border cursor-pointer ${
-              selectedDiv === null
-                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                : `${borderCol} ${textMuted}`
-            }`}
-          >
-            {t.all} ({CLEARANCE_LEVELS.length.toLocaleString()})
-          </button>
-          {CLEARANCE_DIVISIONS.map((div) => {
-            const isSelected = selectedDiv === div.index;
+        {/* Scrollable 3,000 Ranks List */}
+        <div
+          className={`flex-1 min-h-40 overflow-y-auto border ${borderCol} divide-y ${
+            isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'
+          }`}
+        >
+          {filteredLevels.map((lvl) => {
+            const unlocked = clearance.totalHours >= lvl.requiredHours;
+            const isCurrent = clearance.current.level === lvl.level;
+            const rewardTheme = THEME_REWARD_BY_LEVEL[lvl.level];
             return (
-              <button
-                key={div.code}
-                type="button"
-                onClick={() => setSelectedDiv(isSelected ? null : div.index)}
-                title={`${div.sectorName} (LV.${div.minLevel}–${div.maxLevel} // ${div.minHours}H–${div.maxHours}H)`}
-                className={`shrink-0 px-2 py-0.5 text-[10px] border flex items-center space-x-1 cursor-pointer ${
-                  isSelected
-                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                    : `${borderCol} ${textMuted} hover:opacity-100`
+              <div
+                key={lvl.level}
+                className={`px-3.5 py-2.5 flex items-center justify-between gap-3 transition-colors ${
+                  isCurrent
+                    ? 'bg-emerald-500/15'
+                    : lvl.isMajorMilestone || rewardTheme
+                    ? isDark
+                      ? 'bg-zinc-900/60'
+                      : 'bg-zinc-100/70'
+                    : unlocked
+                    ? ''
+                    : 'opacity-55'
                 }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: div.color }} />
-                <span>{div.name}</span>
-              </button>
+                <div className="flex items-center space-x-3 min-w-0">
+                  <span
+                    className={`w-16 text-center py-1 text-[10px] font-bold shrink-0 border ${
+                      unlocked ? 'text-zinc-950 border-transparent' : `${borderCol} ${textMuted}`
+                    }`}
+                    style={unlocked ? { backgroundColor: lvl.color } : undefined}
+                  >
+                    LV.{String(lvl.level).padStart(4, '0')}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-bold text-xs truncate">{lvl.title}</span>
+                      {lvl.isMajorMilestone && (
+                        <span className="px-1.5 py-0.2 border border-amber-500/50 text-amber-400 text-[9px] font-bold uppercase shrink-0">
+                          {t.milestone}
+                        </span>
+                      )}
+                      {rewardTheme && (
+                        // Single-line tag that may shrink: on narrow screens the
+                        // label collapses to its colour dot and the name ellipsizes,
+                        // so it never pushes past the hours column.
+                        <span
+                          className="inline-flex items-center max-w-full min-w-0 border border-cyan-500/50 text-cyan-400 text-[9px] font-bold uppercase"
+                          title={tf(t.unlocksTheme, { code: rewardTheme.code, name: rewardTheme.name })}
+                        >
+                          <span className="flex items-center gap-1 self-stretch px-1.5 shrink-0 bg-cyan-500/10 border-r border-cyan-500/40">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full inline-block"
+                              style={{ backgroundColor: rewardTheme.accentHex }}
+                            />
+                            <span className="hidden sm:inline">{t.rewardLabel.replace(/:$/, '')}</span>
+                          </span>
+                          <span className="px-1.5 min-w-0 truncate">
+                            <span className="tabular-nums">{rewardTheme.code}</span>
+                            <span className="opacity-75"> // {rewardTheme.name}</span>
+                          </span>
+                        </span>
+                      )}
+                      {isCurrent && (
+                        <span className="px-1.5 py-0.2 bg-emerald-500 text-zinc-950 text-[9px] font-bold uppercase shrink-0">
+                          {t.current}
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-[10px] font-sans truncate ${textMuted}`}>
+                      [{lvl.division}] {lvl.subtitle}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0 flex items-center space-x-2">
+                  <div className="text-right">
+                    <div className="font-bold text-xs tabular-nums">
+                      {lvl.requiredHours.toLocaleString()}{' '}
+                      <span className={`text-[10px] ${textMuted}`}>{t.unitHrs}</span>
+                    </div>
+                    {!unlocked && (
+                      <div className={`text-[9px] ${textMuted}`}>
+                        {tf(t.hoursReq, { h: Math.max(0.1, Number((lvl.requiredHours - clearance.totalHours).toFixed(1))) })}
+                      </div>
+                    )}
+                  </div>
+                  {unlocked ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <Lock className={`w-3.5 h-3.5 ${textMuted} shrink-0`} />
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
-      </div>
-
-      {/* Scrollable 3,000 Ranks List — generous min-height on mobile so the
-          list area doesn't collapse under the summary/filter chrome above it. */}
-      <div
-        className={`flex-1 min-h-80 sm:min-h-55 overflow-y-auto border ${borderCol} divide-y ${
-          isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'
-        }`}
-      >
-        {filteredLevels.map((lvl) => {
-          const unlocked = clearance.totalHours >= lvl.requiredHours;
-          const isCurrent = clearance.current.level === lvl.level;
-          const rewardTheme = THEME_REWARD_BY_LEVEL[lvl.level];
-          return (
-            <div
-              key={lvl.level}
-              className={`px-3.5 py-2.5 flex items-center justify-between gap-3 transition-colors ${
-                isCurrent
-                  ? 'bg-emerald-500/15'
-                  : lvl.isMajorMilestone || rewardTheme
-                  ? isDark
-                    ? 'bg-zinc-900/60'
-                    : 'bg-zinc-100/70'
-                  : unlocked
-                  ? ''
-                  : 'opacity-55'
-              }`}
-            >
-              <div className="flex items-center space-x-3 min-w-0">
-                <span
-                  className={`w-16 text-center py-1 text-[10px] font-bold shrink-0 border ${
-                    unlocked ? 'text-zinc-950 border-transparent' : `${borderCol} ${textMuted}`
-                  }`}
-                  style={unlocked ? { backgroundColor: lvl.color } : undefined}
-                >
-                  LV.{String(lvl.level).padStart(4, '0')}
-                </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-bold text-xs truncate">{lvl.title}</span>
-                    {lvl.isMajorMilestone && (
-                      <span className="px-1.5 py-0.2 border border-amber-500/50 text-amber-400 text-[9px] font-bold uppercase shrink-0">
-                        {t.milestone}
-                      </span>
-                    )}
-                    {rewardTheme && (
-                      <span
-                        className="px-1.5 py-0.2 border border-cyan-500/50 text-cyan-400 text-[9px] font-bold uppercase shrink-0 flex items-center space-x-1"
-                        title={tf(t.unlocksTheme, { code: rewardTheme.code, name: rewardTheme.name })}
-                      >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full inline-block"
-                          style={{ backgroundColor: rewardTheme.accentHex }}
-                        />
-                        <span>
-                          {t.rewardLabel} {rewardTheme.code} // {rewardTheme.name}
-                        </span>
-                      </span>
-                    )}
-                    {isCurrent && (
-                      <span className="px-1.5 py-0.2 bg-emerald-500 text-zinc-950 text-[9px] font-bold uppercase shrink-0">
-                        {t.current}
-                      </span>
-                    )}
-                  </div>
-                  <div className={`text-[10px] font-sans truncate ${textMuted}`}>
-                    [{lvl.division}] {lvl.subtitle}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-right shrink-0 flex items-center space-x-2">
-                <div className="text-right">
-                  <div className="font-bold text-xs tabular-nums">
-                    {lvl.requiredHours.toLocaleString()}{' '}
-                    <span className={`text-[10px] ${textMuted}`}>{t.unitHrs}</span>
-                  </div>
-                  {!unlocked && (
-                    <div className={`text-[9px] ${textMuted}`}>
-                      {tf(t.hoursReq, { h: Math.max(0.1, Number((lvl.requiredHours - clearance.totalHours).toFixed(1))) })}
-                    </div>
-                  )}
-                </div>
-                {unlocked ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                ) : (
-                  <Lock className={`w-3.5 h-3.5 ${textMuted} shrink-0`} />
-                )}
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -3484,7 +3495,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   };
 
   return (
-    <div className="space-y-3.5 font-mono text-xs flex flex-col h-full">
+    <div className="space-y-3.5 font-mono text-xs flex flex-col">
       {/* Active Theme Pair Dual-Polarity Preview Card */}
       <div className={`p-3.5 border ${borderCol} space-y-2.5 shrink-0`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3630,215 +3641,221 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         )}
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="space-y-2 shrink-0">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className={`flex items-center flex-1 border ${borderCol} px-2.5 py-1`}>
-            <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={tf(t.searchThemes, { n: SURFACE_THEME_PAIRS.length })}
-              className="w-full bg-transparent text-xs outline-none"
-            />
+      {/* Search/filter chrome + theme grid form one settings-viewport-tall block
+          (see ClearanceBrowserPanel). */}
+      <div className="flex flex-col gap-3.5 h-[100cqh] shrink-0">
+        {/* Filter & Search Bar */}
+        <div className="space-y-2 shrink-0">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className={`flex items-center flex-1 border ${borderCol} px-2.5 py-1`}>
+              <Search className={`w-3.5 h-3.5 mr-2 ${textMuted}`} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={tf(t.searchThemes, { n: SURFACE_THEME_PAIRS.length })}
+                className="w-full bg-transparent text-xs outline-none"
+              />
+            </div>
+            <div className={`flex border ${borderCol} text-[10px]`}>
+              {(
+                [
+                  ['all', `${t.all} (${SURFACE_THEME_PAIRS.length})`],
+                  ['unlocked', `${t.filterUnlocked} (${unlockedCount})`],
+                  ['locked', `${t.filterLocked} (${SURFACE_THEME_PAIRS.length - unlockedCount})`],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setUnlockFilter(key)}
+                  className={`px-2.5 py-1 uppercase cursor-pointer transition-colors ${
+                    unlockFilter === key
+                      ? 'bg-emerald-500 text-zinc-950 font-bold'
+                      : `${textMuted} hover:opacity-100`
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className={`flex border ${borderCol} text-[10px]`}>
-            {(
-              [
-                ['all', `${t.all} (${SURFACE_THEME_PAIRS.length})`],
-                ['unlocked', `${t.filterUnlocked} (${unlockedCount})`],
-                ['locked', `${t.filterLocked} (${SURFACE_THEME_PAIRS.length - unlockedCount})`],
-              ] as const
-            ).map(([key, label]) => (
+
+          {/* Series Filter: CLASSIC / CHROMA (saturation) / COMPLEMENT (hue) / PRESTIGE.
+              Container draws top/left, each cell right/bottom, so the grid stays
+              closed when the row wraps on narrow screens; cells grow to fill each row. */}
+          <div className={`flex flex-wrap border-l border-t ${borderCol} text-[10px] sm:w-fit`} title={t.seriesHint}>
+            {SERIES_FILTERS.map((key) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setUnlockFilter(key)}
-                className={`px-2.5 py-1 uppercase cursor-pointer transition-colors ${
-                  unlockFilter === key
-                    ? 'bg-emerald-500 text-zinc-950 font-bold'
-                    : `${textMuted} hover:opacity-100`
+                onClick={() => setSeriesFilter(key)}
+                className={`grow sm:grow-0 px-2.5 py-1 text-center uppercase whitespace-nowrap border-r border-b ${borderCol} cursor-pointer transition-colors ${
+                  seriesFilter === key ? 'bg-emerald-500 text-zinc-950 font-bold' : `${textMuted} hover:opacity-100`
                 }`}
               >
-                {label}
+                {seriesLabel[key]} ({seriesCounts[key]})
               </button>
             ))}
           </div>
+
+          {/* Division Filter Strip — horizontally scrollable on mobile so 11
+              buttons never spend multiple lines of the limited viewport height. */}
+          <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
+            {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE'].map(
+              (divCode) => (
+                <button
+                  key={divCode}
+                  type="button"
+                  onClick={() => setSelectedDiv(divCode)}
+                  className={`shrink-0 px-2 py-0.5 text-[9px] border cursor-pointer ${
+                    selectedDiv === divCode
+                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                      : `${borderCol} ${textMuted}`
+                  }`}
+                >
+                  {divCode === 'ALL' ? t.all : divCode}
+                </button>
+              )
+            )}
+          </div>
         </div>
 
-        {/* Series Filter: CLASSIC / CHROMA (saturation) / COMPLEMENT (hue) / PRESTIGE */}
-        <div className={`flex flex-wrap border ${borderCol} text-[10px] w-fit`} title={t.seriesHint}>
-          {SERIES_FILTERS.map((key, idx) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSeriesFilter(key)}
-              className={`px-2.5 py-1 uppercase cursor-pointer transition-colors ${idx > 0 ? `border-l ${borderCol}` : ''} ${
-                seriesFilter === key ? 'bg-emerald-500 text-zinc-950 font-bold' : `${textMuted} hover:opacity-100`
-              }`}
-            >
-              {seriesLabel[key]} ({seriesCounts[key]})
-            </button>
-          ))}
-        </div>
+        {/* Scrollable Theme Pairs Grid */}
+        <div className="flex-1 min-h-40 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
+          {filteredThemes.map((item) => {
+            const isSelected = item.id === activeThemeId;
+            const isUnlocked = checkUnlocked(item);
+            const isPrestigeExclusive = Boolean(item.requiredAscensions && item.requiredAscensions > 0);
+            const reqHours = getReqHoursForLevel(item.clearanceHintLv);
+            const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
 
-        {/* Division Filter Strip — horizontally scrollable on mobile so 11
-            buttons never spend multiple lines of the limited viewport height. */}
-        <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
-          {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE'].map(
-            (divCode) => (
+            return (
               <button
-                key={divCode}
+                key={item.id}
                 type="button"
-                onClick={() => setSelectedDiv(divCode)}
-                className={`shrink-0 px-2 py-0.5 text-[9px] border cursor-pointer ${
-                  selectedDiv === divCode
-                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                    : `${borderCol} ${textMuted}`
+                onClick={() => {
+                  if (isUnlocked) {
+                    setLockedNotice(null);
+                    onSelectThemeId(item.id);
+                  } else if (isPrestigeExclusive) {
+                    setLockedNotice(
+                      tf(t.themePrestigeNotice, {
+                        code: item.code,
+                        name: item.name,
+                        n: item.requiredAscensions ?? 0,
+                        have: userTotalAscensions,
+                      })
+                    );
+                  } else {
+                    setLockedNotice(
+                      tf(t.noiseLockedNotice, {
+                        code: item.code,
+                        name: item.name,
+                        lv: String(item.clearanceHintLv).padStart(4, '0'),
+                        req: reqHours,
+                        rem: hoursRemaining,
+                      })
+                    );
+                  }
+                }}
+                className={`p-3 border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_168px] ${
+                  isSelected
+                    ? 'border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5'
+                    : isUnlocked
+                    ? `${borderCol} hover:border-zinc-500`
+                    : `${borderCol} opacity-65 hover:opacity-90`
                 }`}
               >
-                {divCode === 'ALL' ? t.all : divCode}
-              </button>
-            )
-          )}
-        </div>
-      </div>
-
-      {/* Scrollable Theme Pairs Grid — generous min-height on mobile */}
-      <div className="flex-1 min-h-80 sm:min-h-55 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
-        {filteredThemes.map((item) => {
-          const isSelected = item.id === activeThemeId;
-          const isUnlocked = checkUnlocked(item);
-          const isPrestigeExclusive = Boolean(item.requiredAscensions && item.requiredAscensions > 0);
-          const reqHours = getReqHoursForLevel(item.clearanceHintLv);
-          const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
-
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                if (isUnlocked) {
-                  setLockedNotice(null);
-                  onSelectThemeId(item.id);
-                } else if (isPrestigeExclusive) {
-                  setLockedNotice(
-                    tf(t.themePrestigeNotice, {
-                      code: item.code,
-                      name: item.name,
-                      n: item.requiredAscensions ?? 0,
-                      have: userTotalAscensions,
-                    })
-                  );
-                } else {
-                  setLockedNotice(
-                    tf(t.noiseLockedNotice, {
-                      code: item.code,
-                      name: item.name,
-                      lv: String(item.clearanceHintLv).padStart(4, '0'),
-                      req: reqHours,
-                      rem: hoursRemaining,
-                    })
-                  );
-                }
-              }}
-              className={`p-3 border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_168px] ${
-                isSelected
-                  ? 'border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5'
-                  : isUnlocked
-                  ? `${borderCol} hover:border-zinc-500`
-                  : `${borderCol} opacity-65 hover:opacity-90`
-              }`}
-            >
-              <div className="space-y-1 w-full">
-                <div className="flex items-center justify-between gap-1.5">
-                  <div className="flex items-center space-x-1.5 min-w-0">
-                    <span
-                      className="px-1.5 py-0.2 text-[9px] font-bold text-zinc-950 shrink-0"
-                      style={{ backgroundColor: item.accentHex }}
-                    >
-                      {item.code}
-                    </span>
-                    <span className="font-bold text-[11px] truncate">{item.name}</span>
-                  </div>
-                  {isSelected ? (
-                    <span className="px-1.5 py-0.2 bg-emerald-500 text-zinc-950 text-[9px] font-bold uppercase shrink-0">
-                      {t.equipped}
-                    </span>
-                  ) : isUnlocked ? (
-                    <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
-                      {t.filterUnlocked}
-                    </span>
-                  ) : isPrestigeExclusive ? (
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
-                      title={tf(t.prestigeRequires, { n: item.requiredAscensions ?? 0 })}
-                    >
-                      <Lock className="w-2.5 h-2.5" />
-                      <span>✦ ×{item.requiredAscensions}</span>
-                    </span>
-                  ) : (
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 border ${borderCol} text-amber-400 flex items-center space-x-1 shrink-0`}
-                      title={tf(t.requiresClearance, { lv: item.clearanceHintLv, h: reqHours })}
-                    >
-                      <Lock className="w-2.5 h-2.5" />
-                      <span>
-                        LV.{String(item.clearanceHintLv).padStart(4, '0')} ({reqHours}H)
+                <div className="space-y-1 w-full">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center space-x-1.5 min-w-0">
+                      <span
+                        className="px-1.5 py-0.2 text-[9px] font-bold text-zinc-950 shrink-0"
+                        style={{ backgroundColor: item.accentHex }}
+                      >
+                        {item.code}
                       </span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between text-[9px]">
-                  <span className={`truncate ${textMuted}`}>{item.pairLabel}</span>
-                  <span className="flex items-center gap-1 shrink-0 ml-1">
-                    {item.fx && (
-                      <span className="uppercase px-1 border border-fuchsia-500/40 text-fuchsia-400" title={t.surfaceFxHint}>
-                        FX·{item.fx}
+                      <span className="font-bold text-[11px] truncate">{item.name}</span>
+                    </div>
+                    {isSelected ? (
+                      <span className="px-1.5 py-0.2 bg-emerald-500 text-zinc-950 text-[9px] font-bold uppercase shrink-0">
+                        {t.equipped}
+                      </span>
+                    ) : isUnlocked ? (
+                      <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
+                        {t.filterUnlocked}
+                      </span>
+                    ) : isPrestigeExclusive ? (
+                      <span
+                        className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
+                        title={tf(t.prestigeRequires, { n: item.requiredAscensions ?? 0 })}
+                      >
+                        <Lock className="w-2.5 h-2.5" />
+                        <span>✦ ×{item.requiredAscensions}</span>
+                      </span>
+                    ) : (
+                      <span
+                        className={`text-[9px] px-1.5 py-0.2 border ${borderCol} text-amber-400 flex items-center space-x-1 shrink-0`}
+                        title={tf(t.requiresClearance, { lv: item.clearanceHintLv, h: reqHours })}
+                      >
+                        <Lock className="w-2.5 h-2.5" />
+                        <span>
+                          LV.{String(item.clearanceHintLv).padStart(4, '0')} ({reqHours}H)
+                        </span>
                       </span>
                     )}
-                    <span className={`uppercase px-1 border ${SERIES_BADGE[item.series]}`}>{seriesLabel[item.series]}</span>
-                  </span>
-                </div>
-                <p className={`text-[10px] font-sans leading-snug line-clamp-2 ${textMuted}`}>
-                  {item.description}
-                </p>
-              </div>
+                  </div>
 
-              {/* Dual Swatch Strip (Left = Dark Mode Surface, Right = Light Mode Surface) */}
-              <div className="w-full grid grid-cols-2 border border-zinc-700/50 overflow-hidden h-9 shrink-0">
-                <div
-                  className="px-2 flex items-center justify-between text-[9px] font-bold"
-                  style={getSurfaceBackgroundStyle(item, true)}
-                >
-                  <span className="truncate">DARK</span>
-                  <span
-                    className="w-3 h-3 rounded-sm border"
-                    style={{
-                      backgroundColor: item.dark.bgCard,
-                      borderColor: item.dark.border,
-                    }}
-                  />
+                  <div className="flex items-center justify-between text-[9px]">
+                    <span className={`truncate ${textMuted}`}>{item.pairLabel}</span>
+                    <span className="flex items-center gap-1 shrink-0 ml-1">
+                      {item.fx && (
+                        <span className="uppercase px-1 border border-fuchsia-500/40 text-fuchsia-400" title={t.surfaceFxHint}>
+                          FX·{item.fx}
+                        </span>
+                      )}
+                      <span className={`uppercase px-1 border ${SERIES_BADGE[item.series]}`}>{seriesLabel[item.series]}</span>
+                    </span>
+                  </div>
+                  <p className={`text-[10px] font-sans leading-snug line-clamp-2 ${textMuted}`}>
+                    {item.description}
+                  </p>
                 </div>
-                <div
-                  className="px-2 flex items-center justify-between text-[9px] font-bold border-l border-zinc-700/40"
-                  style={getSurfaceBackgroundStyle(item, false)}
-                >
-                  <span className="truncate">LIGHT</span>
-                  <span
-                    className="w-3 h-3 rounded-sm border"
-                    style={{
-                      backgroundColor: item.light.bgCard,
-                      borderColor: item.light.border,
-                    }}
-                  />
+
+                {/* Dual Swatch Strip (Left = Dark Mode Surface, Right = Light Mode Surface) */}
+                <div className="w-full grid grid-cols-2 border border-zinc-700/50 overflow-hidden h-9 shrink-0">
+                  <div
+                    className="px-2 flex items-center justify-between text-[9px] font-bold"
+                    style={getSurfaceBackgroundStyle(item, true)}
+                  >
+                    <span className="truncate">DARK</span>
+                    <span
+                      className="w-3 h-3 rounded-sm border"
+                      style={{
+                        backgroundColor: item.dark.bgCard,
+                        borderColor: item.dark.border,
+                      }}
+                    />
+                  </div>
+                  <div
+                    className="px-2 flex items-center justify-between text-[9px] font-bold border-l border-zinc-700/40"
+                    style={getSurfaceBackgroundStyle(item, false)}
+                  >
+                    <span className="truncate">LIGHT</span>
+                    <span
+                      className="w-3 h-3 rounded-sm border"
+                      style={{
+                        backgroundColor: item.light.bgCard,
+                        borderColor: item.light.border,
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

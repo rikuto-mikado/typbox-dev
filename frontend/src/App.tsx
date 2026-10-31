@@ -7,8 +7,6 @@ import {
   FolderPlus,
   BarChart3,
   Calendar,
-  Moon,
-  Sun,
   LogIn,
   LogOut,
   Trash2,
@@ -55,6 +53,13 @@ import { TypboxLogo } from './TypboxLogo';
 import { resolveSurfaceThemeId } from './surfaceThemes';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
+import { StatusRankList } from './StatusRankList';
+import { ThemeToggleIcon } from './ThemeToggleIcon';
+import { BitsBadge } from './BitsBadge';
+import { BitsShopModal, type ShopTab } from './BitsShopModal';
+import { MyRoomPanel } from './MyRoomPanel';
+import { NewsPanel } from './NewsPanel';
+import { bitsForMinutes, type BitsSummary } from './bits';
 import { SaveButton, useSaveState } from './SaveButton';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
 import {
@@ -111,7 +116,6 @@ import {
   USER_STATUS_GROUPS,
   USER_STATUS_OPTIONS,
   getUserStatusOption,
-  matchesStatusQuery,
   sanitizeUserStatuses,
   type UserStatusGroup,
 } from './userStatus';
@@ -195,6 +199,8 @@ export interface StudyLog {
   topic: string;
   isPublicToHub: boolean;
   createdAt: string;
+  /** Extra BITS a shop buff paid onto this log (see bits.ts). */
+  bonusBits?: number;
 }
 
 export interface AuthUser {
@@ -218,6 +224,7 @@ export interface AuthUser {
   ambient_theme?: string;
   ambient_clock?: boolean | null;
   cursor_theme?: string;
+  bits?: BitsSummary;
 }
 
 /** Account-synced UI prefs that go through the debounced PATCH queue. */
@@ -234,10 +241,30 @@ type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
 // Sign-ups are closed unless the build opts in (mirrors the backend's ALLOW_REGISTRATION).
 const REGISTRATION_OPEN = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
-type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'cursor' | 'clearance' | 'security' | 'data';
+type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'cursor' | 'clearance' | 'room' | 'account' | 'news';
 // Surface themes, UI fonts, ambient overlays and cursors share the single 02 / APPEARANCE tab.
 const APPEARANCE_TABS: SettingsTab[] = ['themes', 'fonts', 'ambient', 'cursor'];
 const CATEGORY_PREVIEW_COUNT = 5;
+// Tailwind's lg breakpoint, where the dashboard becomes two columns.
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** Live result of a CSS media query (false where matchMedia is missing). */
+const useMediaQuery = (query: string): boolean => {
+  // Stable per query, so the store subscribes once instead of on every render.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const mq = window.matchMedia?.(query);
+      mq?.addEventListener('change', onChange);
+      return () => mq?.removeEventListener('change', onChange);
+    },
+    [query]
+  );
+  return React.useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia?.(query).matches ?? false,
+    () => false
+  );
+};
 
 const AVATAR_PRESET_OPTIONS = [
   { id: 'initial', label: 'Initial' },
@@ -521,15 +548,10 @@ const getInitialAmbientDim = (): AmbientDim => {
 };
 
 const STATUS_GROUP_LABEL_KEY: Record<UserStatusGroup, keyof Dict> = {
-  major: 'statusGroupMajor',
-  school: 'statusGroupSchool',
-  mission: 'statusGroupMission',
   rhythm: 'statusGroupRhythm',
   method: 'statusGroupMethod',
   archetype: 'statusGroupArchetype',
   fuel: 'statusGroupFuel',
-  hobbies: 'statusGroupHobbies',
-  sports: 'statusGroupSports',
 };
 
 const getInitialSurfaceTheme = (): string => {
@@ -869,6 +891,15 @@ export default function App() {
   const visibleLogCount = INITIAL_VISIBLE_LOGS + extraVisibleLogs;
 
   const [dataLoading, setDataLoading] = useState<boolean>(false);
+  // Earned BITS follow the loaded logs so the header moves the instant a log
+  // commits; spending comes from the server (bits.ts mirrors economy.py).
+  const bitsBalance = useMemo(
+    () =>
+      bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)) +
+      logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) -
+      (user?.bits?.spent ?? 0),
+    [logs, user]
+  );
   const [apiError, setApiError] = useState<string | null>(null);
 
   // On desktop the log list stays as tall as its collapsed (5-log) height:
@@ -1010,8 +1041,6 @@ export default function App() {
   const [profileAvatarImage, setProfileAvatarImage] = useState<string>('');
   const [profileStatuses, setProfileStatuses] = useState<string[]>([]);
   const [statusLimitHit, setStatusLimitHit] = useState<boolean>(false);
-  const [statusQuery, setStatusQuery] = useState<string>('');
-  const [openStatusGroups, setOpenStatusGroups] = useState<UserStatusGroup[]>([]);
   const profileSave = useSaveState();
   // Save failures are shown next to the save button (the form is long, so
   // the status box at its top is usually scrolled out of view).
@@ -1033,6 +1062,13 @@ export default function App() {
 
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [showStatusCardModal, setShowStatusCardModal] = useState<boolean>(false);
+  const [showBitsShop, setShowBitsShop] = useState<boolean>(false);
+  const [bitsShopTab, setBitsShopTab] = useState<ShopTab>('buffs');
+  const closeBitsShop = useCallback(() => setShowBitsShop(false), []);
+  const openBitsShop = useCallback((tab: ShopTab) => {
+    setBitsShopTab(tab);
+    setShowBitsShop(true);
+  }, []);
   const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState<string>('');
   const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
@@ -1062,13 +1098,8 @@ export default function App() {
         setProfileAvatarImage(user.avatar_image || '');
         const statuses = sanitizeUserStatuses(user.user_statuses);
         setProfileStatuses(statuses);
-        // ~200 options: open only the groups that already hold a pick.
-        setOpenStatusGroups(
-          USER_STATUS_GROUPS.filter((g) => statuses.some((id) => getUserStatusOption(id)?.group === g))
-        );
       }
       setStatusLimitHit(false);
-      setStatusQuery('');
       setProfileStatus(null);
       setProfileSaveError(null);
       setRegionStatus(null);
@@ -1284,6 +1315,7 @@ export default function App() {
         topic: l.topic,
         isPublicToHub: l.is_public_to_hub,
         createdAt: l.created_at,
+        bonusBits: l.bonus_bits ?? 0,
       }));
 
       setCategories(formattedCats);
@@ -1887,7 +1919,7 @@ export default function App() {
 
       const cat = categories.find((c) => String(c.id) === String(selectedCatId));
       const newLogItem: StudyLog = {
-        id: (created as { id: number | string }).id,
+        id: created.id,
         categoryId: selectedCatId,
         categoryCode: cat?.code,
         categoryName: cat?.name,
@@ -1897,6 +1929,7 @@ export default function App() {
         topic: '',
         isPublicToHub: true,
         createdAt: new Date().toISOString(),
+        bonusBits: created.bonus_bits ?? 0,
       };
 
       setLogs((prev) => [newLogItem, ...prev]);
@@ -1929,7 +1962,7 @@ export default function App() {
 
         const cat = categories.find((c) => String(c.id) === String(categoryId));
         const newLogItem: StudyLog = {
-          id: (created as { id: number | string }).id,
+          id: created.id,
           categoryId,
           categoryCode: cat?.code,
           categoryName: cat?.name,
@@ -1939,6 +1972,7 @@ export default function App() {
           topic: '',
           isPublicToHub: true,
           createdAt: new Date().toISOString(),
+          bonusBits: created.bonus_bits ?? 0,
         };
 
         setLogs((prev) => [newLogItem, ...prev]);
@@ -1972,7 +2006,7 @@ export default function App() {
     const updatedDuration = Number(editLogDuration) || 60;
 
     try {
-      await api.logs.update(editingLogId, {
+      const updated = await api.logs.update(editingLogId, {
         category: editLogCatId,
         date: editLogDate,
         duration_minutes: updatedDuration,
@@ -1993,6 +2027,8 @@ export default function App() {
                 durationMinutes: updatedDuration,
                 durationHours: +(updatedDuration / 60).toFixed(2),
                 topic: '',
+                // The server trims a buff bonus when a log is shortened.
+                bonusBits: updated.bonus_bits ?? l.bonusBits,
               }
             : l
         )
@@ -2434,47 +2470,22 @@ export default function App() {
     [categories, logs]
   );
 
-  // The registry lists the first CATEGORY_PREVIEW_COUNT rows; the rest fold
-  // behind SHOW MORE. A row being edited always stays visible.
+  // On phones the registry lists the first CATEGORY_PREVIEW_COUNT rows and
+  // folds the rest behind SHOW MORE (a row being edited always stays
+  // visible). On desktop it is the stretched last panel of its column, so
+  // it lists every row and the list scrolls inside the panel.
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const hiddenCategories = useMemo(
     () =>
-      showAllCategories
+      showAllCategories || isDesktop
         ? []
         : weeklyBreakdown.slice(CATEGORY_PREVIEW_COUNT).filter((c) => String(c.id) !== String(editingCatId)),
-    [weeklyBreakdown, showAllCategories, editingCatId]
+    [weeklyBreakdown, showAllCategories, isDesktop, editingCatId]
   );
   const visibleCategories = useMemo(
     () => weeklyBreakdown.filter((c) => !hiddenCategories.includes(c)),
     [weeklyBreakdown, hiddenCategories]
   );
-
-  // Same pattern as the log stream: on desktop the registry keeps its
-  // collapsed (CATEGORY_PREVIEW_COUNT-row) height and SHOW MORE scrolls
-  // inside it instead of stretching the column. Measured while collapsed,
-  // since rows change height (inline editor, hints).
-  const categoryListRef = React.useRef<HTMLDivElement>(null);
-  const [categoryListCap, setCategoryListCap] = useState<number | null>(null);
-  useEffect(() => {
-    const el = categoryListRef.current;
-    if (!el || showAllCategories || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setCategoryListCap(el.scrollHeight));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [showAllCategories, weeklyBreakdown.length, dataLoading]);
-
-  // Expanding brings the first newly shown row into view; collapsing
-  // resets the scroll so the next expansion starts from the top.
-  useEffect(() => {
-    const el = categoryListRef.current;
-    if (!el) return;
-    if (!showAllCategories) {
-      el.scrollTop = 0;
-      return;
-    }
-    if (el.scrollHeight <= el.clientHeight) return;
-    const row = el.children[CATEGORY_PREVIEW_COUNT] as HTMLElement | undefined;
-    if (row) el.scrollTo({ top: row.offsetTop - el.offsetTop, behavior: 'smooth' });
-  }, [showAllCategories]);
 
   // 12-Week Aggregation Data (1 Bar = 1 Calendar Week Bucket, ending at weeklyOffset)
   const weeklyAggBuckets = useMemo(() => {
@@ -3259,6 +3270,16 @@ export default function App() {
               userTotalHours={clearanceStatus.totalHours}
             />
 
+            {/* BITS balance (signed-in only) */}
+            {user && (
+              <BitsBadge
+                balance={bitsBalance}
+                ready={!dataLoading}
+                borderCol={borderCol}
+                onOpen={() => openBitsShop('buffs')}
+              />
+            )}
+
             {/* Theme Polarity Toggle (Dark ⇄ Light of active Surface Theme Pair) */}
             <button
               onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
@@ -3270,7 +3291,7 @@ export default function App() {
                   : tf(t.switchToDark, { label: activeSurfacePair.dark.label })
               }
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <ThemeToggleIcon showSun={isDark} className="w-4 h-4" />
             </button>
 
             {/* Auth Action Button */}
@@ -3717,7 +3738,9 @@ export default function App() {
             phones both wrappers are `contents`, so the panels form one column in their
             order-N sequence, log stream last. */}
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
-          {/* LEFT COLUMN: Chronometer, Recording, Categories, Insights, Lunar Calendar */}
+          {/* LEFT COLUMN: Chronometer, Recording, Insights, Lunar Calendar, Categories.
+              The last panel stretches to line the column up with the right one, so it
+              is the category registry, whose list simply shows more rows when taller. */}
           <div className="contents lg:flex lg:flex-col lg:gap-8 lg:col-span-5 lg:[&>*:last-child]:grow">
             {/* SYSTEM CHRONOMETER (DIGITAL CLOCK PANEL) */}
             <div data-panel="chrono" className={`border ${borderCol} ${bgCard} p-5 relative overflow-hidden order-1 lg:order-none`}>
@@ -3857,7 +3880,7 @@ export default function App() {
                   </h2>
                 </div>
                 <div className={`relative flex border ${borderCol} text-xs lg:text-[11px] font-mono`}>
-                  <SegmentIndicator activeKey={inputMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} scan />
+                  <SegmentIndicator activeKey={inputMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
                   <button
                     type="button"
                     onClick={() => setInputMode('manual')}
@@ -4041,8 +4064,126 @@ export default function App() {
               </form>
             </div>
 
+            {/* STUDY INSIGHTS & TELEMETRY VAULT PANEL */}
+            <div data-panel="insights" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 space-y-3 relative order-5 lg:order-none`}>
+              {!user && (
+                <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
+                  <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                  <p className="font-mono text-xs uppercase tracking-wider font-semibold">
+                    {t.signInInsights}
+                  </p>
+                </div>
+              )}
+
+              {/* Panel Header */}
+              <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
+                <div className="flex items-center space-x-2">
+                  <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                  <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
+                    {t.insightsTitle}
+                  </h2>
+                </div>
+                <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'} flex items-center space-x-1`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{t.liveArchive}</span>
+                </span>
+              </div>
+
+              {/* Section 1: Streak & Consistency (stat strip + 30-day cell strip) */}
+              <div className="space-y-2.5 font-mono">
+                <div className={`flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider ${textMuted}`}>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <Flame className={`w-3.5 h-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+                    <span>{t.streakTitle}</span>
+                  </span>
+                  <span className="tabular-nums">
+                    {tf(t.activeDaysOf30, { n: streakStats.activeDaysInLast30, pct: streakStats.activeDayRatio })}
+                  </span>
+                </div>
+
+                <div className={`grid grid-cols-2 sm:grid-cols-4 border-t border-l ${borderCol}`}>
+                  {(
+                    [
+                      [t.currentStreak, streakStats.currentStreak, t.unitDaysShort, isDark ? 'text-amber-400' : 'text-amber-600'],
+                      [t.allTimeRecord, streakStats.longestStreak, t.unitDaysShort, isDark ? 'text-emerald-400' : 'text-emerald-600'],
+                      [t.peakDay, logs.length ? habitInsights.peakDayName.slice(0, 3) : '—', '', ''],
+                      [t.avgSession, habitInsights.avgSessionMin, t.unitMin, ''],
+                    ] as Array<[string, string | number, string, string]>
+                  ).map(([label, value, unit, tone]) => (
+                    <div key={label} className={`px-2.5 py-2 border-r border-b ${borderCol} min-w-0`}>
+                      <span className={`block text-[9px] uppercase tracking-wider truncate ${textMuted}`}>{label}</span>
+                      <span className="mt-0.5 flex items-baseline gap-1">
+                        <span className={`text-lg leading-tight font-light tabular-nums ${tone}`}>{value}</span>
+                        {unit && <span className={`text-[9px] ${textMuted}`}>{unit}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  {/* 30 segments filling left -> right: one per active day in the last 30. */}
+                  <div
+                    className="flex gap-[2px] h-3.5"
+                    role="progressbar"
+                    aria-label={t.streakTitle}
+                    aria-valuemin={0}
+                    aria-valuemax={30}
+                    aria-valuenow={streakStats.activeDaysInLast30}
+                  >
+                    {Array.from({ length: 30 }, (_, idx) => (
+                      <span
+                        key={idx}
+                        className={`flex-1 transition-colors duration-500 ${
+                          idx < streakStats.activeDaysInLast30 ? 'bg-emerald-500' : isDark ? 'bg-zinc-800/70' : 'bg-zinc-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <div className={`mt-0.5 flex justify-between text-[9px] uppercase tracking-wider ${textMuted}`}>
+                    <span>0</span>
+                    <span>{t.strip30d}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Data Vault & Export Actions */}
+              <div className={`flex flex-wrap items-center justify-between gap-2 pt-3 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'} font-mono`}>
+                <span className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${textMuted}`}>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{t.dataVault}</span>
+                </span>
+                <div className={`grid grid-cols-2 border ${borderCol} text-[10px] uppercase tracking-wider`}>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    disabled={logs.length === 0}
+                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                    title={t.exportCsvTitle}
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>{t.exportCsv}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportJSON}
+                    disabled={logs.length === 0}
+                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 border-l ${borderCol} flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                    title={t.exportJsonTitle}
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>{t.exportJson}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* LUNAR CALENDAR PANEL */}
+            <div data-panel="lunar" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
+              <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
+            </div>
+
             {/* CATEGORY REGISTRY PANEL */}
-            <div data-panel="registry" className={`border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none`}>
+            <div data-panel="registry" className={`border ${borderCol} ${bgCard} p-6 relative order-6 lg:order-none lg:flex lg:flex-col`}>
               {!user && (
                 <div
                   className={`absolute inset-0 z-20 backdrop-blur-[2px] ${
@@ -4160,8 +4301,9 @@ export default function App() {
                 </form>
               )}
 
-              {/* Category List */}
-              <div className="space-y-3">
+              {/* Category List: on desktop it takes the panel's remaining height
+                  (basis-0, so it never makes the column taller) and scrolls. */}
+              <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
                 {categories.length > 0 && (
                   <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-wider ${textMuted}`}>
                     <span>
@@ -4192,17 +4334,7 @@ export default function App() {
                   // -mx-2/px-2 leaves room for the rows' hover bleed once
                   // the expanded list becomes a scroll box (desktop).
                   <div
-                    ref={categoryListRef}
-                    className={`space-y-3 -mx-2 px-2 ${
-                      showAllCategories && categoryListCap
-                        ? 'lg:max-h-[var(--category-list-cap)] lg:overflow-y-auto lg:[scrollbar-width:thin]'
-                        : ''
-                    }`}
-                    style={
-                      showAllCategories && categoryListCap
-                        ? ({ '--category-list-cap': `${categoryListCap}px` } as React.CSSProperties)
-                        : undefined
-                    }
+                    className="space-y-3 -mx-2 px-2 lg:flex-1 lg:basis-0 lg:min-h-60 lg:overflow-y-auto lg:[scrollbar-width:thin]"
                   >
                   {visibleCategories.map((cat) => {
                     const isEditing = String(editingCatId) === String(cat.id);
@@ -4472,7 +4604,7 @@ export default function App() {
                   </div>
                 )}
 
-                {weeklyBreakdown.length > CATEGORY_PREVIEW_COUNT && (
+                {weeklyBreakdown.length > CATEGORY_PREVIEW_COUNT && !isDesktop && (
                   <button
                     type="button"
                     onClick={() => setShowAllCategories((v) => !v)}
@@ -4572,124 +4704,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* STUDY INSIGHTS & TELEMETRY VAULT PANEL */}
-            <div data-panel="insights" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 space-y-3 relative order-5 lg:order-none`}>
-              {!user && (
-                <div className={`absolute inset-0 z-20 backdrop-blur-[2px] ${isDark ? 'bg-black/60 text-zinc-100' : 'bg-white/80 text-zinc-900'} flex flex-col items-center justify-center p-6 text-center space-y-2`}>
-                  <Lock className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <p className="font-mono text-xs uppercase tracking-wider font-semibold">
-                    {t.signInInsights}
-                  </p>
-                </div>
-              )}
-
-              {/* Panel Header */}
-              <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
-                <div className="flex items-center space-x-2">
-                  <Activity className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                    {t.insightsTitle}
-                  </h2>
-                </div>
-                <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'} flex items-center space-x-1`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>{t.liveArchive}</span>
-                </span>
-              </div>
-
-              {/* Section 1: Streak & Consistency (stat strip + 30-day cell strip) */}
-              <div className="space-y-2.5 font-mono">
-                <div className={`flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider ${textMuted}`}>
-                  <span className="flex items-center gap-1.5 whitespace-nowrap">
-                    <Flame className={`w-3.5 h-3.5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
-                    <span>{t.streakTitle}</span>
-                  </span>
-                  <span className="tabular-nums">
-                    {tf(t.activeDaysOf30, { n: streakStats.activeDaysInLast30, pct: streakStats.activeDayRatio })}
-                  </span>
-                </div>
-
-                <div className={`grid grid-cols-2 sm:grid-cols-4 border-t border-l ${borderCol}`}>
-                  {(
-                    [
-                      [t.currentStreak, streakStats.currentStreak, t.unitDaysShort, isDark ? 'text-amber-400' : 'text-amber-600'],
-                      [t.allTimeRecord, streakStats.longestStreak, t.unitDaysShort, isDark ? 'text-emerald-400' : 'text-emerald-600'],
-                      [t.peakDay, logs.length ? habitInsights.peakDayName.slice(0, 3) : '—', '', ''],
-                      [t.avgSession, habitInsights.avgSessionMin, t.unitMin, ''],
-                    ] as Array<[string, string | number, string, string]>
-                  ).map(([label, value, unit, tone]) => (
-                    <div key={label} className={`px-2.5 py-2 border-r border-b ${borderCol} min-w-0`}>
-                      <span className={`block text-[9px] uppercase tracking-wider truncate ${textMuted}`}>{label}</span>
-                      <span className="mt-0.5 flex items-baseline gap-1">
-                        <span className={`text-lg leading-tight font-light tabular-nums ${tone}`}>{value}</span>
-                        {unit && <span className={`text-[9px] ${textMuted}`}>{unit}</span>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  {/* 30 segments filling left -> right: one per active day in the last 30. */}
-                  <div
-                    className="flex gap-[2px] h-3.5"
-                    role="progressbar"
-                    aria-label={t.streakTitle}
-                    aria-valuemin={0}
-                    aria-valuemax={30}
-                    aria-valuenow={streakStats.activeDaysInLast30}
-                  >
-                    {Array.from({ length: 30 }, (_, idx) => (
-                      <span
-                        key={idx}
-                        className={`flex-1 transition-colors duration-500 ${
-                          idx < streakStats.activeDaysInLast30 ? 'bg-emerald-500' : isDark ? 'bg-zinc-800/70' : 'bg-zinc-200'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <div className={`mt-0.5 flex justify-between text-[9px] uppercase tracking-wider ${textMuted}`}>
-                    <span>0</span>
-                    <span>{t.strip30d}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Data Vault & Export Actions */}
-              <div className={`flex flex-wrap items-center justify-between gap-2 pt-3 border-t ${isDark ? 'border-zinc-800/50' : 'border-zinc-200'} font-mono`}>
-                <span className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${textMuted}`}>
-                  <Download className="w-3.5 h-3.5" />
-                  <span>{t.dataVault}</span>
-                </span>
-                <div className={`grid grid-cols-2 border ${borderCol} text-[10px] uppercase tracking-wider`}>
-                  <button
-                    type="button"
-                    onClick={handleExportCSV}
-                    disabled={logs.length === 0}
-                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title={t.exportCsvTitle}
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>{t.exportCsv}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportJSON}
-                    disabled={logs.length === 0}
-                    className={`min-h-[36px] lg:min-h-0 px-3 py-1.5 border-l ${borderCol} flex items-center justify-center gap-1.5 ${isDark ? 'text-zinc-200 hover:bg-zinc-800/50' : 'text-zinc-800 hover:bg-zinc-100'} hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
-                    title={t.exportJsonTitle}
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>{t.exportJson}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* LUNAR CALENDAR PANEL */}
-            <div data-panel="lunar" className={`border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
-              <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
             </div>
           </div>
 
@@ -6109,14 +6123,15 @@ export default function App() {
             </div>
 
             {/* Settings Navigation Tabs */}
-            <div className={`flex flex-wrap border-l border-t ${borderCol} text-[10px] sm:text-[11px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
+            <div className={`flex flex-wrap border-l border-t ${borderCol} text-[10px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
               {(
                 [
                   ['profile', t.tabProfile],
                   ['themes', t.tabAppearance],
                   ['clearance', t.tabClearance],
-                  ['security', t.tabPassword],
-                  ['data', t.tabData],
+                  ['room', t.tabRoom],
+                  ['account', t.tabAccount],
+                  ['news', t.tabNews],
                 ] as Array<[SettingsTab, string]>
               ).map(([tab, label]) => {
                 const active = tab === 'themes' ? APPEARANCE_TABS.includes(settingsTab) : settingsTab === tab;
@@ -6139,11 +6154,13 @@ export default function App() {
               })}
             </div>
 
-            {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping) */}
-            <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1">
+            {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping).
+                Size container so inner lists can size themselves to its visible
+                height (100cqh). */}
+            <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1 [container-type:size]">
               {/* TAB 2: APPEARANCE // SURFACE (900 PAIRS) · TYPE · AMBIENT · CURSOR */}
               {APPEARANCE_TABS.includes(settingsTab) && (
-                <div className={`flex flex-col gap-3 sm:gap-4 ${settingsTab === 'themes' ? 'h-full' : ''}`}>
+                <div className="flex flex-col gap-3 sm:gap-4">
                   <div
                     className={`grid grid-cols-2 sm:grid-cols-4 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
                     role="tablist"
@@ -6178,7 +6195,7 @@ export default function App() {
                     ))}
                   </div>
 
-                  <div className={settingsTab === 'themes' ? 'flex-1 min-h-0' : ''}>
+                  <div>
                     {settingsTab === 'themes' && (
                       <SurfaceThemeSelectorPanel
                         activeThemeId={surfaceThemeId}
@@ -6242,6 +6259,29 @@ export default function App() {
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* TAB 6: NEWS (what's new in TYPBOX, news.ts) */}
+              {settingsTab === 'news' && (
+                <NewsPanel
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                  bgCard={bgCard}
+                  isDark={isDark}
+                  timeZone={timeZone}
+                  weekStart={weekStart}
+                />
+              )}
+
+              {/* TAB 4: MY ROOM (furniture bought with BITS in the weekly shop) */}
+              {settingsTab === 'room' && (
+                <MyRoomPanel
+                  isRunning={isRunning}
+                  timeZone={timeZone}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                  onOpenShop={() => openBitsShop('furniture')}
+                />
               )}
 
               {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-1,000H PER CYCLE) */}
@@ -6512,30 +6552,31 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Current selection (in pick order) */}
-                  <div className="flex flex-wrap items-center gap-1.5 min-h-[26px]">
+                  {/* Current selection, ranked: order is priority (#1 = headline) */}
+                  <div className="space-y-1.5 min-h-[26px]">
                     {profileStatuses.length === 0 ? (
                       <span className={`text-[10px] ${textMuted}`}>{t.statusNone}</span>
                     ) : (
                       <>
-                        {profileStatuses.map((id) => (
-                          <button
-                            key={`sel-${id}`}
-                            type="button"
-                            onClick={() => toggleProfileStatus(id)}
-                            className="px-2 py-1 border border-emerald-500 bg-emerald-500/15 text-emerald-400 text-[10px] font-bold flex items-center space-x-1.5 cursor-pointer hover:bg-emerald-500/25"
-                          >
-                            <span>{getUserStatusOption(id)?.label ?? id}</span>
-                            <span aria-hidden>×</span>
-                          </button>
-                        ))}
+                        <StatusRankList
+                          statuses={profileStatuses}
+                          onReorder={setProfileStatuses}
+                          onRemove={toggleProfileStatus}
+                          groupLabelOf={(id) => {
+                            const opt = getUserStatusOption(id);
+                            return opt ? t[STATUS_GROUP_LABEL_KEY[opt.group]] : undefined;
+                          }}
+                          borderCol={borderCol}
+                          textMuted={textMuted}
+                          bgCard={bgCard}
+                        />
                         <button
                           type="button"
                           onClick={() => {
                             setProfileStatuses([]);
                             setStatusLimitHit(false);
                           }}
-                          className={`px-1.5 py-1 text-[10px] ${textMuted} hover:text-rose-400 underline underline-offset-2 cursor-pointer`}
+                          className={`block ml-auto px-1.5 py-0.5 text-[10px] ${textMuted} hover:text-rose-400 underline underline-offset-2 cursor-pointer`}
                         >
                           {t.statusClear}
                         </button>
@@ -6550,101 +6591,46 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="search"
-                      value={statusQuery}
-                      onChange={(e) => setStatusQuery(e.target.value)}
-                      placeholder={tf(t.statusSearch, { n: USER_STATUS_OPTIONS.length })}
-                      aria-label={tf(t.statusSearch, { n: USER_STATUS_OPTIONS.length })}
-                      className={`flex-1 min-h-[34px] px-2.5 py-1.5 text-base sm:text-xs border outline-none ${inputBg}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOpenStatusGroups(
-                          openStatusGroups.length === USER_STATUS_GROUPS.length ? [] : [...USER_STATUS_GROUPS]
-                        )
-                      }
-                      className={`px-2.5 py-1.5 border ${borderCol} ${textMuted} text-[10px] hover:text-emerald-400 cursor-pointer shrink-0`}
-                    >
-                      {openStatusGroups.length === USER_STATUS_GROUPS.length ? t.statusCollapseAll : t.statusExpandAll}
-                    </button>
-                  </div>
-
+                  {/* The catalog is short, so every group is always shown in full. */}
                   <div className={`border ${borderCol} divide-y divide-[var(--tb-border)]`}>
-                    {(() => {
-                      const searching = statusQuery.trim().length > 0;
-                      const groups = USER_STATUS_GROUPS.map((group) => ({
-                        group,
-                        options: USER_STATUS_OPTIONS.filter(
-                          (o) => o.group === group && matchesStatusQuery(o, statusQuery)
-                        ),
-                        picked: profileStatuses.filter((id) => getUserStatusOption(id)?.group === group).length,
-                      })).filter((g) => g.options.length > 0);
-                      if (groups.length === 0) {
-                        return (
-                          <div className={`p-3 text-[10px] ${textMuted}`}>{tf(t.statusNoMatch, { q: statusQuery.trim() })}</div>
-                        );
-                      }
-                      return groups.map(({ group, options, picked }) => {
-                        // A search shows every matching group expanded.
-                        const isOpen = searching || openStatusGroups.includes(group);
-                        return (
-                          <div key={group}>
-                            <button
-                              type="button"
-                              aria-expanded={isOpen}
-                              onClick={() =>
-                                setOpenStatusGroups(
-                                  openStatusGroups.includes(group)
-                                    ? openStatusGroups.filter((g) => g !== group)
-                                    : [...openStatusGroups, group]
-                                )
-                              }
-                              className="w-full px-2.5 py-2 flex items-center justify-between text-[10px] uppercase cursor-pointer hover:bg-emerald-500/5"
-                            >
-                              <span className="flex items-center space-x-1.5">
-                                <ChevronDown
-                                  className={`w-3 h-3 transition-transform ${isOpen ? '' : '-rotate-90'} ${textMuted}`}
-                                />
-                                <span className="font-semibold tracking-wider">{t[STATUS_GROUP_LABEL_KEY[group]]}</span>
-                                <span className={textMuted}>({options.length})</span>
-                              </span>
-                              {picked > 0 && (
-                                <span className="text-emerald-400 normal-case">{tf(t.statusGroupPicked, { n: picked })}</span>
-                              )}
-                            </button>
-                            {isOpen && (
-                              <div className="px-2.5 pb-2.5 flex flex-wrap gap-1.5">
-                                {options.map((opt) => {
-                                  const selected = profileStatuses.includes(opt.id);
-                                  const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
-                                  return (
-                                    <button
-                                      key={opt.id}
-                                      type="button"
-                                      aria-pressed={selected}
-                                      onClick={() => toggleProfileStatus(opt.id)}
-                                      className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
-                                        selected
-                                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                                          : atLimit
-                                          ? `${borderCol} ${textMuted} opacity-45`
-                                          : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
-                                      }`}
-                                    >
-                                      {selected ? '✓ ' : ''}
-                                      {opt.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                    {USER_STATUS_GROUPS.map((group) => {
+                      const options = USER_STATUS_OPTIONS.filter((o) => o.group === group);
+                      const picked = profileStatuses.filter((id) => getUserStatusOption(id)?.group === group).length;
+                      return (
+                        <div key={group} className="px-2.5 py-2 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] uppercase">
+                            <span className="font-semibold tracking-wider">{t[STATUS_GROUP_LABEL_KEY[group]]}</span>
+                            {picked > 0 && (
+                              <span className="text-emerald-400 normal-case">{tf(t.statusGroupPicked, { n: picked })}</span>
                             )}
                           </div>
-                        );
-                      });
-                    })()}
+                          <div className="flex flex-wrap gap-1.5">
+                            {options.map((opt) => {
+                              const selected = profileStatuses.includes(opt.id);
+                              const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() => toggleProfileStatus(opt.id)}
+                                  className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
+                                    selected
+                                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                                      : atLimit
+                                      ? `${borderCol} ${textMuted} opacity-45`
+                                      : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
+                                  }`}
+                                >
+                                  {selected ? '✓ ' : ''}
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>
@@ -6670,9 +6656,10 @@ export default function App() {
                 </div>
             )}
 
-            {/* TAB 2: PASSWORD & SECURITY */}
-            {settingsTab === 'security' && (
+            {/* TAB 5: ACCOUNT, part 1 of 2: PASSWORD & SECURITY */}
+            {settingsTab === 'account' && (
               <div className="space-y-5 font-mono text-xs">
+                <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountSecurity}</h4>
                 {passwordStatus && (
                   <div
                     className={`p-3 border flex items-center space-x-2 ${
@@ -6771,9 +6758,10 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 3: DATA ARCHIVE & DANGER ZONE */}
-            {settingsTab === 'data' && (
-              <div className="space-y-5 font-mono text-xs">
+            {/* TAB 5: ACCOUNT, part 2 of 2: DATA ARCHIVE & DANGER ZONE */}
+            {settingsTab === 'account' && (
+              <div className={`space-y-5 font-mono text-xs mt-8 pt-6 border-t ${borderCol}`}>
+                <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountData}</h4>
                 {dataStatus && (
                   <div
                     className={`p-3 border flex items-center space-x-2 ${
@@ -6963,6 +6951,24 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* BITS // EXCHANGE (buff shop), opened from the header balance */}
+      {user && (
+        <BitsShopModal
+          isOpen={showBitsShop}
+          onClose={closeBitsShop}
+          balance={bitsBalance}
+          onPurchased={(state) => setUser((prev) => (prev ? { ...prev, bits: state.bits } : prev))}
+          initialTab={bitsShopTab}
+          onOpenRoom={() => {
+            setShowBitsShop(false);
+            openSettingsModal('room');
+          }}
+          borderCol={borderCol}
+          bgCard={bgCard}
+          textMuted={textMuted}
+        />
       )}
 
       {/* ==========================================

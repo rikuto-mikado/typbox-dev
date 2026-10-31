@@ -1,0 +1,2978 @@
+[
+ {
+  "id": "wall_plain",
+  "name": "PLAIN WALL",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 0,
+  "price": 0
+ },
+ {
+  "id": "wall_plain__mint",
+  "name": "PLAIN WALL (MINT)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#d1fae5",
+   "#ded7c9": "#bbf2d8"
+  }
+ },
+ {
+  "id": "wall_plain__sage",
+  "name": "PLAIN WALL (SAGE)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#cfd8c4",
+   "#ded7c9": "#bec9b1"
+  }
+ },
+ {
+  "id": "wall_plain__sky",
+  "name": "PLAIN WALL (SKY)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#dbeafe",
+   "#ded7c9": "#c7dcfa"
+  }
+ },
+ {
+  "id": "wall_plain__blush",
+  "name": "PLAIN WALL (BLUSH)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#fce7f3",
+   "#ded7c9": "#f7d2e6"
+  }
+ },
+ {
+  "id": "wall_plain__lilac",
+  "name": "PLAIN WALL (LILAC)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#ede9fe",
+   "#ded7c9": "#ddd6fe"
+  }
+ },
+ {
+  "id": "wall_plain__butter",
+  "name": "PLAIN WALL (BUTTER)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#fef9c3",
+   "#ded7c9": "#f6eea6"
+  }
+ },
+ {
+  "id": "wall_plain__sand",
+  "name": "PLAIN WALL (SAND)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#e7d8bf",
+   "#ded7c9": "#dccaa9"
+  }
+ },
+ {
+  "id": "wall_plain__charcoal",
+  "name": "PLAIN WALL (CHARCOAL)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#3f3f46",
+   "#ded7c9": "#36363c"
+  }
+ },
+ {
+  "id": "wall_plain__slate",
+  "name": "PLAIN WALL (SLATE)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#475569",
+   "#ded7c9": "#3e4b5d"
+  }
+ },
+ {
+  "id": "wall_plain__forest",
+  "name": "PLAIN WALL (FOREST)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#1f3d2b",
+   "#ded7c9": "#1a3424"
+  }
+ },
+ {
+  "id": "wall_plain__burgundy",
+  "name": "PLAIN WALL (BURGUNDY)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#5b1a2a",
+   "#ded7c9": "#4f1624"
+  }
+ },
+ {
+  "id": "wall_plain__cream",
+  "name": "PLAIN WALL (CREAM)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "wall_plain",
+  "recolor": {
+   "#e8e2d6": "#faf6ee",
+   "#ded7c9": "#f1ebde"
+  }
+ },
+ {
+  "id": "floor_wood",
+  "name": "OAK FLOOR",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 0,
+  "price": 0
+ },
+ {
+  "id": "floor_wood__birch",
+  "name": "OAK FLOOR (BIRCH)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_wood",
+  "recolor": {
+   "#c8955a": "#e2c79a",
+   "#b5824a": "#d6b886",
+   "#a06f3c": "#c3a370"
+  }
+ },
+ {
+  "id": "floor_wood__ash",
+  "name": "OAK FLOOR (ASH)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_wood",
+  "recolor": {
+   "#c8955a": "#b8b2a7",
+   "#b5824a": "#a9a397",
+   "#a06f3c": "#948e82"
+  }
+ },
+ {
+  "id": "floor_wood__cherry",
+  "name": "OAK FLOOR (CHERRY)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_wood",
+  "recolor": {
+   "#c8955a": "#9a4a2c",
+   "#b5824a": "#8a3f24",
+   "#a06f3c": "#73331c"
+  }
+ },
+ {
+  "id": "floor_wood__ebony",
+  "name": "OAK FLOOR (EBONY)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_wood",
+  "recolor": {
+   "#c8955a": "#3a2a20",
+   "#b5824a": "#33251c",
+   "#a06f3c": "#271b14"
+  }
+ },
+ {
+  "id": "starter_desk",
+  "name": "STUDY DESK",
+  "category": "desk",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 0,
+  "price": 0
+ },
+ {
+  "id": "starter_chair",
+  "name": "STUDY CHAIR",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 0,
+  "price": 0
+ },
+ {
+  "id": "plant_pot",
+  "name": "POTTED PLANT",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1500
+ },
+ {
+  "id": "plant_pot__white",
+  "name": "POTTED PLANT (WHITE POT)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1500,
+  "base": "plant_pot",
+  "recolor": {
+   "#c2410c": "#e7e5e4",
+   "#9a3412": "#a8a29e"
+  }
+ },
+ {
+  "id": "plant_pot__black",
+  "name": "POTTED PLANT (BLACK POT)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1500,
+  "base": "plant_pot",
+  "recolor": {
+   "#c2410c": "#3f3f46",
+   "#9a3412": "#18181b"
+  }
+ },
+ {
+  "id": "plant_pot__blue",
+  "name": "POTTED PLANT (BLUE POT)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1500,
+  "base": "plant_pot",
+  "recolor": {
+   "#c2410c": "#3b82f6",
+   "#9a3412": "#1d4ed8"
+  }
+ },
+ {
+  "id": "cactus",
+  "name": "CACTUS",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1600
+ },
+ {
+  "id": "trash_bin",
+  "name": "WASTE BIN",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1500
+ },
+ {
+  "id": "book_stack",
+  "name": "BOOK STACK",
+  "category": "storage",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1800
+ },
+ {
+  "id": "stool",
+  "name": "STOOL",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2000
+ },
+ {
+  "id": "stool__white",
+  "name": "STOOL (WHITE)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2000,
+  "base": "stool",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "stool__black",
+  "name": "STOOL (BLACK)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2000,
+  "base": "stool",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "wall_clock",
+  "name": "WALL CLOCK",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2200
+ },
+ {
+  "id": "wall_clock__wood",
+  "name": "WALL CLOCK (WOOD)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2200,
+  "base": "wall_clock",
+  "recolor": {
+   "#1c1c1f": "#6b4221"
+  }
+ },
+ {
+  "id": "wall_clock__red",
+  "name": "WALL CLOCK (RED)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2200,
+  "base": "wall_clock",
+  "recolor": {
+   "#1c1c1f": "#b91c1c"
+  }
+ },
+ {
+  "id": "wall_clock__emerald",
+  "name": "WALL CLOCK (EMERALD)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2200,
+  "base": "wall_clock",
+  "recolor": {
+   "#1c1c1f": "#047857"
+  }
+ },
+ {
+  "id": "pennant",
+  "name": "PENNANT",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2000
+ },
+ {
+  "id": "pennant__red",
+  "name": "PENNANT (RED)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2000,
+  "base": "pennant",
+  "recolor": {
+   "#10b981": "#ef4444",
+   "#047857": "#b91c1c"
+  }
+ },
+ {
+  "id": "pennant__blue",
+  "name": "PENNANT (BLUE)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2000,
+  "base": "pennant",
+  "recolor": {
+   "#10b981": "#3b82f6",
+   "#047857": "#1d4ed8"
+  }
+ },
+ {
+  "id": "pennant__amber",
+  "name": "PENNANT (AMBER)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2000,
+  "base": "pennant",
+  "recolor": {
+   "#10b981": "#fbbf24",
+   "#047857": "#d97706"
+  }
+ },
+ {
+  "id": "pennant__purple",
+  "name": "PENNANT (PURPLE)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2000,
+  "base": "pennant",
+  "recolor": {
+   "#10b981": "#a855f7",
+   "#047857": "#7e22ce"
+  }
+ },
+ {
+  "id": "poster_grid",
+  "name": "GRID POSTER",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 2,
+  "tier": 1,
+  "price": 2600
+ },
+ {
+  "id": "frame_mountain",
+  "name": "MOUNTAIN PRINT",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2800
+ },
+ {
+  "id": "wall_shelf",
+  "name": "WALL SHELF",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 3200
+ },
+ {
+  "id": "floor_lamp",
+  "name": "FLOOR LAMP",
+  "category": "lighting",
+  "layer": "floor",
+  "w": 1,
+  "h": 3,
+  "tier": 1,
+  "price": 3500
+ },
+ {
+  "id": "beanbag",
+  "name": "BEANBAG",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 4000
+ },
+ {
+  "id": "beanbag__purple",
+  "name": "BEANBAG (PURPLE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 4000,
+  "base": "beanbag",
+  "recolor": {
+   "#f97316": "#8b5cf6",
+   "#c2410c": "#5b21b6",
+   "#fbbf24": "#c4b5fd"
+  }
+ },
+ {
+  "id": "beanbag__lime",
+  "name": "BEANBAG (LIME)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 4000,
+  "base": "beanbag",
+  "recolor": {
+   "#f97316": "#84cc16",
+   "#c2410c": "#4d7c0f",
+   "#fbbf24": "#d9f99d"
+  }
+ },
+ {
+  "id": "beanbag__black",
+  "name": "BEANBAG (BLACK)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 4000,
+  "base": "beanbag",
+  "recolor": {
+   "#f97316": "#3f3f46",
+   "#c2410c": "#18181b",
+   "#fbbf24": "#a1a1aa"
+  }
+ },
+ {
+  "id": "beanbag__pink",
+  "name": "BEANBAG (PINK)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 4000,
+  "base": "beanbag",
+  "recolor": {
+   "#f97316": "#ec4899",
+   "#c2410c": "#9d174d",
+   "#fbbf24": "#f9a8d4"
+  }
+ },
+ {
+  "id": "bonsai",
+  "name": "BONSAI",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 2400
+ },
+ {
+  "id": "snake_plant",
+  "name": "SNAKE PLANT",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 2600
+ },
+ {
+  "id": "certificate",
+  "name": "DIPLOMA",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 1,
+  "tier": 1,
+  "price": 1500
+ },
+ {
+  "id": "photo_frames",
+  "name": "PHOTO FRAMES",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2200
+ },
+ {
+  "id": "coat_hooks",
+  "name": "COAT HOOKS",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 1800
+ },
+ {
+  "id": "calendar",
+  "name": "CALENDAR",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 2,
+  "tier": 1,
+  "price": 1600
+ },
+ {
+  "id": "floor_cushion",
+  "name": "FLOOR CUSHION",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2400
+ },
+ {
+  "id": "floor_cushion__crimson",
+  "name": "FLOOR CUSHION (CRIMSON)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2400,
+  "base": "floor_cushion",
+  "recolor": {
+   "#0f766e": "#be123c",
+   "#115e59": "#881337",
+   "#14b8a6": "#f43f5e"
+  }
+ },
+ {
+  "id": "floor_cushion__mustard",
+  "name": "FLOOR CUSHION (MUSTARD)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2400,
+  "base": "floor_cushion",
+  "recolor": {
+   "#0f766e": "#ca8a04",
+   "#115e59": "#854d0e",
+   "#14b8a6": "#facc15"
+  }
+ },
+ {
+  "id": "floor_cushion__navy",
+  "name": "FLOOR CUSHION (NAVY)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2400,
+  "base": "floor_cushion",
+  "recolor": {
+   "#0f766e": "#1e40af",
+   "#115e59": "#172554",
+   "#14b8a6": "#60a5fa"
+  }
+ },
+ {
+  "id": "floor_cushion__lavender",
+  "name": "FLOOR CUSHION (LAVENDER)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 1,
+  "price": 2400,
+  "base": "floor_cushion",
+  "recolor": {
+   "#0f766e": "#8b5cf6",
+   "#115e59": "#5b21b6",
+   "#14b8a6": "#c4b5fd"
+  }
+ },
+ {
+  "id": "lava_lamp",
+  "name": "LAVA LAMP",
+  "category": "lighting",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 3000
+ },
+ {
+  "id": "vinyl_wall",
+  "name": "VINYL WALL",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 1,
+  "price": 3600
+ },
+ {
+  "id": "fan",
+  "name": "ELECTRIC FAN",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 2800
+ },
+ {
+  "id": "nightstand",
+  "name": "NIGHTSTAND",
+  "category": "storage",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 3800
+ },
+ {
+  "id": "nightstand__white",
+  "name": "NIGHTSTAND (WHITE)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 3800,
+  "base": "nightstand",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "nightstand__black",
+  "name": "NIGHTSTAND (BLACK)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 3800,
+  "base": "nightstand",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "globe",
+  "name": "DESK GLOBE",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 1,
+  "price": 3400
+ },
+ {
+  "id": "office_chair",
+  "name": "OFFICE CHAIR",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5000
+ },
+ {
+  "id": "office_chair__red",
+  "name": "OFFICE CHAIR (RED)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5000,
+  "base": "office_chair",
+  "recolor": {
+   "#27272a": "#b91c1c",
+   "#18181b": "#7f1d1d",
+   "#3f3f46": "#ef4444"
+  }
+ },
+ {
+  "id": "office_chair__blue",
+  "name": "OFFICE CHAIR (BLUE)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5000,
+  "base": "office_chair",
+  "recolor": {
+   "#27272a": "#1d4ed8",
+   "#18181b": "#1e3a8a",
+   "#3f3f46": "#60a5fa"
+  }
+ },
+ {
+  "id": "office_chair__white",
+  "name": "OFFICE CHAIR (WHITE)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5000,
+  "base": "office_chair",
+  "recolor": {
+   "#27272a": "#e4e4e7",
+   "#18181b": "#a1a1aa",
+   "#3f3f46": "#fafafa"
+  }
+ },
+ {
+  "id": "writing_desk",
+  "name": "WRITING DESK",
+  "category": "desk",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 7000
+ },
+ {
+  "id": "writing_desk__oak",
+  "name": "WRITING DESK (OAK)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 7000,
+  "base": "writing_desk",
+  "recolor": {
+   "#6d4630": "#d9a86c",
+   "#5b3a24": "#c8955a",
+   "#4a2f1d": "#a06f3c"
+  }
+ },
+ {
+  "id": "writing_desk__white",
+  "name": "WRITING DESK (WHITE)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 7000,
+  "base": "writing_desk",
+  "recolor": {
+   "#6d4630": "#f5f5f4",
+   "#5b3a24": "#e7e5e4",
+   "#4a2f1d": "#a8a29e"
+  }
+ },
+ {
+  "id": "side_table",
+  "name": "SIDE TABLE + LAMP",
+  "category": "lighting",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5500
+ },
+ {
+  "id": "side_table__white",
+  "name": "SIDE TABLE + LAMP (WHITE)",
+  "category": "lighting",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5500,
+  "base": "side_table",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "side_table__black",
+  "name": "SIDE TABLE + LAMP (BLACK)",
+  "category": "lighting",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 5500,
+  "base": "side_table",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "tall_plant",
+  "name": "FIDDLE-LEAF FIG",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "window",
+  "name": "WINDOW",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 3,
+  "tier": 2,
+  "price": 7500
+ },
+ {
+  "id": "window__wood",
+  "name": "WINDOW (WOOD FRAME)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 3,
+  "tier": 2,
+  "price": 7500,
+  "base": "window",
+  "recolor": {
+   "#f5f5f3": "#b07a46"
+  }
+ },
+ {
+  "id": "window__black",
+  "name": "WINDOW (BLACK FRAME)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 3,
+  "tier": 2,
+  "price": 7500,
+  "base": "window",
+  "recolor": {
+   "#f5f5f3": "#3f3f47"
+  }
+ },
+ {
+  "id": "window__sage",
+  "name": "WINDOW (SAGE FRAME)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 3,
+  "tier": 2,
+  "price": 7500,
+  "base": "window",
+  "recolor": {
+   "#f5f5f3": "#8fb39a"
+  }
+ },
+ {
+  "id": "corkboard",
+  "name": "CORKBOARD",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "bookshelf",
+  "name": "BOOKSHELF",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 2,
+  "price": 9000
+ },
+ {
+  "id": "bookshelf__white",
+  "name": "BOOKSHELF (WHITE)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 2,
+  "price": 9000,
+  "base": "bookshelf",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "bookshelf__black",
+  "name": "BOOKSHELF (BLACK)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 2,
+  "price": 9000,
+  "base": "bookshelf",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "bookshelf__birch",
+  "name": "BOOKSHELF (BIRCH)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 2,
+  "price": 9000,
+  "base": "bookshelf",
+  "recolor": {
+   "#8b5a2b": "#d6b98c",
+   "#6b4220": "#a88b5e",
+   "#b07a45": "#e8d4b0",
+   "#4a2c14": "#7a6440"
+  }
+ },
+ {
+  "id": "armchair",
+  "name": "ARMCHAIR",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000
+ },
+ {
+  "id": "armchair__crimson",
+  "name": "ARMCHAIR (CRIMSON)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "armchair",
+  "recolor": {
+   "#0f766e": "#be123c",
+   "#115e59": "#881337",
+   "#14b8a6": "#f43f5e"
+  }
+ },
+ {
+  "id": "armchair__mustard",
+  "name": "ARMCHAIR (MUSTARD)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "armchair",
+  "recolor": {
+   "#0f766e": "#ca8a04",
+   "#115e59": "#854d0e",
+   "#14b8a6": "#facc15"
+  }
+ },
+ {
+  "id": "armchair__navy",
+  "name": "ARMCHAIR (NAVY)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "armchair",
+  "recolor": {
+   "#0f766e": "#1e40af",
+   "#115e59": "#172554",
+   "#14b8a6": "#60a5fa"
+  }
+ },
+ {
+  "id": "armchair__charcoal",
+  "name": "ARMCHAIR (CHARCOAL)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "armchair",
+  "recolor": {
+   "#0f766e": "#52525b",
+   "#115e59": "#27272a",
+   "#14b8a6": "#a1a1aa"
+  }
+ },
+ {
+  "id": "armchair__blush",
+  "name": "ARMCHAIR (BLUSH)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "armchair",
+  "recolor": {
+   "#0f766e": "#f472b6",
+   "#115e59": "#be185d",
+   "#14b8a6": "#fbcfe8"
+  }
+ },
+ {
+  "id": "armchair__sage",
+  "name": "ARMCHAIR (SAGE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "armchair",
+  "recolor": {
+   "#0f766e": "#6b8f71",
+   "#115e59": "#3f5e45",
+   "#14b8a6": "#a7c4a0"
+  }
+ },
+ {
+  "id": "neon_sign",
+  "name": "NEON \"STUDY\"",
+  "category": "lighting",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 11000
+ },
+ {
+  "id": "neon_sign__emerald",
+  "name": "NEON \"STUDY\" (EMERALD)",
+  "category": "lighting",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 11000,
+  "base": "neon_sign",
+  "recolor": {
+   "#f472b6": "#34d399",
+   "#9d4a7a": "#2a6e57"
+  }
+ },
+ {
+  "id": "neon_sign__cyan",
+  "name": "NEON \"STUDY\" (CYAN)",
+  "category": "lighting",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 11000,
+  "base": "neon_sign",
+  "recolor": {
+   "#f472b6": "#22d3ee",
+   "#9d4a7a": "#1d6f7d"
+  }
+ },
+ {
+  "id": "neon_sign__amber",
+  "name": "NEON \"STUDY\" (AMBER)",
+  "category": "lighting",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 11000,
+  "base": "neon_sign",
+  "recolor": {
+   "#f472b6": "#fbbf24",
+   "#9d4a7a": "#8a6a1c"
+  }
+ },
+ {
+  "id": "neon_sign__violet",
+  "name": "NEON \"STUDY\" (VIOLET)",
+  "category": "lighting",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 11000,
+  "base": "neon_sign",
+  "recolor": {
+   "#f472b6": "#a78bfa",
+   "#9d4a7a": "#584a86"
+  }
+ },
+ {
+  "id": "monstera",
+  "name": "MONSTERA",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 6500
+ },
+ {
+  "id": "monstera__white",
+  "name": "MONSTERA (WHITE POT)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 6500,
+  "base": "monstera",
+  "recolor": {
+   "#c2410c": "#e7e5e4",
+   "#9a3412": "#a8a29e"
+  }
+ },
+ {
+  "id": "rocking_chair",
+  "name": "ROCKING CHAIR",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 7000
+ },
+ {
+  "id": "rocking_chair__walnut",
+  "name": "ROCKING CHAIR (WALNUT)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 7000,
+  "base": "rocking_chair",
+  "recolor": {
+   "#8b5a2b": "#5b3a24",
+   "#6b4220": "#3b2516",
+   "#b07a45": "#6d4630",
+   "#4a2c14": "#2a1a0f"
+  }
+ },
+ {
+  "id": "rocking_chair__white",
+  "name": "ROCKING CHAIR (WHITE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 7000,
+  "base": "rocking_chair",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "gaming_chair",
+  "name": "GAMING CHAIR",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 9500
+ },
+ {
+  "id": "gaming_chair__blue",
+  "name": "GAMING CHAIR (BLUE)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 9500,
+  "base": "gaming_chair",
+  "recolor": {
+   "#e11d48": "#2563eb"
+  }
+ },
+ {
+  "id": "gaming_chair__green",
+  "name": "GAMING CHAIR (GREEN)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 9500,
+  "base": "gaming_chair",
+  "recolor": {
+   "#e11d48": "#16a34a"
+  }
+ },
+ {
+  "id": "gaming_chair__violet",
+  "name": "GAMING CHAIR (VIOLET)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 9500,
+  "base": "gaming_chair",
+  "recolor": {
+   "#e11d48": "#9333ea"
+  }
+ },
+ {
+  "id": "gaming_chair__amber",
+  "name": "GAMING CHAIR (AMBER)",
+  "category": "desk",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 9500,
+  "base": "gaming_chair",
+  "recolor": {
+   "#e11d48": "#f59e0b"
+  }
+ },
+ {
+  "id": "dresser",
+  "name": "DRESSER",
+  "category": "storage",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 9000
+ },
+ {
+  "id": "dresser__white",
+  "name": "DRESSER (WHITE)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 9000,
+  "base": "dresser",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "dresser__black",
+  "name": "DRESSER (BLACK)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 9000,
+  "base": "dresser",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "dresser__birch",
+  "name": "DRESSER (BIRCH)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 9000,
+  "base": "dresser",
+  "recolor": {
+   "#8b5a2b": "#d6b98c",
+   "#6b4220": "#a88b5e",
+   "#b07a45": "#e8d4b0",
+   "#4a2c14": "#7a6440"
+  }
+ },
+ {
+  "id": "file_cabinet",
+  "name": "FILE CABINET",
+  "category": "storage",
+  "layer": "floor",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 5500
+ },
+ {
+  "id": "string_lights",
+  "name": "STRING LIGHTS",
+  "category": "lighting",
+  "layer": "wall",
+  "w": 4,
+  "h": 1,
+  "tier": 2,
+  "price": 6500
+ },
+ {
+  "id": "mini_fridge",
+  "name": "MINI FRIDGE",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 8000
+ },
+ {
+  "id": "mini_fridge__mint",
+  "name": "MINI FRIDGE (MINT)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "mini_fridge",
+  "recolor": {
+   "#e5e7e6": "#a7f3d0",
+   "#c7cbc9": "#6ee7b7"
+  }
+ },
+ {
+  "id": "mini_fridge__pink",
+  "name": "MINI FRIDGE (PINK)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "mini_fridge",
+  "recolor": {
+   "#e5e7e6": "#fbcfe8",
+   "#c7cbc9": "#f9a8d4"
+  }
+ },
+ {
+  "id": "mini_fridge__black",
+  "name": "MINI FRIDGE (BLACK)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 2,
+  "price": 8000,
+  "base": "mini_fridge",
+  "recolor": {
+   "#e5e7e6": "#3f3f46",
+   "#c7cbc9": "#27272a"
+  }
+ },
+ {
+  "id": "easel",
+  "name": "EASEL",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 3,
+  "tier": 2,
+  "price": 7500
+ },
+ {
+  "id": "guitar_stand",
+  "name": "ACOUSTIC GUITAR",
+  "category": "decor",
+  "layer": "floor",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 8500
+ },
+ {
+  "id": "coffee_table",
+  "name": "COFFEE TABLE",
+  "category": "seating",
+  "layer": "floor",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 5500
+ },
+ {
+  "id": "coffee_table__white",
+  "name": "COFFEE TABLE (WHITE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 5500,
+  "base": "coffee_table",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "coffee_table__black",
+  "name": "COFFEE TABLE (BLACK)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 5500,
+  "base": "coffee_table",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "record_player",
+  "name": "RECORD PLAYER",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 10000
+ },
+ {
+  "id": "record_player__walnut",
+  "name": "RECORD PLAYER (WALNUT)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 10000,
+  "base": "record_player",
+  "recolor": {
+   "#8b5a2b": "#5b3a24",
+   "#6b4220": "#3b2516",
+   "#b07a45": "#6d4630",
+   "#4a2c14": "#2a1a0f"
+  }
+ },
+ {
+  "id": "record_player__white",
+  "name": "RECORD PLAYER (WHITE)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 10000,
+  "base": "record_player",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "mirror",
+  "name": "ROUND MIRROR",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 2,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "world_map",
+  "name": "WORLD MAP",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 7000
+ },
+ {
+  "id": "whiteboard",
+  "name": "WHITEBOARD",
+  "category": "wall",
+  "layer": "wall",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 5000
+ },
+ {
+  "id": "guitar_wall",
+  "name": "ELECTRIC GUITAR",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 9000
+ },
+ {
+  "id": "guitar_wall__blue",
+  "name": "ELECTRIC GUITAR (BLUE)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 9000,
+  "base": "guitar_wall",
+  "recolor": {
+   "#dc2626": "#2563eb",
+   "#991b1b": "#1e3a8a"
+  }
+ },
+ {
+  "id": "guitar_wall__black",
+  "name": "ELECTRIC GUITAR (BLACK)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 9000,
+  "base": "guitar_wall",
+  "recolor": {
+   "#dc2626": "#27272a",
+   "#991b1b": "#18181b"
+  }
+ },
+ {
+  "id": "guitar_wall__sunburst",
+  "name": "ELECTRIC GUITAR (SUNBURST)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 1,
+  "h": 3,
+  "tier": 2,
+  "price": 9000,
+  "base": "guitar_wall",
+  "recolor": {
+   "#dc2626": "#f59e0b",
+   "#991b1b": "#92400e"
+  }
+ },
+ {
+  "id": "tapestry",
+  "name": "TAPESTRY",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 3,
+  "tier": 2,
+  "price": 6500
+ },
+ {
+  "id": "tapestry__teal",
+  "name": "TAPESTRY (TEAL)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 3,
+  "tier": 2,
+  "price": 6500,
+  "base": "tapestry",
+  "recolor": {
+   "#7c3aed": "#0d9488",
+   "#5b21b6": "#115e59",
+   "#c4b5fd": "#99f6e4"
+  }
+ },
+ {
+  "id": "tapestry__rose",
+  "name": "TAPESTRY (ROSE)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 3,
+  "tier": 2,
+  "price": 6500,
+  "base": "tapestry",
+  "recolor": {
+   "#7c3aed": "#e11d48",
+   "#5b21b6": "#9f1239",
+   "#c4b5fd": "#fecdd3"
+  }
+ },
+ {
+  "id": "tapestry__ochre",
+  "name": "TAPESTRY (OCHRE)",
+  "category": "wall",
+  "layer": "wall",
+  "w": 2,
+  "h": 3,
+  "tier": 2,
+  "price": 6500,
+  "base": "tapestry",
+  "recolor": {
+   "#7c3aed": "#ca8a04",
+   "#5b21b6": "#854d0e",
+   "#c4b5fd": "#fde68a"
+  }
+ },
+ {
+  "id": "ac_unit",
+  "name": "AIR CONDITIONER",
+  "category": "tech",
+  "layer": "wall",
+  "w": 3,
+  "h": 1,
+  "tier": 2,
+  "price": 8000
+ },
+ {
+  "id": "wall_tv",
+  "name": "WALL TV",
+  "category": "tech",
+  "layer": "wall",
+  "w": 3,
+  "h": 2,
+  "tier": 2,
+  "price": 12000
+ },
+ {
+  "id": "ladder_shelf",
+  "name": "LADDER SHELF",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 2,
+  "price": 8500
+ },
+ {
+  "id": "wall_brick",
+  "name": "BRICK WALL",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 7000
+ },
+ {
+  "id": "wall_brick__white",
+  "name": "BRICK WALL (WHITE)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 7000,
+  "base": "wall_brick",
+  "recolor": {
+   "#b45309": "#e7e5e4",
+   "#92400e": "#d6d3d1",
+   "#d6d3d1": "#a8a29e"
+  }
+ },
+ {
+  "id": "wall_brick__gray",
+  "name": "BRICK WALL (GRAY)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 7000,
+  "base": "wall_brick",
+  "recolor": {
+   "#b45309": "#6b7280",
+   "#92400e": "#4b5563",
+   "#d6d3d1": "#d1d5db"
+  }
+ },
+ {
+  "id": "wall_navy",
+  "name": "NAVY WALL",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000
+ },
+ {
+  "id": "wall_terminal",
+  "name": "TERMINAL WALL",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 9000
+ },
+ {
+  "id": "wall_terminal__amber",
+  "name": "TERMINAL WALL (AMBER)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 9000,
+  "base": "wall_terminal",
+  "recolor": {
+   "#047857": "#92400e",
+   "#4ade80": "#fbbf24"
+  }
+ },
+ {
+  "id": "wall_stripes",
+  "name": "STRIPED WALLPAPER",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "wall_stripes__mint",
+  "name": "STRIPED WALLPAPER (MINT)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "wall_stripes",
+  "recolor": {
+   "#e9e4da": "#e7f6ee",
+   "#d9cfbf": "#c8ead7"
+  }
+ },
+ {
+  "id": "wall_stripes__rose",
+  "name": "STRIPED WALLPAPER (ROSE)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "wall_stripes",
+  "recolor": {
+   "#e9e4da": "#fbecef",
+   "#d9cfbf": "#f3d0d8"
+  }
+ },
+ {
+  "id": "wall_dots",
+  "name": "DOT WALLPAPER",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "wall_dots__navy",
+  "name": "DOT WALLPAPER (NAVY)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "wall_dots",
+  "recolor": {
+   "#e9e4da": "#1e293b",
+   "#c9bba5": "#475569"
+  }
+ },
+ {
+  "id": "wall_check",
+  "name": "CHECK WALLPAPER",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "wall_check__green",
+  "name": "CHECK WALLPAPER (GREEN)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "wall_check",
+  "recolor": {
+   "#e9e4da": "#dcfce7",
+   "#d9cfbf": "#bbf7d0"
+  }
+ },
+ {
+  "id": "wall_wainscot",
+  "name": "WAINSCOT WALL",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 8000
+ },
+ {
+  "id": "wall_wainscot__navy",
+  "name": "WAINSCOT WALL (NAVY)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 8000,
+  "base": "wall_wainscot",
+  "recolor": {
+   "#9a6b3f": "#1e3a5f",
+   "#7d5531": "#172f4d"
+  }
+ },
+ {
+  "id": "wall_panel",
+  "name": "WOOD PANEL WALL",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 8000
+ },
+ {
+  "id": "wall_panel__dark",
+  "name": "WOOD PANEL WALL (DARK)",
+  "category": "surfaces",
+  "layer": "wall_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 8000,
+  "base": "wall_panel",
+  "recolor": {
+   "#9a6b3f": "#4a2f1d",
+   "#7d5531": "#3a2416"
+  }
+ },
+ {
+  "id": "floor_tile",
+  "name": "CHECKER TILE",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000
+ },
+ {
+  "id": "floor_tile__blue",
+  "name": "CHECKER TILE (BLUE)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_tile",
+  "recolor": {
+   "#3f3f46": "#1d4ed8",
+   "#e7e5e4": "#e0f2fe"
+  }
+ },
+ {
+  "id": "floor_tile__green",
+  "name": "CHECKER TILE (GREEN)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_tile",
+  "recolor": {
+   "#3f3f46": "#166534",
+   "#e7e5e4": "#f0fdf4"
+  }
+ },
+ {
+  "id": "floor_tile__red",
+  "name": "CHECKER TILE (RED)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_tile",
+  "recolor": {
+   "#3f3f46": "#991b1b",
+   "#e7e5e4": "#fef2f2"
+  }
+ },
+ {
+  "id": "floor_carpet",
+  "name": "MOSS CARPET",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000
+ },
+ {
+  "id": "floor_carpet__navy",
+  "name": "MOSS CARPET (NAVY)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "floor_carpet",
+  "recolor": {
+   "#4d7c0f": "#1e3a5f",
+   "#3f6212": "#172f4d"
+  }
+ },
+ {
+  "id": "floor_carpet__burgundy",
+  "name": "MOSS CARPET (BURGUNDY)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "floor_carpet",
+  "recolor": {
+   "#4d7c0f": "#7f1d1d",
+   "#3f6212": "#651515"
+  }
+ },
+ {
+  "id": "floor_carpet__gray",
+  "name": "MOSS CARPET (GRAY)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "floor_carpet",
+  "recolor": {
+   "#4d7c0f": "#6b7280",
+   "#3f6212": "#5b6270"
+  }
+ },
+ {
+  "id": "floor_carpet__sand",
+  "name": "MOSS CARPET (SAND)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 6000,
+  "base": "floor_carpet",
+  "recolor": {
+   "#4d7c0f": "#d6c3a0",
+   "#3f6212": "#c5b08a"
+  }
+ },
+ {
+  "id": "floor_dark",
+  "name": "WALNUT FLOOR",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 7500
+ },
+ {
+  "id": "floor_concrete",
+  "name": "CONCRETE FLOOR",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000
+ },
+ {
+  "id": "floor_concrete__dark",
+  "name": "CONCRETE FLOOR (DARK)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 5000,
+  "base": "floor_concrete",
+  "recolor": {
+   "#a8a29e": "#57534e",
+   "#8f8984": "#44403c"
+  }
+ },
+ {
+  "id": "floor_tatami",
+  "name": "TATAMI",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 8000
+ },
+ {
+  "id": "floor_herringbone",
+  "name": "HERRINGBONE FLOOR",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 9000
+ },
+ {
+  "id": "floor_herringbone__dark",
+  "name": "HERRINGBONE FLOOR (DARK)",
+  "category": "surfaces",
+  "layer": "floor_paint",
+  "w": 1,
+  "h": 1,
+  "tier": 2,
+  "price": 9000,
+  "base": "floor_herringbone",
+  "recolor": {
+   "#b88a5a": "#6d4630",
+   "#9c7046": "#5b3a24"
+  }
+ },
+ {
+  "id": "bed",
+  "name": "BED",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 24000
+ },
+ {
+  "id": "bed__rose",
+  "name": "BED (ROSE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 24000,
+  "base": "bed",
+  "recolor": {
+   "#6366f1": "#f43f5e",
+   "#4f46e5": "#be123c"
+  }
+ },
+ {
+  "id": "bed__forest",
+  "name": "BED (FOREST)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 24000,
+  "base": "bed",
+  "recolor": {
+   "#6366f1": "#16a34a",
+   "#4f46e5": "#14532d"
+  }
+ },
+ {
+  "id": "bed__sunflower",
+  "name": "BED (SUNFLOWER)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 24000,
+  "base": "bed",
+  "recolor": {
+   "#6366f1": "#facc15",
+   "#4f46e5": "#a16207"
+  }
+ },
+ {
+  "id": "bed__slate",
+  "name": "BED (SLATE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 24000,
+  "base": "bed",
+  "recolor": {
+   "#6366f1": "#64748b",
+   "#4f46e5": "#334155"
+  }
+ },
+ {
+  "id": "bed__sky",
+  "name": "BED (SKY)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 24000,
+  "base": "bed",
+  "recolor": {
+   "#6366f1": "#38bdf8",
+   "#4f46e5": "#0369a1"
+  }
+ },
+ {
+  "id": "sofa",
+  "name": "SOFA",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000
+ },
+ {
+  "id": "sofa__crimson",
+  "name": "SOFA (CRIMSON)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#be123c",
+   "#115e59": "#881337",
+   "#14b8a6": "#f43f5e"
+  }
+ },
+ {
+  "id": "sofa__mustard",
+  "name": "SOFA (MUSTARD)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#ca8a04",
+   "#115e59": "#854d0e",
+   "#14b8a6": "#facc15"
+  }
+ },
+ {
+  "id": "sofa__navy",
+  "name": "SOFA (NAVY)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#1e40af",
+   "#115e59": "#172554",
+   "#14b8a6": "#60a5fa"
+  }
+ },
+ {
+  "id": "sofa__charcoal",
+  "name": "SOFA (CHARCOAL)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#52525b",
+   "#115e59": "#27272a",
+   "#14b8a6": "#a1a1aa"
+  }
+ },
+ {
+  "id": "sofa__blush",
+  "name": "SOFA (BLUSH)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#f472b6",
+   "#115e59": "#be185d",
+   "#14b8a6": "#fbcfe8"
+  }
+ },
+ {
+  "id": "sofa__sage",
+  "name": "SOFA (SAGE)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#6b8f71",
+   "#115e59": "#3f5e45",
+   "#14b8a6": "#a7c4a0"
+  }
+ },
+ {
+  "id": "sofa__lavender",
+  "name": "SOFA (LAVENDER)",
+  "category": "seating",
+  "layer": "floor",
+  "w": 4,
+  "h": 2,
+  "tier": 3,
+  "price": 26000,
+  "base": "sofa",
+  "recolor": {
+   "#0f766e": "#8b5cf6",
+   "#115e59": "#5b21b6",
+   "#14b8a6": "#c4b5fd"
+  }
+ },
+ {
+  "id": "bookcase_wide",
+  "name": "LIBRARY WALL",
+  "category": "storage",
+  "layer": "floor",
+  "w": 4,
+  "h": 4,
+  "tier": 3,
+  "price": 28000
+ },
+ {
+  "id": "bookcase_wide__white",
+  "name": "LIBRARY WALL (WHITE)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 4,
+  "h": 4,
+  "tier": 3,
+  "price": 28000,
+  "base": "bookcase_wide",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "bookcase_wide__walnut",
+  "name": "LIBRARY WALL (WALNUT)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 4,
+  "h": 4,
+  "tier": 3,
+  "price": 28000,
+  "base": "bookcase_wide",
+  "recolor": {
+   "#8b5a2b": "#5b3a24",
+   "#6b4220": "#3b2516",
+   "#b07a45": "#6d4630",
+   "#4a2c14": "#2a1a0f"
+  }
+ },
+ {
+  "id": "server_rack",
+  "name": "SERVER RACK",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 3,
+  "price": 32000
+ },
+ {
+  "id": "server_rack__white",
+  "name": "SERVER RACK (WHITE)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 3,
+  "price": 32000,
+  "base": "server_rack",
+  "recolor": {
+   "#18181b": "#e4e4e7",
+   "#27272a": "#d4d4d8",
+   "#3f3f46": "#a1a1aa"
+  }
+ },
+ {
+  "id": "battlestation",
+  "name": "BATTLESTATION",
+  "category": "tech",
+  "layer": "floor",
+  "w": 4,
+  "h": 3,
+  "tier": 3,
+  "price": 38000
+ },
+ {
+  "id": "battlestation__white",
+  "name": "BATTLESTATION (WHITE)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 4,
+  "h": 3,
+  "tier": 3,
+  "price": 38000,
+  "base": "battlestation",
+  "recolor": {
+   "#27272a": "#e4e4e7",
+   "#18181b": "#a1a1aa",
+   "#3f3f46": "#d4d4d8"
+  }
+ },
+ {
+  "id": "battlestation__pink",
+  "name": "BATTLESTATION (PINK)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 4,
+  "h": 3,
+  "tier": 3,
+  "price": 38000,
+  "base": "battlestation",
+  "recolor": {
+   "#27272a": "#f9a8d4",
+   "#18181b": "#db2777",
+   "#3f3f46": "#fbcfe8"
+  }
+ },
+ {
+  "id": "piano",
+  "name": "UPRIGHT PIANO",
+  "category": "decor",
+  "layer": "floor",
+  "w": 4,
+  "h": 3,
+  "tier": 3,
+  "price": 40000
+ },
+ {
+  "id": "piano__wood",
+  "name": "UPRIGHT PIANO (WOOD)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 4,
+  "h": 3,
+  "tier": 3,
+  "price": 40000,
+  "base": "piano",
+  "recolor": {
+   "#18181b": "#5b3a24",
+   "#27272a": "#4a2f1d",
+   "#3f3f46": "#6d4630"
+  }
+ },
+ {
+  "id": "wardrobe",
+  "name": "WARDROBE",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 3,
+  "price": 22000
+ },
+ {
+  "id": "wardrobe__white",
+  "name": "WARDROBE (WHITE)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 3,
+  "price": 22000,
+  "base": "wardrobe",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "wardrobe__black",
+  "name": "WARDROBE (BLACK)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 3,
+  "price": 22000,
+  "base": "wardrobe",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "wardrobe__birch",
+  "name": "WARDROBE (BIRCH)",
+  "category": "storage",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 3,
+  "price": 22000,
+  "base": "wardrobe",
+  "recolor": {
+   "#8b5a2b": "#d6b98c",
+   "#6b4220": "#a88b5e",
+   "#b07a45": "#e8d4b0",
+   "#4a2c14": "#7a6440"
+  }
+ },
+ {
+  "id": "tv_stand",
+  "name": "TV + STAND",
+  "category": "tech",
+  "layer": "floor",
+  "w": 3,
+  "h": 3,
+  "tier": 3,
+  "price": 30000
+ },
+ {
+  "id": "tv_stand__white",
+  "name": "TV + STAND (WHITE)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 3,
+  "h": 3,
+  "tier": 3,
+  "price": 30000,
+  "base": "tv_stand",
+  "recolor": {
+   "#8b5a2b": "#e7e5e4",
+   "#6b4220": "#a8a29e",
+   "#b07a45": "#f5f5f4",
+   "#4a2c14": "#78716c"
+  }
+ },
+ {
+  "id": "tv_stand__black",
+  "name": "TV + STAND (BLACK)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 3,
+  "h": 3,
+  "tier": 3,
+  "price": 30000,
+  "base": "tv_stand",
+  "recolor": {
+   "#8b5a2b": "#3f3f46",
+   "#6b4220": "#27272a",
+   "#b07a45": "#52525b",
+   "#4a2c14": "#18181b"
+  }
+ },
+ {
+  "id": "printer_3d",
+  "name": "3D PRINTER",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 3,
+  "price": 34000
+ },
+ {
+  "id": "hamster_cage",
+  "name": "HAMSTER HOME",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 2,
+  "tier": 3,
+  "price": 25000
+ },
+ {
+  "id": "telescope",
+  "name": "TELESCOPE",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 3,
+  "tier": 4,
+  "price": 55000
+ },
+ {
+  "id": "telescope__black",
+  "name": "TELESCOPE (BLACK)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 3,
+  "tier": 4,
+  "price": 55000,
+  "base": "telescope",
+  "recolor": {
+   "#f4f4f5": "#3f3f46"
+  }
+ },
+ {
+  "id": "aquarium",
+  "name": "AQUARIUM",
+  "category": "decor",
+  "layer": "floor",
+  "w": 3,
+  "h": 3,
+  "tier": 4,
+  "price": 65000
+ },
+ {
+  "id": "aquarium__tropical",
+  "name": "AQUARIUM (TROPICAL)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 3,
+  "h": 3,
+  "tier": 4,
+  "price": 65000,
+  "base": "aquarium",
+  "recolor": {
+   "#38bdf8": "#14b8a6",
+   "#7dd3fc": "#99f6e4"
+  }
+ },
+ {
+  "id": "arcade_cabinet",
+  "name": "ARCADE CABINET",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 4,
+  "price": 70000
+ },
+ {
+  "id": "arcade_cabinet__red",
+  "name": "ARCADE CABINET (RED)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 4,
+  "price": 70000,
+  "base": "arcade_cabinet",
+  "recolor": {
+   "#6d28d9": "#dc2626",
+   "#4c1d95": "#7f1d1d"
+  }
+ },
+ {
+  "id": "arcade_cabinet__blue",
+  "name": "ARCADE CABINET (BLUE)",
+  "category": "tech",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 4,
+  "price": 70000,
+  "base": "arcade_cabinet",
+  "recolor": {
+   "#6d28d9": "#2563eb",
+   "#4c1d95": "#1e3a8a"
+  }
+ },
+ {
+  "id": "cat",
+  "name": "SLEEPING CAT",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 80000
+ },
+ {
+  "id": "cat__gray",
+  "name": "SLEEPING CAT (GRAY)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 80000,
+  "base": "cat",
+  "recolor": {
+   "#f59e0b": "#9ca3af",
+   "#f97316": "#6b7280",
+   "#fbbf24": "#d1d5db"
+  }
+ },
+ {
+  "id": "cat__black",
+  "name": "SLEEPING CAT (BLACK)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 80000,
+  "base": "cat",
+  "recolor": {
+   "#f59e0b": "#3f3f46",
+   "#f97316": "#18181b",
+   "#fbbf24": "#52525b"
+  }
+ },
+ {
+  "id": "cat__calico",
+  "name": "SLEEPING CAT (CALICO)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 80000,
+  "base": "cat",
+  "recolor": {
+   "#f59e0b": "#f5f5f4",
+   "#f97316": "#f59e0b",
+   "#fbbf24": "#e7e5e4"
+  }
+ },
+ {
+  "id": "dog",
+  "name": "SLEEPY DOG",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 75000
+ },
+ {
+  "id": "dog__golden",
+  "name": "SLEEPY DOG (GOLDEN)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 75000,
+  "base": "dog",
+  "recolor": {
+   "#a16207": "#eab308",
+   "#713f12": "#a16207"
+  }
+ },
+ {
+  "id": "dog__black",
+  "name": "SLEEPY DOG (BLACK)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 75000,
+  "base": "dog",
+  "recolor": {
+   "#a16207": "#3f3f46",
+   "#713f12": "#18181b"
+  }
+ },
+ {
+  "id": "dog__white",
+  "name": "SLEEPY DOG (WHITE)",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 1,
+  "tier": 4,
+  "price": 75000,
+  "base": "dog",
+  "recolor": {
+   "#a16207": "#e7e5e4",
+   "#713f12": "#a8a29e"
+  }
+ },
+ {
+  "id": "robot",
+  "name": "DESK ROBOT",
+  "category": "tech",
+  "layer": "floor",
+  "w": 1,
+  "h": 2,
+  "tier": 4,
+  "price": 60000
+ },
+ {
+  "id": "xmas_tree",
+  "name": "HOLIDAY TREE",
+  "category": "decor",
+  "layer": "floor",
+  "w": 2,
+  "h": 4,
+  "tier": 4,
+  "price": 50000
+ }
+]

@@ -169,9 +169,9 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
         <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</span>
       </div>
 
-      {/* flex-1 down to the grid: when the panel is stretched to line up with the
-          other column (desktop), the extra height goes into taller day cells. */}
-      <div className="pt-3 space-y-3 font-mono flex-1 flex flex-col">
+      {/* The calendar keeps its natural height (day cells stay close to square);
+          it is never the panel stretched to line the dashboard columns up. */}
+      <div className="pt-3 space-y-3 font-mono flex flex-col">
         <div className="flex items-center gap-4">
           <MoonIcon fraction={todayFraction} size={40} isDark={isDark} glow={illuminated >= 40} />
           <div className="flex-1 min-w-0 space-y-1.5">
@@ -202,13 +202,13 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col">
+        <div className="flex flex-col">
           <div className={`grid grid-cols-7 gap-1 mb-1 text-center text-[9px] uppercase tracking-widest ${textMuted}`}>
             {orderedWeekdayLabels(t.weekdaysShortSun, weekStart).map((d) => (
               <span key={d}>{d}</span>
             ))}
           </div>
-          <div className="flex-1 grid grid-cols-7 auto-rows-fr gap-1">
+          <div className="grid grid-cols-7 auto-rows-fr gap-1">
             {Array.from({ length: leadingBlanks }).map((_, idx) => (
               <div key={`empty-lead-${idx}`} className="min-h-8 pointer-events-none" />
             ))}

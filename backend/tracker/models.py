@@ -44,7 +44,7 @@ class UserProfile(models.Model):
     )
     # Selected Chronometer Theme id (frontend catalog). Blank = default face.
     chrono_theme = models.CharField(max_length=64, blank=True, default="")
-    # Up to 5 status ids (e.g. ['student_cs', 'startup_founder']), ordered as picked.
+    # Up to 4 status ids (e.g. ['style_night_owl', 'fuel_coffee']), ordered as picked.
     user_statuses = models.JSONField(default=list, blank=True)
     # Chronometer weather widget, synced like the Surface Theme. Blank theme
     # = never synced from any device yet; blank unit = pick from time zone.
@@ -63,6 +63,9 @@ class UserProfile(models.Model):
     # Mouse cursor id (frontend catalog; unlocks decided client-side like
     # chrono_theme). Blank = never synced yet.
     cursor_theme = models.CharField(max_length=32, blank=True, default="")
+    # MY ROOM: {'wall', 'floor', 'items': [{'id', 'x', 'y'}]} (see furniture.py);
+    # empty until the user first saves, which reads as the default room.
+    room_layout = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -140,6 +143,10 @@ class StudyLog(models.Model):
         default=True,
         help_text="Flag to include this log in the rikutomikado.tech portfolio feed",
     )
+    # Extra BITS a shop buff paid on top of the base rate when this log was
+    # committed (see economy.py); the base rate itself is never stored.
+    bonus_bits = models.PositiveIntegerField(default=0)
+    bonus_item = models.CharField(max_length=32, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -155,3 +162,32 @@ class StudyLog(models.Model):
     @property
     def duration_hours(self):
         return round(self.duration_minutes / 60, 2)
+
+
+class BitPurchase(models.Model):
+    """
+    One shop purchase: the BITS ledger's only debit (balance = derived
+    earnings - sum of prices). A buff's live state rides on the same row:
+    it applies to logs committed before expires_at while it still has
+    minutes / uses left (null = that limit does not apply).
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bit_purchases"
+    )
+    item_id = models.CharField(max_length=32)
+    price = models.PositiveIntegerField()
+    expires_at = models.DateTimeField(null=True, blank=True)
+    remaining_minutes = models.PositiveIntegerField(null=True, blank=True)
+    remaining_uses = models.PositiveIntegerField(null=True, blank=True)
+    bonus_earned = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "BITS Purchase"
+        verbose_name_plural = "BITS Purchases"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.user} {self.item_id} -{self.price}"

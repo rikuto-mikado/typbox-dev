@@ -3,6 +3,9 @@
  * Handles JWT authentication, token refreshing, and REST API communication with Django backend.
  */
 
+import type { BitsSummary } from './bits';
+import type { FurnitureSpec, RoomLayout } from './roomRender';
+
 const getApiBaseUrl = (): string => {
   // 1. Explicit environment variable takes precedence
   if (import.meta.env.VITE_API_URL) {
@@ -180,9 +183,67 @@ export interface AuthUserResponse {
   ui_font?: string;
   ambient_theme?: string;
   ambient_clock?: boolean | null;
+  /** Study currency, derived from logged time (see bits.ts). */
+  bits?: BitsSummary;
+}
+
+/** Fields read back from a created / updated log. */
+interface LogWriteResponse {
+  id: number | string;
+  bonus_bits?: number;
+  bonus_item?: string;
+}
+
+export interface BitsBuff {
+  item_id: string;
+  name: string;
+  tagline: string;
+  detail: string;
+  price: number;
+}
+
+export interface BitsActiveBuff {
+  item_id: string;
+  name: string;
+  expires_at: string;
+  remaining_minutes: number | null;
+  total_minutes: number | null;
+  remaining_uses: number | null;
+  total_uses: number | null;
+  bonus_earned: number;
+}
+
+export interface BitsShopState {
+  bits: BitsSummary;
+  active_buff: BitsActiveBuff | null;
+  buffs: BitsBuff[];
+}
+
+export interface RoomState {
+  layout: RoomLayout;
+  inventory: Record<string, number>;
+  catalog: FurnitureSpec[];
+  weekly: { items: string[]; resets_at: string };
+  grid: { w: number; h: number; wall_rows: number };
 }
 
 export const api = {
+  room: {
+    get: async () => apiFetch<RoomState>('/room/'),
+    save: async (layout: RoomLayout) =>
+      apiFetch<RoomState>('/room/', {
+        method: 'PUT',
+        body: JSON.stringify({ layout }),
+      }),
+  },
+  bits: {
+    get: async () => apiFetch<BitsShopState>('/bits/'),
+    buy: async (item_id: string) =>
+      apiFetch<BitsShopState>('/bits/buy/', {
+        method: 'POST',
+        body: JSON.stringify({ item_id }),
+      }),
+  },
   auth: {
     login: async (username: string, password: string) => {
       const data = await apiFetch<{ access: string; refresh: string }>('/auth/login/', {
@@ -332,6 +393,8 @@ export const api = {
         topic: string;
         is_public_to_hub: boolean;
         created_at: string;
+        bonus_bits?: number;
+        bonus_item?: string;
       }>>(`/logs/${query}`);
     },
     create: async (data: {
@@ -341,7 +404,7 @@ export const api = {
       topic: string;
       is_public_to_hub: boolean;
     }) => {
-      return apiFetch('/logs/', {
+      return apiFetch<LogWriteResponse>('/logs/', {
         method: 'POST',
         body: JSON.stringify(data),
       });
@@ -353,7 +416,7 @@ export const api = {
       topic: string;
       is_public_to_hub: boolean;
     }>) => {
-      return apiFetch(`/logs/${id}/`, {
+      return apiFetch<LogWriteResponse>(`/logs/${id}/`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       });

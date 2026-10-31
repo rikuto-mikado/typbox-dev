@@ -23,7 +23,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Category, StudyLog
+from .economy import PurchaseError, apply_buff_to_new_log, buy, scale_bonus_on_edit, shop_state
+from .furniture import LayoutError, inventory, room_state, validate_layout
+from .models import Category, StudyLog, UserProfile
 from .serializers import (
     CategorySerializer,
     ChangePasswordSerializer,
@@ -339,7 +341,13 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             # No explicit study date: use "today" in the user's own zone
             # rather than the server's UTC date.
             extra["date"] = user_localdate(self.request.user)
-        serializer.save(user=self.request.user, **extra)
+        log = serializer.save(user=self.request.user, **extra)
+        apply_buff_to_new_log(log)
+
+    def perform_update(self, serializer):
+        old_minutes = serializer.instance.duration_minutes
+        log = serializer.save()
+        scale_bonus_on_edit(log, old_minutes)
 
     @action(detail=False, methods=["delete"], url_path="clear-all")
     def clear_all(self, request):
@@ -537,6 +545,56 @@ class StudyLogViewSet(viewsets.ModelViewSet):
 # ==========================================
 # Portfolio / Django Hub Telemetry View
 # ==========================================
+
+
+class BitsShopView(APIView):
+    """
+    GET  /api/bits/      - Balance, the running buff and the buff catalog
+    POST /api/bits/buy/  - {"item_id": "..."}: spend BITS on a buff
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        return Response(shop_state(request.user))
+
+
+class BitsBuyView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        item_id = request.data.get("item_id") if isinstance(request.data, dict) else None
+        if not isinstance(item_id, str):
+            return Response({"detail": "item_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            buy(request.user, item_id)
+        except PurchaseError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(shop_state(request.user), status=status.HTTP_201_CREATED)
+
+
+class RoomView(APIView):
+    """
+    GET /api/room/ - Layout, owned furniture, the catalog and this week's shop
+    PUT /api/room/ - {"layout": {...}}: save an arrangement of owned pieces
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        return Response(room_state(request.user, profile))
+
+    def put(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            layout = validate_layout(payload.get("layout"), inventory(request.user))
+        except LayoutError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        profile.room_layout = layout
+        profile.save(update_fields=["room_layout"])
+        return Response(room_state(request.user, profile))
 
 
 class HubTelemetryView(APIView):

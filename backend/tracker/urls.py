@@ -3,6 +3,8 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
+    BitsBuyView,
+    BitsShopView,
     CategoryViewSet,
     ChangePasswordView,
     CurrentUserView,
@@ -10,6 +12,7 @@ from .views import (
     PasswordResetConfirmView,
     PasswordResetRequestView,
     PortfolioFeedView,
+    RoomView,
     RegisterView,
     StudyLogViewSet,
     ThrottledTokenObtainPairView,
@@ -27,6 +30,9 @@ urlpatterns = [
     ),
     path("auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/me/", CurrentUserView.as_view(), name="current_user"),
+    path("bits/", BitsShopView.as_view(), name="bits_shop"),
+    path("bits/buy/", BitsBuyView.as_view(), name="bits_buy"),
+    path("room/", RoomView.as_view(), name="room"),
     path("auth/password-change/", ChangePasswordView.as_view(), name="password_change"),
     path(
         "auth/password-reset/",

@@ -10,18 +10,16 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 // the selection changes. Buttons sit above it, so their borders and text
 // paint over the block exactly as they did over their own background.
 // The glide is enabled only after the first change, so page load and
-// layout shifts before any click never animate. `scan` adds a one-shot
-// light sweep across the block on each change. Motion is dropped under
+// layout shifts before any click never animate. Motion is dropped under
 // prefers-reduced-motion (see .seg-* in index.css).
 
 interface SegmentIndicatorProps {
   activeKey: string;
   /** Background utility classes of the block (the old active-button background). */
   colorClass: string;
-  scan?: boolean;
 }
 
-export const SegmentIndicator: React.FC<SegmentIndicatorProps> = ({ activeKey, colorClass, scan = false }) => {
+export const SegmentIndicator: React.FC<SegmentIndicatorProps> = ({ activeKey, colorClass }) => {
   const ref = useRef<HTMLSpanElement>(null);
   // Counts selection changes (state derived during render, not in an effect).
   const [prevKey, setPrevKey] = useState(activeKey);
@@ -57,8 +55,6 @@ export const SegmentIndicator: React.FC<SegmentIndicatorProps> = ({ activeKey, c
       ref={ref}
       aria-hidden
       className={`seg-indicator ${changes > 0 ? 'seg-indicator-glide' : ''} ${colorClass}`}
-    >
-      {scan && changes > 0 && <span key={changes} className="seg-scan" />}
-    </span>
+    />
   );
 };
