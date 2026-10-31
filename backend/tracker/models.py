@@ -167,7 +167,7 @@ class StudyLog(models.Model):
 class BitPurchase(models.Model):
     """
     One shop purchase: the BITS ledger's only debit (balance = derived
-    earnings - sum of prices). A buff's live state rides on the same row:
+    earnings - sum of (price - refunded)). A buff's live state rides on the same row:
     it applies to logs committed before expires_at while it still has
     minutes / uses left (null = that limit does not apply).
     """
@@ -181,6 +181,17 @@ class BitPurchase(models.Model):
     remaining_minutes = models.PositiveIntegerField(null=True, blank=True)
     remaining_uses = models.PositiveIntegerField(null=True, blank=True)
     bonus_earned = models.PositiveIntegerField(default=0)
+    # BITS handed back when the buff was cancelled early (see
+    # economy.cancel_buff); the ledger counts price - refunded as spent.
+    refunded = models.PositiveIntegerField(default=0)
+    # CATEGORY LOCK: the only category whose logs it pays on. Deleting the
+    # category leaves the buff paying on nothing (it is not re-targeted).
+    category = models.ForeignKey(
+        "Category", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # Set when the buff was rolled from a MYSTERY CRATE (the crate's id);
+    # item_id is then the buff it rolled and price the crate's.
+    via = models.CharField(max_length=32, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

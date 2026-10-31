@@ -1,0 +1,275 @@
+// 16 x 16 pixel icons for the BITS // EXCHANGE buffs, keyed by the item ids
+// in backend/tracker/economy.py (BUFFS). Drawn as SVG rects (BuffIcon.tsx),
+// so they stay crisp at any size. '.' is transparent; every other
+// character is a key into the sprite's own palette.
+
+export interface BuffSprite {
+  palette: Record<string, string>;
+  rows: string[];
+}
+
+/** Visual identity of a buff card: its accent hue and a rarity class. */
+export interface BuffLook {
+  /** Card accent (border glow, tagline, progress bar). */
+  accent: string;
+  /** The accent darkened for text on light surfaces. */
+  ink: string;
+  /** Softer tone of the accent for backgrounds. */
+  tint: string;
+  /** C · B · A · S: purely cosmetic, follows the price. */
+  rank: 'C' | 'B' | 'A' | 'S';
+}
+
+const K = '#18181b';
+
+export const BUFF_ART: Record<string, BuffSprite> = {
+  warm_up: {
+    palette: { k: K, s: '#a1a1aa', b: '#78350f', w: '#fecdd3', r: '#fb7185', h: '#fff1f2', d: '#e11d48', p: '#d4d4d8' },
+    rows: [
+      '.....s..s..s....',
+      '....s..s..s.....',
+      '.....s..s..s....',
+      '....s..s..s.....',
+      '..kkkkkkkkkkk...',
+      '..kbbbbbbbbbk...',
+      '..kwrrrrrrrrkkk.',
+      '..kwrrhrhrrrk.k.',
+      '..kwrhhhhhrrk.k.',
+      '..kwrrhhhrrrk.k.',
+      '..kwrrrhrrrrkkk.',
+      '..kwrrrrrrrrk...',
+      '..kddddddddk....',
+      '.kkkkkkkkkkkkk..',
+      '.kpppppppppppk..',
+      '..kkkkkkkkkkk...',
+    ],
+  },
+  early_bird: {
+    palette: { k: K, y: '#fde047', o: '#f59e0b', w: '#fefce8', h: '#0c4a6e', b: '#0ea5e9', c: '#7dd3fc' },
+    rows: [
+      '..........k.k...',
+      '.......yy..k....',
+      '..y....yy....y..',
+      '...y........y...',
+      '................',
+      '.....kkkkkk.....',
+      '....koyyyyyk....',
+      '...koyyywyyyk...',
+      '...koyyyyyyyk...',
+      '..kooyyyyyyyyk..',
+      'hhhhhhhhhhhhhhhh',
+      'bbbbbyywwyybbbbb',
+      'bcbbbbyyyybbbcbb',
+      'bbbbbbbyybbbbbbb',
+      'bbbcbbbbbbbbbbcb',
+      'bbbbbbbbbbbbbbbb',
+    ],
+  },
+  mystery_crate: {
+    palette: { k: K, c: '#d6a46a', d: '#8b5a2b', p: '#3b2412', y: '#facc15', x: '#fef08a' },
+    rows: [
+      '.............x..',
+      '.kkkkkkkkkkkkkk.',
+      '.kcccccccccccdk.',
+      '.kckkkkkkkkkkdk.',
+      '.kckppyyyyppkdk.',
+      '.kckpyyppyypkdk.',
+      '.kckpppppyypkdk.',
+      '.kckppppyyppkdk.',
+      '.kckpppyypppkdk.',
+      '.kckpppyypppkdk.',
+      '.kckppppppppkdk.',
+      '.kckpppyypppkdk.',
+      '.kckkkkkkkkkkdk.',
+      '.kddddddddddddk.',
+      '.kkkkkkkkkkkkkk.',
+      'x...............',
+    ],
+  },
+  category_lock: {
+    palette: { k: K, m: '#a1a1aa', n: '#e4e4e7', p: '#d946ef', c: '#f0abfc', d: '#a21caf' },
+    rows: [
+      '................',
+      '.....kkkkkk.....',
+      '....kmmmmmmk....',
+      '...kmnkkkknmk...',
+      '...kmk....kmk...',
+      '...kmk....kmk...',
+      '...kmk....kmk...',
+      '.kkkkkkkkkkkkkk.',
+      '.kcppppppppppdk.',
+      '.kcpppppkkpppdk.',
+      '.kcppppkkkkppdk.',
+      '.kcppppkkkkppdk.',
+      '.kcpppppkkpppdk.',
+      '.kcpppppkkpppdk.',
+      '.kddddddddddddk.',
+      '..kkkkkkkkkkkk..',
+    ],
+  },
+  deep_dive: {
+    palette: { k: K, a: '#eab308', b: '#a16207', c: '#fef08a', g: '#0ea5e9', G: '#075985', w: '#e0f2fe', u: '#38bdf8' },
+    rows: [
+      '....kkkkkkk.....',
+      '...kcccaaaak..u.',
+      '..kcccaaaaaak...',
+      '.kcccaaaaaaaau..',
+      '.kccaaGGGaaaak.u',
+      'kccaaGwggGaaaak.',
+      'kcaaGwggggGaabu.',
+      'kaaaGgggggGabbk.',
+      'kaaaGgggggGbbbk.',
+      '.kaaaGgggGbbbk..',
+      '.kaaaaGGGbbbbk..',
+      '..kaaaaabbbbk...',
+      '..kaaaaaaaaaak..',
+      '..kacaaccaacak..',
+      '..kbbbbbbbbbbk..',
+      '...kkkkkkkkkk...',
+    ],
+  },
+  overclock: {
+    palette: { k: K, r: '#dc2626', o: '#f97316', y: '#facc15', w: '#fef9c3', a: '#3f3f46', b: '#27272a', c: '#71717a', p: '#a1a1aa' },
+    rows: [
+      '.......r........',
+      '.......ror......',
+      '...r...royr..r..',
+      '..ror.roywor.ro.',
+      '..royrroywyorroy',
+      '..roywyywwyywyor',
+      '.kkkkkkkkkkkkkk.',
+      'pkccccccccccccbp',
+      '.kcakkkkkkkkcab.',
+      'pkcakyyyyyykcabp',
+      '.kcakyowwoykcab.',
+      'pkcakyowwoykcabp',
+      '.kcakyyyyyykcab.',
+      'pkcakkkkkkkkcabp',
+      '.kbbbbbbbbbbbbb.',
+      '..p.p.p..p.p.p..',
+    ],
+  },
+  focus_chip: {
+    palette: { k: K, c: '#22d3ee', d: '#0e7490', e: '#164e63', g: '#0c4a6e', w: '#ecfeff', r: '#f43f5e' },
+    rows: [
+      '.......cc.......',
+      '.....kkcckk.....',
+      '...kkddccddkk...',
+      '..kddeeccgeddk..',
+      '..kdeegccggedk..',
+      '.kdeggg..gggedk.',
+      '.kdegg.ww.ggedk.',
+      'cccccc.rr.cccccc',
+      'cccccc.rr.cccccc',
+      '.kdegg.ww.ggedk.',
+      '.kdeggg..gggedk.',
+      '..kdeggccggedk..',
+      '..kddeeccgeddk..',
+      '...kkddccddkk...',
+      '.....kkcckk.....',
+      '.......cc.......',
+    ],
+  },
+  night_shift: {
+    palette: { k: K, m: '#fde68a', n: '#fbbf24', s: '#d97706', t: '#e0e7ff', v: '#818cf8' },
+    rows: [
+      '...kkkk.......t.',
+      '..kmmmnk.....ttt',
+      '.kmmmnk.......t.',
+      '.kmmnk..........',
+      'kmmmnk.....v....',
+      'kmmnk.....vtv...',
+      'kmmnk......v....',
+      'kmmnk...........',
+      'kmmmnk......t...',
+      'kmmmmnk........k',
+      '.kmmmmnkk....kkk',
+      '.kmmmmmnnkkkknsk',
+      '..kmmmmmmnnnnsk.',
+      '...kkmmmmmmssk..',
+      '.....kkkkkkkk...',
+      '................',
+    ],
+  },
+  weekend_surge: {
+    palette: { k: K, h: '#10b981', i: '#047857', p: '#f4f4f5', q: '#a1a1aa', g: '#6ee7b7', y: '#fde047', o: '#f59e0b', w: '#fefce8' },
+    rows: [
+      '..k.k.k.k.......',
+      'kkkkkkkkkkk.....',
+      'khhhhhhhhhk.....',
+      'kiiiiiiiiik.....',
+      'kpppppppggk.....',
+      'kqpqpqpqghkkkkk.',
+      'kpppppppggkyyyk.',
+      'kqpqpqpqgkyyyk..',
+      'kpppppppkyyyykkk',
+      'kqpqpqpqkwyyyyyk',
+      'kpppppppkkkoyyk.',
+      'kqpqpqpqghkyyk..',
+      'kpppppppgkyok...',
+      'kkkkkkkkkkok....',
+      '.........kk.....',
+      '................',
+    ],
+  },
+  lucky_byte: {
+    palette: { k: K, w: '#fafafa', s: '#d4d4d8', z: '#a1a1aa', g: '#16a34a', l: '#4ade80', y: '#facc15', x: '#fef08a' },
+    rows: [
+      '..............y.',
+      '..y..........yxy',
+      '.yxy..........y.',
+      '..y.kkkkkkkk....',
+      '...kwwwwwwwwk...',
+      '..kwwwwwwwlgsk..',
+      '..kwwwwwwwggsk..',
+      '..kwwwwwwwwwsk..',
+      '..kwwwwlgwwwsk..',
+      '..kwwwwggwwwsk..',
+      '..kwwwwwwwwwsk..',
+      '..kwlgwwwwwwsk..',
+      '..kwggwwwwwwsk..',
+      '..kssssssssssk.y',
+      '...kzzzzzzzzk.yx',
+      '....kkkkkkkk...y',
+    ],
+  },
+  hyperdrive: {
+    palette: { k: K, w: '#f5f3ff', l: '#c4b5fd', v: '#8b5cf6', d: '#5b21b6', c: '#22d3ee', p: '#ec4899', r: '#be185d', o: '#f97316', y: '#fde047' },
+    rows: [
+      '.......kk.......',
+      '......krpk......',
+      '.....krrppk.....',
+      '.....kwwlvk..c..',
+      '.c..kwwllvvk.c..',
+      '.c..kwkkkkvk....',
+      '.c..kwkcwkvk....',
+      '....kwkcckvk..c.',
+      '....kwkkkkvk..c.',
+      '..c.kwwllvvk..c.',
+      '..ckkwwllvvkk...',
+      '..kdkwwllvvkdk..',
+      '.kddkkkkkkkkddk.',
+      '.kkk.kywwyk.kkk.',
+      '......oyyo......',
+      '.......oo.......',
+    ],
+  },
+};
+
+export const BUFF_LOOK: Record<string, BuffLook> = {
+  warm_up: { accent: '#fb7185', ink: '#be123c', tint: 'rgba(251, 113, 133, 0.10)', rank: 'C' },
+  early_bird: { accent: '#38bdf8', ink: '#0369a1', tint: 'rgba(56, 189, 248, 0.10)', rank: 'C' },
+  mystery_crate: { accent: '#f59e0b', ink: '#b45309', tint: 'rgba(245, 158, 11, 0.10)', rank: 'A' },
+  category_lock: { accent: '#e879f9', ink: '#a21caf', tint: 'rgba(232, 121, 249, 0.10)', rank: 'B' },
+  deep_dive: { accent: '#60a5fa', ink: '#1d4ed8', tint: 'rgba(96, 165, 250, 0.10)', rank: 'A' },
+  night_shift: { accent: '#818cf8', ink: '#4f46e5', tint: 'rgba(129, 140, 248, 0.10)', rank: 'C' },
+  overclock: { accent: '#f97316', ink: '#c2410c', tint: 'rgba(249, 115, 22, 0.10)', rank: 'C' },
+  focus_chip: { accent: '#22d3ee', ink: '#0e7490', tint: 'rgba(34, 211, 238, 0.10)', rank: 'B' },
+  weekend_surge: { accent: '#10b981', ink: '#047857', tint: 'rgba(16, 185, 129, 0.10)', rank: 'B' },
+  lucky_byte: { accent: '#facc15', ink: '#a16207', tint: 'rgba(250, 204, 21, 0.10)', rank: 'A' },
+  hyperdrive: { accent: '#a78bfa', ink: '#6d28d9', tint: 'rgba(167, 139, 250, 0.12)', rank: 'S' },
+};
+
+export const DEFAULT_LOOK: BuffLook = { accent: '#fbbf24', ink: '#b45309', tint: 'rgba(251, 191, 36, 0.10)', rank: 'C' };
+
+export const lookOf = (itemId: string): BuffLook => BUFF_LOOK[itemId] ?? DEFAULT_LOOK;

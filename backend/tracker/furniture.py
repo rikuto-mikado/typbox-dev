@@ -15,6 +15,7 @@ Placed pieces may not overlap, and a piece can be placed as many times as
 it has been bought.
 """
 
+import hashlib
 import json
 import random
 from datetime import datetime, time, timedelta
@@ -39,6 +40,9 @@ with open(Path(__file__).with_name('furniture_catalog.json'), encoding='utf-8') 
     _CATALOG = json.load(fh)
 
 FURNITURE = {row['id']: {k: v for k, v in row.items() if k != 'id'} for row in _CATALOG}
+# Changes whenever the catalog does: clients cache the (large) catalog and
+# only ask for it again when this differs from the copy they hold.
+CATALOG_VERSION = hashlib.sha1(json.dumps(_CATALOG, sort_keys=True).encode()).hexdigest()[:12]
 
 STARTER_IDS = [item_id for item_id, spec in FURNITURE.items() if spec['tier'] == 0]
 DEFAULT_LAYOUT = {
@@ -50,8 +54,12 @@ DEFAULT_LAYOUT = {
     ],
 }
 
-# Weekly lineup: how many pieces of each tier the shop shows (6 in all).
-LINEUP_SLOTS = ((4, 1), (3, 1), (2, 2), (1, 2))
+# Weekly lineup: how many pieces of each tier the shop shows (12 in all).
+# Weighted toward the cheap tiers so there is something affordable every
+# week (~100 BITS per study hour), while large and featured pieces stay
+# things you save up for. With ~350 designs a missed piece comes back in
+# roughly 20-36 weeks.
+LINEUP_SLOTS = ((4, 1), (3, 2), (2, 4), (1, 5))
 
 
 # ==========================================
@@ -178,11 +186,16 @@ def catalog():
     return [{'id': item_id, **spec} for item_id, spec in FURNITURE.items()]
 
 
-def room_state(user, profile, now=None):
-    return {
+def room_state(user, profile, now=None, with_catalog=True):
+    """The room for the client. The catalog (~1,200 pieces) is left out
+    when the client already holds the current version (see CATALOG_VERSION)."""
+    state = {
         'layout': stored_layout(profile),
         'inventory': inventory(user),
-        'catalog': catalog(),
+        'catalog_version': CATALOG_VERSION,
         'weekly': weekly_shop(user, now),
         'grid': {'w': ROOM_W, 'h': ROOM_H, 'wall_rows': WALL_ROWS},
     }
+    if with_catalog:
+        state['catalog'] = catalog()
+    return state

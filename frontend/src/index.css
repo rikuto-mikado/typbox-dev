@@ -963,6 +963,94 @@ canvas {
 }
 
 /* ==========================================
+   BITS // EXCHANGE buff cards (BitsShopModal.tsx). Icons bob on hover, the
+   running buff's icon breathes, and a purchase plays a short "online" splash.
+========================================== */
+.buff-card:hover .buff-icon,
+.buff-card:focus-within .buff-icon {
+  animation: buff-bob 900ms steps(4, jump-none) infinite alternate;
+}
+@keyframes buff-bob {
+  from { transform: translateY(1px); }
+  to { transform: translateY(-2px); }
+}
+.buff-live-ring {
+  animation: buff-live 2400ms ease-in-out infinite;
+}
+@keyframes buff-live {
+  0%, 100% { box-shadow: 0 0 0 0 var(--buff-accent), inset 0 0 0 1px var(--buff-accent); opacity: 1; }
+  50% { box-shadow: 0 0 18px 2px var(--buff-accent), inset 0 0 0 1px var(--buff-accent); }
+}
+.buff-splash {
+  animation: buff-splash-fade 1700ms ease-out forwards;
+}
+@keyframes buff-splash-fade {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.buff-splash-icon {
+  animation: buff-splash-pop 700ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes buff-splash-pop {
+  0% { transform: scale(0.2) rotate(-20deg); }
+  60% { transform: scale(1.15) rotate(4deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.buff-splash-rays {
+  background: repeating-conic-gradient(from 0deg, var(--buff-accent) 0deg 8deg, transparent 8deg 30deg);
+  mask-image: radial-gradient(circle, transparent 22%, #000 30%, transparent 70%);
+  animation: fx-spin 6s linear infinite;
+  opacity: 0.35;
+}
+.crate-shake {
+  animation: crate-shake 1000ms steps(10, jump-none);
+}
+@keyframes crate-shake {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  10% { transform: rotate(-6deg) translateY(-2px); }
+  20% { transform: rotate(6deg); }
+  30% { transform: rotate(-8deg) translateY(-3px); }
+  40% { transform: rotate(8deg); }
+  50% { transform: rotate(-10deg) translateY(-4px) scale(1.05); }
+  60% { transform: rotate(10deg) scale(1.05); }
+  70% { transform: rotate(-12deg) translateY(-5px) scale(1.1); }
+  80% { transform: rotate(12deg) scale(1.12); }
+  90% { transform: rotate(0deg) scale(1.2); }
+}
+/* Header BITS button while a buff runs: a slow glow in the buff's colour. */
+.bits-badge-buff {
+  animation: bits-badge-glow 2400ms ease-in-out infinite;
+}
+@keyframes bits-badge-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 10px 0 var(--buff-accent); }
+}
+/* Shop furniture: the featured piece's frame shimmers. */
+.shop-featured {
+  background-image: linear-gradient(110deg, transparent 35%, rgba(251, 191, 36, 0.14) 50%, transparent 65%);
+  background-size: 250% 100%;
+  animation: shop-shimmer 3.2s ease-in-out infinite;
+}
+@keyframes shop-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .buff-card:hover .buff-icon,
+  .buff-card:focus-within .buff-icon,
+  .buff-live-ring,
+  .buff-splash-icon,
+  .buff-splash-rays,
+  .bits-badge-buff,
+  .crate-shake,
+  .shop-featured {
+    animation: none;
+  }
+}
+
+/* ==========================================
    Header polarity toggle (ThemeToggleIcon.tsx): the sun's core swells into
    a disc, a masked shadow disc slides in to carve the crescent and the rays
    spin away; moon → sun plays it backwards, the rays arriving last.

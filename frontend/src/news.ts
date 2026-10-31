@@ -104,7 +104,141 @@ const SHOWCASE_ROOMS: ShowcaseRoom[] = [
   ),
 ];
 
+// Rooms built from the furniture packs added in November.
+const PACK_ROOMS: ShowcaseRoom[] = [
+  room(
+    'KISSA CAFÉ',
+    'Mint subway tile and a black-and-white checker floor: a retro fridge, an espresso bar, a vending machine and a cat under the table.',
+    'wall_subway__mint',
+    'floor_checker_big__black',
+    `cafe_board@0,1 pendant_lights__brass@4,0 dish_shelf@8,1 spice_rack@11,2 herb_planter@11,3 neon_open@13,0
+     fridge_tall__mint@0,4 kitchen_counter__sage@2,6 stove__white@5,6 espresso_machine@7,6
+     water_dispenser__white@8,5 microwave_cart@9,6 vending_machine__red@14,4 tea_cart__pink@1,9
+     bar_stool__red@4,9 dining_table__walnut@6,9 bar_stool__red@10,9 gumball_machine@12,8 fern@15,9 cat@12,11`
+  ),
+  room(
+    'ZEN STUDY',
+    'Whitewashed planks over tatami: a kotatsu with mikan, a hanging scroll, a folding screen and a paper lantern that glows at night.',
+    'wall_plank__whitewash',
+    'floor_tatami',
+    `kakejiku@1,1 noren__forest@6,1 wave_print@9,1 furin@13,1 chochin@14,0 chochin__white@15,0 tansu@0,6
+     andon@3,6 kotatsu__forest@5,7 zabuton__red@4,8 zabuton__red@8,8 bonsai_pine@10,6 ikebana__black@12,6
+     byobu@13,5 futon__forest@0,10 daruma@5,11 maneki_neko@6,11 chabudai@9,10 hedgehog@12,11 kadomatsu@14,9`
+  ),
+  room(
+    'GREENHOUSE',
+    'Sage shiplap and terrazzo, an egg chair among an olive tree, a lemon tree, a sakura and a lot of smaller green.',
+    'wall_shiplap__sage',
+    'floor_terrazzo',
+    `moss_frame@0,1 hanging_ivy@3,0 hanging_basket@5,0 botanical_print@7,1 floating_plants__white@10,2
+     hanging_ivy__white@14,0 olive_tree@0,5 palm__white@2,6 plant_ladder@4,6 egg_chair@6,5
+     bird_of_paradise@9,6 lemon_tree@11,6 cherry_blossom@13,5 flower_box@0,10 succulents@2,10
+     cactus_trio@3,11 bench@4,10 terrarium@7,11 bunny@9,11 tulip_vase__pink@11,11 sunflower@12,10
+     saguaro@15,9`
+  ),
+];
+
 export const NEWS_ARTICLES: NewsArticle[] = [
+  {
+    id: 'bits-button',
+    date: 'EARLY NOV 2026',
+    tag: 'IMPROVEMENT',
+    title: 'One BITS mark, and a button that shows your buff',
+    lede: 'BITS now use the same amber diamond everywhere, and the header button lights up in the colour of the buff you are running.',
+    blocks: [
+      { type: 'figure', kind: 'bitsbutton', caption: 'The header button without a buff, and with each buff running in turn.' },
+      {
+        type: 'list',
+        items: [
+          'The pixel shard is gone: the header button, balances and prices all use the diamond from the BITS // EXCHANGE title.',
+          'While a buff runs, the button glows in its colour and carries its icon in the corner. It switches back on its own when the buff runs out, is used up or is cancelled.',
+          'The button stays icon-only, so the header never shifts as your balance grows. Hover it for the balance and the running buff.',
+          'The weekly furniture shop now shows twelve pieces instead of six.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'furniture-packs',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW FEATURE',
+    title: 'Over a thousand pieces of furniture',
+    lede: 'MY ROOM went from 222 pieces to 1,243: 262 new designs in eleven themed packs, most of them in several colours.',
+    blocks: [
+      { type: 'figure', kind: 'furniture', caption: 'A shelf of the new designs, a page at a time, and one piece in every colour.' },
+      {
+        type: 'stats',
+        items: [
+          ['Pieces', '1,243'],
+          ['Designs', '349'],
+          ['New wall & floor', '22'],
+        ],
+      },
+      { type: 'h', text: 'Eleven packs' },
+      {
+        type: 'list',
+        items: [
+          'Kitchen & café: a retro fridge in six colours, an espresso bar, a stove and a vending machine.',
+          'Study & office: standing and corner desks, a drafting table, chalkboards, lockers and a card catalog.',
+          'Plants: ferns, palms, an olive tree, a lemon tree, a venus flytrap and a sakura tree.',
+          'Japanese room: kotatsu, tansu, a folding screen, scrolls, lanterns, a daruma and a lucky cat.',
+          'Music: a drum kit, a synth, DJ decks, a cello, a harp and a jukebox.',
+          'Tech & games: a CRT TV, a home computer, hex light panels, pinball and a claw machine.',
+          'Fitness, sport and pets: a treadmill, a climbing wall, a bicycle, a bunny, a parrot and an owl.',
+          'Lighting: neon signs, an arc lamp, a moon lamp, a chandelier and a disco ball.',
+          'Wall decor: thirty-one posters, prints, clocks, mirrors and shelves.',
+          'Seating & storage: a sectional, a hanging egg chair, a loft bed with a desk underneath and a throne.',
+          'Extras: a fireplace, a dinosaur skeleton, a spacesuit, a suit of armour and 22 new walls and floors.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'The weekly shop now offers twelve pieces instead of six: five small, four medium, two large and one featured, drawn from the whole catalog. A piece you missed comes back in months instead of more than a year. Lamps, screens and neon light up while the stopwatch runs or at night, as before.',
+      },
+      { type: 'h', text: 'Three rooms from the new packs' },
+      { type: 'rooms', rooms: PACK_ROOMS },
+    ],
+  },
+  {
+    id: 'buffs-wave-2',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW FEATURE',
+    title: 'Five new buffs, and every buff gets an icon',
+    lede: 'The exchange now stocks eleven buffs, each with its own pixel icon, and a crate for the ones who like to gamble.',
+    blocks: [
+      { type: 'figure', kind: 'buffs', caption: 'All eleven buff icons, with their class letters.' },
+      {
+        type: 'stats',
+        items: [
+          ['Buffs in the exchange', '11'],
+          ['Cheapest', 'WARM-UP · 400'],
+          ['Buffs running at once', 'Still 1'],
+        ],
+      },
+      {
+        type: 'list',
+        items: [
+          'WARM-UP (400): ×2 on your next 5 study hours. A cheap first buff.',
+          'EARLY BIRD (650): ×2 for logs committed between 05:00 and 09:00. NIGHT SHIFT for mornings.',
+          'MYSTERY CRATE (700): opens into one of nine buffs at random. HYPERDRIVE is in there, rarely.',
+          'CATEGORY LOCK (900): pick a category and its logs earn ×2 for up to 12 hours.',
+          'DEEP DIVE (1,200): +250 for each single session of two hours or more.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Logs a buff paid out on now carry its icon and the bonus next to the duration, so you can see which sessions it covered.',
+      },
+      {
+        type: 'p',
+        text: 'Changed your mind? A running buff can be cancelled from its card. Two thirds of what is left of it comes back (all of it unused: two thirds of the price), and bonuses it already paid stay on your logs.',
+      },
+      {
+        type: 'p',
+        text: 'Resetting your study logs now resets BITS too: buffs, furniture and MY ROOM start over, and a backup imported afterwards pays its hours out again at the base rate only.',
+      },
+    ],
+  },
   {
     id: 'my-room',
     date: 'LATE OCT 2026',
@@ -116,7 +250,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
         type: 'stats',
         items: [
           ['Pieces in the catalog', '222'],
-          ['On sale each week', '6'],
+          ['On sale each week', '6 (12 since Nov)'],
           ['Copies you can own', '1 of each'],
         ],
       },
@@ -130,7 +264,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       {
         type: 'list',
         items: [
-          'Six pieces go on sale each week: one featured, one large, two medium and two small. Everyone sees the same lineup, and it changes when your week starts.',
+          'Six pieces went on sale each week at launch: one featured, one large, two medium and two small (twelve since November). Everyone sees the same lineup, and it changes when your week starts.',
           'A lineup never shows the same piece twice in different colours, and each piece can be owned once.',
           'Missed something? Lineups rotate, so it comes back in a later week.',
           'Walls and floors are pieces too: buy a wallpaper or flooring and the whole room changes.',
@@ -154,7 +288,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
     title: 'BITS: a currency you earn by studying',
     lede: 'Every hour you log now pays 100 BITS, whether you timed it with the stopwatch or entered it by hand.',
     blocks: [
-      { type: 'figure', kind: 'bits', caption: 'Each committed log pops the header shard and floats the gain.' },
+      { type: 'figure', kind: 'bits', caption: 'Each committed log floats the gain out of the BITS button in the header.' },
       {
         type: 'stats',
         items: [
@@ -293,7 +427,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
     title: 'Ambient scenes and a rebuilt status card',
     lede: 'Ambient mode got new scenes, and the shareable status card was rebuilt from scratch.',
     blocks: [
-      { type: 'figure', kind: 'ambient', caption: 'Three ambient scenes, running live.' },
+      { type: 'figure', kind: 'ambient', caption: 'Six of the ambient scenes, running live.' },
     ],
   },
   {

@@ -27,14 +27,14 @@ const ShowcaseRoomCard: React.FC<{
   }, [room, catalog, night]);
 
   return (
-    <figure className={`m-0 border ${borderCol} p-2 space-y-2`}>
+    <figure className={`m-0 border ${borderCol} p-2 flex flex-col gap-2`}>
       <canvas
         ref={canvasRef}
         aria-label={room.name}
         className={`block w-full aspect-4/3 border ${borderCol}`}
         style={{ imageRendering: 'pixelated' }}
       />
-      <figcaption className="space-y-1">
+      <figcaption className="flex flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold tracking-wider">{room.name}</span>
           <span className={`inline-flex border ${borderCol} text-[9px]`} role="group" aria-label={t.newsTimeOfDay}>
@@ -163,7 +163,8 @@ const ArticleView: React.FC<{
         <ArrowLeft className="w-3.5 h-3.5" />
         {t.newsBack}
       </button>
-      <header className={`space-y-2 pb-3 border-b ${borderCol}`}>
+      {/* flex + gap, not space-y: the blocks carry m-0, which would cancel space-y's margins */}
+      <header className={`flex flex-col gap-2 pb-3 border-b ${borderCol}`}>
         <div className="flex flex-wrap items-center gap-2 text-[10px] tracking-wider">
           <span className="px-1.5 py-0.5 border border-emerald-500/60 text-emerald-400 font-bold">{article.tag}</span>
           <span className={textMuted}>{article.date}</span>
@@ -171,7 +172,7 @@ const ArticleView: React.FC<{
         <h3 className="m-0 text-base sm:text-lg font-bold tracking-tight text-balance">{article.title}</h3>
         <p className={`m-0 text-[12px] font-sans leading-relaxed max-w-[64ch] ${textMuted}`}>{article.lede}</p>
       </header>
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3.5">
         {article.blocks.map((block, i) => (
           <Block key={i} block={block} ctx={ctx} />
         ))}
@@ -195,7 +196,7 @@ export const NewsPanel: React.FC<NewsPanelProps> = (ctx) => {
   }
 
   return (
-    <div className="space-y-3 font-mono text-xs">
+    <div className="flex flex-col gap-3 font-mono text-xs">
       <p className={`m-0 text-[10px] ${textMuted}`}>{t.newsIntro}</p>
       <ol className={`m-0 p-0 list-none border-l border-t ${borderCol}`}>
         {NEWS_ARTICLES.map((a, i) => (

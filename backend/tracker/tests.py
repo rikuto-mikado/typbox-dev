@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from pathlib import Path
@@ -20,7 +21,8 @@ User = get_user_model()
 FRONTEND_USER_STATUS_TS = (
     Path(settings.BASE_DIR).parent / "frontend" / "src" / "userStatus.ts"
 )
-# Pixel art for every furniture piece, keyed by catalog id.
+# Pixel art for every furniture piece, keyed by catalog id: roomArt.ts and
+# the themed packs (roomArt<Pack>.ts).
 FRONTEND_ROOM_ART_TS = Path(settings.BASE_DIR).parent / "frontend" / "src" / "roomArt.ts"
 
 
@@ -286,10 +288,55 @@ class ResetAndImportTests(APITestCase):
     def test_clear_all_removes_logs_and_categories_but_keeps_account(self):
         res = self.client.delete("/api/logs/clear-all/")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data, {"deleted": 1, "deleted_categories": 1})
+        self.assertEqual(
+            res.data, {"deleted": 1, "deleted_categories": 1, "deleted_purchases": 0}
+        )
         self.assertFalse(StudyLog.objects.filter(user=self.user).exists())
         self.assertFalse(Category.objects.filter(user=self.user).exists())
         self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
+    def test_reset_starts_the_bits_economy_over(self):
+        # 100h earned, a buff bought and paid out, a furniture piece owned
+        # and placed: all of it goes with the reset.
+        StudyLog.objects.filter(user=self.user).update(duration_minutes=6000)
+        self.assertEqual(
+            self.client.post(
+                "/api/bits/buy/", {"item_id": "overclock"}, format="json"
+            ).status_code,
+            201,
+        )
+        self.client.post(
+            "/api/logs/",
+            {"category": None, "date": "2026-10-30", "duration_minutes": 120, "topic": ""},
+            format="json",
+        )
+        self.assertTrue(StudyLog.objects.filter(user=self.user, bonus_bits__gt=0).exists())
+        piece = next(i for i, s in FURNITURE.items() if s["tier"] == 1)
+        BitPurchase.objects.create(user=self.user, item_id=piece, price=FURNITURE[piece]["price"])
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.room_layout = {**DEFAULT_LAYOUT, "items": []}
+        profile.save()
+
+        res = self.client.delete("/api/logs/clear-all/")
+        self.assertEqual(res.data["deleted_purchases"], 2)
+        self.assertFalse(BitPurchase.objects.filter(user=self.user).exists())
+        profile.refresh_from_db()
+        self.assertEqual(profile.room_layout, {})
+        state = self.client.get("/api/bits/").data
+        self.assertEqual(state["bits"], {"balance": 0, "earned": 0, "spent": 0, "per_hour": 100})
+        self.assertIsNone(state["active_buff"])
+        room = self.client.get("/api/room/").data
+        self.assertEqual(room["layout"], DEFAULT_LAYOUT)
+        self.assertNotIn(piece, room["inventory"])
+
+    def test_import_after_reset_pays_base_bits_only(self):
+        StudyLog.objects.filter(user=self.user).update(bonus_bits=500, bonus_item="overclock")
+        self.client.delete("/api/logs/clear-all/")
+        backup = self._backup()
+        backup["logs"][0]["bonusBits"] = 999  # never trusted from a file
+        self.client.post("/api/logs/import-backup/", backup, format="json")
+        # 2 x 60 min = 200 BITS, no bonus carried over.
+        self.assertEqual(self.client.get("/api/bits/").data["bits"]["balance"], 200)
 
     def test_import_after_reset_restores_backup_categories_exactly(self):
         self.client.delete("/api/logs/clear-all/")
@@ -923,6 +970,157 @@ class BitsShopTests(APITestCase):
         with mock.patch("tracker.economy.random.random", return_value=0.1):
             self.assertEqual(self._log(60)["bonus_bits"], 200)
 
+    def test_warm_up_is_a_short_double(self):
+        self._buy("warm_up")
+        self.assertEqual(self._log(240)["bonus_bits"], 300)  # capped at 180 min per log
+        self.assertEqual(self._log(240)["bonus_bits"], 200)  # 2h of its 5h left
+        self.assertIsNone(self.client.get("/api/bits/").data["active_buff"])
+
+    def test_early_bird_only_pays_in_the_morning(self):
+        from zoneinfo import ZoneInfo
+
+        UserProfile.objects.update_or_create(user=self.user, defaults={"timezone": "Asia/Tokyo"})
+        tokyo = ZoneInfo("Asia/Tokyo")
+        with mock.patch("tracker.economy.timezone.now", return_value=datetime(2026, 10, 30, 4, 30, tzinfo=tokyo)):
+            self._buy("early_bird")
+            self.assertEqual(self._log(60)["bonus_bits"], 0)
+        with mock.patch("tracker.economy.timezone.now", return_value=datetime(2026, 10, 30, 7, 0, tzinfo=tokyo)):
+            self.assertEqual(self._log(60)["bonus_bits"], 100)
+        with mock.patch("tracker.economy.timezone.now", return_value=datetime(2026, 10, 30, 9, 0, tzinfo=tokyo)):
+            self.assertEqual(self._log(60)["bonus_bits"], 0)
+
+    def test_deep_dive_needs_two_hour_sessions(self):
+        self._buy("deep_dive")
+        self.assertEqual(self._log(119)["bonus_bits"], 0)
+        self.assertEqual(self._log(120)["bonus_bits"], 250)
+        self.assertEqual(self.client.get("/api/bits/").data["active_buff"]["remaining_uses"], 5)
+
+    def test_category_lock_pays_only_on_its_category(self):
+        math = Category.objects.create(user=self.user, name="Math", code="MATH")
+        other = Category.objects.create(user=self.user, name="Art", code="ART")
+        self.assertEqual(self._buy("category_lock").status_code, 400)  # no category picked
+        res = self.client.post(
+            "/api/bits/buy/", {"item_id": "category_lock", "category": math.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["active_buff"]["category"]["code"], "MATH")
+
+        def log(cat):
+            return self.client.post(
+                "/api/logs/",
+                {"category": cat.id, "date": "2026-10-30", "duration_minutes": 60, "topic": ""},
+                format="json",
+            ).data["bonus_bits"]
+
+        self.assertEqual(log(other), 0)
+        self.assertEqual(log(math), 100)
+        self.assertEqual(self._log(60)["bonus_bits"], 0)  # uncategorized
+
+    def test_category_lock_rejects_foreign_or_done_categories(self):
+        stranger = User.objects.create_user(username="x", email="x@example.com", password="s3cure-pass-123")
+        foreign = Category.objects.create(user=stranger, name="X", code="X")
+        done = Category.objects.create(user=self.user, name="Old", code="OLD", completed_at=timezone.now())
+        for cat in (foreign, done):
+            res = self.client.post(
+                "/api/bits/buy/", {"item_id": "category_lock", "category": cat.id}, format="json"
+            )
+            self.assertEqual(res.status_code, 400)
+        self.assertEqual(self._balance(), 10000)
+
+    def test_mystery_crate_starts_a_rolled_buff(self):
+        with mock.patch("tracker.economy.random.choices", return_value=["hyperdrive"]):
+            res = self._buy("mystery_crate")
+        self.assertEqual(res.status_code, 201)
+        buff = res.data["active_buff"]
+        self.assertEqual((buff["item_id"], buff["via"], buff["total_minutes"]), ("hyperdrive", "mystery_crate", 1500))
+        self.assertEqual(res.data["bits"]["spent"], 700)
+        self.assertEqual(self._log(60)["bonus_bits"], 100)
+        # A running crate buff holds the slot like any other.
+        self.assertEqual(self._buy("warm_up").status_code, 400)
+
+    def test_mystery_crate_odds_cover_only_runnable_buffs(self):
+        from .economy import BUFFS
+
+        offer = next(b for b in self.client.get("/api/bits/").data["buffs"] if b["item_id"] == "mystery_crate")
+        ids = {o["item_id"] for o in offer["odds"]}
+        self.assertNotIn("mystery_crate", ids)
+        self.assertNotIn("category_lock", ids)
+        self.assertTrue(ids <= set(BUFFS))
+        self.assertAlmostEqual(sum(o["chance"] for o in offer["odds"]), 1.0)
+
+    def _cancel(self):
+        return self.client.post("/api/bits/cancel/", {}, format="json")
+
+    def test_cancelling_an_unused_buff_returns_two_thirds(self):
+        self._buy("overclock")  # 800
+        self.assertEqual(self.client.get("/api/bits/").data["active_buff"]["refund"], 533)
+        res = self._cancel()
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["refunded"], 533)
+        self.assertIsNone(res.data["active_buff"])
+        self.assertEqual(res.data["bits"]["spent"], 267)
+        self.assertEqual(self._balance(), 10000 - 267)
+        # The slot is free again.
+        self.assertEqual(self._buy("focus_chip").status_code, 201)
+
+    def test_refund_is_prorated_by_what_is_left(self):
+        self._buy("overclock")  # 1200 min
+        self._log(180)
+        self._log(180)
+        self._log(180)
+        self._log(60)  # 600 of 1200 minutes used
+        self.assertEqual(self._cancel().data["refunded"], 800 * 600 * 2 // (1200 * 3))  # 266
+
+    def test_use_capped_buffs_refund_by_uses_left(self):
+        self._buy("focus_chip")  # 900, 12 uses
+        for _ in range(3):
+            self._log(60)
+        self.assertEqual(self._cancel().data["refunded"], 900 * 9 * 2 // (12 * 3))  # 450
+
+    def test_bonuses_already_paid_stay_after_cancelling(self):
+        self._buy("overclock")
+        log = self._log(120)
+        self.assertEqual(log["bonus_bits"], 100)
+        self._cancel()
+        self.assertEqual(StudyLog.objects.get(pk=log["id"]).bonus_bits, 100)
+        self.assertEqual(self._log(60)["bonus_bits"], 0)
+
+    def test_crate_refund_is_based_on_the_crate_price(self):
+        with mock.patch("tracker.economy.random.choices", return_value=["hyperdrive"]):
+            self._buy("mystery_crate")
+        self.assertEqual(self._cancel().data["refunded"], 466)
+
+    def test_a_buff_cancelled_mid_commit_pays_nothing(self):
+        # The log looked the buff up just before a cancel landed: the
+        # re-check under the row lock must see it has ended.
+        from .economy import active_buff, apply_buff_to_new_log
+
+        self._buy("overclock")
+        buff = active_buff(self.user)
+        log = StudyLog.objects.create(user=self.user, duration_minutes=60)
+        self._cancel()
+        with mock.patch("tracker.economy.active_buff", return_value=buff):
+            apply_buff_to_new_log(log)
+        log.refresh_from_db()
+        self.assertEqual(log.bonus_bits, 0)
+
+    def test_a_used_up_buff_is_not_drawn_below_zero(self):
+        from .economy import active_buff, apply_buff_to_new_log
+
+        self._buy("focus_chip")
+        buff = active_buff(self.user)
+        BitPurchase.objects.filter(pk=buff.pk).update(remaining_uses=0)
+        log = StudyLog.objects.create(user=self.user, duration_minutes=60)
+        with mock.patch("tracker.economy.active_buff", return_value=buff):
+            apply_buff_to_new_log(log)
+        self.assertEqual(BitPurchase.objects.get(pk=buff.pk).remaining_uses, 0)
+
+    def test_cancel_without_a_buff_is_rejected(self):
+        self.assertEqual(self._cancel().status_code, 400)
+        self._buy("overclock")
+        self._cancel()
+        self.assertEqual(self._cancel().status_code, 400)
+
     def test_hyperdrive_doubles(self):
         self._buy("hyperdrive")
         self.assertEqual(self._log(120)["bonus_bits"], 200)
@@ -970,13 +1168,13 @@ class RoomTests(APITestCase):
         room = self._room()
         self.assertEqual(room["layout"], DEFAULT_LAYOUT)
         self.assertEqual(room["inventory"]["starter_desk"], 1)
-        self.assertEqual(len(room["weekly"]["items"]), 6)
+        self.assertEqual(len(room["weekly"]["items"]), 12)
 
     def test_lineup_is_stable_within_a_week_and_rotates(self):
         self.assertEqual(lineup_for_week(3000), lineup_for_week(3000))
         self.assertNotEqual(lineup_for_week(3000), lineup_for_week(3001))
         tiers = sorted(FURNITURE[i]["tier"] for i in lineup_for_week(3000))
-        self.assertEqual(tiers, [1, 1, 2, 2, 3, 4])
+        self.assertEqual(tiers, [1] * 5 + [2] * 4 + [3] * 2 + [4])
 
     def test_a_lineup_never_repeats_a_piece_in_another_colour(self):
         for week in range(2900, 3100):
@@ -1085,13 +1283,32 @@ class RoomTests(APITestCase):
 
     @skipUnless(FRONTEND_ROOM_ART_TS.exists(), "frontend source not present")
     def test_every_piece_has_pixel_art(self):
-        art_ids = set(
-            re.findall(r"^  ([a-z0-9_]+): ", FRONTEND_ROOM_ART_TS.read_text(encoding="utf-8"), re.M)
-        )
-        self.assertEqual({spec.get("base", item_id) for item_id, spec in FURNITURE.items()}, art_ids)
+        art_ids = []
+        for path in sorted(FRONTEND_ROOM_ART_TS.parent.glob("roomArt*.ts")):
+            art_ids += re.findall(r"^  ([a-z0-9_]+): ", path.read_text(encoding="utf-8"), re.M)
+        self.assertEqual(len(art_ids), len(set(art_ids)), "an art id is defined twice")
+        self.assertEqual({spec.get("base", item_id) for item_id, spec in FURNITURE.items()}, set(art_ids))
+
+    def test_catalog_is_sent_only_when_the_client_lacks_it(self):
+        full = self.client.get("/api/room/").data
+        self.assertIn("catalog", full)
+        version = full["catalog_version"]
+        cached = self.client.get(f"/api/room/?catalog={version}").data
+        self.assertNotIn("catalog", cached)
+        self.assertEqual(cached["layout"], full["layout"])
+        self.assertIn("catalog", self.client.get("/api/room/?catalog=stale").data)
+        saved = self.client.put(f"/api/room/?catalog={version}", {"layout": full["layout"]}, format="json")
+        self.assertEqual(saved.status_code, 200)
+        self.assertNotIn("catalog", saved.data)
+        # Older clients send no version and still get the catalog back.
+        legacy = self.client.put("/api/room/", {"layout": full["layout"]}, format="json")
+        self.assertIn("catalog", legacy.data)
 
     def test_catalog_is_well_formed(self):
-        self.assertGreaterEqual(len(FURNITURE), 200)
+        self.assertGreaterEqual(len(FURNITURE), 1000)
+        with open(Path(__file__).with_name("furniture_catalog.json"), encoding="utf-8") as fh:
+            ids = [row["id"] for row in json.load(fh)]
+        self.assertEqual(len(ids), len(set(ids)), "duplicate catalog id")
         for item_id, spec in FURNITURE.items():
             self.assertIn(spec["layer"], ("wall", "floor", "wall_paint", "floor_paint"), item_id)
             self.assertEqual(spec["price"] == 0, spec["tier"] == 0, item_id)

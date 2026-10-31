@@ -23,9 +23,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .economy import PurchaseError, apply_buff_to_new_log, buy, scale_bonus_on_edit, shop_state
-from .furniture import LayoutError, inventory, room_state, validate_layout
-from .models import Category, StudyLog, UserProfile
+from .economy import PurchaseError, apply_buff_to_new_log, buy, cancel_buff, scale_bonus_on_edit, shop_state
+from .furniture import CATALOG_VERSION, LayoutError, inventory, room_state, validate_layout
+from .models import BitPurchase, Category, StudyLog, UserProfile
 from .serializers import (
     CategorySerializer,
     ChangePasswordSerializer,
@@ -359,12 +359,35 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         Categories are deliberately not carried over: the usual next step is
         importing a backup, and leftover categories would shadow the backup's
         own (same code -> its targets/status are skipped).
+
+        The BITS economy starts over with them: every purchase (buffs and
+        furniture, so any running buff too) is dropped and MY ROOM goes back
+        to the starter room. Earnings are derived from logs, so a backup
+        imported afterwards pays its hours out again at the base rate only;
+        buff bonuses are tied to the original commits and never come back.
+        Without this, the old purchases would outlive the logs that paid for
+        them and leave the balance negative.
         """
         with transaction.atomic():
+            # Same lock as a purchase, so a buy racing the reset can't land
+            # on the far side of it.
+            profile, _ = UserProfile.objects.select_for_update().get_or_create(
+                user=request.user
+            )
             deleted_count, _ = StudyLog.objects.filter(user=request.user).delete()
             deleted_cats, _ = Category.objects.filter(user=request.user).delete()
+            deleted_purchases, _ = BitPurchase.objects.filter(
+                user=request.user
+            ).delete()
+            if profile.room_layout:
+                profile.room_layout = {}
+                profile.save(update_fields=["room_layout"])
         return Response(
-            {"deleted": deleted_count, "deleted_categories": deleted_cats},
+            {
+                "deleted": deleted_count,
+                "deleted_categories": deleted_cats,
+                "deleted_purchases": deleted_purchases,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -550,7 +573,8 @@ class StudyLogViewSet(viewsets.ModelViewSet):
 class BitsShopView(APIView):
     """
     GET  /api/bits/      - Balance, the running buff and the buff catalog
-    POST /api/bits/buy/  - {"item_id": "..."}: spend BITS on a buff
+    POST /api/bits/buy/  - {"item_id": "...", "category": id?}: spend BITS on a buff
+                       (category: CATEGORY LOCK only)
     """
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -567,23 +591,45 @@ class BitsBuyView(APIView):
         if not isinstance(item_id, str):
             return Response({"detail": "item_id is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            buy(request.user, item_id)
+            buy(request.user, item_id, category_id=request.data.get("category"))
         except PurchaseError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user), status=status.HTTP_201_CREATED)
 
 
+class BitsCancelView(APIView):
+    """
+    POST /api/bits/cancel/ - End the running buff early. Two thirds of its
+    unused share comes back; bonuses already paid onto logs stay.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        try:
+            refunded = cancel_buff(request.user)
+        except PurchaseError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({**shop_state(request.user), "refunded": refunded})
+
+
 class RoomView(APIView):
     """
-    GET /api/room/ - Layout, owned furniture, the catalog and this week's shop
-    PUT /api/room/ - {"layout": {...}}: save an arrangement of owned pieces
+    GET /api/room/ - Layout, owned furniture, the catalog and this week's shop.
+                     ?catalog=<version> skips the catalog when the client
+                     already holds that version.
+    PUT /api/room/ - {"layout": {...}}: save an arrangement of owned pieces.
+                     Takes the same ?catalog=<version>: clients that send it
+                     get the answer without the catalog. Older clients send
+                     nothing and keep getting the catalog they expect.
     """
 
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        return Response(room_state(request.user, profile))
+        held = request.query_params.get("catalog")
+        return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
 
     def put(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
@@ -594,7 +640,8 @@ class RoomView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         profile.room_layout = layout
         profile.save(update_fields=["room_layout"])
-        return Response(room_state(request.user, profile))
+        held = request.query_params.get("catalog")
+        return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
 
 
 class HubTelemetryView(APIView):

@@ -180,13 +180,15 @@ interface RenderOptions {
   /** Index of the piece being dragged (drawn as the ghost instead). */
   lifted?: number;
   ghost?: Ghost | null;
+  /** Dot grid at the tile corners (shown while placing or moving a piece). */
+  grid?: boolean;
 }
 
 export const renderRoom = (
   canvas: HTMLCanvasElement,
   layout: RoomLayout,
   catalog: Record<string, FurnitureSpec>,
-  { env, selected = -1, lifted = -1, ghost = null }: RenderOptions
+  { env, selected = -1, lifted = -1, ghost = null, grid = false }: RenderOptions
 ) => {
   const W = ROOM_W * TILE;
   const H = ROOM_H * TILE;
@@ -211,6 +213,17 @@ export const renderRoom = (
   ctx.fillRect(0, wallH - 2, W, 2);
   ctx.fillStyle = C.wood3;
   ctx.fillRect(0, wallH - 2, W, 1);
+
+  if (grid) {
+    // Under the pieces, so it only shows on open wall and floor.
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.55)';
+    for (let gy = 1; gy < ROOM_H; gy++) {
+      for (let gx = 1; gx < ROOM_W; gx++) ctx.fillRect(gx * TILE, gy * TILE, 1, 1);
+    }
+    // the wall / floor line pieces snap against
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
+    for (let gx = 0; gx < W; gx += 2) ctx.fillRect(gx, wallH, 1, 1);
+  }
 
   // Wall pieces behind floor pieces; floor pieces nearer the front (lower) drawn last.
   const order = layout.items
@@ -276,4 +289,23 @@ export const TIER_LABEL: Record<number, string> = {
   2: 'MEDIUM',
   3: 'LARGE',
   4: 'FEATURED',
+};
+
+/** The room at `scale`x, without selection or ghosts, as a PNG data URL (SNAPSHOT). */
+export const snapshotRoom = (
+  layout: RoomLayout,
+  catalog: Record<string, FurnitureSpec>,
+  env: Omit<ArtEnv, 'w' | 'h'>,
+  scale = 6
+): string => {
+  const src = document.createElement('canvas');
+  renderRoom(src, layout, catalog, { env });
+  const out = document.createElement('canvas');
+  out.width = src.width * scale;
+  out.height = src.height * scale;
+  const ctx = out.getContext('2d');
+  if (!ctx) return '';
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(src, 0, 0, out.width, out.height);
+  return out.toDataURL('image/png');
 };

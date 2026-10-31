@@ -200,6 +200,18 @@ export interface BitsBuff {
   tagline: string;
   detail: string;
   price: number;
+  /** Older servers omit the fields below; cards then show the text alone. */
+  window?: 'any' | 'night' | 'weekend';
+  expires?: 'hours' | 'weekend';
+  hours?: number | null;
+  minutes?: number | null;
+  uses?: number | null;
+  /** Best-case payout; null when it is down to luck (LUCKY BYTE). */
+  max_bonus?: number | null;
+  /** CATEGORY LOCK: buying needs a category. */
+  needs_category?: boolean;
+  /** MYSTERY CRATE: what it can open into. */
+  odds?: Array<{ item_id: string; name: string; chance: number }> | null;
 }
 
 export interface BitsActiveBuff {
@@ -211,6 +223,12 @@ export interface BitsActiveBuff {
   remaining_uses: number | null;
   total_uses: number | null;
   bonus_earned: number;
+  /** BITS a cancel would hand back right now (two thirds of the unused share). */
+  refund?: number;
+  /** 'mystery_crate' when the buff was rolled from a crate. */
+  via?: string;
+  /** CATEGORY LOCK's category. */
+  category?: { id: number; code: string; name: string; color: string } | null;
 }
 
 export interface BitsShopState {
@@ -223,25 +241,60 @@ export interface RoomState {
   layout: RoomLayout;
   inventory: Record<string, number>;
   catalog: FurnitureSpec[];
+  catalog_version?: string;
   weekly: { items: string[]; resets_at: string };
   grid: { w: number; h: number; wall_rows: number };
 }
 
+/** What /room/ sends: the catalog only when the client lacks this version. */
+type RoomPayload = Omit<RoomState, 'catalog'> & { catalog?: FurnitureSpec[] };
+
+// The furniture catalog (~1,200 pieces) is static per deploy, so it is
+// fetched once per page load and reused until the server's version changes.
+let catalogCache: { version: string; items: FurnitureSpec[] } | null = null;
+
+const withCatalog = (payload: RoomPayload): RoomState => {
+  if (payload.catalog) {
+    catalogCache = payload.catalog_version ? { version: payload.catalog_version, items: payload.catalog } : null;
+    return payload as RoomState;
+  }
+  if (catalogCache && catalogCache.version === payload.catalog_version) return { ...payload, catalog: catalogCache.items };
+  // A save answered against a catalog this page never loaded (or an older
+  // server): an empty list keeps the UI up until the next load refreshes it.
+  return { ...payload, catalog: catalogCache?.items ?? [] };
+};
+
 export const api = {
   room: {
-    get: async () => apiFetch<RoomState>('/room/'),
-    save: async (layout: RoomLayout) =>
-      apiFetch<RoomState>('/room/', {
-        method: 'PUT',
-        body: JSON.stringify({ layout }),
-      }),
+    /** Asks for the catalog only when the cached copy is missing or stale. */
+    get: async (): Promise<RoomState> => {
+      const held = catalogCache ? `?catalog=${encodeURIComponent(catalogCache.version)}` : '';
+      return withCatalog(await apiFetch<RoomPayload>(`/room/${held}`));
+    },
+    /** Like get: the answer skips the catalog when the cached copy is current. */
+    save: async (layout: RoomLayout): Promise<RoomState> => {
+      const held = catalogCache ? `?catalog=${encodeURIComponent(catalogCache.version)}` : '';
+      return withCatalog(
+        await apiFetch<RoomPayload>(`/room/${held}`, {
+          method: 'PUT',
+          body: JSON.stringify({ layout }),
+        })
+      );
+    },
   },
   bits: {
     get: async () => apiFetch<BitsShopState>('/bits/'),
-    buy: async (item_id: string) =>
+    /** `category`: CATEGORY LOCK's target (ignored by every other item). */
+    /** Ends the running buff early; `refunded` is what came back. */
+    cancel: async () =>
+      apiFetch<BitsShopState & { refunded: number }>('/bits/cancel/', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    buy: async (item_id: string, category?: string | number) =>
       apiFetch<BitsShopState>('/bits/buy/', {
         method: 'POST',
-        body: JSON.stringify({ item_id }),
+        body: JSON.stringify(category === undefined ? { item_id } : { item_id, category }),
       }),
   },
   auth: {
@@ -427,7 +480,7 @@ export const api = {
       });
     },
     clearAll: async () => {
-      return apiFetch<{ deleted: number; deleted_categories?: number }>('/logs/clear-all/', {
+      return apiFetch<{ deleted: number; deleted_categories?: number; deleted_purchases?: number }>('/logs/clear-all/', {
         method: 'DELETE',
       });
     },

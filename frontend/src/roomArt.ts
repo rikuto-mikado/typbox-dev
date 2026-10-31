@@ -1,11 +1,14 @@
 // Pixel art for every MY ROOM piece, keyed by the catalog ids in
-// backend/tracker/furniture.py (sizes come from there: w x h tiles, drawn
-// into w*8 x h*8 pixels). backend RoomTests checks every catalog id has an
-// entry here, so add the art in the same change as a new piece.
+// backend/tracker/furniture_catalog.json (sizes come from there: w x h
+// tiles, drawn into w*8 x h*8 pixels). This file holds the original set;
+// later pieces live in themed packs (roomArt<Pack>.ts) merged below.
+// backend RoomTests checks every catalog base has an entry in one of these
+// files, so add the art in the same change as a new piece.
 // Paints ('surfaces') fill the whole wall / floor area they are given.
 import { books, box, C, foliage, hash, text, type Art } from './roomPaint';
+import { PACK_ART } from './roomArtPacks';
 
-export const ROOM_ART: Record<string, Art> = {
+const CORE_ART: Record<string, Art> = {
   // ---------------------------------------------------------------- paints
   wall_plain: (p, { w, h }) => {
     p.rect(0, 0, w, h, C.wallBase);
@@ -866,3 +869,5 @@ export const ROOM_ART: Record<string, Art> = {
     p.px(5, 5, C.red);
   },
 };
+
+export const ROOM_ART: Record<string, Art> = { ...CORE_ART, ...PACK_ART };

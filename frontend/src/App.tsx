@@ -48,18 +48,20 @@ import {
   Undo2,
   ArrowUpRight,
 } from 'lucide-react';
-import { api, apiFetch, ApiError, getAccessToken } from './api';
+import { api, apiFetch, ApiError, getAccessToken, type BitsActiveBuff } from './api';
 import { TypboxLogo } from './TypboxLogo';
 import { resolveSurfaceThemeId } from './surfaceThemes';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
 import { StatusRankList } from './StatusRankList';
 import { ThemeToggleIcon } from './ThemeToggleIcon';
-import { BitsBadge } from './BitsBadge';
+import { BitsBadge, BitShard } from './BitsBadge';
+import { lookOf } from './buffArt';
+import { BuffIcon } from './BuffIcon';
 import { BitsShopModal, type ShopTab } from './BitsShopModal';
 import { MyRoomPanel } from './MyRoomPanel';
 import { NewsPanel } from './NewsPanel';
-import { bitsForMinutes, type BitsSummary } from './bits';
+import { BITS_PER_HOUR, bitsForMinutes, type BitsSummary } from './bits';
 import { SaveButton, useSaveState } from './SaveButton';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
 import {
@@ -201,6 +203,8 @@ export interface StudyLog {
   createdAt: string;
   /** Extra BITS a shop buff paid onto this log (see bits.ts). */
   bonusBits?: number;
+  /** The buff that paid it (economy.BUFFS id). */
+  bonusItem?: string;
 }
 
 export interface AuthUser {
@@ -1063,8 +1067,35 @@ export default function App() {
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [showStatusCardModal, setShowStatusCardModal] = useState<boolean>(false);
   const [showBitsShop, setShowBitsShop] = useState<boolean>(false);
+  // The running buff for the header badge, tagged with its account so a
+  // previous sign-in's buff never shows. Refetched when logs change (a
+  // commit can use a buff up, a reset removes it) and when it expires.
+  const [buffState, setBuffState] = useState<{ userId: number; buff: BitsActiveBuff | null } | null>(null);
+  const activeBuff = user && buffState?.userId === user.id ? buffState.buff : null;
+  const refreshActiveBuff = useCallback(() => {
+    const userId = user?.id;
+    if (userId === undefined) return;
+    api.bits
+      .get()
+      .then((state) => setBuffState({ userId, buff: state.active_buff }))
+      .catch(() => {});
+  }, [user?.id]);
+  useEffect(() => {
+    refreshActiveBuff();
+  }, [refreshActiveBuff, logs.length]);
+  useEffect(() => {
+    if (!activeBuff) return;
+    const ms = new Date(activeBuff.expires_at).getTime() - Date.now();
+    // Past expiry but the server still reports it (a device clock running
+    // ahead): wait a minute rather than refetching in a tight loop.
+    const wait = ms > 0 ? Math.min(ms, 2 ** 31 - 1) + 1000 : 60_000;
+    const id = window.setTimeout(refreshActiveBuff, wait);
+    return () => window.clearTimeout(id);
+  }, [activeBuff, refreshActiveBuff]);
   const [bitsShopTab, setBitsShopTab] = useState<ShopTab>('buffs');
   const closeBitsShop = useCallback(() => setShowBitsShop(false), []);
+  // CATEGORY LOCK can target any category still in progress (not DONE).
+  const lockableCategories = useMemo(() => categories.filter((c) => c.completedAt === null), [categories]);
   const openBitsShop = useCallback((tab: ShopTab) => {
     setBitsShopTab(tab);
     setShowBitsShop(true);
@@ -1316,6 +1347,7 @@ export default function App() {
         isPublicToHub: l.is_public_to_hub,
         createdAt: l.created_at,
         bonusBits: l.bonus_bits ?? 0,
+        bonusItem: l.bonus_item ?? '',
       }));
 
       setCategories(formattedCats);
@@ -1833,9 +1865,17 @@ export default function App() {
       setCategories([]);
       setSelectedCatId('');
       setClearLogsConfirmText('');
+      // The server dropped every purchase with the logs: BITS start from zero.
+      setUser((prev) =>
+        prev ? { ...prev, bits: { ...(prev.bits ?? { per_hour: BITS_PER_HOUR }), balance: 0, earned: 0, spent: 0 } } : prev
+      );
       setDataStatus({
         type: 'success',
-        text: tf(t.msgCleared, { n: res.deleted, cats: res.deleted_categories ?? 0 }),
+        text: tf(t.msgCleared, {
+          n: res.deleted,
+          cats: res.deleted_categories ?? 0,
+          items: res.deleted_purchases ?? 0,
+        }),
       });
     } catch (err: unknown) {
       const error = err as Error;
@@ -1930,6 +1970,7 @@ export default function App() {
         isPublicToHub: true,
         createdAt: new Date().toISOString(),
         bonusBits: created.bonus_bits ?? 0,
+        bonusItem: created.bonus_item ?? '',
       };
 
       setLogs((prev) => [newLogItem, ...prev]);
@@ -1973,6 +2014,7 @@ export default function App() {
           isPublicToHub: true,
           createdAt: new Date().toISOString(),
           bonusBits: created.bonus_bits ?? 0,
+          bonusItem: created.bonus_item ?? '',
         };
 
         setLogs((prev) => [newLogItem, ...prev]);
@@ -2029,6 +2071,7 @@ export default function App() {
                 topic: '',
                 // The server trims a buff bonus when a log is shortened.
                 bonusBits: updated.bonus_bits ?? l.bonusBits,
+                bonusItem: updated.bonus_item ?? l.bonusItem,
               }
             : l
         )
@@ -3277,6 +3320,7 @@ export default function App() {
                 ready={!dataLoading}
                 borderCol={borderCol}
                 onOpen={() => openBitsShop('buffs')}
+                activeBuff={activeBuff}
               />
             )}
 
@@ -3555,7 +3599,7 @@ export default function App() {
                 01 / {t.totalHours}
               </div>
               <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
-                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
+                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
                   {user ? stats.totalHours : '0.0'}
                 </span>
                 <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs}</span>
@@ -3567,7 +3611,7 @@ export default function App() {
                 02 / {t.weeklyHours}
               </div>
               <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
-                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
+                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
                   {user ? stats.weeklyHours : '0.0'}
                 </span>
                 <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs7d}</span>
@@ -3579,7 +3623,7 @@ export default function App() {
                 03 / {t.monthlyHours}
               </div>
               <div className="mt-1 sm:mt-2 flex items-baseline space-x-1.5 sm:space-x-2">
-                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
+                <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
                   {user ? stats.monthlyHours : '0.0'}
                 </span>
                 <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>{t.unitHrs} ({currentMonthPrefix})</span>
@@ -3592,7 +3636,7 @@ export default function App() {
               </div>
               <div className="mt-1 sm:mt-2 flex items-baseline justify-between gap-2 min-w-0">
                 <div className="flex items-baseline space-x-1.5 sm:space-x-2 shrink-0">
-                  <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight">
+                  <span className="font-mono text-2xl sm:text-4xl font-light tracking-tight whitespace-nowrap">
                     {user ? activeCategoryCount : '0'}
                   </span>
                   <span className={`font-mono text-[10px] sm:text-xs ${textMuted}`}>
@@ -3885,7 +3929,7 @@ export default function App() {
                     type="button"
                     onClick={() => setInputMode('manual')}
                     data-seg-active={inputMode === 'manual'}
-                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 sm:px-3.5 py-2 lg:px-2.5 lg:py-1 whitespace-nowrap seg-btn cursor-pointer ${
                       inputMode === 'manual'
                         ? isDark
                           ? 'text-zinc-900 font-semibold'
@@ -3899,7 +3943,7 @@ export default function App() {
                     type="button"
                     onClick={() => setInputMode('timer')}
                     data-seg-active={inputMode === 'timer'}
-                    className={`min-h-[38px] lg:min-h-0 px-3.5 py-2 lg:px-2.5 lg:py-1 seg-btn cursor-pointer ${
+                    className={`min-h-[38px] lg:min-h-0 px-2.5 sm:px-3.5 py-2 lg:px-2.5 lg:py-1 whitespace-nowrap seg-btn cursor-pointer ${
                       inputMode === 'timer'
                         ? isDark
                           ? 'text-zinc-900 font-semibold'
@@ -5603,6 +5647,18 @@ export default function App() {
                                 <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60 font-semibold tabular-nums">
                                   {tf(t.logDurationChip, { min: log.durationMinutes, h: (log.durationMinutes / 60).toFixed(1) })}
                                 </span>
+                                {(log.bonusBits ?? 0) > 0 && (
+                                  <span
+                                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border font-bold tabular-nums"
+                                    style={{
+                                      borderColor: `${lookOf(log.bonusItem ?? '').accent}80`,
+                                      color: isDark ? lookOf(log.bonusItem ?? '').accent : lookOf(log.bonusItem ?? '').ink,
+                                    }}
+                                    title={tf(t.logBuffBonusTitle, { n: log.bonusBits ?? 0 })}
+                                  >
+                                    <BuffIcon itemId={log.bonusItem ?? ''} className="w-3 h-3" />+{(log.bonusBits ?? 0).toLocaleString('en-US')}
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -5860,7 +5916,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={closeAuthModal}
-                className="font-mono text-xs hover:underline cursor-pointer"
+                className="font-mono text-xs hover:underline cursor-pointer whitespace-nowrap shrink-0"
               >
                 {t.closeBracket}
               </button>
@@ -6116,7 +6172,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowSettingsModal(false)}
-                className="font-mono text-xs hover:underline cursor-pointer"
+                className="font-mono text-xs hover:underline cursor-pointer whitespace-nowrap shrink-0"
               >
                 {t.closeBracket}
               </button>
@@ -6835,6 +6891,10 @@ export default function App() {
                     {tf(t.resetLogsBody, { n: logs.length })}{' '}
                     <span className="font-mono font-bold text-amber-400">CLEAR</span> {t.resetLogsBodyTail}
                   </p>
+                  <p className="flex gap-2 text-[11px] font-sans leading-relaxed text-amber-400/90">
+                    <BitShard className="w-3 h-3 shrink-0 mt-0.5" />
+                    <span>{tf(t.resetLogsBits, { rate: BITS_PER_HOUR })}</span>
+                  </p>
                   <div className="flex items-center space-x-2">
                     <input
                       type="text"
@@ -6845,7 +6905,11 @@ export default function App() {
                     />
                     <button
                       type="button"
-                      disabled={clearLogsConfirmText !== 'CLEAR' || clearingLogs || (logs.length === 0 && categories.length === 0)}
+                      disabled={
+                        clearLogsConfirmText !== 'CLEAR' ||
+                        clearingLogs ||
+                        (logs.length === 0 && categories.length === 0 && !(user?.bits?.spent ?? 0))
+                      }
                       onClick={handleClearAllLogs}
                       className="px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                     >
@@ -6959,15 +7023,20 @@ export default function App() {
           isOpen={showBitsShop}
           onClose={closeBitsShop}
           balance={bitsBalance}
-          onPurchased={(state) => setUser((prev) => (prev ? { ...prev, bits: state.bits } : prev))}
+          onPurchased={(state) => {
+            setUser((prev) => (prev ? { ...prev, bits: state.bits } : prev));
+            if (user) setBuffState({ userId: user.id, buff: state.active_buff });
+          }}
           initialTab={bitsShopTab}
           onOpenRoom={() => {
             setShowBitsShop(false);
             openSettingsModal('room');
           }}
+          isDark={isDark}
           borderCol={borderCol}
           bgCard={bgCard}
           textMuted={textMuted}
+          categories={lockableCategories}
         />
       )}
 

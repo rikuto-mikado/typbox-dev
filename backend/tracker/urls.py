@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     BitsBuyView,
+    BitsCancelView,
     BitsShopView,
     CategoryViewSet,
     ChangePasswordView,
@@ -32,6 +33,7 @@ urlpatterns = [
     path("auth/me/", CurrentUserView.as_view(), name="current_user"),
     path("bits/", BitsShopView.as_view(), name="bits_shop"),
     path("bits/buy/", BitsBuyView.as_view(), name="bits_buy"),
+    path("bits/cancel/", BitsCancelView.as_view(), name="bits_cancel"),
     path("room/", RoomView.as_view(), name="room"),
     path("auth/password-change/", ChangePasswordView.as_view(), name="password_change"),
     path(
