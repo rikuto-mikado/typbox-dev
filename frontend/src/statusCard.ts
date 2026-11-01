@@ -430,9 +430,13 @@ function minutesByDate(logs: StudyLog[]): Map<string, number> {
 const ymd = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-// Activity heatmap: the most recent weeks (as many as fit), oldest on the
-// left and this week in the last column. Days not yet reached are drawn as
-// faint placeholders; cell intensity follows minutes logged that day.
+// Activity heatmap. Mirrors the dashboard's TELEMETRY CADENCE MATRIX: the
+// grid starts (top-left) at the user's first logged week and fills toward
+// the bottom-right; once a grid's worth of weeks is used up, the next block
+// starts fresh, so the current week is always on the card. Days not yet
+// reached are drawn as faint placeholders. Cell intensity follows minutes
+// logged that day. The totals row (when there is room) covers the days of
+// the block shown, up to today.
 function paintActivity(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -470,13 +474,22 @@ function paintActivity(
     return out;
   };
   const currentWeek = startOfWeek(today);
-  // The last `weeks` weeks, ending with this one: the newest column is
-  // always today's week, however wide the panel is.
-  const blockStart = new Date(currentWeek);
-  blockStart.setDate(currentWeek.getDate() - (weeks - 1) * 7);
+  // Same direction as the dashboard's cadence matrix: the grid starts at the
+  // top-left with the first logged week and fills toward the bottom-right.
+  // Once a grid's worth of weeks is used up the next block starts fresh, so
+  // the current week is always on the card.
+  let origin = currentWeek;
+  if (data.logs.length > 0) {
+    const oldest = data.logs.reduce((acc, l) => (l.date < acc ? l.date : acc), data.logs[0].date);
+    const oldestDate = new Date(`${oldest}T00:00:00`);
+    if (!isNaN(oldestDate.getTime()) && oldestDate < currentWeek) origin = startOfWeek(oldestDate);
+  }
+  const weeksElapsed = Math.round((currentWeek.getTime() - origin.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const blockStart = new Date(origin);
+  blockStart.setDate(origin.getDate() + Math.floor(weeksElapsed / weeks) * weeks * 7);
 
   const legendFits = innerW >= 520;
-  caption(ctx, `Activity · last ${weeks} weeks`, ix, y + 52, pal.muted, legendFits ? innerW - 170 : innerW);
+  caption(ctx, `Activity · from ${shortDate(blockStart)}`, ix, y + 52, pal.muted, legendFits ? innerW - 170 : innerW);
 
   // Legend: less → more (left out when the panel is narrow)
   const levels = [0, 0.3, 0.55, 0.8, 1];
