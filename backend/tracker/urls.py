@@ -14,6 +14,7 @@ from .views import (
     PasswordResetConfirmView,
     PasswordResetRequestView,
     PortfolioFeedView,
+    RoomSlotsView,
     RoomView,
     RegisterView,
     StudyLogViewSet,
@@ -37,6 +38,7 @@ urlpatterns = [
     path("bits/cancel/", BitsCancelView.as_view(), name="bits_cancel"),
     path("bits/reset/", BitsResetView.as_view(), name="bits_reset"),
     path("room/", RoomView.as_view(), name="room"),
+    path("room/rooms/", RoomSlotsView.as_view(), name="room_slots"),
     path("auth/password-change/", ChangePasswordView.as_view(), name="password_change"),
     path(
         "auth/password-reset/",

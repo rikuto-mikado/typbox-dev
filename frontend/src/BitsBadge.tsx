@@ -5,10 +5,13 @@ import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
 
-// Header BITS button (the BITS diamond); opens the exchange (BitsShopModal). A gain (a log was just committed) floats a "+N" up
-// out of the badge; drops (an edited or deleted log) just update the number.
-// Only a change between two `ready` renders animates, so the initial log
-// fetch (loading → loaded in one batched render) never floats a "+N".
+// Header BITS button (the BITS diamond); opens the exchange (BitsShopModal).
+// A committed log floats "+N" out of the badge (up on desktop, down below
+// it on phones, where the badge sits near the top edge of the screen).
+// Only a rise that arrives together with a new `gainSeq` (bumped by every
+// commit) floats: resets, CLEAR, imports, edits, refunds and the initial
+// load move the balance silently. A "+N" never claims a gain that wasn't a
+// commit.
 
 // The BITS mark: a plain amber diamond, the same one beside the
 // BITS // EXCHANGE title, used for the header button, balances and prices.
@@ -22,6 +25,8 @@ export const BitShard: React.FC<{ className?: string }> = ({ className = '' }) =
 interface BitsBadgeProps {
   balance: number;
   ready: boolean;
+  /** Bumped once per committed log, in the same render as its balance rise. */
+  gainSeq: number;
   borderCol: string;
   onOpen: () => void;
   /** The running buff, shown as a corner badge with a glow in its colour. */
@@ -39,15 +44,15 @@ export const StudyTime: React.FC<{ bits: number; className?: string }> = ({ bits
   );
 };
 
-export const BitsBadge: React.FC<BitsBadgeProps> = ({ balance, ready, borderCol, onOpen, activeBuff }) => {
+export const BitsBadge: React.FC<BitsBadgeProps> = ({ balance, ready, gainSeq, borderCol, onOpen, activeBuff }) => {
   const { t } = useI18n();
   // Gain detection is derived during render (no effect), keyed so each
   // gain restarts the float animation.
-  const [prev, setPrev] = useState({ balance, ready });
+  const [prev, setPrev] = useState({ balance, ready, gainSeq });
   const [gain, setGain] = useState<{ n: number; key: number } | null>(null);
-  if (prev.balance !== balance || prev.ready !== ready) {
-    setPrev({ balance, ready });
-    if (ready && prev.ready && balance > prev.balance) {
+  if (prev.balance !== balance || prev.ready !== ready || prev.gainSeq !== gainSeq) {
+    setPrev({ balance, ready, gainSeq });
+    if (ready && prev.ready && gainSeq !== prev.gainSeq && balance > prev.balance) {
       setGain({ n: balance - prev.balance, key: (gain?.key ?? 0) + 1 });
     }
   }
@@ -87,7 +92,7 @@ export const BitsBadge: React.FC<BitsBadgeProps> = ({ balance, ready, borderCol,
         <span
           key={`gain-${gain.key}`}
           aria-hidden
-          className="bits-gain absolute left-1/2 top-0 -translate-x-1/2 pointer-events-none text-amber-400 font-bold text-[11px] tabular-nums whitespace-nowrap"
+          className="bits-gain absolute left-1/2 -translate-x-1/2 z-40 pointer-events-none text-amber-400 font-bold text-[11px] tabular-nums whitespace-nowrap"
           onAnimationEnd={() => setGain(null)}
         >
           +{gain.n.toLocaleString('en-US')}

@@ -179,6 +179,11 @@ export const CHRONO_THEME_STORAGE_KEY = 'typbox_chrono_theme';
 
 const THEME_BY_ID = new Map(CHRONO_THEMES.map((t) => [t.id, t]));
 
+/** Round, compact faces (dials, rings, arcs): the console centres them
+ *  between the date and the readout instead of setting them to the left. */
+const CENTERED_FACE_KINDS = new Set<ChronoRender['kind']>(['analog', 'rings', 'arc', 'pie', 'pendulum']);
+export const isCenteredFace = (theme: ChronoTheme) => CENTERED_FACE_KINDS.has(theme.render.kind);
+
 export function getChronoThemeById(id: string | null | undefined): ChronoTheme {
   return (id && THEME_BY_ID.get(id)) || THEME_BY_ID.get(DEFAULT_CHRONO_THEME_ID) || CHRONO_THEMES[0];
 }

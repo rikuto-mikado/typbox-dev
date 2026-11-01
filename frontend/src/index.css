@@ -1089,10 +1089,30 @@ canvas {
 
 /* ==========================================
    BITS badge (BitsBadge.tsx): a committed log floats "+N" up out of the
-   header balance while the pixel shard pops.
+   header balance while the shard pops. Below lg the badge sits close to
+   the top of the screen (and the float would leave it), so there it drops
+   out below the badge instead, on a chip so it reads over the page.
 ========================================== */
 .bits-gain {
+  top: 0;
   animation: bits-gain 1200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@media (max-width: 1023.98px) {
+  .bits-gain {
+    top: 100%;
+    padding: 1px 5px;
+    font-size: 12px;
+    background: rgb(9 9 11 / 0.88);
+    border: 1px solid rgb(251 191 36 / 0.55);
+    animation-name: bits-gain-down;
+    animation-duration: 1600ms;
+  }
+}
+@keyframes bits-gain-down {
+  0% { transform: translateY(-6px); opacity: 0; }
+  15% { transform: translateY(6px); opacity: 1; }
+  75% { transform: translateY(10px); opacity: 1; }
+  100% { transform: translateY(18px); opacity: 0; }
 }
 @keyframes bits-gain {
   0% { transform: translateY(4px); opacity: 0; }

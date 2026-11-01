@@ -32,7 +32,19 @@ from .economy import (
     scale_bonus_on_edit,
     shop_state,
 )
-from .furniture import CATALOG_VERSION, LayoutError, inventory, room_state, validate_layout
+from .furniture import (
+    CATALOG_VERSION,
+    ROOM_NAME_MAX,
+    ROOM_SLOTS,
+    LayoutError,
+    active_slot,
+    inventory,
+    room_slots,
+    room_state,
+    sanitize_layout,
+    stored_layout,
+    validate_layout,
+)
 from .models import BitPurchase, Category, StudyLog, UserProfile
 from .serializers import (
     CategorySerializer,
@@ -350,7 +362,10 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             # rather than the server's UTC date.
             extra["date"] = user_localdate(self.request.user)
         log = serializer.save(user=self.request.user, **extra)
-        apply_buff_to_new_log(log)
+        # STORM RUNNER reads the CHRONOMETER weather the client sends along
+        # (optional; older clients send none and simply don't qualify).
+        data = self.request.data
+        apply_buff_to_new_log(log, weather=data.get("weather") if hasattr(data, "get") else None)
 
     def perform_update(self, serializer):
         old_minutes = serializer.instance.duration_minutes
@@ -370,8 +385,9 @@ class StudyLogViewSet(viewsets.ModelViewSet):
 
         The BITS economy starts over with them: every purchase (buffs and
         furniture, so any running buff too) is dropped and MY ROOM goes back
-        to the starter room. Earnings are derived from logs, so a backup
-        imported afterwards pays its hours out again at the base rate only;
+        to the starter room (all five rooms and their SAVEs). Earnings are
+        derived from logs, so a backup imported afterwards pays its hours out
+        again at the base rate only;
         buff bonuses are tied to the original commits and never come back.
         Without this, the old purchases would outlive the logs that paid for
         them and leave the balance negative.
@@ -387,9 +403,11 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             deleted_purchases, _ = BitPurchase.objects.filter(
                 user=request.user
             ).delete()
-            if profile.room_layout:
+            if profile.room_layout or profile.room_slots or profile.room_active_slot:
                 profile.room_layout = {}
-                profile.save(update_fields=["room_layout"])
+                profile.room_slots = []
+                profile.room_active_slot = 0
+                profile.save(update_fields=["room_layout", "room_slots", "room_active_slot"])
         return Response(
             {
                 "deleted": deleted_count,
@@ -665,6 +683,58 @@ class RoomView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         profile.room_layout = layout
         profile.save(update_fields=["room_layout"])
+        held = request.query_params.get("catalog")
+        return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
+
+
+class RoomSlotsView(APIView):
+    """
+    POST /api/room/rooms/ - MY ROOM's five rooms (see furniture.py):
+      {"action": "save", "layout"?}            SAVE checkpoint of the active room
+      {"action": "switch", "slot": n, "layout"?} park the active room, open room n
+      {"action": "rename", "slot": n, "name"}  rename a room (blank = default)
+    "layout" is the editor's current arrangement, stored first (validated
+    like PUT /api/room/) so nothing waiting in the autosave is lost. Loading
+    a checkpoint back happens in the editor (undoable) and saves as a
+    normal layout. Takes ?catalog=<version> like /api/room/.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        action = payload.get("action")
+        if action not in ("save", "switch", "rename"):
+            return Response({"detail": "Unknown action."}, status=status.HTTP_400_BAD_REQUEST)
+        slot = payload.get("slot")
+        if action != "save" and (isinstance(slot, bool) or not isinstance(slot, int) or not 0 <= slot < ROOM_SLOTS):
+            return Response({"detail": "Unknown room."}, status=status.HTTP_400_BAD_REQUEST)
+        owned = inventory(request.user)
+        with transaction.atomic():
+            profile, _ = UserProfile.objects.select_for_update().get_or_create(user=request.user)
+            slots = room_slots(profile)
+            current = active_slot(profile)
+            if action == "rename":
+                name = payload.get("name")
+                if not isinstance(name, str):
+                    return Response({"detail": "Name must be text."}, status=status.HTTP_400_BAD_REQUEST)
+                slots[slot]["name"] = name.strip()[:ROOM_NAME_MAX] or f"ROOM {slot + 1}"
+            else:
+                if "layout" in payload:
+                    try:
+                        profile.room_layout = validate_layout(payload.get("layout"), owned)
+                    except LayoutError as exc:
+                        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                if action == "save":
+                    slots[current]["saved"] = stored_layout(profile)
+                    slots[current]["saved_at"] = timezone.now().isoformat()
+                elif slot != current:
+                    slots[current]["layout"] = stored_layout(profile)
+                    profile.room_layout = sanitize_layout(slots[slot]["layout"], owned)
+                    slots[slot]["layout"] = {}
+                    profile.room_active_slot = slot
+            profile.room_slots = slots
+            profile.save(update_fields=["room_layout", "room_slots", "room_active_slot"])
         held = request.query_params.get("catalog")
         return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
 

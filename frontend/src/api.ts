@@ -201,8 +201,10 @@ export interface BitsBuff {
   detail: string;
   price: number;
   /** Older servers omit the fields below; cards then show the text alone. */
-  window?: 'any' | 'night' | 'weekend';
-  expires?: 'hours' | 'weekend';
+  window?: 'any' | 'night' | 'morning' | 'weekend' | 'weather';
+  expires?: 'hours' | 'weekend' | 'contract' | 'mornings';
+  /** EARLY BIRD: how many mornings it runs. */
+  mornings?: number | null;
   hours?: number | null;
   minutes?: number | null;
   uses?: number | null;
@@ -212,6 +214,22 @@ export interface BitsBuff {
   needs_category?: boolean;
   /** MYSTERY CRATE: what it can open into. */
   odds?: Array<{ item_id: string; name: string; chance: number }> | null;
+  /** IRON CONTRACT's terms. */
+  contract?: BitsContractTerms | null;
+  /** LUNAR TIDE: extra BITS per hour if a log were committed now. */
+  rate_now?: number | null;
+}
+
+export interface BitsContractTerms {
+  days: number;
+  min_minutes: number;
+  multiplier: number;
+}
+
+export interface BitsContractDay {
+  date: string;
+  minutes: number;
+  state: 'pending' | 'live' | 'done' | 'failed';
 }
 
 export interface BitsActiveBuff {
@@ -229,6 +247,12 @@ export interface BitsActiveBuff {
   via?: string;
   /** CATEGORY LOCK's category. */
   category?: { id: number; code: string; name: string; color: string } | null;
+  /** IRON CONTRACT: its terms, payout and each day's progress. */
+  contract?: (Omit<BitsContractTerms, 'days'> & { payout: number; days: BitsContractDay[] }) | null;
+  /** LUNAR TIDE: extra BITS per hour right now. */
+  rate_now?: number | null;
+  /** A live line for the reworked buffs (mornings, night level, daily minimum…). */
+  status?: string | null;
 }
 
 export interface BitsShopState {
@@ -237,9 +261,22 @@ export interface BitsShopState {
   buffs: BitsBuff[];
 }
 
+/** One of MY ROOM's five rooms (furniture.ROOM_SLOTS). */
+export interface RoomSlot {
+  name: string;
+  /** Its arrangement (for the active room, the same as RoomState.layout). */
+  layout: RoomLayout;
+  /** The SAVE checkpoint, if one was made. */
+  saved: RoomLayout | null;
+  saved_at: string | null;
+}
+
 export interface RoomState {
   layout: RoomLayout;
   inventory: Record<string, number>;
+  /** Older servers omit the rooms; the editor then shows a single room. */
+  rooms?: RoomSlot[];
+  active_room?: number;
   catalog: FurnitureSpec[];
   catalog_version?: string;
   weekly: { items: string[]; resets_at: string };
@@ -249,7 +286,7 @@ export interface RoomState {
 /** What /room/ sends: the catalog only when the client lacks this version. */
 type RoomPayload = Omit<RoomState, 'catalog'> & { catalog?: FurnitureSpec[] };
 
-// The furniture catalog (~1,200 pieces) is static per deploy, so it is
+// The furniture catalog (~1,800 pieces) is static per deploy, so it is
 // fetched once per page load and reused until the server's version changes.
 let catalogCache: { version: string; items: FurnitureSpec[] } | null = null;
 
@@ -278,6 +315,22 @@ export const api = {
         await apiFetch<RoomPayload>(`/room/${held}`, {
           method: 'PUT',
           body: JSON.stringify({ layout }),
+        })
+      );
+    },
+    /** SAVE checkpoint / switch room / rename. `layout` (save, switch) is
+     *  the editor's current arrangement, stored first. */
+    rooms: async (
+      body:
+        | { action: 'save'; layout?: RoomLayout }
+        | { action: 'switch'; slot: number; layout?: RoomLayout }
+        | { action: 'rename'; slot: number; name: string }
+    ): Promise<RoomState> => {
+      const held = catalogCache ? `?catalog=${encodeURIComponent(catalogCache.version)}` : '';
+      return withCatalog(
+        await apiFetch<RoomPayload>(`/room/rooms/${held}`, {
+          method: 'POST',
+          body: JSON.stringify(body),
         })
       );
     },
@@ -462,6 +515,8 @@ export const api = {
       duration_minutes: number;
       topic: string;
       is_public_to_hub: boolean;
+      /** The CHRONOMETER weather at commit time (STORM RUNNER); optional. */
+      weather?: { code: number; temp_c: number; at: number };
     }) => {
       return apiFetch<LogWriteResponse>('/logs/', {
         method: 'POST',

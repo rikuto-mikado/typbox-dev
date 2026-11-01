@@ -23,6 +23,9 @@ export interface FurnitureSpec {
   /** Colour variants: the art to draw and {hex: hex} swaps applied to it. */
   base?: string;
   recolor?: Record<string, string>;
+  /** Tucking (furniture.fit_of): a 'chair' may overlap a 'desk' standing
+   *  on the same floor row, and is drawn in front of it. */
+  fit?: 'chair' | 'desk';
 }
 
 export interface PlacedPiece {
@@ -138,6 +141,10 @@ const cells = (spec: FurnitureSpec, x: number, y: number) => {
   return out;
 };
 
+/** Whether two overlapping pieces are a chair tucked into a desk (same floor row). */
+const tucks = (a: FurnitureSpec, ay: number, b: FurnitureSpec, by: number) =>
+  ((a.fit === 'chair' && b.fit === 'desk') || (a.fit === 'desk' && b.fit === 'chair')) && ay + a.h === by + b.h;
+
 /** Same rules as furniture.validate_layout, for one piece against the rest. */
 export const canPlace = (
   spec: FurnitureSpec,
@@ -152,12 +159,37 @@ export const canPlace = (
   if (spec.layer === 'wall' && bottom >= WALL_ROWS) return false;
   if (spec.layer === 'floor' && bottom < WALL_ROWS) return false;
   const mine = new Set(cells(spec, x, y));
-  return items.every((it, i) => {
-    if (i === ignoreIndex) return true;
+  const owners = new Map<string, number>();
+  for (let i = 0; i < items.length; i++) {
+    if (i === ignoreIndex) continue;
+    const it = items[i];
     const other = catalog[it.id];
-    return !other || cells(other, it.x, it.y).every((c) => !mine.has(c));
-  });
+    if (!other) continue;
+    const shared = cells(other, it.x, it.y).filter((c) => mine.has(c));
+    if (shared.length === 0) continue;
+    if (!tucks(spec, y, other, it.y)) return false;
+    for (const c of shared) owners.set(c, (owners.get(c) ?? 0) + 1);
+  }
+  // At most a desk and one chair share a tile.
+  for (const n of owners.values()) if (n > 1) return false;
+  return true;
 };
+
+/** Draw order: wall pieces first, then floor pieces back to front, a
+ *  tucked chair after the desk it stands at. Picking walks it backwards. */
+const drawOrder = (items: PlacedPiece[], catalog: Record<string, FurnitureSpec>) =>
+  items
+    .map((it, i) => ({ it, i, spec: catalog[it.id] }))
+    .filter((e) => e.spec)
+    .sort((a, b) => {
+      const la = a.spec.layer === 'wall' ? 0 : 1;
+      const lb = b.spec.layer === 'wall' ? 0 : 1;
+      return (
+        la - lb ||
+        a.it.y + a.spec.h - (b.it.y + b.spec.h) ||
+        (a.spec.fit === 'chair' ? 1 : 0) - (b.spec.fit === 'chair' ? 1 : 0)
+      );
+    });
 
 /** Where a piece lands when grabbed at tile (tx, ty): bottom row at the pointer, centred, clamped in. */
 export const anchorAt = (spec: FurnitureSpec, tx: number, ty: number) => ({
@@ -165,11 +197,12 @@ export const anchorAt = (spec: FurnitureSpec, tx: number, ty: number) => ({
   y: Math.max(0, Math.min(ROOM_H - spec.h, ty - (spec.h - 1))),
 });
 
-/** Index of the topmost placed piece covering tile (tx, ty), or -1. */
+/** Index of the frontmost placed piece covering tile (tx, ty), or -1. */
 export const pieceAt = (items: PlacedPiece[], catalog: Record<string, FurnitureSpec>, tx: number, ty: number) => {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const spec = catalog[items[i].id];
-    if (spec && tx >= items[i].x && tx < items[i].x + spec.w && ty >= items[i].y && ty < items[i].y + spec.h) return i;
+  const order = drawOrder(items, catalog);
+  for (let k = order.length - 1; k >= 0; k--) {
+    const { it, i, spec } = order[k];
+    if (tx >= it.x && tx < it.x + spec.w && ty >= it.y && ty < it.y + spec.h) return i;
   }
   return -1;
 };
@@ -226,14 +259,7 @@ export const renderRoom = (
   }
 
   // Wall pieces behind floor pieces; floor pieces nearer the front (lower) drawn last.
-  const order = layout.items
-    .map((it, i) => ({ it, i, spec: catalog[it.id] }))
-    .filter((e) => e.spec && e.i !== lifted)
-    .sort((a, b) => {
-      const la = a.spec.layer === 'wall' ? 0 : 1;
-      const lb = b.spec.layer === 'wall' ? 0 : 1;
-      return la - lb || a.it.y + a.spec.h - (b.it.y + b.spec.h);
-    });
+  const order = drawOrder(layout.items, catalog).filter((e) => e.i !== lifted);
   for (const { it, spec } of order) drawPiece(ctx, spec, it.x, it.y, env);
 
   const outline = (x: number, y: number, w: number, h: number, color: string) => {

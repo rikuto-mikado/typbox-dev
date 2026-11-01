@@ -69,6 +69,43 @@ const CellBar: React.FC<{ pct: number; accent: string; borderCol: string }> = ({
   );
 };
 
+/** IRON CONTRACT: one cell per contract day, filled toward its goal. */
+const ContractDays: React.FC<{
+  contract: NonNullable<BitsActiveBuff['contract']>;
+  accent: string;
+  borderCol: string;
+  textMuted: string;
+}> = ({ contract, accent, borderCol, textMuted }) => {
+  const { t } = useI18n();
+  const goal = contract.min_minutes;
+  return (
+    <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${contract.days.length}, minmax(0, 1fr))` }}>
+      {contract.days.map((d, i) => {
+        const pct = Math.min(100, (d.minutes / goal) * 100);
+        const fill = d.state === 'failed' ? '#f43f5e' : d.state === 'done' ? '#34d399' : accent;
+        return (
+          <div
+            key={d.date}
+            className={`p-1 border ${d.state === 'live' ? '' : borderCol} min-w-0`}
+            style={d.state === 'live' ? { borderColor: accent } : undefined}
+            title={tf(t.bitsContractDayTitle, { date: d.date, h: (d.minutes / 60).toFixed(1), goal: goal / 60 })}
+          >
+            <div className="flex items-center justify-between gap-1 text-[8px] uppercase tracking-wider">
+              <span className={d.state === 'pending' ? textMuted : 'font-bold'}>{tf(t.bitsContractDay, { n: i + 1 })}</span>
+              <span className="tabular-nums" style={{ color: d.state === 'pending' ? undefined : fill }}>
+                {d.state === 'done' ? '✓' : d.state === 'failed' ? '✕' : `${(d.minutes / 60).toFixed(1)}h`}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 bg-zinc-500/15">
+              <div className="h-full transition-[width] duration-500" style={{ width: `${pct}%`, background: fill }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const ActiveBuffCard: React.FC<{
   buff: BitsActiveBuff;
   isDark: boolean;
@@ -107,6 +144,7 @@ const ActiveBuffCard: React.FC<{
   }, []);
   const look = lookOf(buff.item_id);
   const ink = isDark ? look.accent : look.ink;
+  const contract = buff.contract ?? null;
   const byMinutes = buff.total_minutes !== null && buff.remaining_minutes !== null;
   const total = byMinutes ? buff.total_minutes! : buff.total_uses ?? 1;
   const left = byMinutes ? buff.remaining_minutes! : buff.remaining_uses ?? 0;
@@ -130,7 +168,11 @@ const ActiveBuffCard: React.FC<{
             {tf(t.bitsExpiresIn, { t: formatLeft(new Date(buff.expires_at).getTime() - now) })}
           </span>
         </div>
-        <CellBar pct={pct} accent={look.accent} borderCol={borderCol} />
+        {contract ? (
+          <ContractDays contract={contract} accent={look.accent} borderCol={borderCol} textMuted={textMuted} />
+        ) : (
+          <CellBar pct={pct} accent={look.accent} borderCol={borderCol} />
+        )}
         {(buff.category || buff.via) && (
           <div className="flex flex-wrap items-center gap-1.5 text-[9px] uppercase tracking-wider">
             {buff.category && (
@@ -148,12 +190,27 @@ const ActiveBuffCard: React.FC<{
             )}
           </div>
         )}
+        {buff.status && (
+          <div className="text-[9px] uppercase tracking-wider font-bold tabular-nums" style={{ color: ink }}>
+            {buff.status}
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 text-[10px]">
           <span className={`tabular-nums ${textMuted}`}>
-            {byMinutes ? tf(t.bitsMinutesLeft, { a: left, b: total }) : tf(t.bitsUsesLeft, { a: left, b: total })}
+            {contract
+              ? contract.days.every((d) => d.state === 'pending')
+                ? t.bitsContractStarts
+                : tf(t.bitsContractPayout, { n: fmt(contract.payout), d: contract.days.length })
+              : buff.rate_now != null
+              ? `${tf(t.bitsMinutesLeft, { a: left, b: total })} · ${tf(t.bitsLunarRate, { n: buff.rate_now })}`
+              : byMinutes
+              ? tf(t.bitsMinutesLeft, { a: left, b: total })
+              : tf(t.bitsUsesLeft, { a: left, b: total })}
           </span>
           <span className="font-bold tabular-nums" style={{ color: ink }}>
-            {tf(t.bitsBonusEarned, { n: fmt(buff.bonus_earned) })}
+            {contract && buff.bonus_earned === 0
+              ? tf(t.bitsContractStake, { n: fmt(contract.payout / contract.multiplier) })
+              : tf(t.bitsBonusEarned, { n: fmt(buff.bonus_earned) })}
           </span>
         </div>
       </div>
@@ -161,7 +218,7 @@ const ActiveBuffCard: React.FC<{
       {buff.refund !== undefined && (
         <div className={`flex flex-wrap items-center justify-between gap-2 pt-2 border-t ${borderCol}`}>
           <span className={`text-[9px] font-sans leading-relaxed max-w-[44ch] ${textMuted}`}>
-            {tf(t.bitsCancelHint, { n: fmt(refund) })}
+            {contract ? t.bitsContractCancelHint : tf(t.bitsCancelHint, { n: fmt(refund) })}
           </span>
           <button
             type="button"
@@ -174,7 +231,7 @@ const ActiveBuffCard: React.FC<{
             {cancelling ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
             ) : armed ? (
-              tf(t.bitsCancelConfirm, { n: fmt(refund) })
+              contract ? t.bitsContractForfeit : tf(t.bitsCancelConfirm, { n: fmt(refund) })
             ) : (
               t.bitsCancelBuff
             )}
@@ -188,7 +245,21 @@ const ActiveBuffCard: React.FC<{
 /** LASTS / COVERS / BEST CASE chips; empty against an older server. */
 const buffStats = (buff: BitsBuff, t: ReturnType<typeof useI18n>['t']): Array<[string, string]> => {
   if (buff.expires === undefined || buff.odds) return [];
-  const lasts = buff.expires === 'weekend' ? t.bitsStatWeekend : tf(t.bitsStatHours, { n: buff.hours ?? 0 });
+  if (buff.contract) {
+    return [
+      [t.bitsStatLasts, tf(t.bitsStatDays, { n: buff.contract.days })],
+      [t.bitsStatCovers, tf(t.bitsStatPerDay, { h: buff.contract.min_minutes / 60 })],
+      [t.bitsStatBest, buff.max_bonus ? `+${fmt(buff.max_bonus)}` : '—'],
+    ];
+  }
+  const lasts =
+    buff.expires === 'mornings'
+      ? tf(t.bitsStatMornings, { n: buff.mornings ?? 0 })
+      : buff.expires === 'weekend'
+      ? t.bitsStatWeekend
+      : (buff.hours ?? 0) >= 120 && (buff.hours ?? 0) % 24 === 0
+      ? tf(t.bitsStatDays, { n: (buff.hours ?? 0) / 24 })
+      : tf(t.bitsStatHours, { n: buff.hours ?? 0 });
   const covers = buff.minutes
     ? tf(t.bitsStatHours, { n: Math.round(buff.minutes / 60) })
     : tf(t.bitsStatLogs, { n: buff.uses ?? 0 });
@@ -578,7 +649,17 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                       const running = state.active_buff?.item_id === buff.item_id;
                       const stats = buffStats(buff, t);
                       const windowLabel =
-                        buff.window === 'night' ? t.bitsStatNight : buff.window === 'weekend' ? t.bitsStatWeekendOnly : null;
+                        buff.window === 'night'
+                          ? t.bitsStatNight
+                          : buff.window === 'morning'
+                          ? t.bitsStatMorning
+                          : buff.window === 'weekend'
+                          ? t.bitsStatWeekendOnly
+                          : buff.window === 'weather'
+                          ? t.bitsStatWeather
+                          : buff.rate_now != null
+                          ? tf(t.bitsStatLunarNow, { n: buff.rate_now })
+                          : null;
                       return (
                         <div
                           key={buff.item_id}

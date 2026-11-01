@@ -29,6 +29,8 @@ import { segmentStyle } from './categoryStyle';
 // app. Motion pauses under prefers-reduced-motion.
 
 export type FigureKind =
+  | 'packs6'
+  | 'newbuffs'
   | 'kpis'
   | 'rhythm'
   | 'bitsreset'
@@ -207,10 +209,11 @@ const BitsButtonFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => 
   return (
     <div className="h-36 flex flex-col items-center justify-center gap-5" aria-hidden>
       <div className="flex items-center gap-8 pointer-events-none">
-        <BitsBadge balance={0} ready={false} borderCol={borderCol} onOpen={() => {}} />
+        <BitsBadge balance={0} ready={false} gainSeq={0} borderCol={borderCol} onOpen={() => {}} />
         <BitsBadge
           balance={0}
           ready={false}
+          gainSeq={0}
           borderCol={borderCol}
           onOpen={() => {}}
           activeBuff={{ item_id: id, name, expires_at: '' }}
@@ -228,9 +231,12 @@ const BitsButtonFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => 
 // A shelf of the new designs (the art packs), a page at a time, and one
 // piece in every colour it comes in.
 const SHELF_SIZE = 24;
-const SWATCH_BASE = 'fridge_tall';
-const FurnitureFigure: React.FC<FigureContext> = ({ borderCol, textMuted, isDark }) => {
-  const tick = useTicker(2600);
+// The six packs added in November carry these id prefixes (roomArtPacks.ts).
+const NEW_PACK_PREFIXES = ['dc_', 'hw_', 'orb_', 'intel_', 'camp_', 'cyber_'];
+const isNewPackId = (id: string) => NEW_PACK_PREFIXES.some((prefix) => id.startsWith(prefix));
+
+/** The furniture catalog for figures (null while loading, [] on failure). */
+const useCatalog = () => {
   const [catalog, setCatalog] = useState<FurnitureSpec[] | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -242,14 +248,27 @@ const FurnitureFigure: React.FC<FigureContext> = ({ borderCol, textMuted, isDark
       cancelled = true;
     };
   }, []);
+  return catalog;
+};
+
+const FurnitureFigure: React.FC<FigureContext & { pick?: (id: string) => boolean; swatchBase?: string }> = ({
+  borderCol,
+  textMuted,
+  isDark,
+  pick = (id) => !isNewPackId(id),
+  swatchBase = 'fridge_tall',
+}) => {
+  const tick = useTicker(2600);
+  const catalog = useCatalog();
   if (!catalog) return <div className="h-64" />;
   const byId = new Map(catalog.map((spec) => [spec.id, spec]));
   const designs = Object.keys(PACK_ART)
+    .filter(pick)
     .map((id) => byId.get(id))
     .filter((spec): spec is FurnitureSpec => spec !== undefined && spec.layer !== 'wall_paint' && spec.layer !== 'floor_paint');
   const pages = Math.max(1, Math.ceil(designs.length / SHELF_SIZE));
   const page = designs.slice((tick % pages) * SHELF_SIZE, (tick % pages) * SHELF_SIZE + SHELF_SIZE);
-  const swatches = catalog.filter((spec) => spec.id === SWATCH_BASE || spec.base === SWATCH_BASE);
+  const swatches = catalog.filter((spec) => spec.id === swatchBase || spec.base === swatchBase);
   const shelf = isDark ? 'linear-gradient(#1c1c20 0 78%, #141417 78%)' : 'linear-gradient(#f4f4f5 0 78%, #e4e4e7 78%)';
   return (
     <div className="p-3 flex flex-col gap-3" aria-hidden>
@@ -286,9 +305,68 @@ const FurnitureFigure: React.FC<FigureContext> = ({ borderCol, textMuted, isDark
   );
 };
 
+// -------------------------------------------------------------- newbuffs
+// The three new buffs, and IRON CONTRACT's three days filling up in turn.
+const NEW_BUFF_CARDS: Array<{ id: string; name: string; line: string }> = [
+  { id: 'iron_contract', name: 'IRON CONTRACT', line: '3 DAYS × 5H · PAYS ×2' },
+  { id: 'storm_runner', name: 'STORM RUNNER', line: 'RAIN · SNOW · <0°C · ×2' },
+  { id: 'lunar_tide', name: 'LUNAR TIDE', line: 'UP TO ×2 AT FULL MOON' },
+];
+const NewBuffsFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => {
+  const tick = useTicker(500);
+  // 0-35: three days of 12 steps each, then a beat on the payout.
+  const step = tick % 44;
+  const look = lookOf('iron_contract');
+  return (
+    <div className="p-3 space-y-3 font-mono" aria-hidden>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {NEW_BUFF_CARDS.map((b) => {
+          const l = lookOf(b.id);
+          return (
+            <div key={b.id} className="flex items-center gap-2.5 p-2 border min-w-0" style={{ borderColor: `${l.accent}88`, background: l.tint }}>
+              <BuffIcon itemId={b.id} className="w-9 h-9 shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-[11px] font-bold tracking-wider truncate" style={{ color: l.accent }}>
+                  {b.name}
+                </span>
+                <span className={`block text-[9px] tracking-wider truncate ${textMuted}`}>{b.line}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className={`p-2 border ${borderCol} space-y-1.5`}>
+        <div className="grid grid-cols-3 gap-1">
+          {[0, 1, 2].map((d) => {
+            const filled = Math.max(0, Math.min(12, step - d * 12));
+            const done = filled >= 12;
+            return (
+              <div key={d} className={`p-1 border ${borderCol}`}>
+                <div className="flex items-center justify-between text-[8px] uppercase tracking-wider">
+                  <span className="font-bold">DAY {d + 1}</span>
+                  <span style={{ color: done ? '#34d399' : look.accent }}>{done ? '✓' : `${((filled / 12) * 5).toFixed(1)}h`}</span>
+                </div>
+                <div className="mt-1 h-1.5 bg-zinc-500/15">
+                  <div className="h-full transition-[width] duration-300" style={{ width: `${(filled / 12) * 100}%`, background: done ? '#34d399' : look.accent }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between text-[9px] uppercase tracking-wider">
+          <span className={textMuted}>STAKE 1,500</span>
+          <span className={step >= 36 ? 'text-amber-400 font-bold' : textMuted}>{step >= 36 ? 'SEALED · +3,000' : 'PAYS +3,000 WHEN DAY 3 IS DONE'}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ----------------------------------------------------------------- buffs
+// The buffs added after this figure's article (they have their own).
+const LATER_BUFFS = ['storm_runner', 'lunar_tide', 'iron_contract'];
 const BuffsFigure: React.FC<FigureContext> = ({ borderCol, isDark }) => {
-  const ids = Object.keys(BUFF_ART);
+  const ids = Object.keys(BUFF_ART).filter((id) => !LATER_BUFFS.includes(id));
   const tick = useTicker(900);
   const lit = ids[tick % ids.length];
   return (
@@ -333,7 +411,8 @@ const BitsFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => {
           <VolumeX className="w-4 h-4" />
           NOISE
         </span>
-        <BitsBadge balance={balance} ready borderCol={borderCol} onOpen={() => {}} />
+        {/* Each tick stands for one commit, so the gain floats like it does live. */}
+        <BitsBadge balance={balance} ready gainSeq={tick} borderCol={borderCol} onOpen={() => {}} />
         <span className={`h-9 w-9 border ${borderCol} flex items-center justify-center`}>
           <ThemeToggleIcon showSun className="w-4 h-4" />
         </span>
@@ -681,6 +760,10 @@ const LaunchFigure: React.FC<FigureContext> = ({ textMuted }) => {
 export const NewsFigure: React.FC<{ kind: FigureKind; caption?: string } & FigureContext> = ({ kind, caption, ...ctx }) => {
   const body = (() => {
     switch (kind) {
+      case 'packs6':
+        return <FurnitureFigure {...ctx} pick={isNewPackId} swatchBase="cyber_holo_vending" />;
+      case 'newbuffs':
+        return <NewBuffsFigure {...ctx} />;
       case 'kpis':
         return <KpisFigure {...ctx} />;
       case 'rhythm':

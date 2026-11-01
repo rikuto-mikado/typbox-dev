@@ -24,6 +24,8 @@ import {
 import type { Category, StudyLog } from './App';
 import { useI18n, tf } from './i18n';
 import { drawStatusCard, loadSurfaceArt, STATUS_CARD_SIZE } from './statusCard';
+import { api } from './api';
+import { renderRoom, type FurnitureSpec, type RoomLayout } from './roomRender';
 import { CHROMA_THEME_PAIRS, CLASSIC_THEME_PAIRS, COMPLEMENT_THEME_PAIRS, resolveSurfaceThemeId } from './surfaceThemes';
 import { PRESTIGE_THEME_PAIRS } from './surfacePrestige';
 import { buildHintRows, buildNamespaceRows, type PaletteCommandItem, type TerminalContext, type TerminalIO } from './terminalCommands';
@@ -2195,6 +2197,33 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [showCategoriesOnCard, setShowCategoriesOnCard] = useState<boolean>(true);
+  const [showRoomOnCard, setShowRoomOnCard] = useState<boolean>(true);
+  // The open MY ROOM room, fetched each time the generator opens (it may
+  // have changed since). null while loading or when it can't be read.
+  const [cardRoom, setCardRoom] = useState<{
+    layout: RoomLayout;
+    catalog: Record<string, FurnitureSpec>;
+    name: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    api.room
+      .get()
+      .then((state) => {
+        if (cancelled) return;
+        const catalog: Record<string, FurnitureSpec> = {};
+        state.catalog.forEach((spec) => {
+          catalog[spec.id] = spec;
+        });
+        const name = state.rooms?.[state.active_room ?? 0]?.name ?? 'MY ROOM';
+        setCardRoom({ layout: state.layout, catalog, name });
+      })
+      .catch(() => !cancelled && setCardRoom(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
   const [copied, setCopied] = useState<boolean>(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
@@ -2221,6 +2250,21 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     // Web fonts used by the card may still be loading on first open.
     await document.fonts?.ready;
 
+    let room: Parameters<typeof drawStatusCard>[1]['room'] = null;
+    if (showRoomOnCard && cardRoom) {
+      const roomCanvas = document.createElement('canvas');
+      // Dark surfaces get the night scene; screens and lamps are on.
+      renderRoom(roomCanvas, cardRoom.layout, cardRoom.catalog, { env: { on: true, night: isDark } });
+      const priceOf = (id: string) => cardRoom.catalog[id]?.price ?? 0;
+      room = {
+        image: roomCanvas,
+        name: cardRoom.name,
+        pieces: cardRoom.layout.items.length,
+        value:
+          cardRoom.layout.items.reduce((sum, it) => sum + priceOf(it.id), 0) + priceOf(cardRoom.layout.wall) + priceOf(cardRoom.layout.floor),
+      };
+    }
+
     const draw = (art: HTMLImageElement | null) => drawStatusCard(canvas, {
       username,
       avatarColor,
@@ -2237,6 +2281,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
       isDark,
       surfaceArt: art,
       showCategories: showCategoriesOnCard,
+      room,
     });
     draw(surfaceArt);
     // Some browsers (older Safari) taint a canvas once an SVG is drawn on
@@ -2251,6 +2296,8 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
     }
   }, [
     showCategoriesOnCard,
+    showRoomOnCard,
+    cardRoom,
     clearance,
     avatarColor,
     avatarImage,
@@ -2334,15 +2381,28 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
             <span className="text-[11px] font-bold truncate">{surfaceLabel}</span>
           </div>
 
-          <label className="flex items-center space-x-2 text-[11px] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={showCategoriesOnCard}
-              onChange={(e) => setShowCategoriesOnCard(e.target.checked)}
-              className="accent-emerald-500"
-            />
-            <span>{t.includeCategories}</span>
-          </label>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <label className={`flex items-center space-x-2 text-[11px] select-none ${cardRoom ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
+              <input
+                type="checkbox"
+                checked={showRoomOnCard && Boolean(cardRoom)}
+                disabled={!cardRoom}
+                onChange={(e) => setShowRoomOnCard(e.target.checked)}
+                className="accent-emerald-500"
+              />
+              <span>{t.includeRoom}</span>
+              {cardRoom && <span className={`truncate max-w-[10rem] ${textMuted}`}>({cardRoom.name})</span>}
+            </label>
+            <label className="flex items-center space-x-2 text-[11px] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showCategoriesOnCard}
+                onChange={(e) => setShowCategoriesOnCard(e.target.checked)}
+                className="accent-emerald-500"
+              />
+              <span>{t.includeCategories}</span>
+            </label>
+          </div>
         </div>
 
         {/* Fixed-height stage: the canvas is scaled down to fit inside it,
@@ -2353,7 +2413,9 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           <div className="absolute inset-2 flex items-center justify-center overflow-hidden">
             <canvas
               ref={canvasRef}
-              className="block w-auto h-auto max-w-full max-h-full min-w-0 min-h-0 border border-zinc-800/50 shadow-lg"
+              // No box border / box-shadow: the card has rounded, transparent
+              // corners, so the shadow follows its outline instead.
+              className="block w-auto h-auto max-w-full max-h-full min-w-0 min-h-0 drop-shadow-lg"
             />
           </div>
         </div>

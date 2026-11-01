@@ -943,7 +943,8 @@ const WordClock: React.FC<{ hh: number; mm: number; compact: boolean }> = ({ hh,
     return <span style={{ fontSize: 9, letterSpacing: '0.12em' }}>{phrase}</span>;
   }
   return (
-    <span className="inline-flex flex-col" style={{ fontSize: 9, lineHeight: 1.25, letterSpacing: '0.42em' }} aria-hidden>
+    // Sized to fit the console's 88px face row (ten rows plus the minute dots).
+    <span className="inline-flex flex-col" style={{ fontSize: 8, lineHeight: 1, letterSpacing: '0.42em' }} aria-hidden>
       {WORD_GRID.map((row, y) => (
         <span key={y}>
           {row.split('').map((ch, x) => (
@@ -1057,9 +1058,12 @@ interface ChronoDisplayProps {
   isDark: boolean;
   /** 'main' = the SYSTEM CHRONOMETER panel; 'preview' = picker tile (no seconds). */
   variant?: 'main' | 'preview';
+  /** Pixel size of dial-type faces at 'main' (default 120). The console
+   *  uses a smaller one so a dial is no taller than a digital face. */
+  instrumentPx?: number;
 }
 
-export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss, isDark, variant = 'main' }) => {
+export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss, isDark, variant = 'main', instrumentPx = 120 }) => {
   const r = theme.render;
   const isMain = variant === 'main';
 
@@ -1069,7 +1073,9 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 
   const label = `${pad2(hh)}:${pad2(mm)}${isMain ? `:${pad2(ss)}` : ''}`;
   const themeColor = isDark ? r.color : (r.colorLight ?? r.color);
-  const mainSize = isMain ? 'text-4xl sm:text-5xl' : 'text-xl';
+  // Mayan glyphs stand 1.6em tall, so they start a step smaller to fit
+  // the console's face row like every other face.
+  const mainSize = isMain ? (r.kind === 'mayan' ? 'text-3xl sm:text-4xl' : 'text-4xl sm:text-5xl') : 'text-xl';
   const secSize = 'text-xl sm:text-2xl';
 
   let mainNode: React.ReactNode;
@@ -1089,7 +1095,7 @@ export const ChronoDisplay: React.FC<ChronoDisplayProps> = ({ theme, hh, mm, ss,
 
   if (INSTRUMENT_KINDS.has(r.kind)) {
     const ink = themeColor ?? 'currentColor';
-    const px = isMain ? 120 : 34;
+    const px = isMain ? instrumentPx : 34;
     const Instrument = INSTRUMENTS[r.kind];
     let instrument: React.ReactNode;
     if (Instrument) instrument = <Instrument hh={hh} mm={mm} ss={ss} r={r} px={px} color={ink} />;

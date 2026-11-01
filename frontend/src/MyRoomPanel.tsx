@@ -4,12 +4,17 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  ArchiveRestore,
   Camera,
+  ChevronDown,
   Grid3x3,
+  LayoutGrid,
   Lightbulb,
   Loader2,
   Moon,
   Redo2,
+  Save,
+  Search,
   ShoppingBag,
   Sun,
   Trash2,
@@ -39,6 +44,11 @@ import {
 // after the last edit (the server re-validates every layout); every edit
 // can be undone. With the room focused, arrows nudge the selected piece,
 // Delete stores it and Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo.
+//
+// ROOMS: five rooms, each arranged on its own from the same inventory (a
+// piece can stand in all of them). The strip switches rooms; SAVE keeps a
+// save point of the open room on the server and LOAD SAVE puts it back as
+// an ordinary, undoable edit (the safety net after an accidental CLEAR).
 
 const SAVE_DELAY_MS = 700;
 const HISTORY_LIMIT = 50;
@@ -62,6 +72,8 @@ interface MyRoomPanelProps {
   borderCol: string;
   textMuted: string;
   onOpenShop: () => void;
+  /** Keys the "seen" list for NEW badges per account on this device. */
+  userId?: number;
 }
 
 const localHour = (timeZone: string) => {
@@ -121,7 +133,28 @@ const Thumb: React.FC<{ spec: FurnitureSpec; box: number; className?: string }> 
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 
-export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, borderCol, textMuted, onOpenShop }) => {
+// NEW badges: furniture ids the operator has already seen in YOUR
+// FURNITURE (a per-device convenience). The first visit takes everything
+// owned as seen, so only later purchases show NEW; tapping one clears it.
+const seenKey = (userId?: number) => `typbox.room.seen.${userId ?? 'anon'}`;
+const readSeen = (userId?: number): Set<string> | null => {
+  try {
+    const raw = window.localStorage.getItem(seenKey(userId));
+    const ids: unknown = raw ? JSON.parse(raw) : null;
+    return Array.isArray(ids) ? new Set(ids.filter((id): id is string => typeof id === 'string')) : null;
+  } catch {
+    return null;
+  }
+};
+const writeSeen = (userId: number | undefined, seen: Set<string>) => {
+  try {
+    window.localStorage.setItem(seenKey(userId), JSON.stringify([...seen]));
+  } catch {
+    /* storage unavailable: badges just last for this visit */
+  }
+};
+
+export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, borderCol, textMuted, onOpenShop, userId }) => {
   const { t } = useI18n();
   const [room, setRoom] = useState<RoomState | null>(null);
   const [layout, setLayout] = useState<RoomLayout | null>(null);
@@ -136,9 +169,18 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState(() => readPrefs(timeZone));
+  const [slotBusy, setSlotBusy] = useState<'save' | 'switch' | null>(null);
+  const [slotNote, setSlotNote] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  const [nameDraft, setNameDraft] = useState<{ slot: number; value: string } | null>(null);
+  const [roomsOpen, setRoomsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [seen, setSeen] = useState<Set<string> | null>(() => readSeen(userId));
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const savedJson = useRef<string>('');
   const pressed = useRef(false);
+  // Bumped on every room switch: an autosave answered after the switch
+  // belongs to the previous room and must not overwrite the new one.
+  const roomEpoch = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,12 +191,18 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
         setRoom(state);
         setLayout(state.layout);
         savedJson.current = JSON.stringify(state.layout);
+        // First visit on this device: what is owned now is not "new".
+        if (!readSeen(userId)) {
+          const baseline = new Set(Object.keys(state.inventory));
+          writeSeen(userId, baseline);
+          setSeen(baseline);
+        }
       })
       .catch((err: Error) => !cancelled && setLoadError(err.message || t.roomLoadFailed));
     return () => {
       cancelled = true;
     };
-  }, [t.roomLoadFailed]);
+  }, [t.roomLoadFailed, userId]);
 
   useEffect(() => {
     try {
@@ -164,26 +212,36 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
     }
   }, [prefs]);
 
-  // Debounced save of every change.
+  // Debounced save of every change (held while a room switch / SAVE is in
+  // flight: those send the current layout themselves).
   useEffect(() => {
-    if (!layout) return;
+    if (!layout || slotBusy) return;
     const json = JSON.stringify(layout);
     if (json === savedJson.current) return;
+    const epoch = roomEpoch.current;
     const id = window.setTimeout(async () => {
       setSaveState('saving');
       try {
         const state = await api.room.save(layout);
+        if (epoch !== roomEpoch.current) return;
         savedJson.current = JSON.stringify(state.layout);
         setRoom(state);
         setSaveState('saved');
         setSaveError(null);
       } catch (err: unknown) {
+        if (epoch !== roomEpoch.current) return;
         setSaveState('error');
         setSaveError((err as Error).message || t.roomSaveFailed);
       }
     }, SAVE_DELAY_MS);
     return () => window.clearTimeout(id);
-  }, [layout, t.roomSaveFailed]);
+  }, [layout, slotBusy, t.roomSaveFailed]);
+
+  useEffect(() => {
+    if (!slotNote) return;
+    const id = window.setTimeout(() => setSlotNote(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [slotNote]);
 
   const catalog = useMemo(() => {
     const map: Record<string, FurnitureSpec> = {};
@@ -200,6 +258,13 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
     });
     return counts;
   }, [layout]);
+
+  // Small pictures of the five rooms for the strip (the open one live).
+  const activeRoom = room?.active_room ?? 0;
+  const roomPreviews = useMemo(() => {
+    if (!roomsOpen || !room?.rooms || !layout || room.catalog.length === 0) return [];
+    return room.rooms.map((slot, i) => snapshotRoom(i === activeRoom ? layout : slot.layout, catalog, { on: false, night: false }, 1));
+  }, [roomsOpen, room, layout, catalog, activeRoom]);
 
   const night = prefs.scene === 'night';
   const lit = isRunning || prefs.lamps;
@@ -353,7 +418,16 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
     });
   };
 
+  const markSeen = (id: string) => {
+    if (!seen || seen.has(id)) return;
+    const next = new Set(seen);
+    next.add(id);
+    writeSeen(userId, next);
+    setSeen(next);
+  };
+
   const pickItem = (spec: FurnitureSpec) => {
+    markSeen(spec.id);
     if (spec.layer === 'wall_paint') {
       if (layout.wall !== spec.id) commit({ ...layout, wall: spec.id });
       return;
@@ -374,6 +448,93 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
     a.href = url;
     a.download = `typbox-room-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
+  };
+
+  // ---------------------------------------------------------------- rooms
+  const stamp = (iso: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        .format(d)
+        .replace(',', '');
+    } catch {
+      return d.toISOString().slice(5, 16).replace('T', ' ');
+    }
+  };
+  const slots = room.rooms ?? [];
+  const openSlot = slots[activeRoom];
+
+  // An autosave already on the wire must land first (it is for this room).
+  const slotLocked = Boolean(slotBusy) || saveState === 'saving';
+
+  const switchRoom = async (slot: number) => {
+    if (slot === activeRoom || slotLocked) return;
+    setSlotBusy('switch');
+    roomEpoch.current += 1;
+    try {
+      const state = await api.room.rooms({ action: 'switch', slot, layout });
+      roomEpoch.current += 1;
+      savedJson.current = JSON.stringify(state.layout);
+      setRoom(state);
+      setLayout(state.layout);
+      setPast([]);
+      setFuture([]);
+      setSelected(-1);
+      setArmed(null);
+      setGhost(null);
+      setSaveState('idle');
+      setSaveError(null);
+      setNameDraft(null);
+    } catch (err: unknown) {
+      setSlotNote({ text: (err as Error).message || t.roomSwitchFailed, tone: 'error' });
+    } finally {
+      setSlotBusy(null);
+    }
+  };
+
+  const saveSlot = async () => {
+    if (slotLocked) return;
+    setSlotBusy('save');
+    roomEpoch.current += 1;
+    try {
+      const state = await api.room.rooms({ action: 'save', layout });
+      roomEpoch.current += 1;
+      savedJson.current = JSON.stringify(state.layout);
+      setRoom(state);
+      setSaveState('saved');
+      setSaveError(null);
+      const at = state.rooms?.[state.active_room ?? 0]?.saved_at ?? null;
+      setSlotNote({ text: tf(t.roomSavePointMade, { time: stamp(at) }), tone: 'ok' });
+    } catch (err: unknown) {
+      setSlotNote({ text: (err as Error).message || t.roomSlotSaveFailed, tone: 'error' });
+    } finally {
+      setSlotBusy(null);
+    }
+  };
+
+  const loadSave = () => {
+    if (!openSlot?.saved) return;
+    if (JSON.stringify(openSlot.saved) !== JSON.stringify(layout)) commit(openSlot.saved);
+    setSelected(-1);
+    setArmed(null);
+    setSlotNote({ text: t.roomSaveLoaded, tone: 'ok' });
+  };
+
+  const commitName = async () => {
+    if (!nameDraft) return;
+    const { slot, value } = nameDraft;
+    setNameDraft(null);
+    if (value.trim() === (slots[slot]?.name ?? '')) return;
+    try {
+      const state = await api.room.rooms({ action: 'rename', slot, name: value });
+      // Only the names: the layouts in this answer may trail the editor.
+      setRoom((prev) =>
+        prev && prev.rooms && state.rooms ? { ...prev, rooms: prev.rooms.map((r, i) => ({ ...r, name: state.rooms![i].name })) } : prev
+      );
+    } catch (err: unknown) {
+      setSlotNote({ text: (err as Error).message, tone: 'error' });
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -415,10 +576,19 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
   };
 
   // ---------------------------------------------------------------- derived
+  const needle = query.trim().toLowerCase();
+  const isNew = (id: string) => Boolean(seen) && !seen!.has(id) && (catalog[id]?.tier ?? 0) > 0;
+  const newCount = Object.keys(room.inventory).filter((id) => (room.inventory[id] ?? 0) > 0 && isNew(id)).length;
   const owned = Object.entries(room.inventory)
     .map(([id, count]) => ({ spec: catalog[id], count }))
     .filter((e) => e.spec && e.count > 0 && (category === 'all' || e.spec.category === category))
-    .sort((a, b) => a.spec.category.localeCompare(b.spec.category) || a.spec.tier - b.spec.tier);
+    .filter((e) => !needle || e.spec.name.toLowerCase().includes(needle))
+    .sort(
+      (a, b) =>
+        Number(isNew(b.spec.id)) - Number(isNew(a.spec.id)) ||
+        a.spec.category.localeCompare(b.spec.category) ||
+        a.spec.tier - b.spec.tier
+    );
 
   const selectedSpec = selected >= 0 ? catalog[layout.items[selected]?.id] : undefined;
   const armedSpec = armed ? catalog[armed] : undefined;
@@ -433,93 +603,186 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
       active ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold' : `${borderCol} ${textMuted} hover:text-emerald-400`
     }`;
 
-  const sceneBtn = (scene: Scene, Icon: typeof Sun, label: string) => (
+  /** One icon button of the stage dock (label as tooltip and for screen readers). */
+  const dockBtn = (
+    onClick: () => void,
+    Icon: typeof Sun,
+    label: string,
+    { on = false, disabled = false, danger = false }: { on?: boolean; disabled?: boolean; danger?: boolean } = {}
+  ) => (
     <button
       type="button"
-      onClick={() => setPrefs((p) => ({ ...p, scene }))}
-      className={`h-full px-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
-        prefs.scene === scene ? 'bg-emerald-500/15 text-emerald-400 font-bold' : `${textMuted} hover:text-emerald-400`
-      }`}
-      aria-pressed={prefs.scene === scene}
+      onClick={onClick}
+      disabled={disabled}
       aria-label={label}
+      aria-pressed={on || undefined}
       title={label}
+      className={`w-9 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+        on ? 'bg-emerald-500/15 text-emerald-400' : danger ? 'hover:text-rose-400 hover:bg-rose-500/10' : 'hover:text-emerald-400 hover:bg-white/5'
+      }`}
     >
       <Icon className="w-3.5 h-3.5" />
-      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 
   return (
     <div className="space-y-3 font-mono text-xs" onKeyDown={handleKey}>
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1">
-          <button type="button" onClick={undo} disabled={past.length === 0} className={toolBtn(false)} title={t.roomUndo}>
-            <Undo2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t.roomUndo}</span>
-          </button>
-          <button type="button" onClick={redo} disabled={future.length === 0} className={toolBtn(false)} title={t.roomRedo}>
-            <Redo2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t.roomRedo}</span>
-          </button>
-          <span className="w-px h-5 mx-0.5 bg-zinc-500/30" aria-hidden />
-          <button
-            type="button"
-            onClick={() => setPrefs((p) => ({ ...p, grid: !p.grid }))}
-            className={toolBtn(prefs.grid)}
-            title={t.roomGridTitle}
-            aria-pressed={prefs.grid}
-          >
-            <Grid3x3 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t.roomGrid}</span>
-          </button>
-          <div
-            role="group"
-            aria-label={t.roomSceneTitle}
-            className={`h-7 border ${borderCol} flex items-stretch text-[10px] uppercase tracking-wider divide-x divide-zinc-500/30`}
-          >
-            {sceneBtn('day', Sun, t.roomSceneDay)}
-            {sceneBtn('night', Moon, t.roomSceneNight)}
+      {/* Rooms: one slim bar (numbered chips switch rooms, SAVE / LOAD SAVE
+          for the open one); ROOMS opens a drawer with a picture of each
+          room, renaming and the save time. */}
+      {slots.length > 0 && (
+        <div className={`border ${borderCol}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 p-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setRoomsOpen((v) => !v)}
+                aria-expanded={roomsOpen}
+                title={t.roomRoomsHint}
+                className={toolBtn(roomsOpen)}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                {t.roomRooms}
+                <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${roomsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              <div className="flex items-center gap-1" role="tablist" aria-label={t.roomRooms}>
+                {slots.map((slot, i) => {
+                  const on = i === activeRoom;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      onClick={() => switchRoom(i)}
+                      disabled={slotLocked && !on}
+                      title={tf(t.roomOpenRoom, { name: slot.name })}
+                      className={`relative w-7 h-7 border text-[10px] font-bold tabular-nums transition-colors ${
+                        on
+                          ? 'border-emerald-500 bg-emerald-500 text-zinc-950'
+                          : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50 cursor-pointer disabled:opacity-50 disabled:cursor-wait`
+                      }`}
+                    >
+                      {i + 1}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="hidden sm:inline min-w-0 truncate text-[11px] font-bold text-emerald-400">{openSlot?.name}</span>
+              {slotBusy === 'switch' && <Loader2 className={`w-3 h-3 shrink-0 animate-spin ${textMuted}`} />}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={saveSlot}
+                disabled={slotLocked}
+                className={toolBtn(false)}
+                title={tf(t.roomSaveSlotTitle, { name: openSlot?.name ?? '' })}
+              >
+                {slotBusy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {t.roomSaveSlot}
+              </button>
+              <button
+                type="button"
+                onClick={loadSave}
+                disabled={!openSlot?.saved || Boolean(slotBusy)}
+                className={toolBtn(false)}
+                title={openSlot?.saved ? tf(t.roomLoadSaveTitle, { name: openSlot.name, time: stamp(openSlot.saved_at) }) : t.roomNoSave}
+              >
+                <ArchiveRestore className="w-3.5 h-3.5" />
+                {t.roomLoadSave}
+              </button>
+              <button
+                type="button"
+                onClick={onOpenShop}
+                title={t.roomOpenShop}
+                className="h-7 px-2 border border-amber-500/60 text-amber-400 hover:bg-amber-500/10 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{t.roomShopShort}</span>
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setPrefs((p) => ({ ...p, lamps: !p.lamps }))}
-            className={toolBtn(lit)}
-            title={t.roomLampsTitle}
-            aria-pressed={prefs.lamps}
-          >
-            <Lightbulb className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t.roomLamps}</span>
-          </button>
-          <button type="button" onClick={saveSnapshot} className={toolBtn(false)} title={t.roomSnapshotTitle}>
-            <Camera className="w-3.5 h-3.5" />
-            {t.roomSnapshot}
-          </button>
+          {slotNote && (
+            <div
+              className={`px-2 pb-1.5 text-[9px] uppercase tracking-wider ${slotNote.tone === 'error' ? 'text-rose-400' : 'text-emerald-400'}`}
+              aria-live="polite"
+            >
+              {slotNote.text}
+            </div>
+          )}
+          {/* Drawer: opens with a height slide (grid rows 0fr → 1fr). */}
+          <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${roomsOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div className="overflow-hidden min-h-0" inert={!roomsOpen}>
+              <div className={`p-2 border-t ${borderCol} space-y-2`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <input
+                    type="text"
+                    value={nameDraft?.slot === activeRoom ? nameDraft.value : openSlot?.name ?? ''}
+                    maxLength={20}
+                    onChange={(e) => setNameDraft({ slot: activeRoom, value: e.target.value })}
+                    onBlur={commitName}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      if (e.key === 'Escape') {
+                        e.stopPropagation();
+                        setNameDraft(null);
+                      }
+                    }}
+                    aria-label={t.roomRename}
+                    title={t.roomRename}
+                    className={`w-40 h-7 px-1.5 border ${borderCol} bg-transparent text-[11px] font-bold text-emerald-400 outline-none focus:border-emerald-500/70`}
+                  />
+                  <span className={`text-[9px] uppercase tracking-wider ${openSlot?.saved ? 'text-amber-400' : textMuted}`}>
+                    {openSlot?.saved ? tf(t.roomSlotSaved, { time: stamp(openSlot.saved_at) }) : t.roomNoSave}
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {slots.map((slot, i) => {
+                    const on = i === activeRoom;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => switchRoom(i)}
+                        disabled={slotLocked && !on}
+                        title={tf(t.roomOpenRoom, { name: slot.name })}
+                        className={`group relative min-w-0 border text-left transition-colors ${
+                          on ? 'border-emerald-500 bg-emerald-500/10' : `${borderCol} hover:border-emerald-500/50 cursor-pointer disabled:opacity-50 disabled:cursor-wait`
+                        }`}
+                      >
+                        <span className="block overflow-hidden">
+                          {roomPreviews[i] ? (
+                            <img
+                              src={roomPreviews[i]}
+                              alt=""
+                              draggable={false}
+                              className={`block w-full aspect-4/3 transition-transform duration-300 ${on ? '' : 'group-hover:scale-105'}`}
+                              style={{ imageRendering: 'pixelated' }}
+                            />
+                          ) : (
+                            <span className="block w-full aspect-4/3 bg-zinc-500/10" />
+                          )}
+                        </span>
+                        <span className={`flex items-center gap-1 px-1 py-0.5 border-t ${borderCol} text-[8px] sm:text-[9px] leading-tight`}>
+                          <span className={`shrink-0 tabular-nums ${on ? 'text-emerald-400 font-bold' : textMuted}`}>{i + 1}</span>
+                          <span className={`truncate ${on ? 'text-emerald-400 font-bold' : textMuted}`}>{slot.name}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-[10px] uppercase tracking-wider ${
-              saveState === 'error' ? 'text-rose-400' : saveState === 'saved' ? 'text-emerald-400' : textMuted
-            }`}
-            aria-live="polite"
-          >
-            {saveState === 'saving' ? t.roomSaving : saveState === 'saved' ? t.roomSaved : saveState === 'error' ? t.roomSaveError : ''}
-          </span>
-          <button
-            type="button"
-            onClick={onOpenShop}
-            className="h-7 px-2.5 border border-amber-500/60 text-amber-400 hover:bg-amber-500/10 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            {t.roomOpenShop}
-          </button>
-        </div>
-      </div>
+      )}
 
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_196px]">
-        {/* Stage */}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+        {/* Stage: the room in a dark frame, its tools docked underneath */}
         <div className="space-y-2 min-w-0">
-          <div className={`relative border ${borderCol} p-1.5 bg-zinc-950`}>
+          <div className={`border ${borderCol} bg-zinc-950`}>
+          <div className="relative p-1.5">
             <canvas
               ref={canvasRef}
               tabIndex={0}
@@ -535,10 +798,34 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
               style={{ imageRendering: 'pixelated' }}
             />
             {/* Caption plate, like a diorama label. */}
-            <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 px-1.5 py-0.5 bg-zinc-950/75 text-[9px] uppercase tracking-widest text-zinc-300">
-              <span className={`w-1.5 h-1.5 ${lit ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} aria-hidden />
-              {tf(t.roomPiecesPlaced, { a: layout.items.length, b: MAX_PLACED })}
+            <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 px-1.5 py-0.5 bg-zinc-950/75 text-[9px] uppercase tracking-widest text-zinc-300 max-w-[70%]">
+              <span className={`w-1.5 h-1.5 shrink-0 ${lit ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} aria-hidden />
+              {openSlot && <span className="truncate font-bold text-emerald-300">{openSlot.name}</span>}
+              {openSlot && <span className="text-zinc-500">·</span>}
+              <span className="shrink-0">{tf(t.roomPiecesPlaced, { a: layout.items.length, b: MAX_PLACED })}</span>
             </div>
+          </div>
+          {/* Dock: history · view · output, then the autosave state */}
+          <div className="flex items-stretch h-8 border-t border-zinc-800 text-zinc-400" role="toolbar" aria-label={t.roomToolsLabel}>
+            {dockBtn(undo, Undo2, t.roomUndo, { disabled: past.length === 0 })}
+            {dockBtn(redo, Redo2, t.roomRedo, { disabled: future.length === 0 })}
+            <span className="w-px bg-zinc-800" aria-hidden />
+            {dockBtn(() => setPrefs((p) => ({ ...p, grid: !p.grid })), Grid3x3, t.roomGridTitle, { on: prefs.grid })}
+            {dockBtn(() => setPrefs((p) => ({ ...p, scene: 'day' })), Sun, t.roomSceneDay, { on: prefs.scene === 'day' })}
+            {dockBtn(() => setPrefs((p) => ({ ...p, scene: 'night' })), Moon, t.roomSceneNight, { on: prefs.scene === 'night' })}
+            {dockBtn(() => setPrefs((p) => ({ ...p, lamps: !p.lamps })), Lightbulb, t.roomLampsTitle, { on: lit })}
+            <span className="w-px bg-zinc-800" aria-hidden />
+            {dockBtn(saveSnapshot, Camera, t.roomSnapshotTitle)}
+            {dockBtn(clearRoom, Trash2, t.roomClearAllTitle, { disabled: layout.items.length === 0, danger: true })}
+            <span
+              className={`ml-auto self-center px-2 text-[9px] uppercase tracking-wider truncate ${
+                saveState === 'error' ? 'text-rose-400' : saveState === 'saved' ? 'text-emerald-400' : 'text-zinc-500'
+              }`}
+              aria-live="polite"
+            >
+              {saveState === 'saving' ? t.roomSaving : saveState === 'saved' ? t.roomSaved : saveState === 'error' ? t.roomSaveError : ''}
+            </span>
+          </div>
           </div>
 
           {/* Inspector */}
@@ -594,40 +881,53 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
               <span className={textMuted}>{t.roomIdleHint}</span>
             )}
           </div>
-          <div className={`hidden sm:flex items-center justify-between gap-2 text-[9px] tracking-wider ${textMuted}`}>
-            <span>{t.roomKeysHint}</span>
-            <button
-              type="button"
-              onClick={clearRoom}
-              disabled={layout.items.length === 0}
-              title={t.roomClearAllTitle}
-              className="flex items-center gap-1 uppercase hover:text-rose-400 cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
-            >
-              <Trash2 className="w-3 h-3" />
-              {t.roomClearAll}
-            </button>
-          </div>
+          <div className={`hidden sm:block text-[9px] tracking-wider ${textMuted}`}>{t.roomKeysHint}</div>
           {saveError && <div className="text-[10px] text-rose-400">{saveError}</div>}
         </div>
 
-        {/* Inventory */}
-        <div className="space-y-2 min-w-0">
-          <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.roomInventory}</div>
-          <div className="flex flex-wrap gap-1">
+        {/* Inventory: as tall as the stage on wide screens (the list scrolls) */}
+        <div className="relative min-w-0 min-h-64">
+          <div className="sm:absolute sm:inset-0 flex flex-col gap-2 min-h-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className={`text-[10px] uppercase tracking-wider truncate ${textMuted}`}>{t.roomInventory}</span>
+              {newCount > 0 && (
+                <span className="shrink-0 px-1 text-[8px] font-bold leading-3.5 bg-amber-400 text-zinc-950" title={t.roomNewTitle}>
+                  {tf(t.roomNewCount, { n: newCount })}
+                </span>
+              )}
+            </span>
+            <span className={`shrink-0 text-[9px] tabular-nums ${textMuted}`}>{tf(t.roomInventoryCount, { n: owned.length })}</span>
+          </div>
+          <label className={`flex items-center gap-1.5 h-7 px-2 border ${borderCol} focus-within:border-emerald-500/60`}>
+            <Search className={`w-3.5 h-3.5 shrink-0 ${textMuted}`} />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t.roomSearch}
+              aria-label={t.roomSearch}
+              className="min-w-0 flex-1 bg-transparent outline-none text-[11px] uppercase placeholder:normal-case"
+            />
+          </label>
+          {/* One row of categories that scrolls sideways */}
+          <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label={t.roomInventory}>
             {CATEGORIES.map((c) => (
               <button
                 key={c}
                 type="button"
+                role="tab"
+                aria-selected={category === c}
                 onClick={() => setCategory(c)}
-                className={`px-1.5 py-0.5 text-[9px] uppercase border cursor-pointer ${
-                  category === c ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold' : `${borderCol} ${textMuted}`
+                className={`shrink-0 px-1.5 py-0.5 text-[9px] uppercase border whitespace-nowrap cursor-pointer transition-colors ${
+                  category === c ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold' : `${borderCol} ${textMuted} hover:text-emerald-400`
                 }`}
               >
                 {t[`roomCat_${c}` as const]}
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-4 sm:grid-cols-3 gap-1.5 sm:max-h-78 sm:overflow-y-auto sm:pr-1 content-start">
+          <div className="grid grid-cols-4 sm:grid-cols-3 gap-1.5 max-h-72 sm:max-h-none sm:flex-1 sm:min-h-0 overflow-y-auto pr-1 content-start [scrollbar-width:thin]">
             {owned.map(({ spec, count }) => {
               const isPaint = spec.layer === 'wall_paint' || spec.layer === 'floor_paint';
               const inUse = isPaint && (layout.wall === spec.id || layout.floor === spec.id);
@@ -659,13 +959,20 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
                       ×{left}
                     </span>
                   )}
-                  {(inUse || (!isPaint && left <= 0)) && (
-                    <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-emerald-400" aria-hidden />
+                  {isNew(spec.id) ? (
+                    <span className="absolute top-0.5 left-0.5 px-0.5 text-[7px] font-bold leading-3 bg-amber-400 text-zinc-950" aria-label={t.roomNewTitle}>
+                      {t.roomNew}
+                    </span>
+                  ) : (
+                    (inUse || (!isPaint && left <= 0)) && <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-emerald-400" aria-hidden />
                   )}
                 </button>
               );
             })}
-            {owned.length === 0 && <div className={`col-span-full text-[10px] ${textMuted} p-2`}>{t.roomEmptyCategory}</div>}
+            {owned.length === 0 && (
+              <div className={`col-span-full text-[10px] ${textMuted} p-2`}>{query.trim() ? t.roomNoMatch : t.roomEmptyCategory}</div>
+            )}
+          </div>
           </div>
         </div>
       </div>
@@ -688,8 +995,8 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
             <div className="flex items-center gap-1.5 text-sm font-bold tabular-nums">
               <BitShard className="w-3 h-3" />
               {fmt(roomValue)}
-              <StudyTime bits={roomValue} className={textMuted} />
             </div>
+            <StudyTime bits={roomValue} className={`block ${textMuted}`} />
           </div>
         </div>
         <button

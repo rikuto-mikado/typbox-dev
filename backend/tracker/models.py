@@ -66,6 +66,12 @@ class UserProfile(models.Model):
     # MY ROOM: {'wall', 'floor', 'items': [{'id', 'x', 'y'}]} (see furniture.py);
     # empty until the user first saves, which reads as the default room.
     room_layout = models.JSONField(default=dict, blank=True)
+    # MY ROOM's five rooms (furniture.ROOM_SLOTS): [{'name', 'layout',
+    # 'saved', 'saved_at'}]. room_layout above is always the live layout of
+    # room `room_active_slot`; the others keep theirs here, and 'saved' is
+    # each room's SAVE checkpoint. Empty until the user first uses them.
+    room_slots = models.JSONField(default=list, blank=True)
+    room_active_slot = models.PositiveSmallIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -192,6 +198,13 @@ class BitPurchase(models.Model):
     # Set when the buff was rolled from a MYSTERY CRATE (the crate's id);
     # item_id is then the buff it rolled and price the crate's.
     via = models.CharField(max_length=32, blank=True, default="")
+    # Which edition of the buff rules the purchase runs on (economy.BUFFS vs
+    # LEGACY_BUFFS): purchases made before the November rework stay on 1, so
+    # a running buff never changes under its owner.
+    rules = models.PositiveSmallIntegerField(default=2)
+    # Per-buff bookkeeping for the reworked buffs (EARLY BIRD's mornings,
+    # NIGHT SHIFT's nights and level).
+    state = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

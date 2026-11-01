@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Info, Telescope } from 'lucide-react';
+import { Telescope } from 'lucide-react';
 import { tf, useI18n } from './i18n';
 import { addDays, parseDateStr } from './week';
 import { CLEARANCE_LEVELS, CYCLE_HOURS, type ClearanceLevel, type UserClearanceStatus } from './telemetryFeatures';
@@ -218,12 +218,8 @@ export const Forecast: React.FC<ForecastProps> = ({ logs, todayStr, clearance, t
           <Telescope className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
           <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">{t.forecastTitle}</h2>
         </div>
-        <span className={`flex items-center gap-2 font-mono text-[10px] uppercase ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+        <span className={`font-mono text-[10px] uppercase ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
           {tf(t.forecastCycle, { n: clearance.cycleNumber })}
-          {/* How the projection is made, on hover / focus */}
-          <Info tabIndex={0} role="img" aria-label={t.forecastSource} className={`w-3.5 h-3.5 cursor-help outline-none ${textMuted} hover:text-emerald-400 focus:text-emerald-400`}>
-            <title>{`${t.forecastSource} · ${etaDate(0)}`}</title>
-          </Info>
         </span>
       </div>
 

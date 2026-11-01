@@ -46,7 +46,6 @@ import {
   CheckCheck,
   Undo2,
   ArrowUpRight,
-  Info,
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken, type BitsActiveBuff } from './api';
 import { TypboxLogo } from './TypboxLogo';
@@ -131,6 +130,7 @@ import {
   CHRONO_THEME_STORAGE_KEY,
   DEFAULT_CHRONO_THEME_ID,
   getChronoThemeById,
+  isCenteredFace,
   isChronoThemeUnlocked,
   type ChronoProgress,
 } from './chronometerThemes';
@@ -750,6 +750,17 @@ export default function App() {
   );
 
   const weather = useWeather(timeZone, queueUiPrefsSave);
+  // The reading sent along with each commit (STORM RUNNER pays on rough
+  // weather). Kept in a ref so the commit callbacks don't re-create on
+  // every weather refresh; nothing is sent while the readout is hidden.
+  const commitWeatherRef = React.useRef<{ code: number; temp_c: number; at: number } | undefined>(undefined);
+  useEffect(() => {
+    const r = weather.reading;
+    commitWeatherRef.current =
+      r && !weather.prefs.hidden && Number.isFinite(r.code) && Number.isFinite(r.tempC)
+        ? { code: r.code, temp_c: r.tempC, at: r.at }
+        : undefined;
+  }, [weather.reading, weather.prefs.hidden]);
   const applyServerWeatherPrefs = weather.applyServerPrefs;
 
   useEffect(() => {
@@ -1070,7 +1081,9 @@ export default function App() {
     // Past expiry but the server still reports it (a device clock running
     // ahead): wait a minute rather than refetching in a tight loop.
     const wait = ms > 0 ? Math.min(ms, 2 ** 31 - 1) + 1000 : 60_000;
-    const id = window.setTimeout(refreshActiveBuff, wait);
+    // An IRON CONTRACT can also end early (a missed day, settled on the
+    // server at the next read), so it is re-checked every half hour.
+    const id = window.setTimeout(refreshActiveBuff, activeBuff.contract ? Math.min(wait, 30 * 60_000) : wait);
     return () => window.clearTimeout(id);
   }, [activeBuff, refreshActiveBuff]);
   const [bitsShopTab, setBitsShopTab] = useState<ShopTab>('buffs');
@@ -1170,9 +1183,14 @@ export default function App() {
     [dismissToast]
   );
 
+  // Bumped with every committed log: the header badge floats "+N" only for
+  // a balance rise that comes with a new value (see BitsBadge).
+  const [bitsGainSeq, setBitsGainSeq] = useState(0);
+
   // Shared success feedback for every path that commits a new log.
   const announceLogCommitted = useCallback(
     (logId: string | number, catCode: string | undefined, minutes: number, date: string) => {
+      setBitsGainSeq((n) => n + 1);
       pushToast(
         'success',
         t.toastLogCommitted,
@@ -2045,6 +2063,7 @@ export default function App() {
         duration_minutes: Number(finalMinutes),
         topic: '',
         is_public_to_hub: true,
+        weather: commitWeatherRef.current,
       });
 
       const cat = categories.find((c) => String(c.id) === String(selectedCatId));
@@ -2089,6 +2108,7 @@ export default function App() {
           duration_minutes: Number(minutes),
           topic: '',
           is_public_to_hub: true,
+          weather: commitWeatherRef.current,
         });
 
         const cat = categories.find((c) => String(c.id) === String(categoryId));
@@ -3057,6 +3077,10 @@ export default function App() {
     }
     return candidate;
   }, [chronoThemeId, authLoading, dataLoading, chronoProgress]);
+  const centeredFace = isCenteredFace(activeChronoTheme);
+  // Dials are drawn at the height of the digital faces' row, so changing
+  // the face never changes the console's height.
+  const CONSOLE_DIAL_PX = 88;
 
   // Weather themes share the Chronometer unlock rules; a locked pick shows
   // the default face without overwriting the saved (account-synced) choice.
@@ -3192,6 +3216,14 @@ export default function App() {
       'Public To Hub',
       'Created At (UTC)',
       `Created At (${timeZone})`,
+      // A record of what each log earned: the base rate (per log, floored;
+      // the balance floors once over the total, so it can be a few BITS
+      // more) and any buff extra. The JSON backup carries the same fields;
+      // importing never restores a bonus (the server ignores them), so a
+      // file can't mint BITS.
+      'Base BITS',
+      'Buff Bonus BITS',
+      'Buff',
     ];
     const rows = logs.map((l) => [
       l.id,
@@ -3203,6 +3235,9 @@ export default function App() {
       l.isPublicToHub ? 'TRUE' : 'FALSE',
       l.createdAt,
       `"${formatDateTime(l.createdAt)}"`,
+      bitsForMinutes(l.durationMinutes),
+      l.bonusBits ?? 0,
+      `"${l.bonusItem || ''}"`,
     ]);
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -3224,6 +3259,8 @@ export default function App() {
       user: user?.username || 'anonymous',
       exportedAt: new Date().toISOString(),
       timezone: timeZone,
+      // For the record only (import ignores it, like each log's bonusBits).
+      bits: { balance: bitsBalance, bonus: logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) },
       categories,
       logs,
     };
@@ -3422,6 +3459,7 @@ export default function App() {
               <BitsBadge
                 balance={bitsBalance}
                 ready={!dataLoading}
+                gainSeq={bitsGainSeq}
                 borderCol={borderCol}
                 onOpen={() => openBitsShop('buffs')}
                 activeBuff={activeBuff}
@@ -3911,15 +3949,58 @@ export default function App() {
                 </div>
               </div>
 
-              {/* One fixed-height row (faces differ in height): the face sits
-                  bottom-left and the date / session readout bottom-right. */}
-              <div className="flex items-end justify-between gap-3 min-h-[128px]">
+              {/* The face row, everything on its middle line. Digital faces
+                  get a row their own height (no empty band above them).
+                  Round faces (dials, rings, arcs) stand in the centre between
+                  the date (left) and the readout (right); the rest sit left
+                  with the date / session readout on the right. */}
+              {centeredFace ? (
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 min-h-[88px]">
+                  <div className="font-mono min-w-0 flex flex-col gap-0.5">
+                    <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums truncate">{clockReadout.dateDot}</div>
+                    <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest truncate ${textMuted}`}>{clockReadout.dayStr}</div>
+                    <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest truncate ${textMuted}`}>{clockReadout.tzLabel}</div>
+                  </div>
+                  <div className="flex justify-center">
+                    <ChronoDisplay
+                      theme={activeChronoTheme}
+                      hh={clockReadout.hour}
+                      mm={clockReadout.minute}
+                      ss={clockReadout.second}
+                      isDark={isDark}
+                      instrumentPx={CONSOLE_DIAL_PX}
+                    />
+                  </div>
+                  {inputMode === 'timer' && user ? (
+                    <div className="text-right font-mono min-w-0 flex flex-col items-end gap-0.5 tb-fade-in" aria-live="off">
+                      <div
+                        className={`flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wider font-bold truncate ${
+                          isRunning ? 'text-emerald-400' : elapsedSeconds > 0 ? 'text-amber-400' : textMuted
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRunning ? 'bg-emerald-400 animate-pulse' : elapsedSeconds > 0 ? 'bg-amber-400' : 'bg-zinc-500'}`} />
+                        {isRunning ? t.consoleElapsed : elapsedSeconds > 0 ? t.consolePaused : t.consoleReady}
+                      </div>
+                      <div className={`text-lg sm:text-2xl font-light tabular-nums ${isRunning ? '' : textMuted}`}>{formatTimer(elapsedSeconds)}</div>
+                    </div>
+                  ) : (
+                    <div className="text-right font-mono min-w-0 flex flex-col items-end gap-0.5 tb-fade-in">
+                      <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums truncate max-w-full">W{calendarStamp.week}</div>
+                      <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest tabular-nums truncate max-w-full ${textMuted}`}>
+                        {tf(t.consoleDayOfYear, { d: calendarStamp.day, n: calendarStamp.days })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <div className="flex items-center justify-between gap-3 min-h-[88px]">
                 <ChronoDisplay
                   theme={activeChronoTheme}
                   hh={clockReadout.hour}
                   mm={clockReadout.minute}
                   ss={clockReadout.second}
                   isDark={isDark}
+                  instrumentPx={CONSOLE_DIAL_PX}
                 />
 
                 {inputMode === 'timer' && user ? (
@@ -3953,6 +4034,7 @@ export default function App() {
                   </div>
                 )}
               </div>
+              )}
 
             </div>
 
@@ -4673,18 +4755,7 @@ export default function App() {
                     <span className="tabular-nums">
                       {tf(t.weekResetsOn, { date: addDays(currentWeekStartStr, 7).slice(5).replace('-', '.') })}
                     </span>
-                    <span className="flex items-center gap-1.5">
-                      {tf(t.activeOfTotal, { a: activeCategoryCount, b: openCategories.length })}
-                      {/* How the week window works, on hover / focus instead of three lines of text. */}
-                      <Info
-                        tabIndex={0}
-                        role="img"
-                        aria-label={tf(t.weekWindowHint, { tz: timeZone, day: t.weekdaysLong.split(',')[weekStart === 'sun' ? 0 : 1] })}
-                        className="w-3.5 h-3.5 shrink-0 cursor-help hover:text-emerald-400 focus:text-emerald-400 outline-none"
-                      >
-                        <title>{tf(t.weekWindowHint, { tz: timeZone, day: t.weekdaysLong.split(',')[weekStart === 'sun' ? 0 : 1] })}</title>
-                      </Info>
-                    </span>
+                    <span className="tabular-nums">{tf(t.activeOfTotal, { a: activeCategoryCount, b: openCategories.length })}</span>
                   </div>
                 )}
                 {/* Fixed-height list box: four rows; SHOW ALL scrolls inside it.
@@ -6222,6 +6293,7 @@ export default function App() {
                   borderCol={borderCol}
                   textMuted={textMuted}
                   onOpenShop={() => openBitsShop('furniture')}
+                  userId={user?.id}
                 />
               )}
 

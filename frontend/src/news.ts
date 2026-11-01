@@ -288,7 +288,332 @@ const TOUR_ROOMS: TourRoom[] = [
   ),
 ];
 
+// ROOM TOUR, part 2: one room for each of the six packs added in November.
+export const NEW_PACK_ROOMS: TourRoom[] = [
+  tour(
+    'DATA CENTER VAULT',
+    'THE VAULT',
+    'Steel panels and a raised floor: racks blinking in rows, a transformer humming, the vault door shut. LEDs wake while the stopwatch runs.',
+    'dc_wall_panels__black',
+    'dc_raised_floor',
+    `dc_warning_beacon__red@0,0 dc_cooling_pipes@1,0 dc_vault_door@5,0 dc_status_wall@9,0 dc_cable_tray@12,0
+     dc_patch_panel@12,2 dc_warning_beacon__orange@15,2 dc_server_rack__black@0,4 dc_server_rack__red_alert@2,4
+     dc_server_rack__black@4,4 dc_breaker_cabinet@6,5 dc_crash_cart@8,6 dc_ups__black@10,6 dc_transformer__grey@13,5
+     dc_fire_extinguisher__crimson@0,10 dc_control_desk__black@1,10 dc_ups__white@6,10 dc_crash_cart__white@9,10
+     dc_server_rack__white@11,8 dc_server_rack__white@13,8 dc_fire_extinguisher__lemon@15,10`
+  ),
+  tour(
+    'HARDWARE LAB',
+    'MAKERSPACE',
+    'OSB walls and a rubber floor: a CNC mill, a robot arm, a drone on the bench and a tool wall with everything in its place.',
+    'hw_wall_osb',
+    'hw_rubber_floor__charcoal',
+    `hw_tool_wall@0,0 hw_breaker_panel@5,0 hw_spool_rack@8,1 dc_warning_beacon__orange@12,0 hw_tool_wall__whitewash@12,1
+     hw_cnc_mill@0,5 hw_oscilloscope_bench@2,6 hw_3d_printer@5,6 hw_drone_bench@7,6 hw_robot_arm@10,5
+     hw_magnifier_lamp@13,6 hw_parts_drawers@14,6 hw_workbench@0,10 hw_lab_stool@4,10 hw_solder_station@6,11
+     hw_power_supply@7,11 hw_lab_stool__black@8,10 hw_parts_drawers__lemon@10,10 hw_cnc_mill__orange@12,9
+     hw_3d_printer__white@14,10`
+  ),
+  tour(
+    'ORBITAL HABITAT',
+    'DECK 7 CABIN',
+    'Hull panels and a station deck: the Earth rising in one window, a nebula in the next, hydroponics, sleep capsules and a hologram table.',
+    'orb_hull_wall__white',
+    'orb_deck_floor__white',
+    `orb_window_earth@0,0 orb_porthole@5,0 orb_window_nebula@8,0 orb_porthole__brass@12,0 orb_handrail__lemon@4,3
+     orb_handrail@12,3 orb_airlock_door@0,4 orb_eva_locker@3,4 orb_hydro_pod@5,5 orb_hydro_pod__black@7,5
+     orb_control_console@9,6 orb_food_dispenser@12,6 orb_oxygen_tank@13,6 orb_oxygen_tank__orange@14,6
+     orb_floating_plant@15,7 orb_sleep_capsule@0,10 orb_holo_table@5,10 orb_rover_model@9,11 orb_floating_plant@11,11
+     orb_sleep_capsule__red@12,10`
+  ),
+  tour(
+    'INTELLIGENCE ARCHIVE',
+    'SAFEHOUSE',
+    'Damask and a Persian carpet: a library with one book out of place, a globe bar, a brass telescope and the operations map.',
+    'intel_damask_wall__crimson',
+    'intel_persian_floor__navy',
+    `intel_portrait@0,1 intel_map_wall@3,0 intel_portrait__brass@7,1 intel_bookcase@10,2 intel_bookcase__cherry@13,2
+     intel_telescope@0,5 intel_globe_bar@3,6 intel_record_player@5,6 intel_safe@7,6 intel_file_cabinet@9,6
+     intel_wingback@11,6 intel_decanter@13,7 intel_banker_lamp@14,7 intel_cipher_machine@15,7
+     intel_chesterfield@0,10 intel_wingback__forest@4,10 intel_desk@7,10 intel_wingback__crimson@11,10
+     intel_safe__brass@14,10 intel_file_cabinet__sage@6,10`
+  ),
+  tour(
+    'OUTDOOR BASECAMP',
+    'CABIN FEVER',
+    'Log walls and a forest floor: a dome tent, a wood stove, giant cacti and a campfire. The fires burn while the stopwatch runs and at night.',
+    'camp_log_wall',
+    'camp_forest_floor__brown',
+    `camp_canoe@0,0 camp_trail_map@5,0 camp_axe_wall@8,1 camp_canoe__forest@11,0 camp_cactus_giant@0,4
+     camp_wood_stove@2,5 camp_log_pile@4,7 camp_tent@6,5 camp_lantern_stand@10,5 camp_backpack@11,6 camp_cooler@12,7
+     camp_cactus_giant__charcoal@14,4 camp_hammock_stand@0,10 camp_folding_chair@4,10 camp_campfire@6,11
+     camp_folding_chair__red@9,10 camp_folding_table@10,11 camp_lantern_stand__black@12,9 camp_log_pile__birch@13,11
+     camp_backpack__forest@15,10`
+  ),
+  tour(
+    'CYBER STREET',
+    'AFTER THE RAIN',
+    'Graffiti brick over wet asphalt: a noodle stall, hologram vending, an arcade cabinet and neon. Best seen with NIGHT on.',
+    'cyber_graffiti_wall',
+    'cyber_wet_asphalt',
+    `cyber_neon_sign@0,0 cyber_ac_unit@4,0 cyber_ac_unit__grey@4,2 cyber_cable_mess@6,0 cyber_lantern_string@6,2
+     cyber_neon_sign__teal@11,0 cyber_lantern_string__pink@12,3 cyber_holo_vending@0,4 cyber_steam_duct@2,5
+     cyber_food_stall@4,5 cyber_stall_stool@8,7 cyber_arcade_cab@9,4 cyber_holo_ad@11,5 cyber_power_box@13,6
+     cyber_trash_bin@14,6 cyber_trash_bin__blue@15,6 cyber_hover_scooter@0,10 cyber_crates@3,10
+     cyber_stall_stool__blue@6,11 cyber_stall_stool__lemon@7,11 cyber_food_stall__navy@8,9 cyber_crates__blue@12,10
+     cyber_holo_vending__teal@14,8`
+  ),
+];
+
+// Chairs tucked into desks (furniture.CHAIR_BASES / DESK_BASES).
+const TUCK_ROOMS: ShowcaseRoom[] = [
+  room(
+    'TUCKED IN',
+    'Every chair pushed in at its desk: a study desk, a corner desk with a gaming chair, a kotatsu with a cushion and stools at the dining table.',
+    'wall_panel',
+    'floor_herringbone',
+    `frame_mountain@2,1 wall_clock@7,1 poster_grid@11,1 kotatsu@1,6 zabuton@2,7 corner_desk@10,6
+     gaming_chair@12,6 starter_desk@0,10 starter_chair@1,10 writing_desk@5,10 office_chair@6,10
+     dining_table@11,10 bar_stool@11,10 bar_stool@13,10`
+  ),
+];
+
+// Five rooms of one operator, for the five-rooms article: mixed packs,
+// each with a chair tucked in somewhere.
+const SLOT_ROOMS: ShowcaseRoom[] = [
+  room(
+    'STUDY DEN',
+    'Panelled and quiet: the partner\'s desk with its chair pushed in, a globe bar, the record console and the library case.',
+    'wall_panel',
+    'floor_herringbone',
+    `intel_map_wall@1,1 intel_portrait@6,1 camp_trail_map@10,1 intel_bookcase@13,2 intel_desk@1,6 office_chair@3,6
+     intel_globe_bar@6,6 intel_file_cabinet@9,6 intel_wingback@11,6 intel_chesterfield@0,10 intel_decanter@5,11
+     intel_record_player@8,10 intel_safe@13,10 intel_cipher_machine@15,11`
+  ),
+  room(
+    'NIGHT OWL',
+    'Neon, a server rack and an arcade cabinet over wet asphalt, with the gaming chair tucked into the NOC desk.',
+    'cyber_graffiti_wall__teal',
+    'cyber_wet_asphalt__purple',
+    `cyber_neon_sign__pink@0,0 cyber_lantern_string__lemon@4,0 dc_status_wall@9,0 cyber_ac_unit@13,0 cyber_cable_mess@4,2
+     cyber_arcade_cab@0,4 dc_server_rack__black@2,4 dc_control_desk__black@4,6 gaming_chair@5,6 cyber_crates@10,6
+     cyber_trash_bin@12,6 cyber_holo_vending__teal@14,4 cyber_hover_scooter__black@1,10 cyber_stall_stool__pink@6,11
+     cyber_power_box@8,10 cyber_steam_duct@12,9`
+  ),
+  room(
+    'WEEKEND CAMP',
+    'Log walls, a dome tent and a wood stove; a camp chair pulled up to the stove table by the fire.',
+    'camp_log_wall__pine',
+    'camp_forest_floor__forest',
+    `camp_canoe__red@0,0 camp_axe_wall@5,1 camp_trail_map__pine@8,0 cyber_lantern_string__white@11,1
+     camp_cactus_giant__blush@0,4 camp_tent__forest@3,5 camp_wood_stove__black@8,5 camp_log_pile@10,7
+     camp_lantern_stand__brass@13,5 camp_backpack__orange@14,6 camp_hammock_stand__teal@0,10 camp_campfire@6,11
+     camp_folding_table__pine@9,11 camp_folding_chair__navy@10,10 camp_cooler__red@12,11`
+  ),
+  room(
+    'ZERO-G NAP',
+    'Black hull panels, a nebula outside, sleep capsules and a lab stool at the flight console.',
+    'orb_hull_wall__black',
+    'orb_deck_floor__chrome',
+    `orb_porthole@0,0 orb_window_nebula__teal@3,0 orb_porthole__copper@7,1 orb_handrail__orange@10,1 orb_handrail@10,3
+     orb_eva_locker__black@0,4 orb_hydro_pod__chrome@2,5 orb_control_console__black@6,6 hw_lab_stool@7,6
+     orb_oxygen_tank__green@10,6 orb_food_dispenser@11,6 orb_floating_plant@13,7 orb_sleep_capsule__lilac@0,10
+     orb_holo_table__purple@6,10 orb_rover_model__gold@10,11 orb_sleep_capsule__mint@12,10`
+  ),
+  room(
+    "MAKER'S CORNER",
+    'A tool wall and a breaker panel over two benches, a stool tucked in at each, the robot arm and the CNC mill.',
+    'hw_wall_osb__greywash',
+    'hw_rubber_floor__navy',
+    `hw_tool_wall__pine@0,0 hw_breaker_panel__white@5,0 hw_spool_rack__navy@8,1 dc_cable_tray@12,0 hw_cnc_mill__green@0,5
+     hw_workbench__birch@2,6 hw_lab_stool__mint@4,6 hw_3d_printer__copper@7,6 hw_robot_arm__lemon@10,5
+     hw_parts_drawers__red@14,6 hw_drone_bench__red@0,10 hw_lab_stool@1,10 hw_oscilloscope_bench__ebony@5,10
+     hw_magnifier_lamp@9,10 hw_power_supply@10,11 hw_solder_station@11,11 dc_fire_extinguisher__crimson@15,10`
+  ),
+];
+
 export const NEWS_ARTICLES: NewsArticle[] = [
+  {
+    id: 'buffs-rework',
+    date: 'EARLY NOV 2026',
+    tag: 'BALANCE',
+    title: 'Every buff plays differently now',
+    lede: 'Most buffs used to be the same deal: pay, cover the hours, come out a little ahead. Six of them were reworked so each one rewards a different way of studying, and most carry a risk to match.',
+    blocks: [
+      { type: 'figure', kind: 'buffs', caption: 'The buff icons, with their class letters.' },
+      {
+        type: 'stats',
+        items: [
+          ['Reworked', '6'],
+          ['Unchanged', 'WARM-UP & 7 more'],
+          ['Running buffs', 'Keep their old rules'],
+        ],
+      },
+      { type: 'h', text: 'What changed' },
+      {
+        type: 'list',
+        items: [
+          'EARLY BIRD (800): ×3 at dawn. The next three mornings, logs committed 05:00–09:00 earn +200 BITS/h, up to 2 hours a morning (+1,200). Miss a morning and the buff ends; what is left of it is lost.',
+          'NIGHT SHIFT (900): climbs on back-to-back nights. +100 BITS/h the first night, +150 the next, +200 the third, up to 3 hours a night (+1,350). Skip a night and the rate falls back to +100.',
+          'OVERCLOCK (800): a one-day sprint. ×2 for 24 hours, up to 10 hours (+1,000). Whatever is left after the day is gone.',
+          'HYPERDRIVE (1,800): ×2 on 25 hours over 96 hours (+2,500), but every full day it runs needs 3 hours of logs, or the drive shuts down.',
+          'FOCUS CHIP (800): +100 for each session of 50 minutes or more (up to 12). A log under 25 minutes burns the chip out and ends it.',
+          'DEEP DIVE (1,500): pays by session length. 2h earns +250, 3h +450, 4h +700, up to four sessions (+2,800).',
+        ],
+      },
+      { type: 'h', text: 'Unchanged' },
+      {
+        type: 'p',
+        text: 'WARM-UP stays the cheap, safe first buff. WEEKEND SURGE, CATEGORY LOCK, LUCKY BYTE, MYSTERY CRATE, STORM RUNNER, LUNAR TIDE and IRON CONTRACT were already their own thing and stay as they are.',
+      },
+      {
+        type: 'p',
+        text: 'A buff you were already running when this arrived finishes on the rules you bought it under. The running buff\'s card now shows a live line for the reworked ones: which morning you are on and how much of it is used, tonight\'s rate, today\'s hours against the daily minimum, or the FOCUS CHIP warning.',
+      },
+    ],
+  },
+  {
+    id: 'room-tuck',
+    date: 'EARLY NOV 2026',
+    tag: 'IMPROVEMENT',
+    title: 'Chairs tuck into desks, and a slimmer room switcher',
+    lede: 'Chairs and stools can now stand at a desk or table instead of beside it, and the five rooms fold away into one slim bar.',
+    blocks: [
+      { type: 'rooms', rooms: TUCK_ROOMS },
+      { type: 'h', text: 'Tucking chairs in' },
+      {
+        type: 'list',
+        items: [
+          'Drop a chair onto a desk or table on the same floor row and it is pushed in, drawn in front of the desk.',
+          'Chairs: study, office, gaming and director\'s chairs, stools, bar stools, lab and stall stools, camp chairs, zabuton and poufs.',
+          'Desks and tables: every desk and workbench, the dining, coffee and chess tables, the kitchen counter, kotatsu, chabudai, the holo-star table, the flight console and the noodle stall.',
+          'One chair per spot. Tap the chair to pick it up first; tap the desk around it to pick up the desk.',
+        ],
+      },
+      { type: 'h', text: 'Also in MY ROOM' },
+      {
+        type: 'list',
+        items: [
+          'The rooms sit in one slim bar: numbered chips switch rooms, with SAVE and LOAD SAVE beside them. ROOMS opens a drawer with a picture of each room, the name and the save time.',
+          'ROOM VALUE shows the study time under the BITS instead of beside it.',
+          'Clock faces with a dial (railway clocks, rings, arcs) are drawn a size smaller, so the SYSTEM CHRONOMETER keeps one height whatever face you pick.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'six-packs',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW FEATURE',
+    title: 'Six new furniture packs: 535 more pieces',
+    lede: 'MY ROOM grows to 1,778 pieces: a data center, a hardware lab, a space station, a spy\'s study, a basecamp and a cyberpunk alley, 96 new designs in all.',
+    blocks: [
+      { type: 'figure', kind: 'packs6', caption: 'The 96 new designs, a shelf at a time, and the hologram vending machine in every colour.' },
+      {
+        type: 'stats',
+        items: [
+          ['New pieces', '535'],
+          ['New designs', '96'],
+          ['Catalog', '1,778'],
+        ],
+      },
+      { type: 'h', text: 'The six packs' },
+      {
+        type: 'list',
+        items: [
+          'DATA CENTER VAULT: blade server racks, a high-voltage transformer, cooling pipes, a UPS, a NOC desk, warning beacons, hazard stripes and a vault door.',
+          'HARDWARE LAB: a scope bench, a soldering station, an open breaker panel, a tool wall, a drone repair bench, a 3D printer, a CNC mill and a robot arm.',
+          'ORBITAL HABITAT: an Earthrise window, a nebula window, hydroponic pods, an airlock bulkhead, sleep capsules, an EVA suit locker and a holo-star table.',
+          'INTELLIGENCE ARCHIVE: a globe bar, a brass telescope, a chesterfield, a classified safe, a record console, a library case and an operations map.',
+          'OUTDOOR BASECAMP: a wood stove, a giant cactus, a lantern stand, a hammock, an indoor campfire, a dome tent and a canoe for the wall.',
+          'CYBER STREET: neon signs, a steam duct, hologram vending, a noodle stall, stall stools, an arcade cabinet, a hover scooter and wet asphalt.',
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Each pack brings its own wall and floor. LEDs, screens and holograms come on while the stopwatch runs; fires, lanterns, beacons and neon also glow at night. The new pieces join the weekly shop\'s draw alongside the rest, so a few of them turn up every week.',
+      },
+      { type: 'h', text: 'ROOM TOUR, part 2' },
+      { type: 'tour', rooms: NEW_PACK_ROOMS },
+      { type: 'link', article: 'room-slots', text: 'Five rooms to build them in' },
+    ],
+  },
+  {
+    id: 'buffs-wave-3',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW FEATURE',
+    title: 'IRON CONTRACT, STORM RUNNER and LUNAR TIDE',
+    lede: 'Three new buffs: a hardcore three-day contract that pays double or keeps your stake, one that pays when the weather turns, and one that follows the moon.',
+    blocks: [
+      { type: 'figure', kind: 'newbuffs', caption: 'The three new buffs, and an IRON CONTRACT filling its three days.' },
+      { type: 'h', text: 'IRON CONTRACT · 1,500' },
+      {
+        type: 'list',
+        items: [
+          'Starts at the next midnight and runs three calendar days.',
+          'Commit at least 5 hours on each of the three days. The log that completes day 3 pays twice the stake: +3,000.',
+          'Miss a single day and the contract ends there. The stake is gone, and the buff slot is free again.',
+          'It counts the hours you commit on each day, by commit time, so hours can\'t be back-dated into a day. Cancelling refunds nothing.',
+          'The exchange shows each day\'s hours toward its 5-hour goal while the contract runs.',
+        ],
+      },
+      { type: 'h', text: 'STORM RUNNER · 800' },
+      {
+        type: 'p',
+        text: 'For five days, logs committed while the CHRONOMETER weather reads rain, drizzle, snow, a storm or below 0°C earn +100 BITS/h, up to 10 hours. Clear skies pay the usual rate. It reads the same weather as the chronometer header, so the weather readout needs to be on; a reading more than three hours old doesn\'t count.',
+      },
+      { type: 'h', text: 'LUNAR TIDE · 900' },
+      {
+        type: 'p',
+        text: 'For 96 hours, each log earns extra BITS in step with the moon: +100 BITS/h at full moon, about +50 at a half moon, close to nothing at new moon, up to 12 hours. Its card shows what it would pay right now, and the LUNAR CALENDAR shows when the next full moon is.',
+      },
+      {
+        type: 'p',
+        text: 'All three show their icon and bonus on the logs they pay out on, like every other buff, and none of them can come out of the MYSTERY CRATE.',
+      },
+    ],
+  },
+  {
+    id: 'room-slots',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW FEATURE',
+    title: 'Five rooms, and a SAVE button',
+    lede: 'MY ROOM now holds five rooms you can switch between at any time, each with a save point you can go back to.',
+    blocks: [
+      { type: 'rooms', rooms: SLOT_ROOMS },
+      {
+        type: 'list',
+        items: [
+          'Pick a room from the strip at the top of MY ROOM. Each one keeps its own walls, floor and furniture, and saves itself as you edit, as before.',
+          'The furniture is shared: everything you own can stand in every room at once. Placing a piece in ROOM 2 doesn\'t take it out of ROOM 1.',
+          'SAVE keeps the open room as its save point. LOAD SAVE puts it back. That works after a CLEAR you didn\'t mean, and UNDO reverses the load too.',
+          'Rename a room in the box next to ROOMS (up to 20 characters).',
+          'RESET BITS & MY ROOM and RESET STUDY LOGS clear all five rooms and their saves, since they hold furniture that is no longer owned.',
+        ],
+      },
+      { type: 'link', article: 'six-packs', text: 'Six new packs to fill them with' },
+    ],
+  },
+  {
+    id: 'polish-nov',
+    date: 'EARLY NOV 2026',
+    tag: 'IMPROVEMENT',
+    title: 'Fixes: the clock, the BITS popup on phones, BITS in exports',
+    lede: 'A round of fixes from use: the chronometer sits better, the +BITS popup shows on phones, and exports record what each log earned.',
+    blocks: [
+      {
+        type: 'list',
+        items: [
+          'Round clock faces (dials, rings, arcs) stand in the middle of the SYSTEM CHRONOMETER, with the date on the left and the week or the stopwatch on the right. Digital faces no longer leave an empty band above them.',
+          'On phones, the +BITS popup after a commit drops below the BITS button instead of rising off the top of the screen.',
+          'The popup now only appears for a commit. Resets, imports, edits and refunds change the balance quietly.',
+          'CSV export adds three columns: the base BITS, the buff bonus and the buff for each log. The JSON backup already carried the bonus and now adds a BITS summary too. Importing a backup still never restores a bonus, so a file can\'t create BITS.',
+          'The ℹ hints beside the registry\'s ACTIVE count and FORECAST // TRAJECTORY are gone.',
+          'A log committed at the exact moment of a BITS reset is saved normally (just without a bonus) instead of failing.',
+        ],
+      },
+    ],
+  },
   {
     id: 'dashboard-redesign',
     date: 'EARLY NOV 2026',
