@@ -16,8 +16,10 @@ BOSS RAID: every log committed while the raid is live strikes the boss for
 its minutes (at most MAX_HIT_MINUTES of one log; 90 min+ is a critical,
 x1.5). Each boss has a trait that changes how to fight it. Hits are kept in
 state['events'] and HP is replayed from them (plus the trait's heals), so a
-log deleted mid-raid takes its hit back. Down in time: the full loot. Out
-of time: a share of the loot in step with the damage dealt.
+log deleted mid-raid takes its hit back and an edited one hits for its new
+length, up to what it hit for when committed. A HYDRA head whose category is
+deleted or marked DONE counts as slain. Down in time: the full loot. Out of
+time: a share of the loot in step with the damage dealt.
 
 RIVAL: a 72-hour duel against an NPC whose day runs on a schedule drawn
 from the date (rival_day), the same for everyone. Like a raid, it starts
@@ -242,6 +244,7 @@ DUEL_LENGTH = timedelta(days=DUEL_DAYS)
 RAID_PREFIX = "raid_"
 RIVAL_PREFIX = "rival_"
 CHALLENGE_IDS = [RAID_PREFIX + b for b in RAIDS] + [RIVAL_PREFIX + r for r in RIVALS]
+HEADED_RAID_IDS = [RAID_PREFIX + b for b, s in RAIDS.items() if s["trait"] == "heads"]
 
 
 class ChallengeError(Exception):
@@ -445,6 +448,13 @@ def raid_hp(purchase, now):
         for e in events:
             if e.get("head") is not None and e["dmg"]:
                 left[e["head"]] = max(0, left[e["head"]] - e["dmg"])
+        # No log can hit a head without its in-progress category any more.
+        open_cats = set(
+            Category.objects.filter(
+                pk__in=[h["cat"] for h in heads], completed_at__isnull=True
+            ).values_list("pk", flat=True)
+        )
+        left = [hp if h["cat"] in open_cats else 0 for hp, h in zip(left, heads)]
         return sum(left), left, spec["hp"]
     timeline = [
         (datetime.fromisoformat(e["at"]), -e["dmg"]) for e in events if e["dmg"]
@@ -499,7 +509,8 @@ def _settle(purchase, outcome, payout, now):
 
 def settle_expired(user, now=None):
     """Closes challenges whose time ran out (once): an escaped boss pays a
-    share of its loot, a finished duel pays by its result."""
+    share of its loot, a finished duel pays by its result. A HYDRA left with
+    no head standing (its last categories went away) goes down here."""
     now = now or timezone.now()
     for purchase in _live(user).filter(expires_at__lte=now):
         with transaction.atomic():
@@ -526,6 +537,17 @@ def settle_expired(user, now=None):
                     _settle(locked, "tie", locked.price, now)
                 else:
                     _settle(locked, "lost", 0, now)
+    for purchase in _live(user).filter(
+        item_id__in=HEADED_RAID_IDS, expires_at__gt=now
+    ):
+        with transaction.atomic():
+            locked = (
+                BitPurchase.objects.select_for_update()
+                .filter(pk=purchase.pk, remaining_uses=1)
+                .first()
+            )
+            if locked is not None and raid_hp(locked, now)[0] <= 0:
+                _settle(locked, "down", RAIDS[_key(locked.item_id)]["loot"], now)
 
 
 def active_challenge(user, now=None):
@@ -764,28 +786,43 @@ def on_log_deleted(log):
     purchase.save(update_fields=["state"])
 
 
-def on_log_shortened(log):
-    """A log shortened mid-raid hits for its new length (never more)."""
-    purchase, index = _raid_events_for_log(log)
-    if index is None:
-        return
-    spec = RAIDS[_key(purchase.item_id)]
-    state = dict(purchase.state)
-    events = [dict(e) for e in state["events"]]
-    e = events[index]
-    if (
-        spec["trait"] == "armor"
-        and log.duration_minutes < 60
-        and e["kind"] in ("hit", "crit")
-    ):
-        e["kind"] = "block"
-    elif e["kind"] in ("hit", "crit"):
-        e["kind"] = "crit" if log.duration_minutes >= CRIT_MINUTES else "hit"
-    e["min"] = log.duration_minutes
-    e["dmg"] = min(e["dmg"], _hit(spec, log.duration_minutes, e["kind"]))
-    state["events"] = events
-    purchase.state = state
-    purchase.save(update_fields=["state"])
+def on_log_edited(log, now=None):
+    """A log edited mid-raid hits for its new length, up to what it hit for
+    when committed: fixing a typo restores the hit, padding a log adds nothing.
+    A restored hit can bring the boss down."""
+    now = now or timezone.now()
+    settle_expired(log.user, now)
+    with transaction.atomic():
+        purchase = (
+            _live(log.user)
+            .select_for_update()
+            .filter(item_id__startswith=RAID_PREFIX)
+            .first()
+        )
+        if purchase is None:
+            return
+        state = dict(purchase.state or {})
+        events = [dict(e) for e in state.get("events", [])]
+        e = next((e for e in events if e.get("log") == log.id), None)
+        if e is None:
+            return
+        spec = RAIDS[_key(purchase.item_id)]
+        e.setdefault("orig_min", e["min"])
+        e.setdefault("orig_kind", e["kind"])
+        minutes = min(log.duration_minutes, e["orig_min"])
+        if e["orig_kind"] not in ("hit", "crit"):
+            e["kind"] = e["orig_kind"]
+        elif spec["trait"] == "armor" and minutes < 60:
+            e["kind"] = "block"
+        else:
+            e["kind"] = "crit" if minutes >= CRIT_MINUTES else "hit"
+        e["min"] = log.duration_minutes
+        e["dmg"] = _hit(spec, minutes, e["kind"])
+        state["events"] = events
+        purchase.state = state
+        purchase.save(update_fields=["state"])
+        if raid_hp(purchase, now)[0] <= 0:
+            _settle(purchase, "down", spec["loot"], now)
 
 
 # ==========================================

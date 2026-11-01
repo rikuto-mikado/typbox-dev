@@ -8,8 +8,9 @@ out with no backfill, and editing, deleting, clearing or importing logs
 keeps the balance in step automatically. On top of that:
 
 - a shop buff active when a log is committed adds that log's bonus_bits
-  (stored on the log, so deleting it takes the bonus back too). IRON
-  CONTRACT pays its whole payout onto the log that seals it, the same way;
+  (stored on the log, so deleting it takes the bonus back too; editing it
+  never changes the bonus). IRON CONTRACT pays its whole payout onto the log
+  that seals it, the same way;
 - every BitPurchase debits its price, less anything refunded when a buff
   was cancelled early (cancel_buff);
 - a settled CHALLENGE (challenges.py) credits its payout.
@@ -39,6 +40,12 @@ BITS_PER_HOUR = 100
 # A buff's minute-based bonus never counts more than this much of one log,
 # so a single oversized entry can't drain (or max out) a buff in one go.
 MAX_BONUS_MINUTES_PER_LOG = 180
+
+# A log is committed when the session ends, so a session that runs past a
+# boundary (end of a morning, midnight, a buff's expiry) still belongs to the
+# time it started in, if it is committed within this long of that boundary.
+# A log's session is taken as the `duration_minutes` before its commit.
+LATE_COMMIT_GRACE = timedelta(hours=3)
 
 
 def bits_for_minutes(minutes):
@@ -88,7 +95,7 @@ BUFFS = {
     "night_shift": {
         "name": "NIGHT SHIFT",
         "tagline": "Climbs ×2 → ×2.5 → ×3 on back-to-back nights",
-        "detail": "For 72h, logs committed 22:00–02:00 earn +100 BITS/h the first night, +150 the next and +200 the third, up to 3 hours a night (+1,350 in all). Skip a night and the rate drops back to +100.",
+        "detail": "For 72h, sessions touching 22:00–02:00 earn +100 BITS/h the first night, +150 the next and +200 the third, up to 3 hours a night (+1,350 in all). Skip a night and the rate drops back to +100.",
         "price": 900,
         "window": "night",
         "expires": "hours",
@@ -101,7 +108,7 @@ BUFFS = {
     "early_bird": {
         "name": "EARLY BIRD",
         "tagline": "×3 at dawn — skip a morning and it ends",
-        "detail": "The next 3 mornings: logs committed 05:00–09:00 earn +200 BITS/h, up to 2 hours each morning (+1,200 in all). A morning with no log ends the buff, and whatever is left of it is lost.",
+        "detail": "The next 3 mornings: sessions touching 05:00–09:00 earn +200 BITS/h, up to 2 hours each morning (+1,200 in all). A morning with no log ends the buff, and whatever is left of it is lost.",
         "price": 800,
         "window": "morning",
         "expires": "mornings",
@@ -191,7 +198,7 @@ BUFFS = {
     "weekend_surge": {
         "name": "WEEKEND SURGE",
         "tagline": "×1.5 all weekend",
-        "detail": "Logs committed this Saturday and Sunday earn +50 BITS/h (up to 24 hours, +1,200). Buy it any day — it holds your buff slot until Sunday ends.",
+        "detail": "Sessions touching this Saturday and Sunday earn +50 BITS/h (up to 24 hours, +1,200). Buy it any day — it holds your buff slot until Sunday ends.",
         "price": 1000,
         "window": "weekend",
         "expires": "weekend",
@@ -225,7 +232,7 @@ BUFFS = {
     "iron_contract": {
         "name": "IRON CONTRACT",
         "tagline": "3 days × 5h: pays ×2 — or keeps the stake",
-        "detail": "Starts at midnight and runs 3 calendar days. Commit 5 hours or more on every one of them and the log that completes day 3 pays twice the stake (+3,000). Miss a single day and the stake is gone. Cancelling refunds nothing.",
+        "detail": "Starts at midnight and runs 3 calendar days. Log 5 hours or more on every one of them (a session past midnight counts for the day it started, if committed by 03:00) and the log that completes day 3 pays twice the stake (+3,000). Miss a single day and the stake is gone. Cancelling refunds nothing.",
         "price": 1500,
         "window": "any",
         "expires": "contract",
@@ -234,7 +241,7 @@ BUFFS = {
     "hyperdrive": {
         "name": "HYPERDRIVE",
         "tagline": "×2 on 25 hours — if you keep up 3h a day",
-        "detail": "Every log you commit in the next 96h earns +100 BITS/h until 25 hours are covered (up to +2,500). Every full day it runs needs 3 hours of logs, or the drive shuts down.",
+        "detail": "Every log you commit in the next 96h earns +100 BITS/h until 25 hours are covered (up to +2,500). Every full day it runs needs 3 hours of logs (a session past midnight counts for the day it started, if committed by 03:00), or the drive shuts down.",
         "price": 1800,
         "window": "any",
         "expires": "hours",
@@ -443,12 +450,12 @@ def _in_window(user, spec, now, weather=None):
 def contract_days(purchase, now):
     """IRON CONTRACT's days: [{'date', 'minutes', 'state'}] with state
     'pending' (not yet), 'live' (today, short so far), 'done' (5h+) or
-    'failed' (over, short). Minutes are those of logs committed (created_at)
-    within each local day, so hours can't be back-dated into a day."""
+    'failed' (over by LATE_COMMIT_GRACE, short). Minutes are those of logs
+    committed for each local day (_day_minutes), so hours can't be back-dated
+    into a day."""
     spec = spec_of(purchase)["contract"]
     local = _local_now(purchase.user, purchase.created_at)
     zone = local.tzinfo
-    today = _local_now(purchase.user, now).date()
     first = local.date() + timedelta(days=1)
     days = []
     for i in range(spec["days"]):
@@ -456,17 +463,12 @@ def contract_days(purchase, now):
         start, end = _local_midnight(day, zone), _local_midnight(
             day + timedelta(days=1), zone
         )
-        minutes = (
-            StudyLog.objects.filter(
-                user=purchase.user, created_at__gte=start, created_at__lt=end
-            ).aggregate(m=Sum("duration_minutes"))["m"]
-            or 0
-        )
+        minutes = _day_minutes(purchase.user, day, zone)
         if minutes >= spec["min_minutes"]:
             state = "done"
-        elif day < today:
+        elif now >= end + LATE_COMMIT_GRACE:
             state = "failed"
-        elif day == today:
+        elif now >= start:
             state = "live"
         else:
             state = "pending"
@@ -474,45 +476,58 @@ def contract_days(purchase, now):
     return days
 
 
-def _minutes_between(user, start, end):
-    """Minutes of the logs committed (created_at) in [start, end)."""
-    return (
-        StudyLog.objects.filter(
-            user=user, created_at__gte=start, created_at__lt=end
-        ).aggregate(m=Sum("duration_minutes"))["m"]
-        or 0
-    )
+def _day_minutes(user, day, zone):
+    """Minutes logged for one local day: the logs committed on it, except
+    that a session running past midnight belongs to the day before if it is
+    committed within LATE_COMMIT_GRACE of that midnight. Every log counts for
+    exactly one day."""
+    start = _local_midnight(day, zone)
+    end = _local_midnight(day + timedelta(days=1), zone)
+    total = 0
+    for created, minutes in StudyLog.objects.filter(
+        user=user, created_at__gte=start, created_at__lt=end + LATE_COMMIT_GRACE
+    ).values_list("created_at", "duration_minutes"):
+        began = created - timedelta(minutes=minutes)
+        if created < end:
+            if not (created < start + LATE_COMMIT_GRACE and began < start):
+                total += minutes
+        elif began < end:
+            total += minutes
+    return total
 
 
 def _missed_morning(purchase, spec, now):
-    """EARLY BIRD: a morning (05:00-09:00) that has ended with no log."""
+    """EARLY BIRD: a morning (05:00-09:00) over by LATE_COMMIT_GRACE with no
+    log whose session touched it."""
     zone = _local_now(purchase.user, now).tzinfo
     day = _first_morning(purchase.user, purchase.created_at)
     for _ in range(spec["mornings"]):
         start = timezone.make_aware(datetime.combine(day, time(5)), zone)
         end = timezone.make_aware(datetime.combine(day, time(9)), zone)
-        if end > now:
+        if end + LATE_COMMIT_GRACE > now:
             break
-        if not StudyLog.objects.filter(
-            user=purchase.user, created_at__gte=start, created_at__lt=end
-        ).exists():
+        logs = StudyLog.objects.filter(
+            user=purchase.user,
+            created_at__gte=start,
+            created_at__lt=end + LATE_COMMIT_GRACE,
+        ).values_list("created_at", "duration_minutes")
+        if not any(
+            created - timedelta(minutes=minutes) < end for created, minutes in logs
+        ):
             return True
         day += timedelta(days=1)
     return False
 
 
 def _short_day(purchase, spec, now):
-    """HYPERDRIVE: a full day (after the purchase day, before today) with
-    fewer than daily_min minutes committed."""
-    local = _local_now(purchase.user, now)
-    zone = local.tzinfo
+    """HYPERDRIVE: a full day (after the purchase day, over by
+    LATE_COMMIT_GRACE) with fewer than daily_min minutes logged."""
+    zone = _local_now(purchase.user, now).tzinfo
     day = _local_now(purchase.user, purchase.created_at).date() + timedelta(days=1)
-    while day < local.date():
-        start = _local_midnight(day, zone)
-        if (
-            _minutes_between(purchase.user, start, start + timedelta(days=1))
-            < spec["daily_min"]
-        ):
+    while (
+        _local_midnight(day + timedelta(days=1), zone) + LATE_COMMIT_GRACE <= now
+    ):
+        if _day_minutes(purchase.user, day, zone) < spec["daily_min"]:
             return True
         day += timedelta(days=1)
     return False
@@ -548,10 +563,59 @@ def active_buff(user, now=None):
     )
     if buff is not None and _broken(buff, now):
         BitPurchase.objects.filter(pk=buff.pk, expires_at__gt=now).update(
-            expires_at=now
+            expires_at=now, state={**(buff.state or {}), "closed": True}
         )
         return None
     return buff
+
+
+def _close(buff, now):
+    """Ends a buff before its time (buff row locked by the caller). 'closed'
+    tells it apart from one that simply ran out, which a session started
+    before the expiry can still draw on (_just_expired_buff)."""
+    buff.expires_at = now
+    buff.state = {**(buff.state or {}), "closed": True}
+    buff.save(update_fields=["expires_at", "state"])
+
+
+def _just_expired_buff(log, now):
+    """The buff that ran out while this log's session was under way (and at
+    most LATE_COMMIT_GRACE ago), or None. Cancelled, failed or used-up buffs
+    don't qualify."""
+    began = now - timedelta(minutes=log.duration_minutes)
+    buff = (
+        BitPurchase.objects.filter(
+            user=log.user,
+            item_id__in=RUNNABLE_BUFFS,
+            refunded=0,
+            expires_at__gt=max(began, now - LATE_COMMIT_GRACE),
+            expires_at__lte=now,
+        )
+        .filter(Q(remaining_minutes__isnull=True) | Q(remaining_minutes__gt=0))
+        .filter(Q(remaining_uses__isnull=True) | Q(remaining_uses__gt=0))
+        .select_related("category", "user")
+        .order_by("-expires_at")
+        .first()
+    )
+    if buff is None or (buff.state or {}).get("closed") or _broken(buff, now):
+        return None
+    return buff
+
+
+def _window_moment(log, buff, spec, now, weather):
+    """The moment the log's session falls in the buff's window, or None: the
+    commit itself if it is inside, else the latest moment of the session
+    since the purchase that is. Windows last hours, so hourly steps can't
+    miss one."""
+    if spec["window"] in ("any", "weather"):
+        return now if _in_window(log.user, spec, now, weather) else None
+    began = max(now - timedelta(minutes=log.duration_minutes), buff.created_at)
+    moment = now
+    while moment > began:
+        if _in_window(log.user, spec, moment):
+            return moment
+        moment -= timedelta(hours=1)
+    return began if _in_window(log.user, spec, began) else None
 
 
 def _night_key(local):
@@ -582,7 +646,7 @@ def apply_buff_to_new_log(log, now=None, weather=None):
     """
     now = now or timezone.now()
     with transaction.atomic():
-        buff = active_buff(log.user, now)
+        buff = active_buff(log.user, now) or _just_expired_buff(log, now)
         if buff is None:
             return
         # A BITS reset (or a cancel) may have removed it since the lookup:
@@ -594,7 +658,9 @@ def apply_buff_to_new_log(log, now=None, weather=None):
         # minutes / uses) may have landed between the lookup and the lock.
         if (
             buff.expires_at is None
-            or buff.expires_at <= timezone.now()
+            or buff.expires_at <= now - timedelta(minutes=log.duration_minutes)
+            or buff.refunded
+            or (buff.state or {}).get("closed")
             or (buff.remaining_minutes is not None and buff.remaining_minutes <= 0)
             or (buff.remaining_uses is not None and buff.remaining_uses <= 0)
         ):
@@ -605,10 +671,10 @@ def apply_buff_to_new_log(log, now=None, weather=None):
             return
         if spec.get("break_under") and log.duration_minutes < spec["break_under"]:
             # FOCUS CHIP burns out on a short log.
-            buff.expires_at = now
-            buff.save(update_fields=["expires_at"])
+            _close(buff, now)
             return
-        if not _in_window(log.user, spec, now, weather):
+        moment = _window_moment(log, buff, spec, now, weather)
+        if moment is None:
             return
         if spec.get("category") and (
             buff.category_id is None or log.category_id != buff.category_id
@@ -624,7 +690,7 @@ def apply_buff_to_new_log(log, now=None, weather=None):
                 buff.remaining_minutes or 0,
             )
             rate = lunar_rate(spec, now) if spec.get("lunar") else spec["per_hour"]
-            local = _local_now(log.user, now)
+            local = _local_now(log.user, moment)
             if "daily_cap" in spec:
                 days = dict(state.get("days") or {})
                 key = local.date().isoformat()
@@ -682,8 +748,7 @@ def _seal_contract(buff, spec, log, now):
     price * multiplier onto the log that completes the last day."""
     days = contract_days(buff, now)
     if any(d["state"] == "failed" for d in days):
-        buff.expires_at = now
-        buff.save(update_fields=["expires_at"])
+        _close(buff, now)
         return
     if not all(d["state"] == "done" for d in days):
         return
@@ -691,16 +756,26 @@ def _seal_contract(buff, spec, log, now):
     buff.remaining_uses = 0
     buff.bonus_earned += bonus
     buff.save(update_fields=["remaining_uses", "bonus_earned"])
-    log.bonus_bits = bonus
+    log.bonus_bits += bonus
     log.bonus_item = buff.item_id
     log.save(update_fields=["bonus_bits", "bonus_item"])
 
 
-def scale_bonus_on_edit(log, old_minutes):
-    """A log shortened after the fact keeps only its share of the bonus."""
-    if log.bonus_bits and log.duration_minutes < old_minutes:
-        log.bonus_bits = log.bonus_bits * log.duration_minutes // old_minutes
-        log.save(update_fields=["bonus_bits"])
+def seal_contract_on_edit(log, now=None):
+    """A log lengthened while IRON CONTRACT runs can complete its last day:
+    pays out onto that log, as a commit would have."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        buff = active_buff(log.user, now)
+        if buff is None or "contract" not in spec_of(buff):
+            return
+        buff = (
+            BitPurchase.objects.select_for_update()
+            .filter(pk=buff.pk, remaining_uses__gt=0, expires_at__gt=now)
+            .first()
+        )
+        if buff is not None:
+            _seal_contract(buff, spec_of(buff), log, now)
 
 
 def bits_summary(user):
@@ -740,10 +815,9 @@ def buff_status(purchase, spec, now):
         used = ((state.get("nights") or {}).get(key) or {}).get("min", 0)
         return f'TONIGHT +{spec["levels"][level - 1]} BITS/H · {used}/{spec["nightly_cap"]} MIN'
     if "daily_min" in spec:
-        start = _local_midnight(local.date(), local.tzinfo)
         if local.date() == _local_now(purchase.user, purchase.created_at).date():
             return f'FROM TOMORROW: {spec["daily_min"] // 60}H A DAY'
-        done = _minutes_between(purchase.user, start, start + timedelta(days=1))
+        done = _day_minutes(purchase.user, local.date(), local.tzinfo)
         return f'TODAY {min(done, spec["daily_min"])}/{spec["daily_min"]} MIN NEEDED'
     if "break_under" in spec:
         return f'A LOG UNDER {spec["break_under"]} MIN BURNS IT OUT'
@@ -890,8 +964,8 @@ def cancel_buff(user, now=None):
         buff = BitPurchase.objects.select_for_update().get(pk=buff.pk)
         refund = refund_amount(buff)
         buff.refunded = refund
-        buff.expires_at = now
-        buff.save(update_fields=["refunded", "expires_at"])
+        buff.save(update_fields=["refunded"])
+        _close(buff, now)
         return refund
 
 

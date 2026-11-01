@@ -1,9 +1,12 @@
 import json
 import re
 from datetime import date, datetime, timedelta, timezone as dt_timezone
+from importlib import import_module
 from pathlib import Path
 from unittest import mock, skipUnless
+from zoneinfo import ZoneInfo
 
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -1118,7 +1121,7 @@ class BitsShopTests(APITestCase):
             self.assertEqual(self._log(60)["bonus_bits"], 200)
         with mock.patch(
             "tracker.economy.timezone.now",
-            return_value=datetime(2026, 10, 30, 9, 0, tzinfo=tokyo),
+            return_value=datetime(2026, 10, 30, 10, 30, tzinfo=tokyo),
         ):
             self.assertEqual(self._log(60)["bonus_bits"], 0)
 
@@ -1292,16 +1295,61 @@ class BitsShopTests(APITestCase):
         with mock.patch("tracker.economy.timezone.now", return_value=later):
             self.assertEqual(self._log(60)["bonus_bits"], 0)
 
-    def test_deleting_or_shortening_a_log_takes_its_bonus_back(self):
+    def test_shortening_a_log_keeps_its_bonus(self):
         self._buy("overclock")
         log = self._log(120)  # +200 base, +200 bonus
         self.assertEqual(self._balance(), 9600)
-        self.client.patch(
+        res = self.client.patch(
             f"/api/logs/{log['id']}/", {"duration_minutes": 60}, format="json"
         )
-        self.assertEqual(StudyLog.objects.get(pk=log["id"]).bonus_bits, 100)
+        self.assertEqual(res.data["bonus_bits"], 200)
+        # Only the base rate follows the new length (-100).
+        self.assertEqual(self._balance(), 9500)
+
+    def test_deleting_a_log_takes_its_bonus_back(self):
+        self._buy("overclock")
+        log = self._log(120)
         self.client.delete(f"/api/logs/{log['id']}/")
         self.assertEqual(self._balance(), 9200)
+
+    def _restore_trimmed_bonuses(self):
+        migration = import_module("tracker.migrations.0025_restore_trimmed_bonuses")
+        migration.restore_trimmed_bonuses(django_apps, None)
+
+    def _mark_edited(self, log_id):
+        StudyLog.objects.filter(pk=log_id).update(
+            updated_at=timezone.now() + timedelta(minutes=5)
+        )
+
+    def test_migration_restores_a_trimmed_bonus(self):
+        self._buy("overclock")
+        log = self._log(120)
+        untouched = self._log(60)
+        StudyLog.objects.filter(pk=log["id"]).update(bonus_bits=100)
+        self._mark_edited(log["id"])
+        self._restore_trimmed_bonuses()
+        self.assertEqual(StudyLog.objects.get(pk=log["id"]).bonus_bits, 200)
+        self.assertEqual(StudyLog.objects.get(pk=untouched["id"]).bonus_bits, 100)
+        self._restore_trimmed_bonuses()  # nothing left to restore
+        self.assertEqual(StudyLog.objects.get(pk=log["id"]).bonus_bits, 200)
+
+    def test_migration_skips_a_gap_it_cannot_pin_on_one_log(self):
+        self._buy("overclock")
+        first = self._log(60)
+        second = self._log(60)
+        StudyLog.objects.filter(pk=first["id"]).update(bonus_bits=50)
+        self._mark_edited(first["id"])
+        self._mark_edited(second["id"])
+        self._restore_trimmed_bonuses()
+        self.assertEqual(StudyLog.objects.get(pk=first["id"]).bonus_bits, 50)
+
+    def test_migration_ignores_a_gap_with_no_edited_log(self):
+        self._buy("overclock")
+        kept = self._log(60)
+        deleted = self._log(60)
+        self.client.delete(f"/api/logs/{deleted['id']}/")
+        self._restore_trimmed_bonuses()
+        self.assertEqual(StudyLog.objects.get(pk=kept["id"]).bonus_bits, 100)
 
     def test_me_reports_spending(self):
         self._buy("overclock")
@@ -2566,7 +2614,7 @@ class BuffReworkTests(APITestCase):
         with self._at(2026, 11, 2, 12, 0):
             self._buy("overclock")
             self.assertEqual(self._log(60), 100)
-        with self._at(2026, 11, 3, 12, 1):
+        with self._at(2026, 11, 3, 13, 1):
             self.assertIsNone(self._active())
             self.assertEqual(self._log(60), 0)
 
@@ -2580,7 +2628,9 @@ class BuffReworkTests(APITestCase):
                 self._log(90), 100
             )  # only 30 of the morning's 120 minutes left
             self.assertEqual(self._log(60), 0)
-        with self._at(2026, 11, 4, 10, 0):  # the 4th's morning passed with no log
+        with self._at(2026, 11, 4, 11, 59):  # a late commit could still save it
+            self.assertIsNotNone(self._active())
+        with self._at(2026, 11, 4, 12, 0):  # the 4th's morning passed with no log
             self.assertIsNone(self._active())
             self.assertEqual(self._buy("warm_up").status_code, 201)
 
@@ -3128,3 +3178,276 @@ class ChallengeTests(APITestCase):
                 self.assertGreater(r["projected"], 0)
                 self.assertEqual(self._buy(r["item_id"]).status_code, 201, r["key"])
                 self.client.post("/api/bits/challenge/forfeit/", {}, format="json")
+
+
+class SessionTimingAndEditTests(APITestCase):
+    """A session belongs to the time it started in; edits can restore what a
+    log did but never add to it."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="operator",
+            email="operator@example.com",
+            password="s3cure-pass-123",
+        )
+        self.client.force_authenticate(user=self.user)
+        UserProfile.objects.update_or_create(
+            user=self.user, defaults={"timezone": "Asia/Tokyo"}
+        )
+        self.math = Category.objects.create(user=self.user, code="MATH", name="Math")
+        self.code = Category.objects.create(user=self.user, code="CODE", name="Code")
+        self.spare = Category.objects.create(user=self.user, code="ART", name="Art")
+        with self._at(2026, 1, 1):
+            StudyLog.objects.create(user=self.user, duration_minutes=60000)
+
+    def _at(self, month_or_year, *rest):
+        parts = (month_or_year, *rest)
+        moment = datetime(*parts, tzinfo=ZoneInfo("Asia/Tokyo"))
+        return mock.patch("django.utils.timezone.now", return_value=moment)
+
+    def _buy(self, item_id, **extra):
+        res = self.client.post(
+            "/api/bits/buy/", {"item_id": item_id, **extra}, format="json"
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+
+    def _log(self, minutes, category=None):
+        return self.client.post(
+            "/api/logs/",
+            {"duration_minutes": minutes, "category": (category or self.math).id},
+            format="json",
+        ).data
+
+    def _edit(self, log, minutes):
+        return self.client.patch(
+            f"/api/logs/{log['id']}/", {"duration_minutes": minutes}, format="json"
+        ).data
+
+    def _shop(self):
+        return self.client.get("/api/bits/").data
+
+    def _hp(self):
+        return self._shop()["active_challenge"]["hp"]
+
+    # Windows
+
+    def test_session_past_the_morning_still_pays_and_keeps_early_bird(self):
+        with self._at(2026, 3, 1, 20):
+            self._buy("early_bird")
+        with self._at(2026, 3, 2, 9, 1):  # studied 07:00-09:01
+            self.assertEqual(self._log(121)["bonus_bits"], 400)
+            self.assertIsNotNone(self._shop()["active_buff"])
+
+    def test_session_after_the_morning_pays_nothing(self):
+        with self._at(2026, 3, 1, 20):
+            self._buy("early_bird")
+        with self._at(2026, 3, 2, 10, 0):  # studied 09:30-10:00
+            self.assertEqual(self._log(30)["bonus_bits"], 0)
+
+    def test_session_past_two_am_stays_on_its_night_rate(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("night_shift")
+        with self._at(2026, 3, 3, 2, 10):  # studied 23:10-02:10
+            self.assertEqual(self._log(180)["bonus_bits"], 300)
+
+    def test_session_started_before_the_purchase_does_not_reach_the_window(self):
+        with self._at(2026, 3, 2, 9, 30):
+            self._buy("early_bird")
+        with self._at(2026, 3, 2, 10, 0):  # 150 min back is 07:30, before buying
+            self.assertEqual(self._log(150)["bonus_bits"], 0)
+
+    def test_session_past_the_last_morning_still_pays(self):
+        with self._at(2026, 3, 2, 6):
+            self._buy("early_bird")
+            self._log(60)
+        with self._at(2026, 3, 3, 6):
+            self._log(60)
+        with self._at(2026, 3, 4, 9, 5):  # expired at 09:00
+            self.assertEqual(self._log(120)["bonus_bits"], 400)
+
+    # Days
+
+    def test_session_past_midnight_counts_for_the_day_it_started(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 4, 0, 30):  # studied 21:30-00:30 on the 3rd
+            self._log(180)
+        with self._at(2026, 3, 4, 12):
+            self.assertIsNotNone(self._shop()["active_buff"])
+
+    def test_log_committed_later_in_the_morning_stays_on_that_day(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 3, 12):
+            self._log(180)
+        with self._at(2026, 3, 4, 9):  # 10h back is yesterday, but it's past 03:00
+            self._log(600)
+        with self._at(2026, 3, 5, 12):
+            self.assertIsNotNone(self._shop()["active_buff"])
+
+    def test_hyperdrive_still_shuts_down_after_the_grace(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 4, 2, 59):
+            self.assertIsNotNone(self._shop()["active_buff"])
+        with self._at(2026, 3, 4, 3, 0):
+            self.assertIsNone(self._shop()["active_buff"])
+
+    def test_contract_last_day_can_be_sealed_after_midnight(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("iron_contract")
+        for day in (3, 4):
+            with self._at(2026, 3, day, 12):
+                self._log(300)
+        with self._at(2026, 3, 6, 0, 30):  # studied 19:30-00:30 on the 5th
+            self.assertEqual(self._log(300)["bonus_bits"], 3000)
+
+    # Buffs that were ended on purpose
+
+    def test_cancelled_buff_pays_nothing_to_a_session_under_way(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self.client.post("/api/bits/cancel/", {}, format="json")
+        with self._at(2026, 3, 2, 12, 30):
+            self.assertEqual(self._log(60)["bonus_bits"], 0)
+
+    def test_burnt_focus_chip_pays_nothing_to_a_session_under_way(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("focus_chip")
+            self._log(5)
+        with self._at(2026, 3, 2, 12, 30):
+            self.assertEqual(self._log(60)["bonus_bits"], 0)
+
+    def test_expired_buff_pays_only_a_session_started_before_the_expiry(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+        with self._at(2026, 3, 3, 12, 30):
+            self.assertEqual(self._log(60)["bonus_bits"], 100)
+        with self._at(2026, 3, 3, 12, 40):
+            self.assertEqual(self._log(30)["bonus_bits"], 0)
+
+    def test_expired_buff_is_out_of_reach_after_the_grace(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+        with self._at(2026, 3, 3, 15, 1):
+            self.assertEqual(self._log(600)["bonus_bits"], 0)
+
+    # Raid edits
+
+    def test_fixing_a_typo_restores_the_raid_hit(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_titan")
+            log = self._log(120)
+            self.assertEqual(self._hp(), 1620)
+            self._edit(log, 12)
+            self.assertEqual(self._hp(), 1788)
+            self._edit(log, 120)
+            self.assertEqual(self._hp(), 1620)
+
+    def test_padding_a_log_adds_no_damage(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_titan")
+            log = self._log(60)
+            self._edit(log, 180)
+            self.assertEqual(self._hp(), 1740)
+
+    def test_a_block_comes_back_only_as_far_as_the_commit(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_golem")
+            short = self._log(30)
+            self._edit(short, 120)
+            self.assertEqual(self._hp(), 1200)  # it bounced off when committed
+            long = self._log(120)
+            self._edit(long, 30)
+            self.assertEqual(self._hp(), 1200)
+            self._edit(long, 120)
+            self.assertEqual(self._hp(), 1020)
+
+    def test_a_restored_hit_can_bring_the_boss_down(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_golem")
+            before = self.client.get("/api/auth/me/").data["bits"]["earned"]
+            logs = [self._log(180) for _ in range(4)]  # 270 each: 1,080
+            first = logs[0]
+            self._edit(first, 60)
+            self.assertEqual(self._log(180)["challenge_hit"]["down"], False)
+            self._edit(first, 180)
+            shop = self._shop()
+            self.assertIsNone(shop["active_challenge"])
+            self.assertEqual(shop["last_challenge"]["outcome"], "down")
+            self.assertEqual(shop["bits"]["payouts"], 1300)
+            self.assertGreater(shop["bits"]["earned"], before)
+
+    # Contract edits
+
+    def test_editing_up_to_the_goal_on_the_last_day_pays_once(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("iron_contract")
+        for day in (3, 4):
+            with self._at(2026, 3, day, 12):
+                self._log(300)
+        with self._at(2026, 3, 5, 12):
+            log = self._log(200)
+            self.assertEqual(self._edit(log, 300)["bonus_bits"], 3000)
+            self.assertEqual(self._edit(log, 320)["bonus_bits"], 3000)
+        self.assertEqual(
+            BitPurchase.objects.get(user=self.user, item_id="iron_contract").bonus_earned,
+            3000,
+        )
+
+    def test_editing_up_before_the_last_day_pays_nothing(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("iron_contract")
+        with self._at(2026, 3, 3, 12):
+            log = self._log(200)
+            self.assertEqual(self._edit(log, 300)["bonus_bits"], 0)
+
+    def test_shortening_a_done_day_still_breaks_the_contract(self):
+        with self._at(2026, 3, 2, 10):
+            self._buy("iron_contract")
+        with self._at(2026, 3, 3, 12):
+            log = self._log(300)
+        with self._at(2026, 3, 4, 12):
+            self._edit(log, 299)
+            self.assertIsNone(self._shop()["active_buff"])
+
+    # HYDRA
+
+    def _hydra(self):
+        self._buy("raid_hydra", categories=[self.math.id, self.code.id])
+
+    def test_a_head_without_its_category_counts_as_slain(self):
+        with self._at(2026, 3, 2, 12):
+            self._hydra()
+            self.assertEqual(self._hp(), 1200)
+            self.client.delete(f"/api/categories/{self.code.id}/")
+            self.assertEqual(self._hp(), 600)
+            for _ in range(2):
+                self._log(180, self.math)
+            res = self._log(60, self.math)
+            self.assertTrue(res["challenge_hit"]["down"])
+            self.assertEqual(self._shop()["bits"]["payouts"], 1500)
+
+    def test_losing_the_last_standing_head_brings_hydra_down(self):
+        with self._at(2026, 3, 2, 12):
+            self._hydra()
+            for _ in range(2):
+                self._log(180, self.math)
+            self._log(60, self.math)
+            self.client.delete(f"/api/categories/{self.code.id}/")
+            shop = self._shop()
+            self.assertIsNone(shop["active_challenge"])
+            self.assertEqual(shop["last_challenge"]["outcome"], "down")
+            self.assertEqual(shop["bits"]["payouts"], 1500)
+
+    def test_a_head_marked_done_comes_back_with_its_category(self):
+        with self._at(2026, 3, 2, 12):
+            self._hydra()
+            self.client.patch(
+                f"/api/categories/{self.code.id}/", {"completed": True}, format="json"
+            )
+            self.assertEqual(self._hp(), 600)
+            self.client.patch(
+                f"/api/categories/{self.code.id}/", {"completed": False}, format="json"
+            )
+            self.assertEqual(self._hp(), 1200)

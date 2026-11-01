@@ -30,7 +30,7 @@ from .economy import (
     buy,
     cancel_buff,
     reset_economy,
-    scale_bonus_on_edit,
+    seal_contract_on_edit,
     shop_state,
 )
 from .furniture import (
@@ -383,9 +383,10 @@ class StudyLogViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         old_minutes = serializer.instance.duration_minutes
         log = serializer.save()
-        scale_bonus_on_edit(log, old_minutes)
-        if log.duration_minutes < old_minutes:
-            challenges.on_log_shortened(log)
+        if log.duration_minutes != old_minutes:
+            challenges.on_log_edited(log)
+        if log.duration_minutes > old_minutes:
+            seal_contract_on_edit(log)
 
     def perform_destroy(self, instance):
         challenges.on_log_deleted(instance)

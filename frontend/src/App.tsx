@@ -2231,7 +2231,6 @@ export default function App() {
                 durationMinutes: updatedDuration,
                 durationHours: +(updatedDuration / 60).toFixed(2),
                 topic: '',
-                // The server trims a buff bonus when a log is shortened.
                 bonusBits: updated.bonus_bits ?? l.bonusBits,
                 bonusItem: updated.bonus_item ?? l.bonusItem,
               }
@@ -2239,6 +2238,8 @@ export default function App() {
         )
       );
       setEditingLogId(null);
+      // An edit can move the running buff or challenge (and settle a raid).
+      refreshActiveBuff();
     } catch (err: unknown) {
       const error = err as Error;
       alert(tf(t.errUpdateLog, { msg: error.message }));
@@ -2377,6 +2378,8 @@ export default function App() {
       await api.categories.delete(id);
       const remaining = categories.filter((c) => c.id !== id);
       setCategories(remaining);
+      // HYDRA: a head goes with its category.
+      refreshActiveBuff();
 
       if (String(editingCatId) === String(id)) {
         setEditingCatId(null);
@@ -2413,6 +2416,8 @@ export default function App() {
       setCategories((prev) =>
         prev.map((c) => (String(c.id) === String(cat.id) ? { ...c, completedAt } : c))
       );
+      // HYDRA: a head goes with its category.
+      refreshActiveBuff();
       if (String(editingCatId) === String(cat.id)) setEditingCatId(null);
 
       if (done) {
