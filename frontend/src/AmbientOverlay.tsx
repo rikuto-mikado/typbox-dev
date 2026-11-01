@@ -14,27 +14,15 @@ import type { KeepAwakeMode } from './keepAwake';
 interface AmbientOverlayProps {
   themeId: string;
   dimAlpha: number;
-  /** Elapsed-time readout; omitted when the user turned it off. */
-  clock?: { main: string; sub?: string } | null;
   /** Preview: sits above modals and exits on click / key. */
   preview?: boolean;
   onExit?: () => void;
 }
 
-// The readout drifts to a new spot every minute so a long session never
-// burns the same pixels on an OLED panel.
-const DRIFT_MS = 60_000;
-const randomSpot = () => ({ x: 22 + Math.random() * 56, y: 25 + Math.random() * 50 });
-
-export const AmbientOverlay: React.FC<AmbientOverlayProps> = ({ themeId, dimAlpha, clock, preview, onExit }) => {
+export const AmbientOverlay: React.FC<AmbientOverlayProps> = ({ themeId, dimAlpha, preview, onExit }) => {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useAmbientCanvas(canvasRef, themeId, { fullscreen: true, animate: true });
-  const [spot, setSpot] = useState(randomSpot);
-  useEffect(() => {
-    const id = window.setInterval(() => setSpot(randomSpot()), DRIFT_MS);
-    return () => window.clearInterval(id);
-  }, []);
 
   useEffect(() => {
     if (!preview || !onExit) return;
@@ -54,19 +42,8 @@ export const AmbientOverlay: React.FC<AmbientOverlayProps> = ({ themeId, dimAlph
     <div className={`fixed inset-0 ${preview ? 'z-[80] bg-zinc-950' : 'z-30 pointer-events-none'} transition-opacity duration-1000`} aria-hidden={!preview}>
       <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${dimAlpha})` }} />
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-      {/* Screen sleep is already held off by the Wake Lock API (see
-          useKeepAwake); this readout drifting to a new spot each minute is
-          purely OLED burn-in hygiene, so it's kept almost invisible rather
-          than a bright, eye-catching overlay. */}
-      {clock && (
-        <div
-          className="absolute -translate-x-1/2 -translate-y-1/2 text-center font-mono text-white pointer-events-none"
-          style={{ left: `${spot.x}%`, top: `${spot.y}%`, transition: 'left 4s ease-in-out, top 4s ease-in-out' }}
-        >
-          <div className="text-2xl sm:text-3xl font-light tabular-nums tracking-wider opacity-[0.07]">{clock.main}</div>
-          {clock.sub && <div className="mt-1 text-[9px] uppercase tracking-[0.35em] opacity-[0.05]">{clock.sub}</div>}
-        </div>
-      )}
+      {/* No digital readout: every scene is an ORBITAL CLOCK that shows the
+          time itself, and its orbit center drifts against OLED burn-in. */}
       {preview && (
         <div className="absolute bottom-6 inset-x-0 text-center font-mono text-[10px] uppercase tracking-widest text-white/60 pointer-events-none">
           {t.ambientPreviewExit}
@@ -96,8 +73,6 @@ interface AmbientSettingsPanelProps {
   onSelect: (id: string) => void;
   onPreview: (id: string) => void;
   progress: ChronoProgress;
-  showClock: boolean;
-  onToggleClock: () => void;
   dim: AmbientDim;
   onChangeDim: (dim: AmbientDim) => void;
   keepAwakeMode: KeepAwakeMode;
@@ -110,8 +85,6 @@ export const AmbientSettingsPanel: React.FC<AmbientSettingsPanelProps> = ({
   onSelect,
   onPreview,
   progress,
-  showClock,
-  onToggleClock,
   dim,
   onChangeDim,
   keepAwakeMode,
@@ -143,12 +116,6 @@ export const AmbientSettingsPanel: React.FC<AmbientSettingsPanelProps> = ({
 
       <div className={`p-2.5 border ${borderCol} space-y-2.5`}>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] uppercase">
-          <span className="flex items-center gap-1.5">
-            <span className={textMuted}>{t.ambientClockLabel}</span>
-            <button type="button" onClick={onToggleClock} className={chip(showClock)} aria-pressed={showClock}>
-              {showClock ? 'ON' : 'OFF'}
-            </button>
-          </span>
           <span className="flex items-center gap-1.5">
             <span className={textMuted}>{t.ambientDimLabel}</span>
             <span className="flex gap-1">

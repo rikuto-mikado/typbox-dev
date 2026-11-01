@@ -434,6 +434,184 @@ const SLOT_ROOMS: ShowcaseRoom[] = [
 
 export const NEWS_ARTICLES: NewsArticle[] = [
   {
+    id: 'challenges',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'CHALLENGES: boss raids and rivals',
+    lede: 'A second slot opens next to your buff. Fight a boss with your study hours, or take on a rival who studies on their own schedule, and see what they are doing right now.',
+    blocks: [
+      { type: 'figure', kind: 'challenges', caption: 'A raid boss taking hits, and the three rivals at their desks (or not).' },
+      {
+        type: 'stats',
+        items: [
+          ['Bosses', '6'],
+          ['Rivals', '6'],
+          ['Runs with a buff', 'Yes · one challenge at a time'],
+        ],
+      },
+      { type: 'h', text: 'BOSS RAID' },
+      {
+        type: 'p',
+        text: 'Pay the entry fee and a boss appears. Every log you commit hits it for its minutes (up to 3 hours of one log), and a log of 90 minutes or more is a critical for ×1.5. Bring it down before its days run out and the loot is yours; if it gets away, you still get a share for the damage you dealt. HYDRA asks you to pick the two or three categories that become its heads.',
+      },
+      {
+        type: 'list',
+        items: [
+          'GOLEM: logs under 60 minutes bounce off.',
+          'NIGHTMARE: heals an hour at every midnight.',
+          'HYDRA: one head per category, and a log only hits its own head.',
+          'WARDEN: heals two hours after a full day without a log.',
+          'PHANTOM: dodges one hit in four.',
+          'TITAN: 30 hours of HP, a week to bring it down, and loot to match.',
+        ],
+      },
+      { type: 'h', text: 'RIVAL' },
+      {
+        type: 'p',
+        text: 'A 72-hour duel that starts the moment you buy it, just like a raid. Six rivals, six ways of studying: ORION every morning, NOVA through the night, RUSH little all week and then the whole weekend (so RUSH\'s prize follows the hours the duel will cover), KAI in 25-minute blocks all day, MIKA on the train to and from work (the easy one), and ACE, eight hours a day, every day (the hard one). Each keeps a real daily schedule: open the duel any time to see whether they are studying, on a break or asleep, and the race between their hours and yours. The hours still to come stay under fog. Win and you take the prize; a tie gives the entry fee back.',
+      },
+      {
+        type: 'p',
+        text: 'Find both under CHALLENGES in the BITS // EXCHANGE. Giving up ends a challenge at once and refunds nothing.',
+      },
+    ],
+  },
+  {
+    id: 'buff-guide',
+    date: 'EARLY NOV 2026',
+    tag: 'GUIDE',
+    title: 'Which buff fits the way you study?',
+    lede: 'Fourteen buffs, and no single best one: each pays most for a different way of studying. Find the line that sounds like you, then see which CHALLENGE to run next to it. (Numbers as of November 2026; "pays back" is the most a buff can return, as a multiple of its price.)',
+    blocks: [
+      { type: 'figure', kind: 'buffguide', caption: 'Every buff by how much it can pay back and what you stand to lose. Pick a study style to see what fits.' },
+      {
+        type: 'stats',
+        items: [
+          ['IRON CONTRACT', '2.0×'],
+          ['DEEP DIVE', '1.87×'],
+          ['NIGHT SHIFT · EARLY BIRD · FOCUS CHIP', '1.5×'],
+          ['HYPERDRIVE · CATEGORY LOCK · LUNAR TIDE', '1.33–1.39×'],
+          ['WARM-UP · OVERCLOCK · STORM RUNNER · WEEKEND SURGE', '1.2–1.25×'],
+          ['LUCKY BYTE · MYSTERY CRATE', 'Luck'],
+        ],
+      },
+      { type: 'h', text: 'You put in 5+ hours every day' },
+      {
+        type: 'p',
+        text: 'IRON CONTRACT (1,500) is the best return in the shop: three calendar days of 5 hours each, starting the midnight after you sign, and the log that completes day 3 pays +3,000. Miss one day and the stake is gone, and cancelling refunds nothing. Only sign when the next three days are clear.',
+      },
+      { type: 'h', text: 'You study in long sittings' },
+      {
+        type: 'p',
+        text: 'DEEP DIVE (1,500) pays by the length of a single log: 2h +250, 3h +450, 4h +700, up to four logs (+2,800). Shorter logs neither pay nor use anything up, so there is nothing to lose by mixing them in. HYPERDRIVE (1,800) also suits long days, but it needs 3 hours on every full day it runs and returns less.',
+      },
+      { type: 'h', text: 'You keep a fixed rhythm' },
+      {
+        type: 'list',
+        items: [
+          'Night owl: NIGHT SHIFT (900). Logs committed 22:00–02:00 earn +100, then +150, then +200 BITS/h on back-to-back nights, up to 3 hours a night (+1,350). Skipping a night only drops the rate back to +100.',
+          'Early riser: EARLY BIRD (800). Logs committed 05:00–09:00 earn +200 BITS/h, 2 hours a morning, three mornings (+1,200). A morning with no log ends it. Bought before 09:00, today is the first morning, so buy it the evening before rather than at 08:30.',
+        ],
+      },
+      { type: 'h', text: 'You work in 50-minute blocks' },
+      {
+        type: 'p',
+        text: 'FOCUS CHIP (800) pays +100 for each log of 50 minutes or more, up to 12 (+1,200). A log of 25–49 minutes pays nothing and costs nothing, but a single log under 25 minutes burns the chip out. The stopwatch rounds to the nearest minute, so 49:30 counts as 50 and 49:29 does not. Skip it on days you log lots of short sessions.',
+      },
+      { type: 'h', text: 'You have one exam to focus on' },
+      {
+        type: 'p',
+        text: 'CATEGORY LOCK (900) doubles one category you pick for 72 hours, up to 12 hours (+1,200). Logs in other categories simply earn the usual rate and never end it.',
+      },
+      { type: 'h', text: 'A lighter week, or your first buff' },
+      {
+        type: 'p',
+        text: 'WARM-UP (400) is the safest: ×2 on 5 hours spread over 48 hours (+500). OVERCLOCK (800) is the same ×2 squeezed into 24 hours, up to 10 hours (+1,000); only worth it on a day you can actually study ten.',
+      },
+      { type: 'h', text: 'Timing and luck' },
+      {
+        type: 'list',
+        items: [
+          'LUNAR TIDE (900): the rate follows the moon at the moment each log is committed, from +100 BITS/h at full moon to almost nothing at new moon, and dim-moon logs still use up its 12 hours. Check MOON NOW on the card and buy it in the days before a full moon.',
+          'STORM RUNNER (800): pays on logs committed in rain, snow, a storm or below 0°C, for 5 days. The weather is read at commit time from the CHRONOMETER readout, which uses your time zone\'s city unless you switch on PRECISE LOCATION in the weather settings. In a snowy winter that can make it pay on most logs.',
+          'WEEKEND SURGE (1,000): +50 BITS/h over Saturday and Sunday. It needs 20 hours of weekend study just to break even; buy it for a weekend you plan to spend at the desk.',
+          'LUCKY BYTE (1,000): each log has a 1-in-5 chance to pay triple. On average that is +40% of each log\'s base BITS (the first 3 hours of it count), on up to 20 logs; even very short logs use one up. It breaks even at about 25 hours of logs in its 72 hours, and pays well above that if you log long sessions.',
+          'MYSTERY CRATE (700): better than it looks. 80% of rolls are a buff that costs more than 700, and the average roll is worth 822 at shop prices. It never rolls CATEGORY LOCK, STORM RUNNER, LUNAR TIDE or IRON CONTRACT.',
+        ],
+      },
+      { type: 'h', text: 'Pair it with a challenge' },
+      { type: 'figure', kind: 'pairs', caption: 'A buff and a challenge for each way of studying, with the most the two can add up to together, and the pair to skip.' },
+      {
+        type: 'p',
+        text: 'A buff and a CHALLENGE (a BOSS RAID or a RIVAL duel) run side by side, one of each, and every log you commit counts for both: the buff pays its bonus and the same minutes hit the boss or add to your side of the duel. The best pairs are the ones that reward the same habit twice.',
+      },
+      {
+        type: 'stats',
+        items: [
+          ['Raids · net', '+500 – +1,500'],
+          ['Duels · net', '+400 – +1,800'],
+          ['At once', '1 buff + 1 challenge'],
+        ],
+      },
+      {
+        type: 'list',
+        items: [
+          '5+ hours every day: IRON CONTRACT + ORION (~13.5h over the 72 hours, +800), or ACE (~24h, +1,800) if you really mean it. Buy the duel around midnight so its 72 hours line up with the contract\'s three days. The riskiest pair in the shop: one short day and you likely lose both.',
+          'Long sittings: DEEP DIVE + GOLEM, or TITAN for the long haul. A 4-hour log earns DEEP DIVE\'s +700 and hits for 270 (3 hours counted, ×1.5 critical), and GOLEM ignores exactly the short logs you were not going to commit anyway.',
+          'Night owl: NIGHT SHIFT + NOVA. You study when NOVA does, so the duel stays close every night. Skip NIGHTMARE: it heals at midnight, right in the middle of your hours.',
+          'Early riser: EARLY BIRD + ORION, the other morning person (~4.5h a day). Get your two morning hours in before ORION finishes the first block.',
+          '50-minute blocks: FOCUS CHIP + KAI. KAI works in 25-minute pomodoros all day (~12.5h over the duel); you keep committing 50-minute logs. Do not copy KAI\'s 25-minute logs: under 25 minutes burns the chip out.',
+          'One exam: CATEGORY LOCK + WARDEN or GOLEM. Not HYDRA: its heads want two or three categories, while the lock pays on one.',
+          'A lighter week, or a first try: WARM-UP + MIKA. MIKA studies on the train (~5.5h over the duel), the cheapest duel at 400.',
+          'Weekends: WEEKEND SURGE + RUSH, bought on Thursday or Friday so the duel covers the weekend. RUSH crams it too, but RUSH\'s prize grows with those hours.',
+          'Luck: LUCKY BYTE or MYSTERY CRATE + PHANTOM, if you like your odds twice: PHANTOM dodges one hit in four.',
+        ],
+      },
+      { type: 'h', text: 'Rules that apply to every buff' },
+      {
+        type: 'list',
+        items: [
+          'Hour-based buffs count at most 3 hours of any one log. A 5-hour log earns the bonus on 3 of them.',
+          'Windows go by when a log is committed, not the date it is filed under: entering last night\'s session the next afternoon will not count for NIGHT SHIFT.',
+          'A buff that fails its condition (EARLY BIRD, HYPERDRIVE, FOCUS CHIP, IRON CONTRACT) ends on the spot and whatever was left of it is lost. Cancelling instead refunds two thirds of the unused part (IRON CONTRACT excepted).',
+          'Deleting a log takes its bonus back, but the hours or uses it spent are not returned to the buff. A deleted log takes its hit off a raid boss too.',
+          'Challenges count at most 3 hours of one log against a boss; a duel counts every minute you commit inside its 72 hours.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'shop-rotation',
+    date: 'EARLY NOV 2026',
+    tag: 'MY ROOM',
+    title: 'The furniture shop turns over faster',
+    lede: 'A whole week was a long wait for twelve pieces. Small pieces now change every day and medium ones every two days, while large and featured pieces still stay a week, so there is time to save up for them. And one piece can be put on hold.',
+    blocks: [
+      {
+        type: 'stats',
+        items: [
+          ['Small ×5', 'Daily'],
+          ['Medium ×4', 'Every 2 days'],
+          ['Large ×2 · Featured ×1', 'Weekly'],
+        ],
+      },
+      { type: 'h', text: 'How the lineup works' },
+      {
+        type: 'list',
+        items: [
+          'Every lineup changes at midnight in your time zone, and everyone on the same date sees the same pieces.',
+          'Each tier deals its designs out from a shuffled deck, so a design never comes back until the rest of its tier has been shown: small pieces return within about a month, medium within about three, large and featured within about eight.',
+          'One of each piece to own, as before.',
+        ],
+      },
+      { type: 'h', text: 'RESERVE' },
+      {
+        type: 'p',
+        text: 'Tap RESERVE on any piece in the lineup to put it on hold. It stays buyable after it rotates out, until you buy it or release it. One piece at a time: reserving another replaces the hold, and the shop asks for a second tap before dropping one that has already left the lineup.',
+      },
+    ],
+  },
+  {
     id: 'buffs-rework',
     date: 'EARLY NOV 2026',
     tag: 'BALANCE',
@@ -545,7 +723,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
     title: 'IRON CONTRACT, STORM RUNNER and LUNAR TIDE',
     lede: 'Three new buffs: a hardcore three-day contract that pays double or keeps your stake, one that pays when the weather turns, and one that follows the moon.',
     blocks: [
-      { type: 'figure', kind: 'newbuffs', caption: 'The three new buffs, and an IRON CONTRACT filling its three days.' },
+      { type: 'figure', kind: 'newbuffs', caption: 'Each new buff with its rule at work: IRON CONTRACT\'s three days, STORM RUNNER reading the weather, LUNAR TIDE following the moon.' },
       { type: 'h', text: 'IRON CONTRACT · 1,500' },
       {
         type: 'list',

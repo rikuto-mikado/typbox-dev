@@ -201,7 +201,7 @@ Kinds: CHESS 12 (rook (default), pawn, knight, bishop, queen, king, plus a NOIR 
 
 `PROFILE` · `APPEARANCE` (02.1 SURFACE · 02.2 TYPE · 02.3 AMBIENT · 02.4 CURSOR) · `CLEARANCE` · `SECURITY` · `DATA`
 
-Preferences (theme, chronometer face, font, weather style/unit/visibility, surface FX, ambient scene/clock/dim, cursor, statuses) sync to the server via the user profile, so they follow the account across devices.
+Preferences (theme, chronometer face, font, weather style/unit/visibility, surface FX, ambient scene/dim, cursor, statuses) sync to the server via the user profile, so they follow the account across devices.
 
 ---
 
@@ -225,7 +225,7 @@ Preferences (theme, chronometer face, font, weather style/unit/visibility, surfa
 
 ### 7.2 Ambient overlay (23 scenes)
 
-- Full-screen canvas scene with an optional clock and 5 dim levels (from NONE upward).
+- Full-screen canvas scene with 5 dim levels (from NONE upward); no digital readout, since every scene is itself a clock.
 - Every scene is a variation on **ORBITAL CLOCK**: three planets on concentric orbits tracking the real hour, minute and second, each with a progress arc from 12 o'clock. One orbital engine (`ambientThemes.ts`) owns the clock math and layout; the orbit center drifts slowly so a long session never burns the same pixels into an OLED panel.
 - Scenes: accretion disk, rain orbit, frost orbit, star chart, firefly orbit, bubble orrery, sakura orbit, ember orbit, glyph orbit, constellation orbit, aurora orbit, ripple clock, synthwave orbit, comet clock, lava orbit, vector scope, autumn orbit, warp orbit, lantern orbit, galactic orbit, code orbit, orbital clock, prism orbit.
 - Keeps the screen awake while shown.

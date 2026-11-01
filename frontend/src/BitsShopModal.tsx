@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Home, Loader2, Zap } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap } from 'lucide-react';
 import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState } from './api';
 import { BITS_PER_HOUR } from './bits';
 import { BitShard, StudyTime } from './BitsBadge';
@@ -7,9 +7,11 @@ import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
 import { thumbnail, TIER_LABEL, type FurnitureSpec } from './roomRender';
+import { ChallengesTab } from './ChallengePanel';
+import { CategoryChips } from './CategoryChips';
 
 // BITS // EXCHANGE, opened from the header balance (or MY ROOM): buffs and
-// the weekly furniture lineup. Catalogs, prices, the running buff and the
+// the furniture lineup. Catalogs, prices, the running buff and the
 // lineup come from the server (economy.py / furniture.py); one buff runs at
 // a time. BUY takes two taps (arm, then confirm) so a stray tap never spends.
 // Each buff has a pixel icon and an accent colour (buffArt.ts).
@@ -20,7 +22,7 @@ const SPLASH_MS = 1700;
 const CRATE_SHAKE_MS = 1000;
 const BAR_CELLS = 20;
 
-export type ShopTab = 'buffs' | 'furniture';
+export type ShopTab = 'buffs' | 'furniture' | 'challenges';
 
 interface BitsShopModalProps {
   isOpen: boolean;
@@ -304,7 +306,14 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const [splash, setSplash] = useState<Splash | null>(null);
   const [crateOpen, setCrateOpen] = useState(false);
   const [lockCategory, setLockCategory] = useState<string>('');
+  // HYDRA's heads as picked in the CHALLENGES tab (null = the suggestion).
+  const [hydraPick, setHydraPick] = useState<string[] | null>(null);
+  // Furniture reserve: the piece a request is in flight for, and the one
+  // armed for a second tap (replacing a hold that has left the lineup).
+  const [reserving, setReserving] = useState<string | null>(null);
+  const [reserveArmed, setReserveArmed] = useState<string | null>(null);
   const armTimer = useRef<number | null>(null);
+  const reserveTimer = useRef<number | null>(null);
   const splashTimers = useRef<number[]>([]);
 
   useEffect(() => {
@@ -342,10 +351,36 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   useEffect(
     () => () => {
       if (armTimer.current !== null) window.clearTimeout(armTimer.current);
+      if (reserveTimer.current !== null) window.clearTimeout(reserveTimer.current);
       splashTimers.current.forEach((id) => window.clearTimeout(id));
     },
     []
   );
+
+  // Keeps the lineup countdowns moving while the shop is open, and fetches
+  // the next lineup as soon as one of its groups turns over.
+  const lineupResetsAt = room?.weekly.resets_at;
+  useEffect(() => {
+    if (!isOpen) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 30_000);
+    let turnover: number | undefined;
+    if (lineupResetsAt) {
+      const ms = new Date(lineupResetsAt).getTime() - Date.now();
+      turnover = window.setTimeout(() => {
+        api.room
+          .get()
+          .then((r) => {
+            setRoom(r);
+            setNow(Date.now());
+          })
+          .catch(() => {});
+      }, Math.min(Math.max(1_000, ms + 1_000), 2_000_000_000));
+    }
+    return () => {
+      window.clearInterval(tick);
+      if (turnover !== undefined) window.clearTimeout(turnover);
+    };
+  }, [isOpen, lineupResetsAt]);
 
   if (!isOpen) return null;
 
@@ -388,6 +423,17 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     }
   };
 
+  const handleForfeitChallenge = async () => {
+    setBuyError(null);
+    try {
+      const next = await api.bits.forfeitChallenge();
+      setState(next);
+      onPurchased(next);
+    } catch (err: unknown) {
+      setBuyError((err as Error).message || t.chForfeitFailed);
+    }
+  };
+
   const handleBuy = async (itemId: string) => {
     setCancelNotice(null);
     if (armed !== itemId) {
@@ -401,11 +447,18 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     setBuying(itemId);
     try {
       const offer = state?.buffs.find((b) => b.item_id === itemId);
-      const next = await api.bits.buy(itemId, offer?.needs_category ? lockTarget?.id : undefined);
+      const hydra = state?.challenges?.raids.find((r) => r.item_id === itemId && r.heads);
+      const next = await api.bits.buy(
+        itemId,
+        offer?.needs_category ? lockTarget?.id : undefined,
+        hydra ? hydraPick ?? (hydra.suggested ?? []).map(String) : undefined
+      );
       setState(next);
       onPurchased(next);
       const piece = furnitureById.get(itemId);
-      if (piece) {
+      if (itemId.startsWith('raid_') || itemId.startsWith('rival_')) {
+        // A challenge shows up as the running card at the top of its tab.
+      } else if (piece) {
         setRoom(await api.room.get());
         showSplash({ kind: 'piece', spec: piece }, true);
       } else {
@@ -426,6 +479,80 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     } finally {
       setBuying(null);
     }
+  };
+
+  const lineup = room?.weekly ?? null;
+  const reserve = lineup?.reserve ?? null;
+  const reserveGone = Boolean(reserve && lineup && !lineup.items.includes(reserve));
+  // One section per turnover rate (weekly, every 2 days, daily); an older
+  // server without groups shows its single lineup.
+  const shopSections: Array<{ every: number; items: string[]; resetsAt: string }> = !lineup
+    ? []
+    : lineup.groups?.length
+    ? [7, 2, 1]
+        .map((every) => lineup.groups!.filter((g) => g.every_days === every))
+        .filter((groups) => groups.length > 0)
+        .map((groups) => ({
+          every: groups[0].every_days,
+          items: groups.flatMap((g) => g.items),
+          resetsAt: groups[0].resets_at,
+        }))
+    : [{ every: 0, items: lineup.items, resetsAt: lineup.resets_at }];
+  const everyLabel = (every: number) =>
+    every === 1 ? t.bitsShopEvery1 : every === 2 ? t.bitsShopEvery2 : t.bitsShopEvery7;
+
+  const handleReserve = async (itemId: string | null) => {
+    setCancelNotice(null);
+    // Taking a new piece drops a hold that has already left the lineup for
+    // good (until it comes round again): ask for a second tap first.
+    if (itemId && reserveGone && reserveArmed !== itemId) {
+      setReserveArmed(itemId);
+      if (reserveTimer.current !== null) window.clearTimeout(reserveTimer.current);
+      reserveTimer.current = window.setTimeout(() => setReserveArmed(null), CONFIRM_WINDOW_MS);
+      return;
+    }
+    setReserveArmed(null);
+    setReserving(itemId ?? reserve);
+    setBuyError(null);
+    try {
+      setRoom(await api.room.reserve(itemId));
+    } catch (err: unknown) {
+      setBuyError((err as Error).message || t.bitsReserveFailed);
+    } finally {
+      setReserving(null);
+    }
+  };
+
+  const reserveButton = (itemId: string) => {
+    const held = reserve === itemId;
+    const isArmed = reserveArmed === itemId;
+    return (
+      <button
+        type="button"
+        onClick={() => handleReserve(held ? null : itemId)}
+        disabled={reserving !== null}
+        title={held ? undefined : t.bitsReserveTitle}
+        aria-pressed={held}
+        className={`py-1 border text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-colors ${
+          reserving !== null ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+        } ${
+          held
+            ? 'border-sky-500/70 text-sky-400 hover:border-rose-500/60 hover:text-rose-400'
+            : isArmed
+            ? 'border-sky-500 bg-sky-500 text-zinc-950'
+            : `${borderCol} ${textMuted} hover:text-sky-400 hover:border-sky-500/60`
+        }`}
+      >
+        {reserving === itemId ? (
+          <Loader2 className="w-3 h-3 animate-spin" />
+        ) : held ? (
+          <BookmarkCheck className="w-3 h-3" />
+        ) : (
+          <Bookmark className="w-3 h-3" />
+        )}
+        {held ? t.bitsUnreserve : isArmed ? t.bitsReserveReplace : t.bitsReserve}
+      </button>
+    );
   };
 
   const buyButton = (itemId: string, price: number, blockedLabel: string | null, accent = '#fbbf24') => {
@@ -460,6 +587,71 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           t.bitsBuy
         )}
       </button>
+    );
+  };
+
+  /** One furniture card: its sprite on a little stage, price, BUY and RESERVE. */
+  const renderPiece = (id: string) => {
+    const spec = furnitureById.get(id);
+    if (!spec || !room) return null;
+    const owned = room.inventory[id] ?? 0;
+    const featured = spec.tier === 4;
+    const held = reserve === id;
+    // Integer zoom keeps the sprite's pixels square.
+    const zoom = Math.max(1, Math.min(4, Math.floor(72 / (Math.max(spec.w, spec.h) * 8))));
+    return (
+      <div
+        key={id}
+        className={`relative p-2 border flex flex-col gap-1.5 ${
+          held ? 'border-sky-500/70' : featured ? 'border-amber-500/70 shop-featured' : borderCol
+        }`}
+      >
+        {/* A little stage: back wall, floor line, the piece standing on it. */}
+        <div
+          className={`relative h-24 flex items-end justify-center border ${borderCol} overflow-hidden`}
+          style={{
+            background: isDark
+              ? 'linear-gradient(#232327 0 72%, #1a1a1d 72%)'
+              : 'linear-gradient(#f4f4f5 0 72%, #e4e4e7 72%)',
+          }}
+        >
+          <img
+            src={thumbnail(spec)}
+            alt=""
+            className={`relative mb-[7%] ${owned > 0 ? 'opacity-45' : ''}`}
+            style={{ imageRendering: 'pixelated', width: spec.w * 8 * zoom, height: spec.h * 8 * zoom }}
+          />
+          {owned > 0 && (
+            <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500 text-zinc-950 text-[9px] font-bold -rotate-6">
+              <Check className="w-3 h-3" />
+              {t.bitsOwned}
+            </span>
+          )}
+          {held && owned === 0 && (
+            <span className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-sky-500 text-zinc-950 text-[9px] font-bold">
+              <BookmarkCheck className="w-3 h-3" />
+              {t.bitsReserved}
+            </span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold truncate">{spec.name}</div>
+          <div className={`text-[9px] ${featured ? 'text-amber-400 font-bold' : textMuted}`}>
+            {TIER_LABEL[spec.tier]} · {spec.w}×{spec.h}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-1 tabular-nums text-[11px]">
+          <span className="flex items-center gap-1 font-bold self-center">
+            <BitShard className="w-2.5 h-2.5" />
+            {fmt(spec.price)}
+          </span>
+          <StudyTime bits={spec.price} className={textMuted} />
+        </div>
+        {/* One of each piece: owned ones can't be bought again. */}
+        {buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)}
+        {/* Older servers (one weekly lineup, no groups) have no reserve. */}
+        {owned === 0 && lineup?.groups && reserveButton(id)}
+      </div>
     );
   };
 
@@ -504,10 +696,11 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             <div className={`text-[10px] ${textMuted}`}>{tf(t.bitsRate, { n: BITS_PER_HOUR })}</div>
           </div>
 
-          <div className={`grid grid-cols-2 border-l border-t ${borderCol} text-[10px] uppercase tracking-wider`} role="tablist">
+          <div className={`grid grid-cols-3 border-l border-t ${borderCol} text-[10px] uppercase tracking-wider`} role="tablist">
             {(
               [
                 ['buffs', t.bitsTabBuffs],
+                ['challenges', t.chTab],
                 ['furniture', t.bitsTabFurniture],
               ] as Array<[ShopTab, string]>
             ).map(([id, label]) => (
@@ -529,10 +722,10 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
 
         <div className="flex-1 min-h-0 overflow-y-auto mt-4 space-y-4 pr-1">
           {tab === 'furniture' && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[10px] uppercase tracking-wider text-amber-400">
-                  {room ? tf(t.bitsWeeklyResets, { t: formatLeft(new Date(room.weekly.resets_at).getTime() - now) }) : ''}
+                  {lineup ? tf(t.bitsWeeklyResets, { t: formatLeft(new Date(lineup.resets_at).getTime() - now) }) : ''}
                 </span>
                 <button
                   type="button"
@@ -548,67 +741,52 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                   <Loader2 className="w-4 h-4 animate-spin" />
                 </div>
               )}
-              {room && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {room.weekly.items.map((id) => {
-                    const spec = furnitureById.get(id);
-                    if (!spec) return null;
-                    const owned = room.inventory[id] ?? 0;
-                    const featured = spec.tier === 4;
-                    // Integer zoom keeps the sprite's pixels square.
-                    const zoom = Math.max(1, Math.min(4, Math.floor(72 / (Math.max(spec.w, spec.h) * 8))));
-                    return (
-                      <div
-                        key={id}
-                        className={`relative p-2 border flex flex-col gap-1.5 ${
-                          featured ? 'border-amber-500/70 shop-featured' : borderCol
-                        }`}
-                      >
-                        {/* A little stage: back wall, floor line, the piece standing on it. */}
-                        <div
-                          className={`relative h-24 flex items-end justify-center border ${borderCol} overflow-hidden`}
-                          style={{
-                            background: isDark
-                              ? 'linear-gradient(#232327 0 72%, #1a1a1d 72%)'
-                              : 'linear-gradient(#f4f4f5 0 72%, #e4e4e7 72%)',
-                          }}
-                        >
-                          <img
-                            src={thumbnail(spec)}
-                            alt=""
-                            className={`relative mb-[7%] ${owned > 0 ? 'opacity-45' : ''}`}
-                            style={{ imageRendering: 'pixelated', width: spec.w * 8 * zoom, height: spec.h * 8 * zoom }}
-                          />
-                          {owned > 0 && (
-                            <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500 text-zinc-950 text-[9px] font-bold -rotate-6">
-                              <Check className="w-3 h-3" />
-                              {t.bitsOwned}
-                            </span>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-[10px] font-bold truncate">{spec.name}</div>
-                          <div className={`text-[9px] ${featured ? 'text-amber-400 font-bold' : textMuted}`}>
-                            {TIER_LABEL[spec.tier]} · {spec.w}×{spec.h}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-baseline gap-x-1 tabular-nums text-[11px]">
-                          <span className="flex items-center gap-1 font-bold self-center">
-                            <BitShard className="w-2.5 h-2.5" />
-                            {fmt(spec.price)}
-                          </span>
-                          <StudyTime bits={spec.price} className={textMuted} />
-                        </div>
-                        {/* One of each piece: owned ones can't be bought again. */}
-                        {buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)}
-                      </div>
-                    );
-                  })}
+              {room && reserve && reserveGone && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                    {t.bitsReserveHeading}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{renderPiece(reserve)}</div>
+                  <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsReserveGone}</p>
                 </div>
               )}
+              {room &&
+                shopSections.map((section) => (
+                  <div key={section.every} className="space-y-1.5">
+                    {section.every > 0 && (
+                      <div className="flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-wider">
+                        <span className="font-bold">{everyLabel(section.every)}</span>
+                        <span className={`tabular-nums ${textMuted}`}>
+                          {tf(t.bitsShopNewIn, { t: formatLeft(new Date(section.resetsAt).getTime() - now) })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {section.items.map((id) => renderPiece(id))}
+                    </div>
+                  </div>
+                ))}
               {buyError && <div className="p-2 border border-rose-500/40 text-rose-400 text-[10px]">{buyError}</div>}
               <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsWeeklyHint}</p>
             </div>
+          )}
+
+          {tab === 'challenges' && (
+            <>
+              <ChallengesTab
+                state={state}
+                loadError={loadError}
+                categories={categories}
+                hydraPick={hydraPick}
+                onHydraPick={setHydraPick}
+                buyButton={buyButton}
+                onForfeit={handleForfeitChallenge}
+                borderCol={borderCol}
+                textMuted={textMuted}
+              />
+              {buyError && <div className="p-2 border border-rose-500/40 text-rose-400 text-[10px]">{buyError}</div>}
+            </>
           )}
 
           {tab === 'buffs' && (
@@ -729,25 +907,22 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                             </div>
                           )}
                           {buff.needs_category && (
-                            <label className="flex items-center gap-2 text-[10px]">
-                              <span className={`shrink-0 uppercase tracking-wider text-[8px] ${textMuted}`}>{t.bitsLockedTo}</span>
+                            <div className="space-y-1 text-[10px]">
+                              <span className={`block uppercase tracking-wider text-[8px] ${textMuted}`}>{t.bitsLockedTo}</span>
                               {categories.length > 0 ? (
-                                <select
-                                  value={lockTarget ? String(lockTarget.id) : ''}
-                                  onChange={(e) => setLockCategory(e.target.value)}
+                                <CategoryChips
+                                  categories={categories}
+                                  selected={lockTarget ? [String(lockTarget.id)] : []}
+                                  onToggle={(id) => setLockCategory(id)}
                                   disabled={busy}
-                                  className={`min-w-0 flex-1 px-1.5 py-1 border ${borderCol} bg-transparent font-mono text-[10px] cursor-pointer disabled:opacity-50`}
-                                >
-                                  {categories.map((c) => (
-                                    <option key={c.id} value={String(c.id)} className="bg-zinc-900 text-zinc-100">
-                                      [{c.code}] {c.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  borderCol={borderCol}
+                                  textMuted={textMuted}
+                                  caption={lockTarget ? `[${lockTarget.code}] ${lockTarget.name}` : null}
+                                />
                               ) : (
                                 <span className={textMuted}>{t.bitsCategoryNone}</span>
                               )}
-                            </label>
+                            </div>
                           )}
                           {buyButton(
                             buff.item_id,

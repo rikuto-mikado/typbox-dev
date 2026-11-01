@@ -1540,7 +1540,6 @@ export const AMBIENT_THEMES: AmbientTheme[] = ROWS.map(([id, name, , unlock, des
 
 export const DEFAULT_AMBIENT_THEME_ID = 'dust';
 export const AMBIENT_THEME_STORAGE_KEY = 'typbox_ambient_theme';
-export const AMBIENT_CLOCK_STORAGE_KEY = 'typbox_ambient_clock';
 export const AMBIENT_DIM_STORAGE_KEY = 'typbox_ambient_dim';
 
 const THEME_BY_ID = new Map(AMBIENT_THEMES.map((th) => [th.id, th]));

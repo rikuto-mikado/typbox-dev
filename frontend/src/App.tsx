@@ -47,7 +47,8 @@ import {
   Undo2,
   ArrowUpRight,
 } from 'lucide-react';
-import { api, apiFetch, ApiError, getAccessToken, type BitsActiveBuff } from './api';
+import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit } from './api';
+import { ChallengeTicker } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
 import { resolveSurfaceThemeId } from './surfaceThemes';
 import { CategoryTrendTable } from './CategoryTrendTable';
@@ -141,7 +142,6 @@ import { WeatherBadge, WeatherPanel, isWeatherThemeUnlocked, useWeather, type Sy
 import { DEFAULT_WEATHER_THEME, WEATHER_THEMES, type WeatherThemeId } from './weatherThemes';
 import { AmbientOverlay, AmbientSettingsPanel, isAmbientThemeUnlocked } from './AmbientOverlay';
 import {
-  AMBIENT_CLOCK_STORAGE_KEY,
   AMBIENT_DIM_LEVELS,
   AMBIENT_DIM_STORAGE_KEY,
   AMBIENT_THEME_STORAGE_KEY,
@@ -242,7 +242,6 @@ type UiPrefsPatch = SyncedWeatherPrefs & {
   surface_fx?: boolean;
   ui_font?: string;
   ambient_theme?: string;
-  ambient_clock?: boolean;
   cursor_theme?: string;
 };
 
@@ -717,7 +716,6 @@ export default function App() {
   // Cursor size is a per-device comfort setting (like dim) and stays local.
   const [cursorSize, setCursorSize] = useState<CursorSize>(getInitialCursorSize);
   const [ambientThemeId, setAmbientThemeId] = useState<string>(getInitialAmbientTheme);
-  const [ambientClock, setAmbientClock] = useState<boolean>(() => readLocal(AMBIENT_CLOCK_STORAGE_KEY) !== 'off');
   const [ambientDim, setAmbientDim] = useState<AmbientDim>(getInitialAmbientDim);
   const [ambientPreviewId, setAmbientPreviewId] = useState<string | null>(null);
   // Debounced account sync for small UI prefs (weather widget, motion FX):
@@ -771,14 +769,13 @@ export default function App() {
     try {
       localStorage.setItem(UI_FONT_STORAGE_KEY, uiFontId);
       localStorage.setItem(AMBIENT_THEME_STORAGE_KEY, ambientThemeId);
-      localStorage.setItem(AMBIENT_CLOCK_STORAGE_KEY, ambientClock ? 'on' : 'off');
       localStorage.setItem(AMBIENT_DIM_STORAGE_KEY, ambientDim);
       localStorage.setItem(CURSOR_THEME_STORAGE_KEY, cursorThemeId);
       localStorage.setItem(CURSOR_SIZE_STORAGE_KEY, cursorSize);
     } catch {
       // Storage unavailable (private mode): prefs last for this tab only.
     }
-  }, [uiFontId, ambientThemeId, ambientClock, ambientDim, cursorThemeId, cursorSize]);
+  }, [uiFontId, ambientThemeId, ambientDim, cursorThemeId, cursorSize]);
 
   useEffect(() => {
     // English-only now: drop the retired language setting from this device.
@@ -895,11 +892,13 @@ export default function App() {
 
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   // Earned BITS follow the loaded logs so the header moves the instant a log
-  // commits; spending comes from the server (bits.ts mirrors economy.py).
+  // commits; spending and challenge payouts come from the server (bits.ts
+  // mirrors economy.py).
   const bitsBalance = useMemo(
     () =>
       bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)) +
-      logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) -
+      logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) +
+      (user?.bits?.payouts ?? 0) -
       (user?.bits?.spent ?? 0),
     [logs, user]
   );
@@ -1059,19 +1058,36 @@ export default function App() {
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [showStatusCardModal, setShowStatusCardModal] = useState<boolean>(false);
   const [showBitsShop, setShowBitsShop] = useState<boolean>(false);
-  // The running buff for the header badge, tagged with its account so a
-  // previous sign-in's buff never shows. Refetched when logs change (a
-  // commit can use a buff up, a reset removes it) and when it expires.
-  const [buffState, setBuffState] = useState<{ userId: number; buff: BitsActiveBuff | null } | null>(null);
+  // The running buff and challenge for the header, tagged with their account
+  // so a previous sign-in's never shows. Refetched when logs change (a
+  // commit can use a buff up, hit a boss, a reset removes both) and when
+  // either runs out.
+  const [buffState, setBuffState] = useState<{
+    userId: number;
+    buff: BitsActiveBuff | null;
+    challenge: ActiveChallenge | null;
+  } | null>(null);
   const activeBuff = user && buffState?.userId === user.id ? buffState.buff : null;
+  const activeChallenge = user && buffState?.userId === user.id ? buffState.challenge : null;
+  /** Adopts a fresh /bits/ answer: the running buff and challenge, and the
+   *  server's spent / payouts (a settled challenge changes the balance). */
+  const applyShopState = useCallback((userId: number, state: BitsShopState) => {
+    setBuffState({ userId, buff: state.active_buff, challenge: state.active_challenge ?? null });
+    setUser((prev) => {
+      if (!prev || prev.id !== userId) return prev;
+      const cur = prev.bits;
+      if (cur && cur.spent === state.bits.spent && (cur.payouts ?? 0) === (state.bits.payouts ?? 0)) return prev;
+      return { ...prev, bits: state.bits };
+    });
+  }, []);
   const refreshActiveBuff = useCallback(() => {
     const userId = user?.id;
     if (userId === undefined) return;
     api.bits
       .get()
-      .then((state) => setBuffState({ userId, buff: state.active_buff }))
+      .then((state) => applyShopState(userId, state))
       .catch(() => {});
-  }, [user?.id]);
+  }, [user?.id, applyShopState]);
   useEffect(() => {
     refreshActiveBuff();
   }, [refreshActiveBuff, logs.length]);
@@ -1086,6 +1102,16 @@ export default function App() {
     const id = window.setTimeout(refreshActiveBuff, activeBuff.contract ? Math.min(wait, 30 * 60_000) : wait);
     return () => window.clearTimeout(id);
   }, [activeBuff, refreshActiveBuff]);
+  useEffect(() => {
+    if (!activeChallenge) return;
+    // A raid boss heals at midnight and a duel's score moves with the
+    // rival's schedule: refetch every half hour, and right when it ends
+    // (the server settles it on that read).
+    const ms = new Date(activeChallenge.expires_at).getTime() - Date.now();
+    const wait = ms > 0 ? Math.min(ms + 1000, 30 * 60_000) : 60_000;
+    const id = window.setTimeout(refreshActiveBuff, wait);
+    return () => window.clearTimeout(id);
+  }, [activeChallenge, refreshActiveBuff]);
   const [bitsShopTab, setBitsShopTab] = useState<ShopTab>('buffs');
   const closeBitsShop = useCallback(() => setShowBitsShop(false), []);
   // CATEGORY LOCK can target any category still in progress (not DONE).
@@ -1198,6 +1224,34 @@ export default function App() {
       );
       setFlashLogId(logId);
       window.setTimeout(() => setFlashLogId((cur) => (cur === logId ? null : cur)), 2400);
+    },
+    [pushToast, t]
+  );
+
+  // What a committed log did to the running BOSS RAID / RIVAL duel.
+  const announceChallengeHit = useCallback(
+    (hit: ChallengeHit | undefined) => {
+      if (!hit) return;
+      const h = (min: number) => `${(Math.max(0, min) / 60).toFixed(1)}H`;
+      if (hit.kind === 'rival') {
+        pushToast('success', tf(t.chToastDuel, { name: hit.name }), tf(t.chToastDuelScore, { a: h(hit.mine), name: hit.name, b: h(hit.theirs) }));
+        return;
+      }
+      if (hit.down) {
+        pushToast('success', tf(t.chToastDown, { name: hit.name }), tf(t.chToastLoot, { n: hit.payout.toLocaleString('en-US') }));
+        return;
+      }
+      const title =
+        hit.hit === 'crit'
+          ? tf(t.chToastCrit, { n: hit.damage })
+          : hit.hit === 'hit'
+          ? tf(t.chToastHit, { n: hit.damage })
+          : hit.hit === 'block'
+          ? t.chToastBlock
+          : hit.hit === 'miss'
+          ? t.chToastMiss
+          : t.chToastNoHead;
+      pushToast('success', title, tf(t.chToastHpLeft, { name: hit.name, h: h(hit.hp) }));
     },
     [pushToast, t]
   );
@@ -1458,10 +1512,6 @@ export default function App() {
     if (!('cursor_theme' in pendingUi) && me.cursor_theme !== undefined) {
       if (isCursorThemeId(me.cursor_theme)) setCursorThemeId(me.cursor_theme);
       else if (!me.cursor_theme) firstUiSync.cursor_theme = readLocal(CURSOR_THEME_STORAGE_KEY) ?? DEFAULT_CURSOR_THEME_ID;
-    }
-    if (!('ambient_clock' in pendingUi) && me.ambient_clock !== undefined) {
-      if (me.ambient_clock === null) firstUiSync.ambient_clock = readLocal(AMBIENT_CLOCK_STORAGE_KEY) !== 'off';
-      else setAmbientClock(me.ambient_clock);
     }
     if (Object.keys(firstUiSync).length > 0) {
       api.auth.updateProfile(firstUiSync).catch(() => {});
@@ -1907,9 +1957,9 @@ export default function App() {
       setClearLogsConfirmText('');
       // The server dropped every purchase with the logs: BITS start from zero.
       setUser((prev) =>
-        prev ? { ...prev, bits: { ...(prev.bits ?? { per_hour: BITS_PER_HOUR }), balance: 0, earned: 0, spent: 0 } } : prev
+        prev ? { ...prev, bits: { ...(prev.bits ?? { per_hour: BITS_PER_HOUR }), balance: 0, earned: 0, spent: 0, payouts: 0 } } : prev
       );
-      if (user) setBuffState({ userId: user.id, buff: null });
+      if (user) setBuffState({ userId: user.id, buff: null, challenge: null });
       const n = (v: number) => v.toLocaleString('en-US');
       setClearReceipt({
         at: Date.now(),
@@ -1955,7 +2005,7 @@ export default function App() {
       // Logs and categories stay; only the buff bonuses come off them.
       setLogs((prev) => prev.map((l) => (l.bonusBits || l.bonusItem ? { ...l, bonusBits: 0, bonusItem: '' } : l)));
       setUser((prev) => (prev ? { ...prev, bits: res.bits } : prev));
-      if (user) setBuffState({ userId: user.id, buff: res.active_buff });
+      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null });
       setResetBitsConfirmText('');
       const n = (v: number) => v.toLocaleString('en-US');
       setBitsReceipt({
@@ -2085,6 +2135,7 @@ export default function App() {
       setLogs((prev) => [newLogItem, ...prev]);
       if (inputMode === 'timer') resetStopwatch();
       announceLogCommitted(newLogItem.id, cat?.code, Number(finalMinutes), logDate);
+      announceChallengeHit(created.challenge_hit);
       setCommitState('success');
       commitResetTimerRef.current = window.setTimeout(() => {
         setCommitState('idle');
@@ -2129,6 +2180,7 @@ export default function App() {
 
         setLogs((prev) => [newLogItem, ...prev]);
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
+        announceChallengeHit(created.challenge_hit);
         return true;
       } catch (err: unknown) {
         const error = err as Error;
@@ -2136,7 +2188,7 @@ export default function App() {
         return false;
       }
     },
-    [user, categories, announceLogCommitted, pushToast, t, timeZone]
+    [user, categories, announceLogCommitted, announceChallengeHit, pushToast, t, timeZone]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -3129,12 +3181,6 @@ export default function App() {
     applyCursorTheme(activeCursorTheme, cursorSize);
   }, [activeCursorTheme, cursorSize]);
   const ambientDimAlpha = AMBIENT_DIM_LEVELS.find((d) => d.id === ambientDim)?.alpha ?? 0;
-  const ambientClockReadout = ambientClock
-    ? {
-        main: formatTimer(elapsedSeconds),
-        sub: categories.find((c) => c.id === selectedCatId)?.code,
-      }
-    : null;
 
   const handleSelectUiFont = useCallback(
     (id: string) => {
@@ -3362,7 +3408,7 @@ export default function App() {
           unattended (screen kept awake by useKeepAwake above), or a
           preview launched from Settings > Ambient. */}
       {isAmbientMode && ambientPreviewId === null && (
-        <AmbientOverlay themeId={activeAmbientTheme.id} dimAlpha={ambientDimAlpha} clock={ambientClockReadout} />
+        <AmbientOverlay themeId={activeAmbientTheme.id} dimAlpha={ambientDimAlpha} />
       )}
       {ambientPreviewId !== null && (
         <AmbientOverlay
@@ -4034,6 +4080,17 @@ export default function App() {
                   </div>
                 )}
               </div>
+              )}
+
+              {/* The running BOSS RAID / RIVAL duel, live: who is at their desk.
+                  Laid over the bottom padding, so the panel keeps its height. */}
+              {user && activeChallenge && (
+                <ChallengeTicker
+                  challenge={activeChallenge}
+                  textMuted={textMuted}
+                  onOpen={() => openBitsShop('challenges')}
+                  className="absolute left-5 right-5 bottom-[3px]"
+                />
               )}
 
             </div>
@@ -6244,12 +6301,6 @@ export default function App() {
                         onSelect={handleSelectAmbientTheme}
                         onPreview={setAmbientPreviewId}
                         progress={chronoProgress}
-                        showClock={ambientClock}
-                        onToggleClock={() => {
-                          const next = !ambientClock;
-                          setAmbientClock(next);
-                          queueUiPrefsSave({ ambient_clock: next });
-                        }}
                         dim={ambientDim}
                         onChangeDim={setAmbientDim}
                         keepAwakeMode={keepAwakeMode}
@@ -7050,7 +7101,7 @@ export default function App() {
           balance={bitsBalance}
           onPurchased={(state) => {
             setUser((prev) => (prev ? { ...prev, bits: state.bits } : prev));
-            if (user) setBuffState({ userId: user.id, buff: state.active_buff });
+            if (user) applyShopState(user.id, state);
           }}
           initialTab={bitsShopTab}
           onOpenRoom={() => {

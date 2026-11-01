@@ -72,6 +72,10 @@ class UserProfile(models.Model):
     # each room's SAVE checkpoint. Empty until the user first uses them.
     room_slots = models.JSONField(default=list, blank=True)
     room_active_slot = models.PositiveSmallIntegerField(default=0)
+    # The furniture shop's reserve: one piece taken from the lineup that
+    # stays buyable after it rotates out (furniture.reserved_piece). Blank =
+    # nothing on hold; cleared when the piece is bought.
+    shop_reserve = models.CharField(max_length=32, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -173,7 +177,7 @@ class StudyLog(models.Model):
 class BitPurchase(models.Model):
     """
     One shop purchase: the BITS ledger's only debit (balance = derived
-    earnings - sum of (price - refunded)). A buff's live state rides on the same row:
+    earnings + sum(payout) - sum of (price - refunded)). A buff's live state rides on the same row:
     it applies to logs committed before expires_at while it still has
     minutes / uses left (null = that limit does not apply).
     """
@@ -203,8 +207,12 @@ class BitPurchase(models.Model):
     # a running buff never changes under its owner.
     rules = models.PositiveSmallIntegerField(default=2)
     # Per-buff bookkeeping for the reworked buffs (EARLY BIRD's mornings,
-    # NIGHT SHIFT's nights and level).
+    # NIGHT SHIFT's nights and level) and the CHALLENGES (a raid's hits, a
+    # duel's prize, the outcome; see challenges.py).
     state = models.JSONField(default=dict, blank=True)
+    # What a CHALLENGE paid back when it was settled (loot, prize, refund on
+    # a tie); counted as earned by the ledger (economy.bits_summary).
+    payout = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

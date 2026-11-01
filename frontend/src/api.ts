@@ -192,7 +192,117 @@ interface LogWriteResponse {
   id: number | string;
   bonus_bits?: number;
   bonus_item?: string;
+  /** What the log did to the running BOSS RAID / RIVAL duel (new logs only). */
+  challenge_hit?: ChallengeHit;
 }
+
+// ---------------------------------------------------------------- CHALLENGES
+// BOSS RAID and RIVAL (backend tracker/challenges.py): a second slot next to
+// the buff, one challenge at a time.
+
+export type RaidHitKind = 'hit' | 'crit' | 'block' | 'miss' | 'nohead';
+
+export interface ActiveRaid {
+  kind: 'raid';
+  id: number;
+  item_id: string;
+  /** The boss id (golem, nightmare, ...): art and colour (challengeArt.ts). */
+  key: string;
+  price: number;
+  started_at: string;
+  expires_at: string;
+  name: string;
+  title: string;
+  trait: string;
+  trait_line: string;
+  /** Minutes of damage still needed. */
+  hp: number;
+  max_hp: number;
+  days: number;
+  loot: number;
+  /** HYDRA only: one head per category. */
+  heads: Array<{ code: string; color: string; hp: number; max: number }> | null;
+  /** The latest hits, newest first. */
+  events: Array<{ at: string; minutes: number; damage: number; hit: RaidHitKind; head: string | null }>;
+  /** The latest heals (NIGHTMARE's midnights, WARDEN's empty days). */
+  heals: Array<{ at: string; minutes: number }>;
+}
+
+export interface ActiveRival {
+  kind: 'rival';
+  id: number;
+  item_id: string;
+  /** The rival id (orion, nova, rush). */
+  key: string;
+  price: number;
+  started_at: string;
+  expires_at: string;
+  name: string;
+  tag: string;
+  motto: string;
+  prize: number;
+  /** The duel runs the 72 hours from the purchase. */
+  starts_at: string;
+  /** Older servers omit it (their duels end at expires_at). */
+  ends_at?: string;
+  /** Three 24-hour rounds. */
+  days: Array<{ start: string; end: string; mine: number; theirs: number; state: 'pending' | 'live' | 'done' }>;
+  mine: number;
+  theirs: number;
+  /** The rival's sessions from the purchase day to the last duel day. */
+  plan: Array<{ start: string; end: string; topic: string }>;
+  sleep: Array<{ start: string; end: string }>;
+}
+
+export type ActiveChallenge = ActiveRaid | ActiveRival;
+
+export interface RaidOffer {
+  item_id: string;
+  key: string;
+  name: string;
+  title: string;
+  price: number;
+  hp: number;
+  days: number;
+  loot: number;
+  trait: string;
+  trait_line: string;
+  /** HYDRA needs two categories in progress. */
+  available: boolean;
+  /** HYDRA: [fewest, most] heads to pick, and the category ids suggested. */
+  heads?: [number, number];
+  suggested?: number[];
+}
+
+export interface RivalOffer {
+  item_id: string;
+  key: string;
+  name: string;
+  tag: string;
+  motto: string;
+  price: number;
+  prize: number;
+  /** Minutes the rival's schedule puts into a duel bought now. */
+  projected: number;
+  /** When a duel bought now would end (72 hours on). */
+  ends_at: string;
+}
+
+export interface ChallengeResult {
+  id: number;
+  item_id: string;
+  kind: 'raid' | 'rival';
+  key: string;
+  name: string;
+  outcome: 'down' | 'escaped' | 'won' | 'lost' | 'tie' | 'forfeit';
+  payout: number;
+  price: number;
+  finished_at: string;
+}
+
+export type ChallengeHit =
+  | { kind: 'raid'; name: string; boss: string; hit: RaidHitKind; damage: number; hp: number; max_hp: number; down: boolean; payout: number }
+  | { kind: 'rival'; name: string; mine: number; theirs: number };
 
 export interface BitsBuff {
   item_id: string;
@@ -259,6 +369,30 @@ export interface BitsShopState {
   bits: BitsSummary;
   active_buff: BitsActiveBuff | null;
   buffs: BitsBuff[];
+  /** Older servers omit the challenge fields. */
+  active_challenge?: ActiveChallenge | null;
+  challenges?: { raids: RaidOffer[]; rivals: RivalOffer[] };
+  last_challenge?: ChallengeResult | null;
+}
+
+/** One tier of the shop lineup (furniture.SHOP_ROTATION). */
+export interface ShopGroup {
+  tier: number;
+  /** How many days each lineup of this tier lasts (1, 2 or 7). */
+  every_days: number;
+  items: string[];
+  resets_at: string;
+}
+
+export interface ShopLineup {
+  /** Every piece on show, featured first. */
+  items: string[];
+  /** The soonest change of any group. */
+  resets_at: string;
+  /** Older servers (one weekly lineup) omit groups and reserve. */
+  groups?: ShopGroup[];
+  /** The piece on hold: buyable even after it rotates out. */
+  reserve?: string | null;
 }
 
 /** One of MY ROOM's five rooms (furniture.ROOM_SLOTS). */
@@ -279,7 +413,8 @@ export interface RoomState {
   active_room?: number;
   catalog: FurnitureSpec[];
   catalog_version?: string;
-  weekly: { items: string[]; resets_at: string };
+  /** The furniture shop (named for when it turned over weekly). */
+  weekly: ShopLineup;
   grid: { w: number; h: number; wall_rows: number };
 }
 
@@ -334,12 +469,28 @@ export const api = {
         })
       );
     },
+    /** Puts one lineup piece on hold (replacing any other); null clears it. */
+    reserve: async (item_id: string | null): Promise<RoomState> => {
+      const held = catalogCache ? `?catalog=${encodeURIComponent(catalogCache.version)}` : '';
+      return withCatalog(
+        await apiFetch<RoomPayload>(`/room/reserve/${held}`, {
+          method: 'POST',
+          body: JSON.stringify({ item_id }),
+        })
+      );
+    },
   },
   bits: {
     get: async () => apiFetch<BitsShopState>('/bits/'),
     /** Ends the running buff early; `refunded` is what came back. */
     cancel: async () =>
       apiFetch<BitsShopState & { refunded: number }>('/bits/cancel/', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    /** Gives up the running BOSS RAID / RIVAL duel (nothing comes back). */
+    forfeitChallenge: async () =>
+      apiFetch<BitsShopState>('/bits/challenge/forfeit/', {
         method: 'POST',
         body: JSON.stringify({}),
       }),
@@ -350,10 +501,15 @@ export const api = {
         body: JSON.stringify({}),
       }),
     /** `category`: CATEGORY LOCK's target (ignored by every other item). */
-    buy: async (item_id: string, category?: string | number) =>
+    /** `category`: CATEGORY LOCK's target; `categories`: HYDRA's 2-3 heads. */
+    buy: async (item_id: string, category?: string | number, categories?: Array<string | number>) =>
       apiFetch<BitsShopState>('/bits/buy/', {
         method: 'POST',
-        body: JSON.stringify(category === undefined ? { item_id } : { item_id, category }),
+        body: JSON.stringify({
+          item_id,
+          ...(category === undefined ? {} : { category }),
+          ...(categories === undefined ? {} : { categories }),
+        }),
       }),
   },
   auth: {

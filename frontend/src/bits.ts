@@ -9,6 +9,8 @@ export interface BitsSummary {
   balance: number;
   earned: number;
   spent: number;
+  /** CHALLENGE payouts (part of earned); older servers omit it. */
+  payouts?: number;
   per_hour: number;
 }
 

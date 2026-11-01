@@ -23,6 +23,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from . import challenges
 from .economy import (
     PurchaseError,
     apply_buff_to_new_log,
@@ -42,6 +43,7 @@ from .furniture import (
     room_slots,
     room_state,
     sanitize_layout,
+    shop_lineup,
     stored_layout,
     validate_layout,
 )
@@ -365,12 +367,29 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         # STORM RUNNER reads the CHRONOMETER weather the client sends along
         # (optional; older clients send none and simply don't qualify).
         data = self.request.data
-        apply_buff_to_new_log(log, weather=data.get("weather") if hasattr(data, "get") else None)
+        apply_buff_to_new_log(
+            log, weather=data.get("weather") if hasattr(data, "get") else None
+        )
+        # BOSS RAID / RIVAL: what the log did, sent back with it.
+        self._challenge_hit = challenges.apply_to_new_log(log)
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        hit = getattr(self, "_challenge_hit", None)
+        if hit is not None:
+            response.data["challenge_hit"] = hit
+        return response
 
     def perform_update(self, serializer):
         old_minutes = serializer.instance.duration_minutes
         log = serializer.save()
         scale_bonus_on_edit(log, old_minutes)
+        if log.duration_minutes < old_minutes:
+            challenges.on_log_shortened(log)
+
+    def perform_destroy(self, instance):
+        challenges.on_log_deleted(instance)
+        instance.delete()
 
     @action(detail=False, methods=["delete"], url_path="clear-all")
     def clear_all(self, request):
@@ -403,11 +422,24 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             deleted_purchases, _ = BitPurchase.objects.filter(
                 user=request.user
             ).delete()
-            if profile.room_layout or profile.room_slots or profile.room_active_slot:
+            if (
+                profile.room_layout
+                or profile.room_slots
+                or profile.room_active_slot
+                or profile.shop_reserve
+            ):
                 profile.room_layout = {}
                 profile.room_slots = []
                 profile.room_active_slot = 0
-                profile.save(update_fields=["room_layout", "room_slots", "room_active_slot"])
+                profile.shop_reserve = ""
+                profile.save(
+                    update_fields=[
+                        "room_layout",
+                        "room_slots",
+                        "room_active_slot",
+                        "shop_reserve",
+                    ]
+                )
         return Response(
             {
                 "deleted": deleted_count,
@@ -598,9 +630,12 @@ class StudyLogViewSet(viewsets.ModelViewSet):
 
 class BitsShopView(APIView):
     """
-    GET  /api/bits/      - Balance, the running buff and the buff catalog
-    POST /api/bits/buy/  - {"item_id": "...", "category": id?}: spend BITS on a buff
-                       (category: CATEGORY LOCK only)
+    GET  /api/bits/      - Balance, the running buff and the buff catalog, the
+                           running challenge, the challenge catalog and the
+                           last settled challenge
+    POST /api/bits/buy/  - {"item_id": "...", "category": id?, "categories": [id]?}:
+                       spend BITS on a buff or a challenge (category: CATEGORY
+                       LOCK; categories: HYDRA's 2-3 heads)
     """
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -613,11 +648,20 @@ class BitsBuyView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def post(self, request):
-        item_id = request.data.get("item_id") if isinstance(request.data, dict) else None
+        item_id = (
+            request.data.get("item_id") if isinstance(request.data, dict) else None
+        )
         if not isinstance(item_id, str):
-            return Response({"detail": "item_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "item_id is required."}, status=status.HTTP_400_BAD_REQUEST
+            )
         try:
-            buy(request.user, item_id, category_id=request.data.get("category"))
+            buy(
+                request.user,
+                item_id,
+                category_id=request.data.get("category"),
+                category_ids=request.data.get("categories"),
+            )
         except PurchaseError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user), status=status.HTTP_201_CREATED)
@@ -639,6 +683,22 @@ class BitsCancelView(APIView):
         return Response({**shop_state(request.user), "refunded": refunded})
 
 
+class BitsChallengeForfeitView(APIView):
+    """
+    POST /api/bits/challenge/forfeit/ - Give up the running BOSS RAID or
+    RIVAL duel. It ends now and pays nothing back.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        try:
+            challenges.forfeit(request.user)
+        except challenges.ChallengeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(shop_state(request.user))
+
+
 class BitsResetView(APIView):
     """
     POST /api/bits/reset/ - Start BITS and MY ROOM over but keep the study
@@ -652,13 +712,17 @@ class BitsResetView(APIView):
     def post(self, request):
         deleted, cleared = reset_economy(request.user)
         return Response(
-            {**shop_state(request.user), "deleted_purchases": deleted, "cleared_bonus_logs": cleared}
+            {
+                **shop_state(request.user),
+                "deleted_purchases": deleted,
+                "cleared_bonus_logs": cleared,
+            }
         )
 
 
 class RoomView(APIView):
     """
-    GET /api/room/ - Layout, owned furniture, the catalog and this week's shop.
+    GET /api/room/ - Layout, owned furniture, the catalog and the shop lineup.
                      ?catalog=<version> skips the catalog when the client
                      already holds that version.
     PUT /api/room/ - {"layout": {...}}: save an arrangement of owned pieces.
@@ -672,7 +736,9 @@ class RoomView(APIView):
     def get(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
         held = request.query_params.get("catalog")
-        return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
+        return Response(
+            room_state(request.user, profile, with_catalog=held != CATALOG_VERSION)
+        )
 
     def put(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
@@ -684,7 +750,58 @@ class RoomView(APIView):
         profile.room_layout = layout
         profile.save(update_fields=["room_layout"])
         held = request.query_params.get("catalog")
-        return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
+        return Response(
+            room_state(request.user, profile, with_catalog=held != CATALOG_VERSION)
+        )
+
+
+class RoomReserveView(APIView):
+    """
+    POST /api/room/reserve/ - {"item_id": "<piece>"} puts one piece from the
+    current lineup on hold: it stays buyable after it rotates out, until it
+    is bought. One at a time, so reserving another replaces it;
+    {"item_id": null} clears it. Takes ?catalog=<version> like /api/room/.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        if not isinstance(request.data, dict):
+            return Response(
+                {"detail": 'Send {"item_id": ...}.'}, status=status.HTTP_400_BAD_REQUEST
+            )
+        item_id = request.data.get("item_id")
+        with transaction.atomic():
+            profile, _ = UserProfile.objects.select_for_update().get_or_create(
+                user=request.user
+            )
+            if item_id in (None, ""):
+                profile.shop_reserve = ""
+            else:
+                if (
+                    not isinstance(item_id, str)
+                    or item_id
+                    not in shop_lineup(request.user, profile=profile)["items"]
+                ):
+                    return Response(
+                        {
+                            "detail": "Only a piece in the current lineup can be reserved."
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if BitPurchase.objects.filter(
+                    user=request.user, item_id=item_id
+                ).exists():
+                    return Response(
+                        {"detail": "You already own this piece."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                profile.shop_reserve = item_id
+            profile.save(update_fields=["shop_reserve"])
+        held = request.query_params.get("catalog")
+        return Response(
+            room_state(request.user, profile, with_catalog=held != CATALOG_VERSION)
+        )
 
 
 class RoomSlotsView(APIView):
@@ -705,26 +822,43 @@ class RoomSlotsView(APIView):
         payload = request.data if isinstance(request.data, dict) else {}
         action = payload.get("action")
         if action not in ("save", "switch", "rename"):
-            return Response({"detail": "Unknown action."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Unknown action."}, status=status.HTTP_400_BAD_REQUEST
+            )
         slot = payload.get("slot")
-        if action != "save" and (isinstance(slot, bool) or not isinstance(slot, int) or not 0 <= slot < ROOM_SLOTS):
-            return Response({"detail": "Unknown room."}, status=status.HTTP_400_BAD_REQUEST)
+        if action != "save" and (
+            isinstance(slot, bool)
+            or not isinstance(slot, int)
+            or not 0 <= slot < ROOM_SLOTS
+        ):
+            return Response(
+                {"detail": "Unknown room."}, status=status.HTTP_400_BAD_REQUEST
+            )
         owned = inventory(request.user)
         with transaction.atomic():
-            profile, _ = UserProfile.objects.select_for_update().get_or_create(user=request.user)
+            profile, _ = UserProfile.objects.select_for_update().get_or_create(
+                user=request.user
+            )
             slots = room_slots(profile)
             current = active_slot(profile)
             if action == "rename":
                 name = payload.get("name")
                 if not isinstance(name, str):
-                    return Response({"detail": "Name must be text."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"detail": "Name must be text."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 slots[slot]["name"] = name.strip()[:ROOM_NAME_MAX] or f"ROOM {slot + 1}"
             else:
                 if "layout" in payload:
                     try:
-                        profile.room_layout = validate_layout(payload.get("layout"), owned)
+                        profile.room_layout = validate_layout(
+                            payload.get("layout"), owned
+                        )
                     except LayoutError as exc:
-                        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                        return Response(
+                            {"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                        )
                 if action == "save":
                     slots[current]["saved"] = stored_layout(profile)
                     slots[current]["saved_at"] = timezone.now().isoformat()
@@ -734,9 +868,13 @@ class RoomSlotsView(APIView):
                     slots[slot]["layout"] = {}
                     profile.room_active_slot = slot
             profile.room_slots = slots
-            profile.save(update_fields=["room_layout", "room_slots", "room_active_slot"])
+            profile.save(
+                update_fields=["room_layout", "room_slots", "room_active_slot"]
+            )
         held = request.query_params.get("catalog")
-        return Response(room_state(request.user, profile, with_catalog=held != CATALOG_VERSION))
+        return Response(
+            room_state(request.user, profile, with_catalog=held != CATALOG_VERSION)
+        )
 
 
 class HubTelemetryView(APIView):
