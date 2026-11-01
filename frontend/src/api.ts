@@ -192,6 +192,10 @@ interface LogWriteResponse {
   id: number | string;
   bonus_bits?: number;
   bonus_item?: string;
+  /** When the server stops accepting edits and deletes of this log. */
+  editable_until?: string;
+  /** The stars on the gauge, when this log lit today's star (new logs only). */
+  star_lit?: number;
   /** What the log did to the running BOSS RAID / RIVAL duel (new logs only). */
   challenge_hit?: ChallengeHit;
 }
@@ -340,6 +344,8 @@ export interface BitsContractDay {
   date: string;
   minutes: number;
   state: 'pending' | 'live' | 'done' | 'failed';
+  /** STARLIGHT paid for this day. */
+  covered?: boolean;
 }
 
 export interface BitsActiveBuff {
@@ -359,15 +365,32 @@ export interface BitsActiveBuff {
   category?: { id: number; code: string; name: string; color: string } | null;
   /** IRON CONTRACT: its terms, payout and each day's progress. */
   contract?: (Omit<BitsContractTerms, 'days'> & { payout: number; days: BitsContractDay[] }) | null;
+  /** STARLIGHT can cover this buff failing its condition / already has. */
+  guardable?: boolean;
+  guarded?: boolean;
   /** LUNAR TIDE: extra BITS per hour right now. */
   rate_now?: number | null;
   /** A live line for the reworked buffs (mornings, night level, daily minimum…). */
   status?: string | null;
 }
 
+/** STARLIGHT (backend tracker/economy.py): the gauge and the days a star was lit. */
+export interface Starlight {
+  stars: number;
+  max: number;
+  cost: number;
+  guard_on: boolean;
+  /** Local days a star was lit, 'YYYY-MM-DD', oldest first. */
+  days: string[];
+  last_guard: { at: string; name: string } | null;
+}
+
 export interface BitsShopState {
   bits: BitsSummary;
   active_buff: BitsActiveBuff | null;
+  /** When the next buff can be bought, while it cools down. */
+  buff_cooldown_until?: string | null;
+  starlight?: Starlight;
   buffs: BitsBuff[];
   /** Older servers omit the challenge fields. */
   active_challenge?: ActiveChallenge | null;
@@ -663,6 +686,7 @@ export const api = {
         created_at: string;
         bonus_bits?: number;
         bonus_item?: string;
+        editable_until?: string;
       }>>(`/logs/${query}`);
     },
     create: async (data: {
@@ -701,7 +725,7 @@ export const api = {
         method: 'DELETE',
       });
     },
-    importBackup: async (payload: { categories?: unknown[]; logs: unknown[] }) => {
+    importBackup: async (payload: { categories?: unknown[]; logs: unknown[]; starlight?: unknown }) => {
       return apiFetch<{ imported_logs: number; skipped_logs?: number; created_categories: number }>('/logs/import-backup/', {
         method: 'POST',
         body: JSON.stringify(payload),

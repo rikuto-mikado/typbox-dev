@@ -434,6 +434,70 @@ const SLOT_ROOMS: ShowcaseRoom[] = [
 
 export const NEWS_ARTICLES: NewsArticle[] = [
   {
+    id: 'starlight',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'STARLIGHT, a buff cooldown and logs that settle',
+    lede: 'Days without a buff now light a night sky that can save your next big run. Buffs take a breath between them, logs settle after three days, and a commit asks you to look before it lands.',
+    blocks: [
+      { type: 'figure', kind: 'starlight', caption: 'Each dipper is seven days without a buff. A finished one covers one failure.' },
+      {
+        type: 'stats',
+        items: [
+          ['One star', 'A day with a log and no buff running'],
+          ['A save', '7 stars · once per buff'],
+          ['Buff cooldown', '24 hours'],
+          ['Logs lock', '3 days after their commit'],
+        ],
+      },
+      { type: 'h', text: 'STARLIGHT' },
+      {
+        type: 'p',
+        text: 'Commit a log while no buff runs and that day lights a star, up to 14. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. The stars you spend leave the gauge, but the days stay marked on the LUNAR CALENDAR.',
+      },
+      {
+        type: 'list',
+        items: [
+          'HYPERDRIVE: covers one short day.',
+          'EARLY BIRD: covers one missed morning.',
+          'FOCUS CHIP: covers one short log.',
+          'IRON CONTRACT: covers one missed day, except the last, since the payout needs the log that completes it.',
+          'Two failures at once are past saving, and no stars are spent on them.',
+        ],
+      },
+      { type: 'h', text: 'BUFF COOLDOWN' },
+      {
+        type: 'p',
+        text: 'The next buff can be bought 24 hours after the last one ends, however it ended. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected, and logs you commit in the meantime light stars.',
+      },
+      { type: 'h', text: 'LOGS' },
+      {
+        type: 'list',
+        items: [
+          'COMMIT LOG takes two taps, and the second shows what is about to land.',
+          'A log can be edited or deleted for 3 days after its commit, then it is sealed.',
+          'A buff bonus is settled at commit: editing a log no longer trims it.',
+          'Deleting a log hands back what it drew from a buff that is still running, so committing it again costs nothing extra. LUCKY BYTE rolls stay spent.',
+          'A session running past a morning, midnight or a buff\'s end counts from when it started, if committed within 3 hours.',
+        ],
+      },
+      { type: 'h', text: 'CHALLENGES' },
+      {
+        type: 'list',
+        items: [
+          'Fixing a typo on a log restores its hit on the boss, up to what it dealt at commit.',
+          'Editing a log up to the goal on the last day of IRON CONTRACT now pays out.',
+          'A HYDRA head whose category was deleted or marked DONE falls once another head has been cut down by real hits.',
+        ],
+      },
+      { type: 'h', text: 'BACKUPS' },
+      {
+        type: 'p',
+        text: 'JSON backups now carry your stars. Importing one onto an account with no stars brings them back. On an account that has some, only the marked days are added, so the gauge cannot be refilled.',
+      },
+    ],
+  },
+  {
     id: 'challenges',
     date: 'EARLY NOV 2026',
     tag: 'NEW',

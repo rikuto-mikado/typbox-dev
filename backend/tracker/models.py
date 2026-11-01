@@ -76,6 +76,12 @@ class UserProfile(models.Model):
     # stays buyable after it rotates out (furniture.reserved_piece). Blank =
     # nothing on hold; cleared when the piece is bought.
     shop_reserve = models.CharField(max_length=32, blank=True, default="")
+    # STARLIGHT (see economy.py): stars on the gauge, every local day a star
+    # was lit ('YYYY-MM-DD', kept for the night sky even once spent) and the
+    # last time it saved a buff ({'at', 'name'}).
+    starlight = models.PositiveSmallIntegerField(default=0)
+    star_days = models.JSONField(default=list, blank=True)
+    last_guard = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

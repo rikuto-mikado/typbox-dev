@@ -18,6 +18,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -29,7 +30,10 @@ from .economy import (
     apply_buff_to_new_log,
     buy,
     cancel_buff,
+    log_is_locked,
     reset_economy,
+    restore_starlight,
+    return_buff_draw,
     seal_contract_on_edit,
     shop_state,
 )
@@ -367,7 +371,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         # STORM RUNNER reads the CHRONOMETER weather the client sends along
         # (optional; older clients send none and simply don't qualify).
         data = self.request.data
-        apply_buff_to_new_log(
+        self._star_lit = apply_buff_to_new_log(
             log, weather=data.get("weather") if hasattr(data, "get") else None
         )
         # BOSS RAID / RIVAL: what the log did, sent back with it.
@@ -378,9 +382,19 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         hit = getattr(self, "_challenge_hit", None)
         if hit is not None:
             response.data["challenge_hit"] = hit
+        stars = getattr(self, "_star_lit", None)
+        if stars is not None:
+            response.data["star_lit"] = stars
         return response
 
+    def _refuse_if_locked(self, log):
+        if log_is_locked(log):
+            raise PermissionDenied(
+                "This log is locked: logs can be changed for 3 days after their commit."
+            )
+
     def perform_update(self, serializer):
+        self._refuse_if_locked(serializer.instance)
         old_minutes = serializer.instance.duration_minutes
         log = serializer.save()
         if log.duration_minutes != old_minutes:
@@ -389,8 +403,11 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             seal_contract_on_edit(log)
 
     def perform_destroy(self, instance):
-        challenges.on_log_deleted(instance)
-        instance.delete()
+        self._refuse_if_locked(instance)
+        with transaction.atomic():
+            return_buff_draw(instance)
+            challenges.on_log_deleted(instance)
+            instance.delete()
 
     @action(detail=False, methods=["delete"], url_path="clear-all")
     def clear_all(self, request):
@@ -423,6 +440,10 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             deleted_purchases, _ = BitPurchase.objects.filter(
                 user=request.user
             ).delete()
+            profile.starlight = 0
+            profile.star_days = []
+            profile.last_guard = {}
+            profile.save(update_fields=["starlight", "star_days", "last_guard"])
             if (
                 profile.room_layout
                 or profile.room_slots
@@ -613,6 +634,12 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         restored.append(obj)
                 if restored:
                     StudyLog.objects.bulk_update(restored, ["created_at"])
+
+            if request.data.get("starlight") is not None:
+                profile, _ = UserProfile.objects.select_for_update().get_or_create(
+                    user=request.user
+                )
+                restore_starlight(profile, request.data.get("starlight"))
 
         return Response(
             {

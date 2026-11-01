@@ -1388,3 +1388,61 @@ button:not(:disabled):active {
   .ch-bob, .ch-shadow, .ch-hit, .ch-pulse, .ch-flicker, .ch-in { animation: none; }
   .ch-float { animation-duration: 0.01s; }
 }
+
+/* A log past its edit window: a hatched, dashed stamp where the edit and delete
+   buttons were. Quiet on purpose, since most of a long log stream wears one. */
+.log-seal {
+  border: 1px dashed color-mix(in srgb, currentColor 38%, transparent);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, currentColor 13%, transparent) 0 1px,
+    transparent 1px 5px
+  );
+  cursor: help;
+  transition: color 150ms, border-color 150ms;
+}
+.log-seal:hover,
+.log-seal:focus-visible {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
+}
+
+/* STARLIGHT's night sky: the air moves a little, slowly enough to watch, and
+   not at all for anyone who asked. */
+.sky-twinkle {
+  animation: sky-twinkle 7s ease-in-out infinite;
+}
+.sky-next {
+  animation: sky-next 4.5s ease-in-out infinite;
+}
+.sky-shoot {
+  stroke-dasharray: 44;
+  stroke-dashoffset: 44;
+  opacity: 0;
+  animation: sky-shoot 37s linear infinite;
+}
+@keyframes sky-twinkle {
+  0%, 100% { opacity: 1; }
+  38% { opacity: 0.84; }
+  62% { opacity: 0.95; }
+}
+@keyframes sky-next {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.8; }
+}
+@keyframes sky-shoot {
+  0%, 96% { stroke-dashoffset: 44; opacity: 0; }
+  96.5% { opacity: 1; }
+  98.5% { stroke-dashoffset: -44; opacity: 0; }
+  100% { stroke-dashoffset: -44; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-twinkle,
+  .sky-next,
+  .sky-shoot {
+    animation: none;
+  }
+  .sky-next {
+    opacity: 0.6;
+  }
+}

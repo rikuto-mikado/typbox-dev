@@ -1,5 +1,6 @@
 import React, { useId, useMemo } from 'react';
 import { Moon } from 'lucide-react';
+import { Glint } from './StarlightSky';
 import { getZonedParts, tf, useI18n, type Dict } from './i18n';
 import { orderedWeekdayLabels, weekdayPosition, type WeekStart } from './week';
 
@@ -129,9 +130,11 @@ interface MoonPhaseCalendarProps {
   weekStart: WeekStart;
   textMuted: string;
   isDark: boolean;
+  /** Days a STARLIGHT star was lit ('YYYY-MM-DD'): they stay lit once spent. */
+  starDays?: string[];
 }
 
-export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, weekStart, textMuted, isDark }) => {
+export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, weekStart, textMuted, isDark, starDays }) => {
   const { t } = useI18n();
   const { year, month, day: today } = useMemo(() => getZonedParts(new Date(), timeZone), [timeZone]);
 
@@ -216,10 +219,13 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
               const isToday = cell.day === today;
               const isPast = cell.day < today;
               const isFull = cell.phaseIdx === FULL_IDX;
+              const starLit = starDays?.includes(
+                `${year}-${String(month).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`
+              );
               return (
                 <div
                   key={cell.day}
-                  title={`${t[PHASE_KEYS[cell.phaseIdx]]} · ${moonIllumination(cell.fraction)}%`}
+                  title={`${t[PHASE_KEYS[cell.phaseIdx]]} · ${moonIllumination(cell.fraction)}%${starLit ? ` · ${t.moonStarLit}` : ''}`}
                   className={`relative flex items-center justify-center pt-2 pb-0.5 min-h-8 transition-colors ${
                     isToday
                       ? 'bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/60'
@@ -256,6 +262,9 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
                   >
                     {cell.day}
                   </span>
+                  {starLit && (
+                    <Glint className="absolute top-0.5 right-0.5 w-2 h-2 text-amber-300" />
+                  )}
                   <MoonIcon
                     fraction={cell.fraction}
                     size={14}

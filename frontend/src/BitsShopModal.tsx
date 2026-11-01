@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap } from 'lucide-react';
 import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState } from './api';
+import { Glint, StarlightSky } from './StarlightSky';
 import { BITS_PER_HOUR } from './bits';
 import { BitShard, StudyTime } from './BitsBadge';
 import { lookOf } from './buffArt';
@@ -9,6 +10,7 @@ import { tf, useI18n } from './i18n';
 import { thumbnail, TIER_LABEL, type FurnitureSpec } from './roomRender';
 import { ChallengesTab } from './ChallengePanel';
 import { CategoryChips } from './CategoryChips';
+import { SegmentIndicator } from './SegmentIndicator';
 
 // BITS // EXCHANGE, opened from the header balance (or MY ROOM): buffs and
 // the furniture lineup. Catalogs, prices, the running buff and the
@@ -95,7 +97,7 @@ const ContractDays: React.FC<{
             <div className="flex items-center justify-between gap-1 text-[8px] uppercase tracking-wider">
               <span className={d.state === 'pending' ? textMuted : 'font-bold'}>{tf(t.bitsContractDay, { n: i + 1 })}</span>
               <span className="tabular-nums" style={{ color: d.state === 'pending' ? undefined : fill }}>
-                {d.state === 'done' ? '✓' : d.state === 'failed' ? '✕' : `${(d.minutes / 60).toFixed(1)}h`}
+                {d.covered ? '✦' : d.state === 'done' ? '✓' : d.state === 'failed' ? '✕' : `${(d.minutes / 60).toFixed(1)}h`}
               </span>
             </div>
             <div className="mt-1 h-1.5 bg-zinc-500/15">
@@ -110,12 +112,13 @@ const ContractDays: React.FC<{
 
 const ActiveBuffCard: React.FC<{
   buff: BitsActiveBuff;
+  guardOn: boolean;
   isDark: boolean;
   borderCol: string;
   textMuted: string;
   /** Cancels the buff (two taps: arm, then confirm, like BUY). */
   onCancel: () => Promise<void>;
-}> = ({ buff, isDark, borderCol, textMuted, onCancel }) => {
+}> = ({ buff, guardOn, isDark, borderCol, textMuted, onCancel }) => {
   const { t } = useI18n();
   const [armed, setArmed] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -170,6 +173,12 @@ const ActiveBuffCard: React.FC<{
             {tf(t.bitsExpiresIn, { t: formatLeft(new Date(buff.expires_at).getTime() - now) })}
           </span>
         </div>
+        {buff.guardable && (buff.guarded || guardOn) && (
+          <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider ${buff.guarded ? textMuted : 'text-amber-400'}`}>
+            <Glint className="w-2.5 h-2.5" />
+            {buff.guarded ? t.starlightBuffUsed : t.starlightBuffOn}
+          </div>
+        )}
         {contract ? (
           <ContractDays contract={contract} accent={look.accent} borderCol={borderCol} textMuted={textMuted} />
         ) : (
@@ -555,6 +564,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     );
   };
 
+  const cooldownLeft = state?.buff_cooldown_until ? new Date(state.buff_cooldown_until).getTime() - now : 0;
+
   const buyButton = (itemId: string, price: number, blockedLabel: string | null, accent = '#fbbf24') => {
     const short = balance < price;
     const isArmed = armed === itemId;
@@ -696,7 +707,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             <div className={`text-[10px] ${textMuted}`}>{tf(t.bitsRate, { n: BITS_PER_HOUR })}</div>
           </div>
 
-          <div className={`grid grid-cols-3 border-l border-t ${borderCol} text-[10px] uppercase tracking-wider`} role="tablist">
+          <div className={`relative grid grid-cols-3 border-l border-t ${borderCol} text-[10px] uppercase tracking-wider`} role="tablist">
+            <SegmentIndicator activeKey={tab} colorClass="bg-amber-500/10" />
             {(
               [
                 ['buffs', t.bitsTabBuffs],
@@ -710,8 +722,9 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 role="tab"
                 aria-selected={tab === id}
                 onClick={() => setTab(id)}
-                className={`px-2.5 py-1.5 border-r border-b ${borderCol} cursor-pointer transition-colors ${
-                  tab === id ? 'bg-amber-500/10 text-amber-400 font-bold' : `${textMuted} hover:text-amber-400`
+                data-seg-active={tab === id}
+                className={`px-2.5 py-1.5 border-r border-b ${borderCol} cursor-pointer seg-btn ${
+                  tab === id ? 'text-amber-400 font-bold' : `${textMuted} hover:text-amber-400`
                 }`}
               >
                 {label}
@@ -791,19 +804,29 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
 
           {tab === 'buffs' && (
             <>
+              {state?.starlight && (
+                <div className="space-y-1.5">
+                  <StarlightSky starlight={state.starlight} />
+                  <p className={`text-[10px] font-sans ${textMuted}`}>{t.starlightHint}</p>
+                </div>
+              )}
+
               {/* Running buff */}
               <div className="space-y-1.5">
                 <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.bitsActiveBuff}</div>
                 {state?.active_buff ? (
                   <ActiveBuffCard
                     buff={state.active_buff}
+                    guardOn={state.starlight?.guard_on ?? false}
                     isDark={isDark}
                     borderCol={borderCol}
                     textMuted={textMuted}
                     onCancel={handleCancelBuff}
                   />
                 ) : (
-                  <div className={`p-3 border border-dashed ${borderCol} text-[10px] ${textMuted}`}>{t.bitsNoBuff}</div>
+                  <div className={`p-3 border border-dashed ${borderCol} text-[10px] ${textMuted}`}>
+                    {cooldownLeft > 0 ? tf(t.bitsCooldownLine, { t: formatLeft(cooldownLeft) }) : t.bitsNoBuff}
+                  </div>
                 )}
                 {cancelNotice && !state?.active_buff && (
                   <div className="p-2 border border-emerald-500/40 text-emerald-400 text-[10px] font-bold tracking-wider">{cancelNotice}</div>
@@ -927,7 +950,13 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                           {buyButton(
                             buff.item_id,
                             buff.price,
-                            busy ? t.bitsSlotBusy : buff.needs_category && !lockTarget ? t.bitsPickCategory : null,
+                            busy
+                              ? t.bitsSlotBusy
+                              : cooldownLeft > 0
+                              ? tf(t.bitsCooldownButton, { t: formatLeft(cooldownLeft) })
+                              : buff.needs_category && !lockTarget
+                              ? t.bitsPickCategory
+                              : null,
                             look.accent
                           )}
                         </div>

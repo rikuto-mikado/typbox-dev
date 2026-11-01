@@ -29,6 +29,7 @@ import { renderRoom, type FurnitureSpec, type RoomLayout } from './roomRender';
 import { CHROMA_THEME_PAIRS, CLASSIC_THEME_PAIRS, COMPLEMENT_THEME_PAIRS, resolveSurfaceThemeId } from './surfaceThemes';
 import { PRESTIGE_THEME_PAIRS } from './surfacePrestige';
 import { buildHintRows, buildNamespaceRows, type PaletteCommandItem, type TerminalContext, type TerminalIO } from './terminalCommands';
+import { SegmentIndicator } from './SegmentIndicator';
 
 // ==========================================
 // 0. DEVELOPMENT DEMO MODE
@@ -1664,14 +1665,16 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
                   aria-label={t.customSleep}
                   className={`flex-1 min-w-0 min-h-[32px] sm:min-h-0 px-2 py-1 border ${borderCol} bg-transparent text-[11px] outline-none focus:border-sky-500/70`}
                 />
-                <div className={`flex border ${borderCol} text-[10px]`}>
+                <div className={`relative flex border ${borderCol} text-[10px]`}>
+                  <SegmentIndicator activeKey={customSleepUnit} colorClass="bg-sky-500/20" />
                   {(['min', 'hr'] as const).map((unit) => (
                     <button
                       key={unit}
                       type="button"
                       onClick={() => setCustomSleepUnit(unit)}
-                      className={`min-h-[30px] sm:min-h-0 px-2 py-1 uppercase cursor-pointer ${
-                        customSleepUnit === unit ? 'bg-sky-500/20 text-sky-400 font-bold' : textMuted
+                      data-seg-active={customSleepUnit === unit}
+                      className={`min-h-[30px] sm:min-h-0 px-2 py-1 uppercase seg-btn cursor-pointer ${
+                        customSleepUnit === unit ? 'text-sky-400 font-bold' : textMuted
                       }`}
                     >
                       {unit}
@@ -2624,6 +2627,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   // Blocks a second command (double Enter / key repeat) while a log commit
   // is in flight or its success banner is showing.
   const [committing, setCommitting] = useState(false);
+  // Two steps, like COMMIT LOG: the first names what is about to be logged.
+  const [armedQuickLog, setArmedQuickLog] = useState<string | null>(null);
 
   const updateQuery = (nextQuery: string) => {
     setQuery(nextQuery);
@@ -2640,6 +2645,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       setStatusBanner(null);
       setBannerTone('ok');
       setCommitting(false);
+      setArmedQuickLog(null);
       inputRef.current?.focus();
     }, 10);
     return () => window.clearTimeout(timer);
@@ -2653,8 +2659,25 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     );
   };
 
+  useEffect(() => {
+    if (armedQuickLog === null) return;
+    const id = window.setTimeout(() => {
+      setArmedQuickLog(null);
+      setStatusBanner(null);
+    }, 5000);
+    return () => window.clearTimeout(id);
+  }, [armedQuickLog]);
+
   const commitQuickLog = useCallback(
     async (cat: Category, minutes: number) => {
+      const key = `${cat.id}-${minutes}`;
+      if (armedQuickLog !== key) {
+        setArmedQuickLog(key);
+        setBannerTone('ok');
+        setStatusBanner(tf(t.pcConfirmCommit, { min: minutes, code: cat.code }));
+        return;
+      }
+      setArmedQuickLog(null);
       setCommitting(true);
       const ok = await onQuickLog(cat.id, minutes);
       if (!ok) {
@@ -2666,7 +2689,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         onClose();
       }, 450);
     },
-    [onQuickLog, onClose, t]
+    [armedQuickLog, onQuickLog, onClose, t]
   );
 
   // How terminal rows talk back: print a line, then close (or stay open on a
@@ -3063,7 +3086,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       updateQuery(commands[selectedIndex].complete as string);
     } else if (e.key === 'Enter' && commands[selectedIndex]) {
       e.preventDefault();
-      if (!committing) commands[selectedIndex].action();
+      // Holding Enter must not run through a two-step command by itself.
+      if (!committing && !e.repeat) commands[selectedIndex].action();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
@@ -3719,7 +3743,8 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                 className="w-full bg-transparent text-xs outline-none"
               />
             </div>
-            <div className={`flex border ${borderCol} text-[10px]`}>
+            <div className={`relative flex border ${borderCol} text-[10px]`}>
+              <SegmentIndicator activeKey={unlockFilter} colorClass="bg-emerald-500" />
               {(
                 [
                   ['all', `${t.all} (${SURFACE_THEME_PAIRS.length})`],
@@ -3731,9 +3756,10 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   key={key}
                   type="button"
                   onClick={() => setUnlockFilter(key)}
-                  className={`px-2.5 py-1 uppercase cursor-pointer transition-colors ${
+                  data-seg-active={unlockFilter === key}
+                  className={`px-2.5 py-1 uppercase cursor-pointer seg-btn ${
                     unlockFilter === key
-                      ? 'bg-emerald-500 text-zinc-950 font-bold'
+                      ? 'text-zinc-950 font-bold'
                       : `${textMuted} hover:opacity-100`
                   }`}
                 >

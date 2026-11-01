@@ -3,6 +3,7 @@ import { Minus, Plus } from 'lucide-react';
 import { ColorSwatchGrid } from './ColorSwatchGrid';
 import { tf, useI18n } from './i18n';
 import { inactiveHatch, swatchStyle } from './categoryStyle';
+import { SegmentIndicator } from './SegmentIndicator';
 
 // The category editor opens over the CATEGORY REGISTRY panel (the panel
 // keeps its size) for both NEW CATEGORY and editing a row. A live preview
@@ -242,21 +243,23 @@ export const CategoryEditor: React.FC<CategoryEditorProps> = ({
           {mode === 'edit' && setActive && (
             <div>
               <span className={label}>{t.catStatus}</span>
-              <div className={`grid grid-cols-2 border ${borderCol} font-mono text-xs`} role="radiogroup" aria-label={t.catStatus}>
+              <div className={`relative grid grid-cols-2 border ${borderCol} font-mono text-xs`} role="radiogroup" aria-label={t.catStatus}>
+                <SegmentIndicator activeKey={String(active)} colorClass={active ? 'bg-emerald-500' : isDark ? 'bg-zinc-700' : 'bg-zinc-300'} />
                 {([true, false] as const).map((isActive) => (
                   <button
                     key={String(isActive)}
                     type="button"
                     role="radio"
                     aria-checked={active === isActive}
+                    data-seg-active={active === isActive}
                     onClick={() => setActive(isActive)}
-                    className={`min-h-[38px] lg:min-h-0 py-2 lg:py-1.5 flex items-center justify-center gap-1.5 uppercase tracking-wider transition-colors cursor-pointer ${
+                    className={`seg-btn min-h-[38px] lg:min-h-0 py-2 lg:py-1.5 flex items-center justify-center gap-1.5 uppercase tracking-wider transition-colors cursor-pointer ${
                       isActive ? '' : `border-l ${borderCol}`
                     } ${
                       active === isActive
                         ? isActive
-                          ? 'bg-emerald-500 text-zinc-950 font-bold'
-                          : `${isDark ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-300 text-zinc-900'} font-bold`
+                          ? 'text-zinc-950 font-bold'
+                          : `${isDark ? 'text-zinc-100' : 'text-zinc-900'} font-bold`
                         : textMuted
                     }`}
                   >

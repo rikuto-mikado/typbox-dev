@@ -47,7 +47,7 @@ import {
   Undo2,
   ArrowUpRight,
 } from 'lucide-react';
-import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit } from './api';
+import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight } from './api';
 import { ChallengeTicker } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
 import { resolveSurfaceThemeId } from './surfaceThemes';
@@ -211,7 +211,17 @@ export interface StudyLog {
   bonusBits?: number;
   /** The buff that paid it (economy.BUFFS id). */
   bonusItem?: string;
+  /** Past this the server refuses edits and deletes (the row shows a seal). */
+  editableUntil?: string;
 }
+
+const isLogLocked = (log: StudyLog): boolean =>
+  log.editableUntil !== undefined && Date.now() >= Date.parse(log.editableUntil);
+
+const COMMIT_CONFIRM_MS = 5000;
+const STARLIGHT_SEEN_KEY = 'typbox_starlight_seen';
+const STARLIGHT_NEWS_MS = 3 * 86_400_000;
+const STARLIGHT_MAX = 14;
 
 export interface AuthUser {
   id: number;
@@ -1066,13 +1076,15 @@ export default function App() {
     userId: number;
     buff: BitsActiveBuff | null;
     challenge: ActiveChallenge | null;
+    starlight?: Starlight;
   } | null>(null);
   const activeBuff = user && buffState?.userId === user.id ? buffState.buff : null;
   const activeChallenge = user && buffState?.userId === user.id ? buffState.challenge : null;
+  const starlight = user && buffState?.userId === user.id ? buffState.starlight : undefined;
   /** Adopts a fresh /bits/ answer: the running buff and challenge, and the
    *  server's spent / payouts (a settled challenge changes the balance). */
   const applyShopState = useCallback((userId: number, state: BitsShopState) => {
-    setBuffState({ userId, buff: state.active_buff, challenge: state.active_challenge ?? null });
+    setBuffState({ userId, buff: state.active_buff, challenge: state.active_challenge ?? null, starlight: state.starlight });
     setUser((prev) => {
       if (!prev || prev.id !== userId) return prev;
       const cur = prev.bits;
@@ -1229,6 +1241,33 @@ export default function App() {
   );
 
   // What a committed log did to the running BOSS RAID / RIVAL duel.
+  // STARLIGHT saved a buff, possibly while the app was closed: say so once.
+  const userId = user?.id;
+  const lastGuardAt = starlight?.last_guard?.at;
+  const lastGuardName = starlight?.last_guard?.name;
+  const starlightCost = starlight?.cost;
+  useEffect(() => {
+    if (!lastGuardAt || userId === undefined) return;
+    // On a new device or after clearing storage, old news stays quiet.
+    if (Date.now() - new Date(lastGuardAt).getTime() > STARLIGHT_NEWS_MS) return;
+    try {
+      const key = `${STARLIGHT_SEEN_KEY}_${userId}`;
+      if (localStorage.getItem(key) === lastGuardAt) return;
+      localStorage.setItem(key, lastGuardAt);
+    } catch {
+      return;
+    }
+    pushToast('success', t.starlightHeldToast, tf(t.starlightHeldBody, { name: lastGuardName ?? '', cost: starlightCost ?? 0 }));
+  }, [lastGuardAt, lastGuardName, starlightCost, userId, pushToast, t]);
+
+  const announceStarLit = useCallback(
+    (stars: number | undefined) => {
+      if (stars === undefined) return;
+      pushToast('success', t.starlightToast, tf(t.starlightToastBody, { n: stars, max: STARLIGHT_MAX }));
+    },
+    [pushToast, t]
+  );
+
   const announceChallengeHit = useCallback(
     (hit: ChallengeHit | undefined) => {
       if (!hit) return;
@@ -1430,6 +1469,7 @@ export default function App() {
         createdAt: l.created_at,
         bonusBits: l.bonus_bits ?? 0,
         bonusItem: l.bonus_item ?? '',
+        editableUntil: l.editable_until,
       }));
 
       setCategories(formattedCats);
@@ -1914,8 +1954,10 @@ export default function App() {
       const res = await api.logs.importBackup({
         categories: Array.isArray(parsed.categories) ? parsed.categories : [],
         logs: parsed.logs,
+        starlight: parsed.starlight,
       });
       await loadUserData();
+      refreshActiveBuff();
       setDataStatus({
         type: 'success',
         text: tf(t.msgImported, {
@@ -2005,7 +2047,7 @@ export default function App() {
       // Logs and categories stay; only the buff bonuses come off them.
       setLogs((prev) => prev.map((l) => (l.bonusBits || l.bonusItem ? { ...l, bonusBits: 0, bonusItem: '' } : l)));
       setUser((prev) => (prev ? { ...prev, bits: res.bits } : prev));
-      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null });
+      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null, starlight: res.starlight });
       setResetBitsConfirmText('');
       const n = (v: number) => v.toLocaleString('en-US');
       setBitsReceipt({
@@ -2083,6 +2125,17 @@ export default function App() {
   // Tracker Handlers (Direct API Calls)
   // ==========================================
 
+  // COMMIT LOG takes two taps, the second confirming what the button now
+  // spells out. Changing the entry disarms it (a running stopwatch doesn't).
+  const commitKey = `${selectedCatId}|${logDate}|${inputMode}|${inputMode === 'timer' ? '' : durationMinutes}`;
+  const [armedCommitKey, setArmedCommitKey] = useState<string | null>(null);
+  const commitArmed = armedCommitKey === commitKey;
+  useEffect(() => {
+    if (armedCommitKey === null) return;
+    const id = window.setTimeout(() => setArmedCommitKey(null), COMMIT_CONFIRM_MS);
+    return () => window.clearTimeout(id);
+  }, [armedCommitKey]);
+
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
@@ -2095,6 +2148,11 @@ export default function App() {
 
     if (!selectedCatId || finalMinutes <= 0) return;
     if (commitState === 'submitting') return;
+    if (!commitArmed) {
+      setArmedCommitKey(commitKey);
+      return;
+    }
+    setArmedCommitKey(null);
 
     setCommitState('submitting');
     // Freeze the stopwatch at the committed value while the request is in
@@ -2130,12 +2188,14 @@ export default function App() {
         createdAt: new Date().toISOString(),
         bonusBits: created.bonus_bits ?? 0,
         bonusItem: created.bonus_item ?? '',
+        editableUntil: created.editable_until,
       };
 
       setLogs((prev) => [newLogItem, ...prev]);
       if (inputMode === 'timer') resetStopwatch();
       announceLogCommitted(newLogItem.id, cat?.code, Number(finalMinutes), logDate);
       announceChallengeHit(created.challenge_hit);
+      announceStarLit(created.star_lit);
       setCommitState('success');
       commitResetTimerRef.current = window.setTimeout(() => {
         setCommitState('idle');
@@ -2176,11 +2236,13 @@ export default function App() {
           createdAt: new Date().toISOString(),
           bonusBits: created.bonus_bits ?? 0,
           bonusItem: created.bonus_item ?? '',
+          editableUntil: created.editable_until,
         };
 
         setLogs((prev) => [newLogItem, ...prev]);
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
         announceChallengeHit(created.challenge_hit);
+        announceStarLit(created.star_lit);
         return true;
       } catch (err: unknown) {
         const error = err as Error;
@@ -2188,7 +2250,7 @@ export default function App() {
         return false;
       }
     },
-    [user, categories, announceLogCommitted, announceChallengeHit, pushToast, t, timeZone]
+    [user, categories, announceLogCommitted, announceChallengeHit, announceStarLit, pushToast, t, timeZone]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -2440,6 +2502,17 @@ export default function App() {
       const error = err as Error;
       pushToast('error', t.errCategoryDone, error.message);
     }
+  };
+
+  // A sealed log can't be changed: a tap gives the lock a shake and says why.
+  const handleSealedLogTap = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      e.currentTarget.firstElementChild?.animate(
+        ['0deg', '-14deg', '12deg', '-7deg', '0deg'].map((a) => ({ transform: `rotate(${a})` })),
+        { duration: 320, easing: 'ease-out' }
+      );
+    }
+    pushToast('success', t.logSealed, t.logSealedHint);
   };
 
   const handleDeleteLog = async (id: string | number) => {
@@ -3135,6 +3208,8 @@ export default function App() {
     return candidate;
   }, [chronoThemeId, authLoading, dataLoading, chronoProgress]);
   const centeredFace = isCenteredFace(activeChronoTheme);
+  // Phones have room for the zone's name only ("JST", not "JST UTC+09:00").
+  const clockTzShort = clockReadout.tzLabel.split(' ')[0];
   // Dials are drawn at the height of the digital faces' row, so changing
   // the face never changes the console's height.
   const CONSOLE_DIAL_PX = 88;
@@ -3312,6 +3387,8 @@ export default function App() {
       timezone: timeZone,
       // For the record only (import ignores it, like each log's bonusBits).
       bits: { balance: bitsBalance, bonus: logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) },
+      // Import restores this onto an account that has no stars yet.
+      starlight: starlight ? { stars: starlight.stars, days: starlight.days } : undefined,
       categories,
       logs,
     };
@@ -4006,11 +4083,14 @@ export default function App() {
                   the date (left) and the readout (right); the rest sit left
                   with the date / session readout on the right. */}
               {centeredFace ? (
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 min-h-[88px]">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3 min-h-[88px]">
                   <div className="font-mono min-w-0 flex flex-col gap-0.5">
-                    <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums truncate">{clockReadout.dateDot}</div>
+                    <div className="text-[11px] sm:text-sm font-semibold sm:tracking-wider tabular-nums truncate">{clockReadout.dateDot}</div>
                     <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest truncate ${textMuted}`}>{clockReadout.dayStr}</div>
-                    <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest truncate ${textMuted}`}>{clockReadout.tzLabel}</div>
+                    <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest truncate ${textMuted}`}>
+                      <span className="sm:hidden">{clockTzShort}</span>
+                      <span className="hidden sm:inline">{clockReadout.tzLabel}</span>
+                    </div>
                   </div>
                   <div className="flex justify-center">
                     <ChronoDisplay
@@ -4037,7 +4117,7 @@ export default function App() {
                   ) : (
                     <div className="text-right font-mono min-w-0 flex flex-col items-end gap-0.5 tb-fade-in">
                       <div className="text-xs sm:text-sm font-semibold tracking-wider tabular-nums truncate max-w-full">W{calendarStamp.week}</div>
-                      <div className={`text-[10px] uppercase tracking-wider sm:tracking-widest tabular-nums truncate max-w-full ${textMuted}`}>
+                      <div className={`text-[10px] uppercase sm:tracking-widest tabular-nums truncate max-w-full ${textMuted}`}>
                         {tf(t.consoleDayOfYear, { d: calendarStamp.day, n: calendarStamp.days })}
                       </div>
                     </div>
@@ -4077,7 +4157,8 @@ export default function App() {
                       {clockReadout.dateDot}
                     </div>
                     <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>
-                      {clockReadout.dayStr} // {clockReadout.tzLabel}
+                      {clockReadout.dayStr} // <span className="sm:hidden">{clockTzShort}</span>
+                      <span className="hidden sm:inline">{clockReadout.tzLabel}</span>
                     </div>
                     <div className={`text-[10px] uppercase tracking-widest tabular-nums ${textMuted}`}>
                       {tf(t.consoleCalendar, { w: calendarStamp.week, d: calendarStamp.day, n: calendarStamp.days })}
@@ -4088,13 +4169,14 @@ export default function App() {
               )}
 
               {/* The running BOSS RAID / RIVAL duel, live: who is at their desk.
-                  Laid over the bottom padding, so the panel keeps its height. */}
+                  A row of its own on phones; on desktop it lies over the bottom
+                  padding, so the panel keeps its height. */}
               {user && activeChallenge && (
                 <ChallengeTicker
                   challenge={activeChallenge}
                   textMuted={textMuted}
                   onOpen={() => openBitsShop('challenges')}
-                  className="absolute left-5 right-5 bottom-[3px]"
+                  className="w-full mt-3 lg:mt-0 lg:w-auto lg:absolute lg:left-5 lg:right-5 lg:bottom-[3px] lg:justify-end"
                 />
               )}
 
@@ -4173,7 +4255,14 @@ export default function App() {
                 </div>
               </div>
 
-              <form onSubmit={handleAddLog} className="flex flex-col gap-4">
+              <form
+                onSubmit={handleAddLog}
+                onKeyDown={(e) => {
+                  // Holding Enter must not arm and confirm the commit by itself.
+                  if (e.key === 'Enter' && e.repeat) e.preventDefault();
+                }}
+                className="flex flex-col gap-4"
+              >
                 {/* Category Selection */}
                 <div>
                   <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
@@ -4323,6 +4412,8 @@ export default function App() {
                       ? 'bg-emerald-500 text-zinc-950 commit-success-flash cursor-default'
                       : commitState === 'submitting'
                       ? `${isDark ? 'bg-zinc-300 text-zinc-700' : 'bg-zinc-700 text-zinc-200'} cursor-wait`
+                      : commitArmed
+                      ? 'bg-amber-400 text-zinc-950 hover:bg-amber-300 cursor-pointer'
                       : isDark
                       ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-300 cursor-pointer'
                       : 'bg-zinc-900 text-white hover:bg-zinc-800 cursor-pointer'
@@ -4338,6 +4429,18 @@ export default function App() {
                       <CheckCircle2 className="w-4 h-4 typbox-toast-pop" />
                       <span>{t.committed}</span>
                     </>
+                  ) : commitArmed ? (
+                    // One line whatever the width: a long code gives way first.
+                    <span className="flex items-center justify-center gap-1.5 min-w-0 tracking-normal sm:tracking-wider whitespace-nowrap">
+                      <span className="shrink-0">{t.saveLogConfirm} ·</span>
+                      <span className="truncate">{categories.find((c) => String(c.id) === String(selectedCatId))?.code ?? ''}</span>
+                      <span className="shrink-0">
+                        · {tf(t.saveLogConfirmDetail, {
+                          min: inputMode === 'timer' ? Math.max(1, Math.round(elapsedSeconds / 60)) : durationMinutes,
+                        })}
+                        {logDate !== getRecentDateString(0, timeZone) && ` · ${logDate.slice(5).replace('-', '/')}`}
+                      </span>
+                    </span>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
@@ -4720,7 +4823,7 @@ export default function App() {
 
             {/* LUNAR CALENDAR PANEL */}
             <div data-panel="lunar" className={`tb-corners border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
-              <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} />
+              <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} starDays={starlight?.days} />
             </div>
 
             {/* CATEGORY REGISTRY PANEL */}
@@ -5672,6 +5775,17 @@ export default function App() {
                               </div>
                             </div>
 
+                            {isLogLocked(log) ? (
+                              <button
+                                type="button"
+                                onClick={handleSealedLogTap}
+                                className={`log-seal shrink-0 p-2.5 lg:p-1.5 ${textMuted}`}
+                                title={t.logSealedHint}
+                                aria-label={`${t.logSealed}: ${t.logSealedHint}`}
+                              >
+                                <Lock className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
+                              </button>
+                            ) : (
                             <div className="flex items-center space-x-2 lg:space-x-1.5 shrink-0">
                               <button
                                 type="button"
@@ -5698,6 +5812,7 @@ export default function App() {
                                 <Trash2 className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
                               </button>
                             </div>
+                            )}
                           </div>
 
                           {/* Inline Log Editor */}
@@ -5942,20 +6057,22 @@ export default function App() {
 
             {/* Mode Switcher Tabs (Shown for Login / Register while sign-ups are open) */}
             {REGISTRATION_OPEN && (authMode === 'login' || authMode === 'register') && (
-              <div className={`flex border ${borderCol} text-xs font-mono`}>
+              <div className={`relative flex border ${borderCol} text-xs font-mono`}>
+                <SegmentIndicator activeKey={authMode} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
                 <button
                   type="button"
+                  data-seg-active={authMode === 'login'}
                   onClick={() => {
                     setAuthMode('login');
                     setAuthError(null);
                     setAuthSuccessMsg(null);
                     setAuthPassword('');
                   }}
-                  className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
+                  className={`flex-1 py-2 text-center seg-btn cursor-pointer ${
                     authMode === 'login'
                       ? isDark
-                        ? 'bg-zinc-100 text-zinc-950 font-bold'
-                        : 'bg-zinc-900 text-white font-bold'
+                        ? 'text-zinc-950 font-bold'
+                        : 'text-white font-bold'
                       : textMuted
                   }`}
                 >
@@ -5963,17 +6080,18 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-seg-active={authMode === 'register'}
                   onClick={() => {
                     setAuthMode('register');
                     setAuthError(null);
                     setAuthSuccessMsg(null);
                     setAuthPassword('');
                   }}
-                  className={`flex-1 py-2 text-center transition-colors cursor-pointer ${
+                  className={`flex-1 py-2 text-center seg-btn cursor-pointer ${
                     authMode === 'register'
                       ? isDark
-                        ? 'bg-zinc-100 text-zinc-950 font-bold'
-                        : 'bg-zinc-900 text-white font-bold'
+                        ? 'text-zinc-950 font-bold'
+                        : 'text-white font-bold'
                       : textMuted
                   }`}
                 >
@@ -6236,10 +6354,11 @@ export default function App() {
               {APPEARANCE_TABS.includes(settingsTab) && (
                 <div className="flex flex-col gap-3 sm:gap-4">
                   <div
-                    className={`grid grid-cols-2 sm:grid-cols-4 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
+                    className={`relative grid grid-cols-2 sm:grid-cols-4 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
                     role="tablist"
                     aria-label={t.tabAppearance}
                   >
+                    <SegmentIndicator activeKey={settingsTab} colorClass="bg-emerald-500/10" />
                     {(
                       [
                         ['themes', t.appearanceSurface, SURFACE_THEME_PAIRS.length],
@@ -6253,10 +6372,11 @@ export default function App() {
                         type="button"
                         role="tab"
                         aria-selected={settingsTab === tab}
+                        data-seg-active={settingsTab === tab}
                         onClick={() => setSettingsTab(tab)}
-                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 border-r border-b ${borderCol} transition-colors cursor-pointer ${
+                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 border-r border-b ${borderCol} seg-btn cursor-pointer ${
                           settingsTab === tab
-                            ? 'bg-emerald-500/10 text-emerald-400 font-bold'
+                            ? 'text-emerald-400 font-bold'
                             : `${textMuted} hover:text-emerald-400`
                         }`}
                       >
@@ -6429,19 +6549,21 @@ export default function App() {
 
                     <div>
                       <span className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>{t.weekStartLabel}</span>
-                      <div className={`grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.weekStartLabel}>
+                      <div className={`relative grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.weekStartLabel}>
+                        <SegmentIndicator activeKey={weekStart} colorClass="bg-emerald-500" />
                         {(['mon', 'sun'] as const).map((opt, idx) => (
                           <button
                             key={opt}
                             type="button"
                             role="radio"
                             aria-checked={weekStart === opt}
+                            data-seg-active={weekStart === opt}
                             onClick={() => weekStart !== opt && handleUpdateRegion({ week_start: opt })}
-                            className={`min-h-[38px] px-3 py-2 transition-colors cursor-pointer ${
+                            className={`min-h-[38px] px-3 py-2 seg-btn cursor-pointer ${
                               idx > 0 ? `border-l ${borderCol}` : ''
                             } ${
                               weekStart === opt
-                                ? 'bg-emerald-500 text-zinc-950 font-bold'
+                                ? 'text-zinc-950 font-bold'
                                 : `${textMuted} hover:text-emerald-400`
                             }`}
                           >

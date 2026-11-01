@@ -26,6 +26,7 @@ import { getChronoThemeById } from './chronometerThemes';
 import { CURSOR_THEMES } from './cursorThemes';
 import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 import { SegmentIndicator } from './SegmentIndicator';
+import { StarlightSky } from './StarlightSky';
 import { StatusRankList } from './StatusRankList';
 import { CLEARANCE_LEVELS, NOISE_PROFILES, SURFACE_THEME_PAIRS } from './telemetryFeatures';
 import { ThemeToggleIcon } from './ThemeToggleIcon';
@@ -44,6 +45,7 @@ import { segmentStyle } from './categoryStyle';
 export type FigureKind =
   | 'pairs'
   | 'challenges'
+  | 'starlight'
   | 'buffguide'
   | 'packs6'
   | 'newbuffs'
@@ -1243,6 +1245,8 @@ export const NewsFigure: React.FC<{ kind: FigureKind; caption?: string } & Figur
     switch (kind) {
       case 'pairs':
         return <PairsFigure {...ctx} />;
+      case 'starlight':
+        return <StarlightSky starlight={{ stars: 9, max: 14, cost: 7, guard_on: true, days: [], last_guard: null }} />;
       case 'challenges':
         return <ChallengesFigure {...ctx} />;
       case 'buffguide':

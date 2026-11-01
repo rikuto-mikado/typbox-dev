@@ -10,7 +10,7 @@ from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 
-from .economy import bits_summary
+from .economy import bits_summary, log_editable_until
 from .models import Category, StudyLog, UserProfile, monthly_to_weekly_hours
 from .timezones import is_valid_timezone
 
@@ -577,6 +577,7 @@ class StudyLogSerializer(serializers.ModelSerializer):
     category_code = serializers.CharField(source='category.code', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     category_color = serializers.CharField(source='category.color', read_only=True)
+    editable_until = serializers.SerializerMethodField()
     # Always serialized as UTC ISO-8601 (e.g. 2026-10-19T09:22:00Z) no matter
     # what settings.TIME_ZONE is; the client converts to the user's zone.
     created_at = serializers.DateTimeField(read_only=True, default_timezone=dt_timezone.utc)
@@ -597,6 +598,7 @@ class StudyLogSerializer(serializers.ModelSerializer):
             'is_public_to_hub',
             'bonus_bits',
             'bonus_item',
+            'editable_until',
             'created_at',
             'updated_at',
         )
@@ -605,12 +607,16 @@ class StudyLogSerializer(serializers.ModelSerializer):
             'duration_hours',
             'bonus_bits',
             'bonus_item',
+            'editable_until',
             'category_code',
             'category_name',
             'category_color',
             'created_at',
             'updated_at',
         )
+
+    def get_editable_until(self, obj):
+        return log_editable_until(obj)
 
     def validate_duration_minutes(self, value):
         if value < 1 or value > 1440:

@@ -8,12 +8,19 @@ out with no backfill, and editing, deleting, clearing or importing logs
 keeps the balance in step automatically. On top of that:
 
 - a shop buff active when a log is committed adds that log's bonus_bits
-  (stored on the log, so deleting it takes the bonus back too; editing it
-  never changes the bonus). IRON CONTRACT pays its whole payout onto the log
-  that seals it, the same way;
+  (stored on the log). The bonus is settled at commit: editing the log never
+  changes it, whether or not the buff is still running. Deleting the log
+  takes it back and returns what the log drew from the buff
+  (return_buff_draw). IRON CONTRACT pays its whole payout onto the log that
+  seals it, the same way;
 - every BitPurchase debits its price, less anything refunded when a buff
   was cancelled early (cancel_buff);
 - a settled CHALLENGE (challenges.py) credits its payout.
+
+Between buffs there is a cooldown (BUFF_COOLDOWN), and STARLIGHT fills: a day
+with a log committed while no buff runs lights a star. With STARLIGHT_COST
+stars on the gauge, a buff that fails its condition keeps running in exchange
+for them, once per buff.
 
 balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded)
 
@@ -23,7 +30,7 @@ an instant balance after each commit; keep the two in sync.
 
 import math
 import random
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from datetime import timezone as dt_timezone
 
 from django.db import transaction
@@ -46,6 +53,29 @@ MAX_BONUS_MINUTES_PER_LOG = 180
 # time it started in, if it is committed within this long of that boundary.
 # A log's session is taken as the `duration_minutes` before its commit.
 LATE_COMMIT_GRACE = timedelta(hours=3)
+
+# How long after its commit a log can still be edited or deleted. Past this it
+# is locked, so nothing a buff or challenge settled can be reopened much later.
+LOG_EDIT_WINDOW = timedelta(days=3)
+
+
+# After a buff ends, the next one can't be bought for this long.
+BUFF_COOLDOWN = timedelta(hours=24)
+
+STARLIGHT_MAX = 14
+STARLIGHT_COST = 7
+# What a backup can bring back of the night sky: nothing lit before TYPBOX
+# existed, which also bounds how long the list can get.
+EARLIEST_STAR_DAY = date(2020, 1, 1)
+MAX_IMPORTED_STAR_DAYS = 5000
+
+
+def log_editable_until(log):
+    return log.created_at + LOG_EDIT_WINDOW
+
+
+def log_is_locked(log, now=None):
+    return (now or timezone.now()) >= log_editable_until(log)
 
 
 def bits_for_minutes(minutes):
@@ -457,6 +487,7 @@ def contract_days(purchase, now):
     local = _local_now(purchase.user, purchase.created_at)
     zone = local.tzinfo
     first = local.date() + timedelta(days=1)
+    covered = (purchase.state or {}).get("covered") or []
     days = []
     for i in range(spec["days"]):
         day = first + timedelta(days=i)
@@ -464,7 +495,7 @@ def contract_days(purchase, now):
             day + timedelta(days=1), zone
         )
         minutes = _day_minutes(purchase.user, day, zone)
-        if minutes >= spec["min_minutes"]:
+        if minutes >= spec["min_minutes"] or day.isoformat() in covered:
             state = "done"
         elif now >= end + LATE_COMMIT_GRACE:
             state = "failed"
@@ -472,7 +503,14 @@ def contract_days(purchase, now):
             state = "live"
         else:
             state = "pending"
-        days.append({"date": day.isoformat(), "minutes": minutes, "state": state})
+        days.append(
+            {
+                "date": day.isoformat(),
+                "minutes": minutes,
+                "state": state,
+                "covered": day.isoformat() in covered,
+            }
+        )
     return days
 
 
@@ -496,11 +534,12 @@ def _day_minutes(user, day, zone):
     return total
 
 
-def _missed_morning(purchase, spec, now):
-    """EARLY BIRD: a morning (05:00-09:00) over by LATE_COMMIT_GRACE with no
-    log whose session touched it."""
+def _missed_mornings(purchase, spec, now):
+    """EARLY BIRD: the mornings (05:00-09:00) over by LATE_COMMIT_GRACE with
+    no log whose session touched them."""
     zone = _local_now(purchase.user, now).tzinfo
     day = _first_morning(purchase.user, purchase.created_at)
+    missed = []
     for _ in range(spec["mornings"]):
         start = timezone.make_aware(datetime.combine(day, time(5)), zone)
         end = timezone.make_aware(datetime.combine(day, time(9)), zone)
@@ -514,42 +553,152 @@ def _missed_morning(purchase, spec, now):
         if not any(
             created - timedelta(minutes=minutes) < end for created, minutes in logs
         ):
-            return True
+            missed.append(day.isoformat())
         day += timedelta(days=1)
-    return False
+    return missed
 
 
-def _short_day(purchase, spec, now):
-    """HYPERDRIVE: a full day (after the purchase day, over by
+def _short_days(purchase, spec, now):
+    """HYPERDRIVE: the full days (after the purchase day, over by
     LATE_COMMIT_GRACE) with fewer than daily_min minutes logged."""
     zone = _local_now(purchase.user, now).tzinfo
     day = _local_now(purchase.user, purchase.created_at).date() + timedelta(days=1)
+    short = []
     while (
         _local_midnight(day + timedelta(days=1), zone) + LATE_COMMIT_GRACE <= now
     ):
         if _day_minutes(purchase.user, day, zone) < spec["daily_min"]:
-            return True
+            short.append(day.isoformat())
         day += timedelta(days=1)
-    return False
+    return short
 
 
-def _broken(purchase, now):
-    """Whether a running buff has failed its condition and must end now."""
+def _misses(purchase, now):
+    """The days a running buff has failed its condition on and STARLIGHT has
+    not covered, as 'YYYY-MM-DD'."""
     spec = spec_of(purchase)
     if "contract" in spec:
-        return any(d["state"] == "failed" for d in contract_days(purchase, now))
+        return [d["date"] for d in contract_days(purchase, now) if d["state"] == "failed"]
+    covered = (purchase.state or {}).get("covered") or []
     if "mornings" in spec:
-        return _missed_morning(purchase, spec, now)
-    if "daily_min" in spec:
-        return _short_day(purchase, spec, now)
-    return False
+        missed = _missed_mornings(purchase, spec, now)
+    elif "daily_min" in spec:
+        missed = _short_days(purchase, spec, now)
+    else:
+        missed = []
+    return [day for day in missed if day not in covered]
+
+
+def _spend_starlight(buff, covering, now):
+    """Pays STARLIGHT_COST stars to keep `buff` running past one failure, if
+    the gauge can and this buff hasn't been saved before. Returns whether it
+    did."""
+    with transaction.atomic():
+        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=buff.user)
+        locked = BitPurchase.objects.select_for_update().filter(pk=buff.pk).first()
+        if locked is None or profile.starlight < STARLIGHT_COST:
+            return False
+        state = dict(locked.state or {})
+        if state.get("closed") or state.get("covered"):
+            return False
+        state["covered"] = [covering]
+        locked.state = state
+        locked.save(update_fields=["state"])
+        profile.starlight -= STARLIGHT_COST
+        profile.last_guard = {"at": now.isoformat(), "name": spec_of(locked)["name"]}
+        profile.save(update_fields=["starlight", "last_guard"])
+    buff.state = state
+    return True
+
+
+def _light_star(log, now):
+    """A log committed with no buff running lights today's star (one a day).
+    Returns the stars on the gauge if it lit one, else None."""
+    day = _local_now(log.user, now).date().isoformat()
+    with transaction.atomic():
+        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=log.user)
+        if day in profile.star_days:
+            return None
+        profile.star_days = [*profile.star_days, day]
+        profile.starlight = min(STARLIGHT_MAX, profile.starlight + 1)
+        profile.save(update_fields=["star_days", "starlight"])
+        return profile.starlight
+
+
+def restore_starlight(profile, raw, now=None):
+    """STARLIGHT from a backup, onto a locked profile. The lit days merge into
+    the night sky. The gauge comes back only for an account with no stars of
+    its own (a clear-all or a new account), and every star on it must have its
+    lit day, so importing a file again can't refill it. Anything malformed is
+    ignored; old backups carry none of it."""
+    if not isinstance(raw, dict):
+        return
+    now = now or timezone.now()
+    today = _local_now(profile.user, now).date()
+    days = raw.get("days")
+    restored = set()
+    for value in days[:MAX_IMPORTED_STAR_DAYS] if isinstance(days, list) else []:
+        try:
+            day = datetime.strptime(value, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            continue
+        if EARLIEST_STAR_DAY <= day <= today:
+            restored.add(day.isoformat())
+    stars = raw.get("stars")
+    if (
+        not profile.star_days
+        and not profile.starlight
+        and isinstance(stars, int)
+        and not isinstance(stars, bool)
+        and 0 <= stars <= min(STARLIGHT_MAX, len(restored))
+    ):
+        profile.starlight = stars
+    profile.star_days = sorted(restored | set(profile.star_days))
+    profile.save(update_fields=["starlight", "star_days"])
+
+
+def buff_cooldown_until(user, now=None):
+    """When the next buff can be bought, or None if nothing holds it back. A
+    purchase cancelled before it paid on any log leaves no cooldown, nor does
+    a used-up buff from before its end was recorded."""
+    now = now or timezone.now()
+    last = (
+        BitPurchase.objects.filter(user=user, item_id__in=RUNNABLE_BUFFS)
+        .order_by("-created_at")
+        .first()
+    )
+    if last is None or (last.state or {}).get("no_cooldown"):
+        return None
+    ended_at = (last.state or {}).get("ended_at")
+    if ended_at:
+        ended = datetime.fromisoformat(ended_at)
+    elif last.expires_at is not None and last.expires_at <= now:
+        ended = last.expires_at
+    else:
+        return None
+    until = ended + BUFF_COOLDOWN
+    return until if until > now else None
+
+
+def serialize_starlight(user):
+    profile = UserProfile.objects.filter(user=user).first()
+    stars = profile.starlight if profile else 0
+    return {
+        "stars": stars,
+        "max": STARLIGHT_MAX,
+        "cost": STARLIGHT_COST,
+        "guard_on": stars >= STARLIGHT_COST,
+        "days": profile.star_days if profile else [],
+        "last_guard": (profile.last_guard if profile else {}) or None,
+    }
 
 
 def active_buff(user, now=None):
     """The user's live buff purchase, or None. A buff whose condition has
     failed (IRON CONTRACT's missed day, EARLY BIRD's missed morning,
     HYPERDRIVE's short day) is closed here: it ends, what is left of it is
-    lost, and the buff slot is free again."""
+    lost, and the buff slot is free again, unless STARLIGHT covers the one
+    failure."""
     now = now or timezone.now()
     buff = (
         BitPurchase.objects.filter(
@@ -561,12 +710,33 @@ def active_buff(user, now=None):
         .order_by("-created_at")
         .first()
     )
-    if buff is not None and _broken(buff, now):
-        BitPurchase.objects.filter(pk=buff.pk, expires_at__gt=now).update(
-            expires_at=now, state={**(buff.state or {}), "closed": True}
-        )
+    if buff is None:
+        return None
+    if _misses(buff, now) and not _rescue_or_close(buff, now):
         return None
     return buff
+
+
+def _rescue_or_close(buff, now):
+    """A buff seen failing: STARLIGHT covers it or it ends. Returns whether it
+    is still running. Decided again under the locks, since another request may
+    have got here first: having just covered this failure, say."""
+    with transaction.atomic():
+        UserProfile.objects.select_for_update().get_or_create(user=buff.user)
+        locked = BitPurchase.objects.select_for_update().filter(pk=buff.pk).first()
+        if locked is None or (locked.state or {}).get("closed"):
+            return False
+        buff.state = locked.state
+        misses = _misses(locked, now)
+        if not misses:
+            return True
+        # Two failures at once are past saving, so no stars go on them.
+        if len(misses) == 1 and _spend_starlight(buff, misses[0], now):
+            return True
+        BitPurchase.objects.filter(pk=buff.pk, expires_at__gt=now).update(
+            expires_at=now, state={**(locked.state or {}), "closed": True}
+        )
+        return False
 
 
 def _close(buff, now):
@@ -597,7 +767,7 @@ def _just_expired_buff(log, now):
         .order_by("-expires_at")
         .first()
     )
-    if buff is None or (buff.state or {}).get("closed") or _broken(buff, now):
+    if buff is None or (buff.state or {}).get("closed") or _misses(buff, now):
         return None
     return buff
 
@@ -637,18 +807,80 @@ def _night_level(spec, nights, local):
     return key, level
 
 
+def _draw_key(log_id):
+    return f"log_{log_id}"
+
+
+def return_buff_draw(log):
+    """A deleted log hands back what it drew from its buff, so committing it
+    again costs nothing extra. A buff that was cancelled or failed, or that
+    another buff has replaced, stays as it ended. Logs committed before draws
+    were recorded have nothing to hand back."""
+    key = _draw_key(log.id)
+    with transaction.atomic():
+        buff = (
+            BitPurchase.objects.select_for_update()
+            .filter(user=log.user, state__draws__has_key=key)
+            .first()
+        )
+        if buff is None:
+            return
+        state = dict(buff.state or {})
+        draws = dict(state["draws"])
+        draw = draws.pop(key)
+        state["draws"] = draws
+        buff.bonus_earned = max(0, buff.bonus_earned - draw.get("bonus", 0))
+        replaced = BitPurchase.objects.filter(
+            user=log.user, item_id__in=RUNNABLE_BUFFS, created_at__gt=buff.created_at
+        ).exists()
+        if not (state.get("closed") or buff.refunded or replaced):
+            minutes = draw.get("minutes", 0)
+            if minutes:
+                buff.remaining_minutes += minutes
+            if draw.get("uses"):
+                buff.remaining_uses += draw["uses"]
+            if minutes or draw.get("uses"):
+                state.pop("ended_at", None)
+            if "day" in draw:
+                days = dict(state.get("days") or {})
+                days[draw["day"]] = max(0, days.get(draw["day"], 0) - minutes)
+                state["days"] = days
+            if "night" in draw:
+                nights = dict(state.get("nights") or {})
+                night = dict(nights.get(draw["night"]) or {"min": 0, "lvl": 1})
+                night["min"] = max(0, night["min"] - minutes)
+                nights[draw["night"]] = night
+                # An emptied latest night never happened, so it can't lift
+                # the rate of the night after it.
+                if not night["min"] and draw["night"] == max(nights):
+                    del nights[draw["night"]]
+                state["nights"] = nights
+        buff.state = state
+        buff.save(
+            update_fields=[
+                "remaining_minutes",
+                "remaining_uses",
+                "bonus_earned",
+                "state",
+            ]
+        )
+
+
 def apply_buff_to_new_log(log, now=None, weather=None):
     """
     Pays the active buff's bonus onto a just-created log and draws the buff
     down. Called once per log from StudyLogViewSet.perform_create (never for
     backup imports or edits). `weather`: the CHRONOMETER reading sent with
-    the commit (STORM RUNNER only).
+    the commit (STORM RUNNER only). With no buff to pay it, the log lights
+    STARLIGHT instead: returns the stars on the gauge if it lit one.
     """
     now = now or timezone.now()
     with transaction.atomic():
+        # Profile first, then the buff, like a purchase or a cancel.
+        UserProfile.objects.select_for_update().get_or_create(user=log.user)
         buff = active_buff(log.user, now) or _just_expired_buff(log, now)
         if buff is None:
-            return
+            return _light_star(log, now)
         # A BITS reset (or a cancel) may have removed it since the lookup:
         # the log is already saved, so just skip the bonus.
         buff = BitPurchase.objects.select_for_update().filter(pk=buff.pk).first()
@@ -670,8 +902,9 @@ def apply_buff_to_new_log(log, now=None, weather=None):
             _seal_contract(buff, spec, log, now)
             return
         if spec.get("break_under") and log.duration_minutes < spec["break_under"]:
-            # FOCUS CHIP burns out on a short log.
-            _close(buff, now)
+            # FOCUS CHIP burns out on a short log, unless STARLIGHT covers it.
+            if buff.expires_at <= now or not _spend_starlight(buff, "short-log", now):
+                _close(buff, now)
             return
         moment = _window_moment(log, buff, spec, now, weather)
         if moment is None:
@@ -682,6 +915,9 @@ def apply_buff_to_new_log(log, now=None, weather=None):
             return
 
         bonus = 0
+        # What this log took from the buff, for return_buff_draw. A LUCKY BYTE
+        # roll stays spent, so deleting a miss can't buy another roll.
+        draw = {}
         state = dict(buff.state or {})
         if "per_hour" in spec:
             covered = min(
@@ -708,6 +944,11 @@ def apply_buff_to_new_log(log, now=None, weather=None):
                 rate = spec["levels"][entry["lvl"] - 1]
             bonus = covered * rate // 60
             buff.remaining_minutes -= covered
+            draw["minutes"] = covered
+            if "daily_cap" in spec:
+                draw["day"] = key
+            if "levels" in spec:
+                draw["night"] = key
         elif "tiers" in spec:
             tier = next(
                 (pay for mins, pay in spec["tiers"] if log.duration_minutes >= mins), 0
@@ -716,11 +957,13 @@ def apply_buff_to_new_log(log, now=None, weather=None):
                 return
             bonus = tier
             buff.remaining_uses -= 1
+            draw["uses"] = 1
         elif "per_use" in spec:
             if log.duration_minutes < spec.get("min_minutes", 0):
                 return
             bonus = spec["per_use"]
             buff.remaining_uses -= 1
+            draw["uses"] = 1
         elif "chance" in spec:
             buff.remaining_uses -= 1
             if random.random() < spec["chance"]:
@@ -728,6 +971,12 @@ def apply_buff_to_new_log(log, now=None, weather=None):
                 bonus = bits_for_minutes(counted) * (spec["multiplier"] - 1)
 
         buff.bonus_earned += bonus
+        state["draws"] = {
+            **(state.get("draws") or {}),
+            _draw_key(log.id): {**draw, "bonus": bonus},
+        }
+        if buff.remaining_minutes == 0 or buff.remaining_uses == 0:
+            state["ended_at"] = now.isoformat()
         buff.state = state
         buff.save(
             update_fields=[
@@ -755,7 +1004,8 @@ def _seal_contract(buff, spec, log, now):
     bonus = buff.price * spec["contract"]["multiplier"]
     buff.remaining_uses = 0
     buff.bonus_earned += bonus
-    buff.save(update_fields=["remaining_uses", "bonus_earned"])
+    buff.state = {**(buff.state or {}), "ended_at": now.isoformat()}
+    buff.save(update_fields=["remaining_uses", "bonus_earned", "state"])
     log.bonus_bits += bonus
     log.bonus_item = buff.item_id
     log.save(update_fields=["bonus_bits", "bonus_item"])
@@ -766,6 +1016,7 @@ def seal_contract_on_edit(log, now=None):
     pays out onto that log, as a commit would have."""
     now = now or timezone.now()
     with transaction.atomic():
+        UserProfile.objects.select_for_update().get_or_create(user=log.user)
         buff = active_buff(log.user, now)
         if buff is None or "contract" not in spec_of(buff):
             return
@@ -861,6 +1112,11 @@ def serialize_buff(purchase):
         ),
         "rate_now": lunar_rate(spec, timezone.now()) if spec.get("lunar") else None,
         "status": buff_status(purchase, spec, timezone.now()),
+        # STARLIGHT: whether a failure can be covered, and whether one was.
+        "guardable": any(
+            key in spec for key in ("contract", "mornings", "daily_min", "break_under")
+        ),
+        "guarded": bool((purchase.state or {}).get("covered")),
     }
 
 
@@ -914,6 +1170,8 @@ def shop_state(user, now=None):
     return {
         "bits": bits_summary(user),
         "active_buff": serialize_buff(active_buff(user, now)),
+        "buff_cooldown_until": buff_cooldown_until(user, now),
+        "starlight": serialize_starlight(user),
         "buffs": [
             serialize_buff_offer(item_id, spec) for item_id, spec in BUFFS.items()
         ],
@@ -965,6 +1223,9 @@ def cancel_buff(user, now=None):
         refund = refund_amount(buff)
         buff.refunded = refund
         buff.save(update_fields=["refunded"])
+        # Bought by mistake: nothing was used, so nothing to wait out.
+        if not (buff.state or {}).get("draws") and not buff.bonus_earned:
+            buff.state = {**(buff.state or {}), "no_cooldown": True}
         _close(buff, now)
         return refund
 
@@ -973,7 +1234,8 @@ def reset_economy(user):
     """Starts the BITS economy over while keeping every study log and
     category: all purchases (buffs and furniture, so a running buff too) are
     dropped, buff bonuses are taken off the logs and MY ROOM goes back to
-    the starter room (all five rooms and their SAVEs, and the shop reserve). The balance falls back to the base rate for the hours
+    the starter room (all five rooms and their SAVEs, and the shop reserve).
+    STARLIGHT's gauge empties; the stars already lit stay in the night sky. The balance falls back to the base rate for the hours
     already logged. Returns (purchases deleted, logs whose bonus was cleared).
     """
     with transaction.atomic():
@@ -981,6 +1243,9 @@ def reset_economy(user):
         # the far side of the reset.
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
         deleted, _ = BitPurchase.objects.filter(user=user).delete()
+        profile.starlight = 0
+        profile.last_guard = {}
+        profile.save(update_fields=["starlight", "last_guard"])
         cleared = (
             StudyLog.objects.filter(user=user)
             .filter(Q(bonus_bits__gt=0) | ~Q(bonus_item=""))
@@ -1047,6 +1312,8 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
         UserProfile.objects.select_for_update().get_or_create(user=user)
         if active_buff(user, now) is not None:
             raise PurchaseError("A buff is already running — wait for it to finish.")
+        if buff_cooldown_until(user, now) is not None:
+            raise PurchaseError("The next buff isn't ready yet — it is cooling down.")
         if bits_summary(user)["balance"] < spec["price"]:
             raise PurchaseError("Not enough BITS.")
         via = ""

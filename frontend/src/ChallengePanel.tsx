@@ -1042,7 +1042,8 @@ const OfferDetail: React.FC<{ accent: string; borderCol: string; children: React
 /** One line under the SYSTEM CHRONOMETER's date while a challenge runs: a
  *  rival with a green dot while they are at their desk, or the boss with its
  *  HP. Opens the CHALLENGES tab. A fixed 14px line, placed by the caller
- *  (`className`) so it never changes the panel's height. */
+ *  (`className`), which also aligns it: a row of its own on phones, laid over
+ *  the panel's padding on desktop so the columns keep their height. */
 export const ChallengeTicker: React.FC<{ challenge: ActiveChallenge; textMuted: string; onOpen: () => void; className?: string }> = ({
   challenge,
   textMuted,
@@ -1072,7 +1073,7 @@ export const ChallengeTicker: React.FC<{ challenge: ActiveChallenge; textMuted: 
       type="button"
       onClick={onOpen}
       title={tf(t.chTickerTitle, { name: challenge.name })}
-      className={`h-3.5 min-w-0 flex items-center justify-end gap-1.5 font-mono text-[9px] leading-none uppercase tracking-wider cursor-pointer group ${className}`}
+      className={`h-3.5 min-w-0 flex items-center gap-1.5 font-mono text-[9px] leading-none uppercase tracking-wider cursor-pointer group ${className}`}
     >
       <span className="relative shrink-0 w-3.5 h-3.5 flex items-end justify-center bg-zinc-950">
         {art && <Pixel art={art} className={`w-3.5 h-3.5 ${status?.kind === 'sleep' ? 'opacity-40 grayscale' : ''}`} />}
@@ -1090,7 +1091,7 @@ export const ChallengeTicker: React.FC<{ challenge: ActiveChallenge; textMuted: 
           <HpCells hp={challenge.hp} max={challenge.max_hp} accent={accent} cells={10} height="h-1" />
         </span>
       )}
-      <span className={`truncate tabular-nums group-hover:underline ${online ? '' : textMuted}`}>{detail}</span>
+      <span className={`ml-auto lg:ml-0 truncate tabular-nums group-hover:underline ${online ? '' : textMuted}`}>{detail}</span>
     </button>
   );
 };

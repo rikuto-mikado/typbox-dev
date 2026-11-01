@@ -5,6 +5,7 @@ import { isUnlockRuleMet, type ChronoProgress } from './chronometerThemes';
 import { unlockLockedMessage, unlockRequirementLabel } from './ChronometerFace';
 import { CLEARANCE_LEVELS } from './telemetryFeatures';
 import { CURSOR_KINDS, CURSOR_SIZES, CURSOR_THEMES, type CursorKind, type CursorSize, type CursorTheme } from './cursorThemes';
+import { SegmentIndicator } from './SegmentIndicator';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const isCursorThemeUnlocked = (cursor: CursorTheme, progress: ChronoProgress) => isUnlockRuleMet(cursor.unlock, progress);
@@ -66,17 +67,19 @@ export const CursorPicker: React.FC<CursorPickerProps> = ({ activeCursorId, onSe
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <span className={`text-[10px] uppercase tracking-widest ${textMuted}`}>{t.cursorSize}</span>
-          <div className={`grid grid-cols-3 border ${borderCol}`} role="radiogroup" aria-label={t.cursorSize}>
+          <div className={`relative grid grid-cols-3 border ${borderCol}`} role="radiogroup" aria-label={t.cursorSize}>
+            <SegmentIndicator activeKey={size} colorClass="bg-emerald-500" />
             {CURSOR_SIZES.map((s, idx) => (
               <button
                 key={s.id}
                 type="button"
                 role="radio"
                 aria-checked={size === s.id}
+                data-seg-active={size === s.id}
                 title={tf(t.cursorSizeScale, { n: s.scale })}
                 onClick={() => size !== s.id && onSelectSize(s.id)}
-                className={`min-w-8.5 px-2.5 py-1 text-[10px] transition-colors cursor-pointer ${idx > 0 ? `border-l ${borderCol}` : ''} ${
-                  size === s.id ? 'bg-emerald-500 text-zinc-950 font-bold' : `${textMuted} hover:text-emerald-400`
+                className={`min-w-8.5 px-2.5 py-1 text-[10px] seg-btn cursor-pointer ${idx > 0 ? `border-l ${borderCol}` : ''} ${
+                  size === s.id ? 'text-zinc-950 font-bold' : `${textMuted} hover:text-emerald-400`
                 }`}
               >
                 {s.label}

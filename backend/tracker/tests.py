@@ -1047,8 +1047,11 @@ class BitsShopTests(APITestCase):
         self.assertEqual(self._log(60)["bonus_bits"], 0)
         # 10,000 - 800 price + 1,300 base (13h) + 1,000 bonus
         self.assertEqual(self._balance(), 11500)
-        # Spent buff frees the slot.
-        self.assertEqual(self._buy("focus_chip").status_code, 201)
+        # Spent buff frees the slot, after its cooldown.
+        self.assertEqual(self._buy("focus_chip").status_code, 400)
+        later = timezone.now() + timedelta(hours=24, minutes=1)
+        with mock.patch("django.utils.timezone.now", return_value=later):
+            self.assertEqual(self._buy("focus_chip").status_code, 201)
 
     def test_focus_chip_needs_long_sessions(self):
         self._buy("focus_chip")
@@ -2328,7 +2331,7 @@ class NewBuffTests(APITestCase):
             self.assertIsNone(self.client.get("/api/bits/").data["active_buff"])
             # 10,000 - 1,500 stake + 3,000 payout + base for 5h + 15h
             self.assertEqual(self._balance(), 10000 - 1500 + 3000 + 2000)
-            self.assertEqual(self._buy("warm_up").status_code, 201)
+            self.assertEqual(self._buy("warm_up").status_code, 400)  # cooling down
 
     def test_iron_contract_missed_day_keeps_the_stake(self):
         with self._at(2026, 11, 1, 20, 0):
@@ -2339,7 +2342,9 @@ class NewBuffTests(APITestCase):
             self.assertIsNone(self.client.get("/api/bits/").data["active_buff"])
             self.assertEqual(self._log(400)["bonus_bits"], 0)
             self.assertEqual(self._balance(), 10000 - 1500 + 1000)
-            # The slot is free again.
+            # The slot is free again, once the cooldown is over.
+            self.assertEqual(self._buy("warm_up").status_code, 400)
+        with self._at(2026, 11, 4, 8, 1):
             self.assertEqual(self._buy("warm_up").status_code, 201)
 
     def test_iron_contract_cancel_refunds_nothing(self):
@@ -2632,6 +2637,8 @@ class BuffReworkTests(APITestCase):
             self.assertIsNotNone(self._active())
         with self._at(2026, 11, 4, 12, 0):  # the 4th's morning passed with no log
             self.assertIsNone(self._active())
+            self.assertEqual(self._buy("warm_up").status_code, 400)  # cooling down
+        with self._at(2026, 11, 5, 12, 1):
             self.assertEqual(self._buy("warm_up").status_code, 201)
 
     def test_early_bird_runs_three_mornings(self):
@@ -3416,12 +3423,12 @@ class SessionTimingAndEditTests(APITestCase):
     def _hydra(self):
         self._buy("raid_hydra", categories=[self.math.id, self.code.id])
 
-    def test_a_head_without_its_category_counts_as_slain(self):
+    def test_a_head_without_its_category_falls_with_the_first_real_kill(self):
         with self._at(2026, 3, 2, 12):
             self._hydra()
             self.assertEqual(self._hp(), 1200)
             self.client.delete(f"/api/categories/{self.code.id}/")
-            self.assertEqual(self._hp(), 600)
+            self.assertEqual(self._hp(), 1200)  # nothing has been cut down yet
             for _ in range(2):
                 self._log(180, self.math)
             res = self._log(60, self.math)
@@ -3442,12 +3449,548 @@ class SessionTimingAndEditTests(APITestCase):
 
     def test_a_head_marked_done_comes_back_with_its_category(self):
         with self._at(2026, 3, 2, 12):
-            self._hydra()
+            self._buy(
+                "raid_hydra", categories=[self.math.id, self.code.id, self.spare.id]
+            )
+            self._log(180, self.math)
+            self._log(130, self.math)  # 270 + 130: the 400 HP head is down
+            self.assertEqual(self._hp(), 800)
             self.client.patch(
                 f"/api/categories/{self.code.id}/", {"completed": True}, format="json"
             )
-            self.assertEqual(self._hp(), 600)
+            self.assertEqual(self._hp(), 400)
             self.client.patch(
                 f"/api/categories/{self.code.id}/", {"completed": False}, format="json"
             )
-            self.assertEqual(self._hp(), 1200)
+            self.assertEqual(self._hp(), 800)
+
+    def test_dropping_every_head_without_a_hit_pays_nothing(self):
+        with self._at(2026, 3, 2, 12):
+            self._hydra()
+            self.client.delete(f"/api/categories/{self.code.id}/")
+            self.client.patch(
+                f"/api/categories/{self.math.id}/", {"completed": True}, format="json"
+            )
+            shop = self._shop()
+            self.assertIsNotNone(shop["active_challenge"])
+            self.assertEqual(shop["bits"]["payouts"], 0)
+        with self._at(2026, 3, 8, 12):  # it got away
+            shop = self._shop()
+            self.assertEqual(shop["last_challenge"]["outcome"], "escaped")
+            self.assertEqual(shop["bits"]["payouts"], 0)
+
+    def test_dropping_heads_after_some_damage_still_needs_a_kill(self):
+        with self._at(2026, 3, 2, 12):
+            self._hydra()
+            self._log(60, self.math)
+            self.client.delete(f"/api/categories/{self.code.id}/")
+            self.client.patch(
+                f"/api/categories/{self.math.id}/", {"completed": True}, format="json"
+            )
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["hp"], 1140)
+            self.assertEqual(shop["bits"]["payouts"], 0)
+
+    # Log lock
+
+    def test_a_log_locks_three_days_after_its_commit(self):
+        with self._at(2026, 3, 2, 12):
+            log = self._log(60)
+            self.assertIn("editable_until", log)
+        with self._at(2026, 3, 5, 11, 59):
+            self.assertEqual(self._edit(log, 50)["duration_minutes"], 50)
+        with self._at(2026, 3, 5, 12):
+            res = self.client.patch(
+                f"/api/logs/{log['id']}/", {"duration_minutes": 40}, format="json"
+            )
+            self.assertEqual(res.status_code, 403)
+            res = self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(res.status_code, 403)
+        saved = StudyLog.objects.get(pk=log["id"])
+        self.assertEqual(saved.duration_minutes, 50)
+
+    def test_a_locked_log_goes_with_a_full_reset(self):
+        with self._at(2026, 3, 2, 12):
+            self._log(60)
+        with self._at(2026, 4, 1):
+            res = self.client.delete("/api/logs/clear-all/")
+            self.assertEqual(res.status_code, 200)
+        self.assertFalse(StudyLog.objects.filter(user=self.user).exists())
+
+    # Deleting returns the draw
+
+    def _buff(self, item_id):
+        return BitPurchase.objects.get(user=self.user, item_id=item_id)
+
+    def test_deleting_returns_minutes_and_recommitting_pays_the_same(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            log = self._log(120)
+            self.assertEqual(self._buff("overclock").remaining_minutes, 480)
+            self.client.delete(f"/api/logs/{log['id']}/")
+            buff = self._buff("overclock")
+            self.assertEqual((buff.remaining_minutes, buff.bonus_earned), (600, 0))
+            self.assertEqual(self._log(120)["bonus_bits"], 200)
+            self.assertEqual(self._buff("overclock").remaining_minutes, 480)
+
+    def test_deleting_returns_a_use(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("focus_chip")
+            log = self._log(60)
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(self._buff("focus_chip").remaining_uses, 12)
+
+    def test_deleting_reopens_a_used_up_buff(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("warm_up")
+            log = self._log(180)
+            self._log(120)
+            self.assertIsNone(self._shop()["active_buff"])
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(self._buff("warm_up").remaining_minutes, 180)
+            self.assertIsNotNone(self._shop()["active_buff"])
+
+    def test_deleting_frees_the_morning_cap(self):
+        with self._at(2026, 3, 2, 6):
+            self._buy("early_bird")
+            log = self._log(120)
+            self.assertEqual(self._log(60)["bonus_bits"], 0)
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(self._log(60)["bonus_bits"], 200)
+
+    def test_deleting_the_only_log_of_a_night_drops_the_climb(self):
+        with self._at(2026, 3, 2, 22):
+            self._buy("night_shift")
+            first = self._log(60)
+            self.client.delete(f"/api/logs/{first['id']}/")
+        with self._at(2026, 3, 3, 22):
+            self.assertEqual(self._log(60)["bonus_bits"], 100)
+
+    def test_a_lucky_byte_roll_stays_spent(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("lucky_byte")
+            log = self._log(60)
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(self._buff("lucky_byte").remaining_uses, 19)
+
+    def test_deleting_after_a_cancel_returns_nothing(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            log = self._log(120)
+            refund = self.client.post("/api/bits/cancel/", {}, format="json").data["refunded"]
+            self.client.delete(f"/api/logs/{log['id']}/")
+            buff = self._buff("overclock")
+            self.assertEqual((buff.remaining_minutes, buff.refunded), (480, refund))
+            self.assertIsNone(self._shop()["active_buff"])
+
+    def test_deleting_after_another_buff_started_does_not_revive_the_old_one(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("warm_up")
+            log = self._log(180)
+            self._log(120)
+        with self._at(2026, 3, 3, 12, 5):
+            self._buy("overclock")
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(self._buff("warm_up").remaining_minutes, 0)
+            self.assertEqual(self._shop()["active_buff"]["item_id"], "overclock")
+
+    def test_a_burnt_focus_chip_stays_burnt_after_deleting_the_short_log(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("focus_chip")
+            log = self._log(5)
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertIsNone(self._shop()["active_buff"])
+
+    def test_a_log_from_before_draws_were_recorded_deletes_cleanly(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            log = self._log(120)
+            BitPurchase.objects.filter(item_id="overclock").update(state={})
+            res = self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(res.status_code, 204)
+            self.assertEqual(self._buff("overclock").remaining_minutes, 480)
+
+    def test_another_users_log_never_touches_my_buff(self):
+        other = User.objects.create_user(
+            username="other", email="other@example.com", password="s3cure-pass-123"
+        )
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            log = self._log(120)
+            self.client.force_authenticate(user=other)
+            res = self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(res.status_code, 404)
+            self.client.force_authenticate(user=self.user)
+            self.assertEqual(self._buff("overclock").remaining_minutes, 480)
+
+    # A log whose buff is over
+
+    def test_editing_a_log_after_its_buff_ended_keeps_the_bonus(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            log = self._log(120)
+        with self._at(2026, 3, 3, 16):  # expired at 12:00, past the grace
+            balance = self._shop()["bits"]["balance"]
+            self.assertEqual(self._edit(log, 60)["bonus_bits"], 200)
+            self.assertEqual(self._edit(log, 240)["bonus_bits"], 200)
+            self.assertEqual(self._shop()["bits"]["balance"], balance + 200)
+            self.assertIsNone(self._shop()["active_buff"])
+
+    def test_deleting_a_log_after_its_buff_ended_takes_the_bonus_only(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            log = self._log(120)
+        with self._at(2026, 3, 3, 16):
+            balance = self._shop()["bits"]["balance"]
+            self.client.delete(f"/api/logs/{log['id']}/")
+            self.assertEqual(self._shop()["bits"]["balance"], balance - 400)
+            self.assertIsNone(self._shop()["active_buff"])
+            self.assertEqual(self._log(60)["bonus_bits"], 0)
+
+    def test_editing_a_log_after_its_raid_settled_changes_nothing(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_golem")
+            logs = [self._log(180) for _ in range(5)]
+            self.assertEqual(self._shop()["bits"]["payouts"], 1300)
+            self._edit(logs[0], 30)
+            self.client.delete(f"/api/logs/{logs[1]['id']}/")
+            self.assertEqual(self._shop()["bits"]["payouts"], 1300)
+
+    # Buff cooldown
+
+    def _cooldown(self):
+        return self._shop()["buff_cooldown_until"]
+
+    def _buy_status(self, item_id):
+        return self.client.post(
+            "/api/bits/buy/", {"item_id": item_id}, format="json"
+        ).status_code
+
+    def test_a_buff_that_ran_out_of_time_starts_the_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(10)
+        with self._at(2026, 3, 3, 12, 1):
+            self.assertIsNotNone(self._cooldown())
+            self.assertEqual(self._buy_status("warm_up"), 400)
+        with self._at(2026, 3, 4, 12, 0):
+            self.assertIsNone(self._cooldown())
+            self.assertEqual(self._buy_status("warm_up"), 201)
+
+    def test_a_used_up_buff_cools_down_from_when_it_ran_out(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("warm_up")
+            self._log(180)
+            self._log(120)
+            self.assertIsNone(self._shop()["active_buff"])
+            self.assertEqual(self._buy_status("overclock"), 400)
+        with self._at(2026, 3, 3, 12):
+            self.assertEqual(self._buy_status("overclock"), 201)
+
+    def test_deleting_the_last_log_of_a_used_up_buff_lifts_its_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("warm_up")
+            self._log(180)
+            last = self._log(120)
+            self.assertIsNotNone(self._cooldown())
+            self.client.delete(f"/api/logs/{last['id']}/")
+            self.assertIsNone(self._cooldown())
+            self.assertIsNotNone(self._shop()["active_buff"])
+
+    def test_cancelling_a_used_buff_starts_the_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(60)
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.assertEqual(self._buy_status("warm_up"), 400)
+
+    def test_cancelling_an_unused_buff_leaves_no_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.assertIsNone(self._cooldown())
+            self.assertEqual(self._buy_status("warm_up"), 201)
+
+    def test_challenges_and_furniture_ignore_the_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(60)
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.assertEqual(self._buy_status("raid_golem"), 201)
+
+    def test_a_reset_clears_the_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(60)
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.client.post("/api/bits/reset/", {}, format="json")
+            self.assertIsNone(self._cooldown())
+
+    # STARLIGHT
+
+    def _stars(self):
+        return self._shop()["starlight"]["stars"]
+
+    def _set_stars(self, n):
+        UserProfile.objects.filter(user=self.user).update(starlight=n)
+
+    def test_a_log_without_a_buff_lights_one_star_a_day(self):
+        with self._at(2026, 3, 2, 12):
+            self.assertEqual(self._log(30)["star_lit"], 1)
+            self.assertNotIn("star_lit", self._log(30))
+            self.assertEqual(self._stars(), 1)
+        with self._at(2026, 3, 3, 12):
+            self.assertEqual(self._log(30)["star_lit"], 2)
+            self.assertEqual(self._shop()["starlight"]["days"], ["2026-03-02", "2026-03-03"])
+
+    def test_a_log_with_a_buff_running_lights_nothing(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self.assertNotIn("star_lit", self._log(30))
+            self.assertEqual(self._stars(), 0)
+
+    def test_a_log_using_up_a_buff_lights_nothing(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("warm_up")
+            self._log(180)
+            self.assertNotIn("star_lit", self._log(120))
+            self.assertEqual(self._stars(), 0)
+            # The buff is over: the next log of the day does light one.
+            self.assertEqual(self._log(10)["star_lit"], 1)
+
+    def test_a_log_during_the_cooldown_lights_a_star(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(60)
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.assertEqual(self._log(10)["star_lit"], 1)
+
+    def test_the_gauge_stops_at_fourteen(self):
+        self._set_stars(14)
+        with self._at(2026, 3, 2, 12):
+            self.assertEqual(self._log(30)["star_lit"], 14)
+            self.assertEqual(self._shop()["starlight"]["days"], ["2026-03-02"])
+
+    def test_starlight_saves_hyperdrive_once_for_seven_stars(self):
+        self._set_stars(9)
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 4, 3, 0):  # the 3rd had no log
+            shop = self._shop()
+            self.assertIsNotNone(shop["active_buff"])
+            self.assertEqual(shop["active_buff"]["guarded"], True)
+            self.assertEqual(shop["starlight"]["stars"], 2)
+            self.assertEqual(shop["starlight"]["last_guard"]["name"], "HYPERDRIVE")
+            self._log(180)  # the 4th is fine
+        self._set_stars(7)
+        with self._at(2026, 3, 6, 3, 0):  # the 5th had no log: no second save
+            shop = self._shop()
+            self.assertIsNone(shop["active_buff"])
+            self.assertEqual(shop["starlight"]["stars"], 7)
+
+    def test_too_few_stars_save_nothing(self):
+        self._set_stars(6)
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 4, 3, 0):
+            shop = self._shop()
+            self.assertIsNone(shop["active_buff"])
+            self.assertEqual(shop["starlight"]["stars"], 6)
+
+    def test_two_failures_at_once_spend_no_stars(self):
+        self._set_stars(14)
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 5, 3, 0):  # the 3rd and the 4th both empty
+            shop = self._shop()
+            self.assertIsNone(shop["active_buff"])
+            self.assertEqual(shop["starlight"]["stars"], 14)
+
+    def test_starlight_saves_a_contract_day_and_it_still_pays(self):
+        self._set_stars(7)
+        with self._at(2026, 3, 2, 10):
+            self._buy("iron_contract")
+        with self._at(2026, 3, 4, 3, 0):  # the 3rd was empty
+            buff = self._shop()["active_buff"]
+            self.assertEqual(buff["contract"]["days"][0]["state"], "done")
+            self.assertTrue(buff["contract"]["days"][0]["covered"])
+        with self._at(2026, 3, 4, 12):
+            self._log(300)
+        with self._at(2026, 3, 5, 12):
+            self.assertEqual(self._log(300)["bonus_bits"], 3000)
+
+    def test_starlight_cannot_save_the_last_day_of_a_contract(self):
+        self._set_stars(7)
+        with self._at(2026, 3, 2, 10):
+            self._buy("iron_contract")
+        for day in (3, 4):
+            with self._at(2026, 3, day, 12):
+                self._log(300)
+        with self._at(2026, 3, 6, 3, 0):
+            shop = self._shop()
+            self.assertIsNone(shop["active_buff"])
+            self.assertEqual(shop["starlight"]["stars"], 7)
+
+    def test_starlight_saves_early_bird_from_a_missed_morning(self):
+        self._set_stars(7)
+        with self._at(2026, 3, 1, 20):
+            self._buy("early_bird")
+        with self._at(2026, 3, 2, 12, 0):
+            self.assertIsNotNone(self._shop()["active_buff"])
+            self.assertEqual(self._stars(), 0)
+        with self._at(2026, 3, 3, 7):
+            self.assertEqual(self._log(60)["bonus_bits"], 200)
+
+    def test_starlight_saves_focus_chip_from_a_short_log(self):
+        self._set_stars(7)
+        with self._at(2026, 3, 2, 12):
+            self._buy("focus_chip")
+            self.assertEqual(self._log(5)["bonus_bits"], 0)
+            shop = self._shop()
+            self.assertIsNotNone(shop["active_buff"])
+            self.assertEqual(shop["starlight"]["stars"], 0)
+            self._set_stars(7)
+            self._log(5)  # a second short log: the one save is gone
+            shop = self._shop()
+            self.assertIsNone(shop["active_buff"])
+            self.assertEqual(shop["starlight"]["stars"], 7)
+
+    def test_a_buff_with_no_condition_shows_no_guard(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self.assertFalse(self._shop()["active_buff"]["guardable"])
+
+    def test_a_reset_empties_the_gauge_but_keeps_the_sky(self):
+        with self._at(2026, 3, 2, 12):
+            self._log(30)
+            self.client.post("/api/bits/reset/", {}, format="json")
+            starlight = self._shop()["starlight"]
+            self.assertEqual(starlight["stars"], 0)
+            self.assertEqual(starlight["days"], ["2026-03-02"])
+
+    def test_a_full_clear_empties_the_sky_too(self):
+        with self._at(2026, 3, 2, 12):
+            self._log(30)
+            self.client.delete("/api/logs/clear-all/")
+            starlight = self._shop()["starlight"]
+            self.assertEqual((starlight["stars"], starlight["days"]), (0, []))
+
+    def test_an_import_lights_no_stars(self):
+        with self._at(2026, 3, 2, 12):
+            res = self.client.post(
+                "/api/logs/import-backup/",
+                {"categories": [], "logs": [{"date": "2026-03-01", "duration_minutes": 60}]},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 201)
+            self.assertEqual(self._stars(), 0)
+
+    # STARLIGHT and backups
+
+    def _import(self, starlight=None, logs=()):
+        body = {"categories": [], "logs": list(logs)}
+        if starlight is not None:
+            body["starlight"] = starlight
+        res = self.client.post("/api/logs/import-backup/", body, format="json")
+        self.assertEqual(res.status_code, 201)
+
+    def test_a_backup_restores_the_stars_after_a_full_clear(self):
+        with self._at(2026, 3, 2, 12):
+            self._set_stars(0)
+            self.client.delete("/api/logs/clear-all/")
+            self._import({"stars": 2, "days": ["2026-03-01", "2026-02-20", "2026-03-01"]})
+            starlight = self._shop()["starlight"]
+            self.assertEqual(starlight["stars"], 2)
+            self.assertEqual(starlight["days"], ["2026-02-20", "2026-03-01"])
+
+    def test_a_backup_cannot_hold_more_stars_than_lit_days(self):
+        with self._at(2026, 3, 2, 12):
+            self.client.delete("/api/logs/clear-all/")
+            self._import({"stars": 14, "days": []})
+            self.assertEqual(self._stars(), 0)
+            self._import({"stars": 14, "days": ["2026-03-01"]})
+            self.assertEqual(self._stars(), 0)
+
+    def test_a_backup_cannot_light_days_before_typbox(self):
+        with self._at(2026, 3, 2, 12):
+            self.client.delete("/api/logs/clear-all/")
+            self._import({"stars": 0, "days": ["0001-01-01", "2019-12-31", "2020-01-01"]})
+            self.assertEqual(self._shop()["starlight"]["days"], ["2020-01-01"])
+
+    def test_a_second_request_finds_the_failure_already_covered(self):
+        from .economy import _rescue_or_close, active_buff
+
+        self._set_stars(14)
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 4, 3, 0):
+            # A second request that read the buff before the first spent stars.
+            stale = BitPurchase.objects.select_related("user").get(
+                user=self.user, item_id="hyperdrive"
+            )
+            self.assertIsNotNone(active_buff(self.user))
+            self.assertEqual(self._stars(), 7)
+            now = timezone.now()
+            self.assertTrue(_rescue_or_close(stale, now))
+            self.assertEqual(self._stars(), 7)
+            self.assertIsNotNone(self._shop()["active_buff"])
+
+    def test_importing_again_cannot_refill_the_gauge(self):
+        with self._at(2026, 3, 2, 12):
+            self.client.delete("/api/logs/clear-all/")
+            self._import({"stars": 1, "days": ["2026-03-01"]})
+            self._set_stars(0)  # spent
+            self._import({"stars": 14, "days": ["2026-02-01"]})
+            starlight = self._shop()["starlight"]
+            self.assertEqual(starlight["stars"], 0)
+            self.assertEqual(starlight["days"], ["2026-02-01", "2026-03-01"])
+
+    def test_a_backup_onto_an_account_with_stars_only_adds_to_the_sky(self):
+        with self._at(2026, 3, 2, 12):
+            self._log(30)
+            self._import({"stars": 14, "days": ["2026-02-27"]})
+            starlight = self._shop()["starlight"]
+            self.assertEqual(starlight["stars"], 1)
+            self.assertEqual(starlight["days"], ["2026-02-27", "2026-03-02"])
+
+    def test_a_backup_without_starlight_changes_nothing(self):
+        with self._at(2026, 3, 2, 12):
+            self._log(30)
+            self._import(None, [{"date": "2026-03-01", "duration_minutes": 60}])
+            starlight = self._shop()["starlight"]
+            self.assertEqual((starlight["stars"], starlight["days"]), (1, ["2026-03-02"]))
+
+    def test_a_malformed_starlight_is_ignored(self):
+        with self._at(2026, 3, 2, 12):
+            for junk in (
+                "lots",
+                7,
+                {"stars": 99, "days": "x"},
+                {"stars": True, "days": [1, None, "soon", "2026-13-40", "2099-01-01"]},
+                {"stars": -1},
+            ):
+                self._import(junk)
+            starlight = self._shop()["starlight"]
+            self.assertEqual((starlight["stars"], starlight["days"]), (0, []))
+
+    def test_an_imported_old_log_stays_sealed_and_a_new_one_is_open(self):
+        with self._at(2026, 3, 10, 12):
+            self._import(
+                None,
+                [
+                    {"date": "2026-03-01", "duration_minutes": 60, "createdAt": "2026-03-01T03:00:00Z"},
+                    {"date": "2026-03-09", "duration_minutes": 30, "createdAt": "2026-03-09T03:00:00Z"},
+                ],
+            )
+            old = StudyLog.objects.get(user=self.user, duration_minutes=60)
+            recent = StudyLog.objects.get(user=self.user, duration_minutes=30)
+            self.assertEqual(self.client.delete(f"/api/logs/{old.id}/").status_code, 403)
+            self.assertEqual(self.client.delete(f"/api/logs/{recent.id}/").status_code, 204)
+
+    def test_an_import_neither_pays_a_running_buff_nor_starts_a_cooldown(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._import(None, [{"date": "2026-03-01", "duration_minutes": 120}])
+            self.assertEqual(self._buff("overclock").remaining_minutes, 600)
+            self.assertIsNone(self._cooldown())
+

@@ -18,8 +18,9 @@ x1.5). Each boss has a trait that changes how to fight it. Hits are kept in
 state['events'] and HP is replayed from them (plus the trait's heals), so a
 log deleted mid-raid takes its hit back and an edited one hits for its new
 length, up to what it hit for when committed. A HYDRA head whose category is
-deleted or marked DONE counts as slain. Down in time: the full loot. Out of
-time: a share of the loot in step with the damage dealt.
+deleted or marked DONE counts as slain once another head has really been cut
+down. Down in time: the full loot. Out of time: a share of the loot in step
+with the damage dealt.
 
 RIVAL: a 72-hour duel against an NPC whose day runs on a schedule drawn
 from the date (rival_day), the same for everyone. Like a raid, it starts
@@ -448,13 +449,19 @@ def raid_hp(purchase, now):
         for e in events:
             if e.get("head") is not None and e["dmg"]:
                 left[e["head"]] = max(0, left[e["head"]] - e["dmg"])
-        # No log can hit a head without its in-progress category any more.
+        # No log can hit a head without its in-progress category any more, so
+        # it stops standing in the way, but only once a head has been cut down
+        # by real hits: dropping categories alone slays nothing.
+        cut_down = any(hp == 0 for hp in left)
         open_cats = set(
             Category.objects.filter(
                 pk__in=[h["cat"] for h in heads], completed_at__isnull=True
             ).values_list("pk", flat=True)
         )
-        left = [hp if h["cat"] in open_cats else 0 for hp, h in zip(left, heads)]
+        left = [
+            hp if h["cat"] in open_cats or not cut_down else 0
+            for hp, h in zip(left, heads)
+        ]
         return sum(left), left, spec["hp"]
     timeline = [
         (datetime.fromisoformat(e["at"]), -e["dmg"]) for e in events if e["dmg"]
@@ -510,7 +517,8 @@ def _settle(purchase, outcome, payout, now):
 def settle_expired(user, now=None):
     """Closes challenges whose time ran out (once): an escaped boss pays a
     share of its loot, a finished duel pays by its result. A HYDRA left with
-    no head standing (its last categories went away) goes down here."""
+    no head standing (its last open categories went away after a head was cut
+    down) goes down here."""
     now = now or timezone.now()
     for purchase in _live(user).filter(expires_at__lte=now):
         with transaction.atomic():

@@ -6,6 +6,7 @@ import { tf, useI18n } from './i18n';
 import { NewsFigure, type FigureContext } from './NewsFigures';
 import { NEWS_ARTICLES, type NewsArticle, type NewsBlock, type ShowcaseRoom, type TourRoom } from './news';
 import { renderRoom, snapshotRoom, type FurnitureSpec } from './roomRender';
+import { SegmentIndicator } from './SegmentIndicator';
 
 // 06 / NEWS: the list of articles (news.ts), newest first; tapping one
 // opens it in place. Room lists (RoomShowcase) are drawn live by the room
@@ -139,15 +140,17 @@ const RoomShowcase: React.FC<{ rooms: Array<ShowcaseRoom | TourRoom>; borderCol:
               </span>
             )}
           </div>
-          <span className={`inline-flex shrink-0 border ${borderCol} text-[9px]`} role="group" aria-label={t.newsTimeOfDay}>
+          <span className={`relative inline-flex shrink-0 border ${borderCol} text-[9px]`} role="group" aria-label={t.newsTimeOfDay}>
+            <SegmentIndicator activeKey={String(night)} colorClass="bg-emerald-500" />
             {([false, true] as const).map((isNight) => (
               <button
                 key={String(isNight)}
                 type="button"
                 aria-pressed={night === isNight}
+                data-seg-active={night === isNight}
                 onClick={() => setNight(isNight)}
-                className={`px-1.5 py-0.5 cursor-pointer ${isNight ? `border-l ${borderCol}` : ''} ${
-                  night === isNight ? 'bg-emerald-500 text-zinc-950 font-bold' : textMuted
+                className={`px-1.5 py-0.5 seg-btn cursor-pointer ${isNight ? `border-l ${borderCol}` : ''} ${
+                  night === isNight ? 'text-zinc-950 font-bold' : textMuted
                 }`}
               >
                 {isNight ? t.newsNight : t.newsDay}
