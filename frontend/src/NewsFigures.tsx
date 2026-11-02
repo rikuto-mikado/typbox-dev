@@ -519,11 +519,11 @@ const BuffsFigure: React.FC<FigureContext> = ({ borderCol, isDark }) => {
 // at a time; the last card is the pair to avoid.
 const PAIRS: Array<{ style: string; buff: string; buffName: string; ch: string; chName: string; kind: 'raid' | 'rival'; best: string; avoid?: boolean }> = [
   { style: '5H+ DAILY', buff: 'iron_contract', buffName: 'IRON CONTRACT', ch: 'orion', chName: 'ORION', kind: 'rival', best: '+2,300' },
-  { style: 'LONG SITTINGS', buff: 'deep_dive', buffName: 'DEEP DIVE', ch: 'golem', chName: 'GOLEM', kind: 'raid', best: '+1,800' },
+  { style: 'LONG SITTINGS', buff: 'deep_dive', buffName: 'DEEP DIVE', ch: 'golem', chName: 'GOLEM', kind: 'raid', best: '+2,300' },
   { style: 'NIGHT OWL', buff: 'night_shift', buffName: 'NIGHT SHIFT', ch: 'nova', chName: 'NOVA', kind: 'rival', best: '+1,150' },
   { style: 'EARLY RISER', buff: 'early_bird', buffName: 'EARLY BIRD', ch: 'orion', chName: 'ORION', kind: 'rival', best: '+1,200' },
   { style: '50-MIN BLOCKS', buff: 'focus_chip', buffName: 'FOCUS CHIP', ch: 'kai', chName: 'KAI', kind: 'rival', best: '+1,100' },
-  { style: 'ONE EXAM', buff: 'category_lock', buffName: 'CATEGORY LOCK', ch: 'warden', chName: 'WARDEN', kind: 'raid', best: '+900' },
+  { style: 'ONE EXAM', buff: 'category_lock', buffName: 'CATEGORY LOCK', ch: 'warden', chName: 'WARDEN', kind: 'raid', best: '+1,100' },
   { style: 'LIGHT WEEK', buff: 'warm_up', buffName: 'WARM-UP', ch: 'mika', chName: 'MIKA', kind: 'rival', best: '+500' },
   { style: 'AVOID', buff: 'category_lock', buffName: 'CATEGORY LOCK', ch: 'hydra', chName: 'HYDRA', kind: 'raid', best: 'ONE CATEGORY VS THREE HEADS', avoid: true },
 ];
