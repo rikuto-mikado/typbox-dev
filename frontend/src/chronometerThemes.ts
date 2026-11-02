@@ -3,9 +3,12 @@
 // numbers into each theme's numeral system, decides unlocks, and lazily
 // loads the (glyph-subset) web font a theme needs.
 import catalog from './chronometerThemes.json';
+import { isFestivalRewardUnlocked } from './festivalUnlocks';
 
 export type ChronoUnlock =
   | { type: 'default' }
+  /** A reward on a festival's bar; `id` is the reward's own id. */
+  | { type: 'festival'; id: string }
   | { type: 'level'; value: number }
   | { type: 'streak'; value: number }
   | { type: 'sessions'; value: number }
@@ -205,6 +208,8 @@ export function isUnlockRuleMet(u: ChronoUnlock, p: ChronoProgress): boolean {
       return p.totalHours >= u.value;
     case 'session':
       return p.longestSessionMinutes >= u.value;
+    case 'festival':
+      return isFestivalRewardUnlocked(u.id);
   }
 }
 
@@ -224,6 +229,8 @@ export function unlockRuleRank(u: ChronoUnlock): number {
       return u.value * 20;
     case 'sessions':
       return u.value * 4;
+    case 'festival':
+      return 3000;
     case 'ascension':
       return 3000 + u.value;
     case 'hours':

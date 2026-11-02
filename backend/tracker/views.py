@@ -24,7 +24,8 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import challenges
+from . import challenges, festival_pass
+from .backup import MAX_IMPORTED_PURCHASES, export_economy, log_bonus, restore_economy
 from .economy import (
     BUFFS,
     PurchaseError,
@@ -32,7 +33,6 @@ from .economy import (
     buy,
     cancel_buff,
     log_is_locked,
-    open_festival_gift,
     reset_economy,
     return_buff_draw,
     seal_contract_on_edit,
@@ -434,8 +434,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         furniture, so any running buff too) is dropped and MY ROOM goes back
         to the starter room (all five rooms and their SAVEs). Earnings are
         derived from logs, so a backup imported afterwards pays its hours out
-        again at the base rate only;
-        buff bonuses are tied to the original commits and never come back.
+        again; one with an `economy` section brings back the rest (backup.py).
         Without this, the old purchases would outlive the logs that paid for
         them and leave the balance negative.
         """
@@ -453,10 +452,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             profile.star_spends = []
             profile.last_guard = {}
             profile.crate_omen = ""
-            profile.festival_gifts = []
-            profile.save(
-                update_fields=["star_spends", "last_guard", "crate_omen", "festival_gifts"]
-            )
+            profile.save(update_fields=["star_spends", "last_guard", "crate_omen"])
             if (
                 profile.room_layout
                 or profile.room_slots
@@ -484,6 +480,11 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["get"], url_path="export-economy")
+    def export_economy_section(self, request):
+        """GET /api/logs/export-economy/: the BITS side of a backup (backup.py)."""
+        return Response(export_economy(request.user))
+
     @action(detail=False, methods=["post"], url_path="import-backup")
     def import_backup(self, request):
         """
@@ -494,7 +495,8 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         the account (same category, date, duration and commit timestamp) is
         skipped, so re-importing the same file adds nothing. Logs whose
         category isn't in the account or the backup are kept uncategorized
-        rather than credited to some other category.
+        rather than credited to some other category. A backup's `economy`
+        section brings purchases, the room and more back (backup.py).
         """
         if not isinstance(request.data, dict):
             return Response(
@@ -503,6 +505,9 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             )
         raw_categories = request.data.get("categories", [])
         raw_logs = request.data.get("logs", [])
+        economy = request.data.get("economy")
+        if not isinstance(economy, dict):
+            economy = None
 
         if not isinstance(raw_logs, list):
             return Response(
@@ -515,6 +520,13 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         ):
             return Response(
                 {"detail": f"This backup is too large: at most {MAX_IMPORTED_LOGS} logs and {MAX_IMPORTED_CATEGORIES} categories."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        purchases = economy.get("purchases") if economy else None
+        if isinstance(purchases, list) and len(purchases) > MAX_IMPORTED_PURCHASES:
+            return Response(
+                {"detail": f"This backup is too large: at most {MAX_IMPORTED_PURCHASES} purchases."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -650,8 +662,9 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         skipped_logs += 1
                         continue
 
-                # The buff that paid survives so a buffed day stays unlit, but
-                # its BITS do not come back (see clear_all).
+                # The buff that paid survives so a buffed day stays unlit. Its
+                # BITS come back with a backup that carries its economy (so the
+                # purchases they paid for are back too), not from an older file.
                 raw_item = entry.get("bonusItem") or entry.get("bonus_item")
                 bonus_item = raw_item if isinstance(raw_item, str) and raw_item in BUFFS else ""
 
@@ -674,6 +687,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         topic=topic_str,
                         is_public_to_hub=True,
                         bonus_item=bonus_item,
+                        bonus_bits=log_bonus(entry) if economy is not None else 0,
                     )
                 )
 
@@ -689,11 +703,18 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 if restored:
                     StudyLog.objects.bulk_update(restored, ["created_at"], batch_size=1000)
 
+            restored_purchases = (
+                restore_economy(request.user, economy, existing_cats) if economy else 0
+            )
+            # What the logs earned at the festivals comes with them.
+            festival_pass.sweep(request.user)
+
         return Response(
             {
                 "imported_logs": len(logs_to_create),
                 "skipped_logs": skipped_logs,
                 "created_categories": created_cats,
+                "restored_purchases": restored_purchases,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -760,7 +781,7 @@ class BitsCancelView(APIView):
 
 
 class BitsStarlightView(APIView):
-    """POST /api/bits/starlight/ - {"use": "reroll"|"omen"|"dawn"}: spend stars."""
+    """POST /api/bits/starlight/ - {"use": "reroll"|"omen"|"festival"}: spend stars."""
 
     permission_classes = (permissions.IsAuthenticated,)
 
@@ -774,19 +795,6 @@ class BitsStarlightView(APIView):
         except StarlightError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user))
-
-
-class BitsFestivalGiftView(APIView):
-    """POST /api/bits/festival/gift/ - Open this year's present."""
-
-    permission_classes = (permissions.IsAuthenticated,)
-
-    def post(self, request):
-        try:
-            piece = open_festival_gift(request.user)
-        except StarlightError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({**shop_state(request.user), "gift_piece": piece})
 
 
 class BitsChallengeForfeitView(APIView):

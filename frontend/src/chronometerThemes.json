@@ -10,7 +10,7 @@
     { "id": "SIGNAL", "label": "Signal / Glyph", "color": "#a855f7" },
     { "id": "HAND", "label": "Hand / Brush", "color": "#fb7185" },
     { "id": "DIAL", "label": "Dial / Instrument", "color": "#38bdf8" },
-    { "id": "PRESTIGE", "label": "Prestige", "color": "#fde047" }
+    { "id": "ASCENSION", "label": "Ascension", "color": "#fde047" }
   ],
   "themes": [
     {
@@ -495,7 +495,7 @@
       "code": "CHR-054",
       "name": "HOLOGRAM PRISM",
       "desc": "Iridescent shifting-spectrum numerals reserved for the first Ascension.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Audiowide", "google": true }, "fx": "holo", "scale": 0.92 },
       "unlock": { "type": "ascension", "value": 1 }
     },
@@ -504,7 +504,7 @@
       "code": "CHR-055",
       "name": "GILDED REGALIA",
       "desc": "Engraved gold-leaf decorative capitals for twice-Ascended operators.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "numeral": "roman", "font": { "family": "Cinzel Decorative", "weight": 700, "google": true }, "fx": "gold", "scale": 0.6, "sep": "·" },
       "unlock": { "type": "ascension", "value": 2 }
     },
@@ -513,7 +513,7 @@
       "code": "CHR-056",
       "name": "QUANTUM STATE",
       "desc": "Superposed glitch-and-prism readout for operators past their third Ascension.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Orbitron", "weight": 700, "google": true }, "fx": "quantum", "scale": 0.9 },
       "unlock": { "type": "ascension", "value": 3 }
     },
@@ -1008,7 +1008,7 @@
       "code": "CHR-111",
       "name": "ISOMETRIC CANDY",
       "desc": "Full-color isometric 3D numerals for operators who have Ascended four times.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Nabla", "google": true }, "scale": 0.9 },
       "unlock": { "type": "ascension", "value": 4 }
     },
@@ -1017,7 +1017,7 @@
       "code": "CHR-112",
       "name": "HONK BALLOON",
       "desc": "Inflated full-color 3D numerals for operators past five Ascensions.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Honk", "google": true }, "scale": 0.95 },
       "unlock": { "type": "ascension", "value": 5 }
     },
@@ -2871,7 +2871,7 @@
       "code": "CHR-318",
       "name": "YEAR OF DAYS",
       "desc": "Iridescent prism numerals reserved for a full year without missing a day.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Unbounded", "weight": 700, "google": true }, "fx": "holo", "scale": 0.85 },
       "unlock": { "type": "streak", "value": 365 }
     },
@@ -2916,7 +2916,7 @@
       "code": "CHR-323",
       "name": "THOUSAND SESSIONS",
       "desc": "Liquid-chrome color-font numerals for a thousand logged sessions.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Kalnia Glaze", "google": true }, "scale": 0.9 },
       "unlock": { "type": "sessions", "value": 1000 }
     },
@@ -2961,7 +2961,7 @@
       "code": "CHR-328",
       "name": "FINAL HOUR",
       "desc": "The capstone of cycle one: molten-gold numerals for reaching LV.3000.",
-      "family": "PRESTIGE",
+      "family": "ASCENSION",
       "render": { "kind": "text", "font": { "family": "Cinzel Decorative", "weight": 900, "google": true }, "fx": "gold", "scale": 0.62 },
       "unlock": { "type": "level", "value": 3000 }
     },

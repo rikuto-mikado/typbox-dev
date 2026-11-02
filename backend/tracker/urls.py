@@ -5,7 +5,6 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     BitsBuyView,
     BitsCancelView,
-    BitsFestivalGiftView,
     BitsStarlightView,
     BitsChallengeForfeitView,
     BitsResetView,
@@ -41,7 +40,6 @@ urlpatterns = [
     path("bits/buy/", BitsBuyView.as_view(), name="bits_buy"),
     path("bits/cancel/", BitsCancelView.as_view(), name="bits_cancel"),
     path("bits/starlight/", BitsStarlightView.as_view(), name="bits_starlight"),
-    path("bits/festival/gift/", BitsFestivalGiftView.as_view(), name="bits_festival_gift"),
     path(
         "bits/challenge/forfeit/",
         BitsChallengeForfeitView.as_view(),

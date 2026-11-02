@@ -10,6 +10,7 @@ from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 
+from . import challenges
 from .economy import bits_summary, log_editable_until
 from .models import Category, StudyLog, UserProfile, monthly_to_weekly_hours
 from .timezones import is_valid_timezone
@@ -115,7 +116,6 @@ class UserSerializer(serializers.ModelSerializer):
     weather_theme = serializers.CharField(required=False, allow_blank=True, max_length=32)
     weather_unit = serializers.CharField(required=False, allow_blank=True, max_length=1)
     weather_hidden = serializers.BooleanField(required=False, allow_null=True)
-    surface_fx = serializers.BooleanField(required=False, allow_null=True)
     ui_font = serializers.CharField(required=False, allow_blank=True, max_length=32)
     ambient_theme = serializers.CharField(required=False, allow_blank=True, max_length=32)
     ambient_clock = serializers.BooleanField(required=False, allow_null=True)
@@ -139,7 +139,6 @@ class UserSerializer(serializers.ModelSerializer):
             'weather_theme',
             'weather_unit',
             'weather_hidden',
-            'surface_fx',
             'ui_font',
             'ambient_theme',
             'ambient_clock',
@@ -163,11 +162,13 @@ class UserSerializer(serializers.ModelSerializer):
         data['weather_theme'] = profile.weather_theme
         data['weather_unit'] = profile.weather_unit
         data['weather_hidden'] = profile.weather_hidden
-        data['surface_fx'] = profile.surface_fx
         data['ui_font'] = profile.ui_font
         data['ambient_theme'] = profile.ambient_theme
         data['ambient_clock'] = profile.ambient_clock
         data['cursor_theme'] = profile.cursor_theme
+        # Settles what has finished and what a boss has taken, so the balance
+        # here matches the shop's.
+        challenges.active_challenge(instance)
         data['bits'] = bits_summary(instance)
         return data
 
@@ -313,7 +314,7 @@ class UserSerializer(serializers.ModelSerializer):
         ui_prefs = {
             key: validated_data.pop(key)
             for key in (
-                'weather_theme', 'weather_unit', 'weather_hidden', 'surface_fx',
+                'weather_theme', 'weather_unit', 'weather_hidden',
                 'ui_font', 'ambient_theme', 'ambient_clock', 'cursor_theme',
             )
             if key in validated_data

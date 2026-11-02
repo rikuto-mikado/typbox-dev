@@ -48,7 +48,7 @@ export const CursorPicker: React.FC<CursorPickerProps> = ({ activeCursorId, onSe
       });
     }
     if (u.type === 'ascension') {
-      return tf(t.themePrestigeNotice, { code: cursor.code, name: cursor.name, n: u.value, have: progress.totalAscensions });
+      return tf(t.ascensionNotice, { code: cursor.code, name: cursor.name, n: u.value, have: progress.totalAscensions });
     }
     return unlockLockedMessage(u, cursor.name, progress, t);
   };
@@ -162,7 +162,7 @@ export const CursorPicker: React.FC<CursorPickerProps> = ({ activeCursorId, onSe
                 ) : cursor.unlock.type === 'ascension' ? (
                   <span
                     className="inline-flex items-center gap-1 text-[9px] px-1 border border-amber-400/60 text-amber-300"
-                    title={tf(t.prestigeRequires, { n: cursor.unlock.value })}
+                    title={tf(t.ascensionRequires, { n: cursor.unlock.value })}
                   >
                     <Lock className="w-2.5 h-2.5" />
                     <span>✦ ×{cursor.unlock.value}</span>

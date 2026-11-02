@@ -17,13 +17,13 @@ keeps the balance in step automatically. On top of that:
   was cancelled early (cancel_buff);
 - a settled CHALLENGE (challenges.py) credits its payout.
 
-Between buffs there is a cooldown (BUFF_COOLDOWN). STARLIGHT is worked out from
+After a buff ends it cools down on its own timer (BUFF_COOLDOWN_HOURS); other buffs can be bought meanwhile. STARLIGHT is worked out from
 the logs: every day with a log no buff paid on is a star, up to STARLIGHT_MAX.
 With STARLIGHT_COST stars on the gauge, a buff that fails its condition keeps
 running in exchange for them, once per buff; stars also buy small wishes
 (STAR_USES). Only what was spent is stored.
 
-balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded)
+balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded + struck)
 
 The frontend mirrors BITS_PER_HOUR and the rounding in src/bits.ts to show
 an instant balance after each commit; keep the two in sync.
@@ -38,7 +38,8 @@ from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
-from . import challenges, festivals
+from . import challenges, festival_pass, festivals
+from .collection import collection_state
 from .furniture import FURNITURE, event_pieces, shop_lineup
 from .models import BitPurchase, Category, StudyLog, UserProfile
 from .timezones import get_user_zone
@@ -61,7 +62,27 @@ LOG_EDIT_WINDOW = timedelta(days=3)
 
 
 # After a buff ends, the next one can't be bought for this long.
-BUFF_COOLDOWN = timedelta(hours=24)
+# Hours before a buff can be bought again, set for each buff by how it is played.
+# Each buff keeps its own timer (buff_cooldowns): while one rests, another can run.
+# A MYSTERY CRATE rests on its own timer as well as the buff it opened into.
+# Buffs from an older edition of the rules wait DEFAULT_BUFF_COOLDOWN_HOURS.
+DEFAULT_BUFF_COOLDOWN_HOURS = 24
+BUFF_COOLDOWN_HOURS = {
+    "warm_up": 6,  # small and quick: meant to be run one after another
+    "storm_runner": 8,  # the weather won't wait
+    "overclock": 12,  # a sprint, then back at it the next morning
+    "lunar_tide": 12,  # it is bought for the moon, not on a schedule
+    "weekend_surge": 12,  # over on Sunday night, weekdays free again by Monday noon
+    "lucky_byte": 12,
+    "mystery_crate": 14,
+    "focus_chip": 16,
+    "category_lock": 16,
+    "night_shift": 18,  # ends in the small hours: free again for the next night
+    "early_bird": 20,  # ends at 09:00: free again before the next dawn
+    "deep_dive": 24,
+    "iron_contract": 24,  # with a signing day on top: a contract every few days
+    "hyperdrive": 36,  # the biggest stretch gets the longest rest
+}
 
 STARLIGHT_MAX = 14
 STARLIGHT_COST = 7
@@ -169,7 +190,7 @@ BUFFS = {
         "name": "OVERCLOCK",
         "tagline": "×2 for one day — a sprint",
         "detail": "For the next 24h every log earns +100 BITS/h, up to 10 hours (+1,000). Short and sharp: whatever is left after a day is gone.",
-        "price": 800,
+        "price": 600,
         "window": "any",
         "expires": "hours",
         "hours": 24,
@@ -180,7 +201,7 @@ BUFFS = {
         "name": "STORM RUNNER",
         "tagline": "×2 while the weather is rough",
         "detail": "For 5 days, logs committed while the CHRONOMETER weather reads rain, snow, a storm or below 0°C earn +100 BITS/h (up to 10 hours, +1,000). Clear skies pay the usual rate. Needs the weather readout switched on.",
-        "price": 800,
+        "price": 600,
         "window": "weather",
         "expires": "hours",
         "hours": 120,
@@ -216,7 +237,7 @@ BUFFS = {
         "name": "LUNAR TIDE",
         "tagline": "Pays with the moon — ×2 at full",
         "detail": "For 96h, each log earns extra BITS in step with the moon: +100 BITS/h at full moon, about +50 at a half moon, close to nothing at new moon (up to 12 hours). Check the LUNAR CALENDAR before you buy.",
-        "price": 900,
+        "price": 500,
         "window": "any",
         "expires": "hours",
         "hours": 96,
@@ -228,7 +249,7 @@ BUFFS = {
         "name": "WEEKEND SURGE",
         "tagline": "×1.5 all weekend",
         "detail": "Sessions touching this Saturday and Sunday earn +50 BITS/h (up to 24 hours, +1,200). Buy it any day — it holds your buff slot until Sunday ends.",
-        "price": 1000,
+        "price": 600,
         "window": "weekend",
         "expires": "weekend",
         "minutes": 1440,
@@ -238,7 +259,7 @@ BUFFS = {
         "name": "LUCKY BYTE",
         "tagline": "20% chance of ×3 on each log",
         "detail": "For 72h, each log has a 1-in-5 chance to pay triple (up to 3h of it counts; up to 20 logs).",
-        "price": 1000,
+        "price": 600,
         "window": "any",
         "expires": "hours",
         "hours": 72,
@@ -249,14 +270,14 @@ BUFFS = {
     "deep_dive": {
         "name": "DEEP DIVE",
         "tagline": "The longer the session, the bigger the haul",
-        "detail": "For 96h, each single log pays by its length: 2h or more earns +250, 3h +450 and 4h +700 (up to 4 logs, +2,800). Shorter logs pay nothing extra and use nothing up.",
-        "price": 1500,
+        "detail": "For 96h, each single log pays by its length: 2h or more earns +300, 3h +450 and 4h +700 (up to 4 logs, +2,800). Shorter logs pay nothing extra and use nothing up.",
+        "price": 1200,
         "window": "any",
         "expires": "hours",
         "hours": 96,
         "uses": 4,
         "min_minutes": 120,
-        "tiers": [[240, 700], [180, 450], [120, 250]],
+        "tiers": [[240, 700], [180, 450], [120, 300]],
     },
     "iron_contract": {
         "name": "IRON CONTRACT",
@@ -271,7 +292,7 @@ BUFFS = {
         "name": "HYPERDRIVE",
         "tagline": "×2 on 25 hours — if you keep up 3h a day",
         "detail": "Every log you commit in the next 96h earns +100 BITS/h until 25 hours are covered (up to +2,500). Every full day it runs needs 3 hours of logs (a session past midnight counts for the day it started, if committed by 03:00), or the drive shuts down.",
-        "price": 1800,
+        "price": 1200,
         "window": "any",
         "expires": "hours",
         "hours": 96,
@@ -611,27 +632,48 @@ def _spend_starlight(buff, covering, now):
     return True
 
 
-def buff_cooldown_until(user, now=None):
-    """When the next buff can be bought, or None if nothing holds it back. A
-    purchase cancelled before it paid on any log leaves no cooldown, nor does
-    a used-up buff from before its end was recorded."""
-    now = now or timezone.now()
-    last = (
-        BitPurchase.objects.filter(user=user, item_id__in=RUNNABLE_BUFFS)
-        .order_by("-created_at")
-        .first()
-    )
-    if last is None or (last.state or {}).get("no_cooldown"):
+def buff_cooldown(purchase):
+    return timedelta(hours=BUFF_COOLDOWN_HOURS.get(purchase.item_id, DEFAULT_BUFF_COOLDOWN_HOURS))
+
+
+def _cooling_until(row, now, wait=None):
+    """When this bought buff stops holding its own card back, or None. One cancelled
+    before it paid on any log leaves no cooldown, nor does a used-up buff from
+    before its end was recorded. `wait` is the wait to use, if not its own."""
+    state = row.state or {}
+    if state.get("no_cooldown"):
         return None
-    ended_at = (last.state or {}).get("ended_at")
+    ended_at = state.get("ended_at")
     if ended_at:
         ended = datetime.fromisoformat(ended_at)
-    elif last.expires_at is not None and last.expires_at <= now:
-        ended = last.expires_at
+    elif row.expires_at is not None and row.expires_at <= now:
+        ended = row.expires_at
     else:
         return None
-    until = ended + BUFF_COOLDOWN - (DAWN_CUT if (last.state or {}).get("dawn") else timedelta())
-    return until if until > now else None
+    return ended + (wait or buff_cooldown(row))
+
+
+def _buff_rows(user):
+    return BitPurchase.objects.filter(user=user, item_id__in=RUNNABLE_BUFFS).order_by("-created_at")
+
+
+def buff_cooldowns(user, now=None):
+    """{item_id: when it can be bought again}: each buff keeps its own timer, so
+    another one can be bought while this one cools down. Only buffs still cooling
+    are listed. A MYSTERY CRATE keeps a timer of its own, next to the one of the
+    buff it opened into."""
+    now = now or timezone.now()
+    seen, out = set(), {}
+    for row in _buff_rows(user):
+        for key in {row.item_id, row.via} - {""}:
+            if key in seen:
+                continue
+            seen.add(key)
+            wait = None if key == row.item_id else timedelta(hours=BUFF_COOLDOWN_HOURS[key])
+            until = _cooling_until(row, now, wait)
+            if until is not None and until > now:
+                out[key] = until
+    return out
 
 
 def _lights_a_star(log_date, created_at, zone):
@@ -699,75 +741,21 @@ class StarlightError(Exception):
 
 
 # What the stars buy, besides saving a buff. Nothing here pays BITS.
-STAR_USES = {"reroll": 2, "omen": 3, "dawn": 3, "festival": 5}
-DAWN_CUT = timedelta(hours=12)
+STAR_USES = {"reroll": 2, "omen": 3, "festival": 5}
 
 
-GIFT_MINUTES = 300
-
-
-def _gift_key(festival, day):
-    return f"{festival['id']}-{day.year}"
 
 
 def festival_state(user, now=None):
     """The year's festivals for the calendar, and what is on right now."""
     local = _local_now(user, now or timezone.now())
     festival = festivals.active_on(local.date())
-    gift = None
-    if festival and festival["id"] == "christmas":
-        profile = UserProfile.objects.filter(user=user).first()
-        earned = (
-            StudyLog.objects.filter(
-                user=user,
-                date__gte=local.date().replace(month=12, day=20),
-                date__lte=local.date().replace(month=12, day=24),
-                # Committed in the festival: no back-dating into it.
-                created_at__gte=_local_midnight(
-                    local.date().replace(month=12, day=20), local.tzinfo
-                ),
-            ).aggregate(m=Sum("duration_minutes"))["m"]
-            or 0
-        )
-        gift = {
-            "minutes": earned,
-            "needed": GIFT_MINUTES,
-            "opens": "12-25",
-            "open_today": (local.month, local.day) == (12, 25),
-            "claimed": bool(profile)
-            and _gift_key(festival, local.date()) in profile.festival_gifts,
-        }
     return {
         "active": festivals.serialize(festival) if festival else None,
         "calendar": [festivals.serialize(f) for f in festivals.FESTIVALS],
-        "gift": gift,
+        "pass": festival_pass.pass_state(user, festival, local.date()) if festival else None,
+        "unlocks": festival_pass.unlocks(user),
     }
-
-
-def open_festival_gift(user, now=None):
-    """Christmas Day: a limited piece the user lacks, free. Once a year, for
-    GIFT_MINUTES logged in the days before. Returns its id."""
-    now = now or timezone.now()
-    local = _local_now(user, now)
-    festival = festivals.active_on(local.date())
-    state = festival_state(user, now)["gift"]
-    if not state or not state["open_today"] or state["minutes"] < GIFT_MINUTES:
-        raise StarlightError("There is no present to open.")
-    with transaction.atomic():
-        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
-        key = _gift_key(festival, local.date())
-        if key in profile.festival_gifts:
-            raise StarlightError("This year's present is already open.")
-        pieces = event_pieces(festival["id"])
-        owned = set(user.bit_purchases.filter(item_id__in=pieces).values_list("item_id", flat=True))
-        lacking = [p for p in pieces if p not in owned]
-        if not lacking:
-            raise StarlightError("You already own every piece of this festival.")
-        piece = random.choice(lacking)
-        BitPurchase.objects.create(user=user, item_id=piece, price=0)
-        profile.festival_gifts = [*profile.festival_gifts, key]
-        profile.save(update_fields=["festival_gifts"])
-        return piece
 
 
 def use_starlight(user, use, now=None, item_id=None):
@@ -789,37 +777,15 @@ def use_starlight(user, use, now=None, item_id=None):
         elif use == "reroll":
             profile.shop_salt += 1
             fields = ["shop_salt"]
-        elif use == "omen":
+        else:
             if profile.crate_omen:
                 raise StarlightError("The stars have already spoken.")
             profile.crate_omen = roll_crate(BUFFS["mystery_crate"])
             fields = ["crate_omen"]
-        else:
-            if buff_cooldown_until(user, now) is None:
-                raise StarlightError("No cooldown to shorten.")
-            last = (
-                BitPurchase.objects.select_for_update()
-                .filter(user=user, item_id__in=RUNNABLE_BUFFS)
-                .order_by("-created_at")
-                .first()
-            )
-            if (last.state or {}).get("dawn"):
-                raise StarlightError("This cooldown has already been shortened.")
-            last.state = {**(last.state or {}), "dawn": True}
-            last.save(update_fields=["state"])
         if not _take_stars(profile, cost, now):
             raise StarlightError("Not enough stars.")
         if fields:
             profile.save(update_fields=fields)
-
-
-def _dawn_used(user):
-    last = (
-        BitPurchase.objects.filter(user=user, item_id__in=RUNNABLE_BUFFS)
-        .order_by("-created_at")
-        .first()
-    )
-    return bool(last and (last.state or {}).get("dawn"))
 
 
 def serialize_starlight(user, now=None):
@@ -836,7 +802,6 @@ def serialize_starlight(user, now=None):
         "last_guard": (profile.last_guard if profile else {}) or None,
         "uses": STAR_USES,
         "omen": BUFFS[omen]["name"] if omen else None,
-        "dawn_used": _dawn_used(user),
     }
 
 
@@ -1180,7 +1145,7 @@ def bits_summary(user):
         minutes=Sum("duration_minutes"), bonus=Sum("bonus_bits")
     )
     purchases = user.bit_purchases.aggregate(
-        total=Sum(F("price") - F("refunded")), payouts=Sum("payout")
+        total=Sum(F("price") - F("refunded") + F("struck")), payouts=Sum("payout")
     )
     spent = purchases["total"] or 0
     payouts = purchases["payouts"] or 0
@@ -1302,6 +1267,7 @@ def serialize_buff_offer(item_id, spec):
         "uses": spec.get("uses"),
         "max_bonus": max_bonus(spec),
         "needs_category": bool(spec.get("category")),
+        "cooldown_hours": BUFF_COOLDOWN_HOURS.get(item_id),
         "odds": crate_odds(spec) if "crate" in spec else None,
         "contract": spec.get("contract"),
         "mornings": spec.get("mornings"),
@@ -1313,10 +1279,11 @@ def serialize_buff_offer(item_id, spec):
 def shop_state(user, now=None):
     now = now or timezone.now()
     challenge = challenges.active_challenge(user, now)  # settles finished ones first
+    festival_pass.sync_current(user, now)  # before the balance: its steps pay BITS
     return {
         "bits": bits_summary(user),
         "active_buff": serialize_buff(active_buff(user, now)),
-        "buff_cooldown_until": buff_cooldown_until(user, now),
+        "buff_cooldowns": buff_cooldowns(user, now),
         "starlight": serialize_starlight(user),
         "festival": festival_state(user, now),
         "buffs": [
@@ -1325,6 +1292,7 @@ def shop_state(user, now=None):
         "active_challenge": challenges.serialize_challenge(challenge, now),
         "challenges": challenges.offers(user, now),
         "last_challenge": challenges.last_result(user, now),
+        "collection": collection_state(user),
     }
 
 
@@ -1384,7 +1352,8 @@ def reset_economy(user):
     the starter room (all five rooms and their SAVEs, and the shop reserve).
     What was spent of STARLIGHT is forgotten, and the bonuses going means every
     day with a log lights again. The balance falls back to the base rate for the hours
-    already logged. Returns (purchases deleted, logs whose bonus was cleared).
+    already logged, plus what the logs still earn: the FESTIVAL PASS steps.
+    Returns (purchases deleted, logs whose bonus was cleared).
     """
     with transaction.atomic():
         # Same lock as a purchase or a log commit, so neither can land on
@@ -1394,10 +1363,7 @@ def reset_economy(user):
         profile.star_spends = []
         profile.last_guard = {}
         profile.crate_omen = ""
-        profile.festival_gifts = []
-        profile.save(
-            update_fields=["star_spends", "last_guard", "crate_omen", "festival_gifts"]
-        )
+        profile.save(update_fields=["star_spends", "last_guard", "crate_omen"])
         cleared = (
             StudyLog.objects.filter(user=user)
             .filter(Q(bonus_bits__gt=0) | ~Q(bonus_item=""))
@@ -1423,6 +1389,7 @@ def reset_economy(user):
                     "shop_reserve",
                 ]
             )
+    festival_pass.sweep(user)
     return deleted, cleared
 
 
@@ -1464,8 +1431,8 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
         UserProfile.objects.select_for_update().get_or_create(user=user)
         if active_buff(user, now) is not None:
             raise PurchaseError("A buff is already running — wait for it to finish.")
-        if buff_cooldown_until(user, now) is not None:
-            raise PurchaseError("The next buff isn't ready yet — it is cooling down.")
+        if item_id in buff_cooldowns(user, now):
+            raise PurchaseError("This buff isn't ready yet — it is cooling down.")
         if bits_summary(user)["balance"] < spec["price"]:
             raise PurchaseError("Not enough BITS.")
         via = ""

@@ -335,7 +335,6 @@ export const TIER_LABEL: Record<number, string> = {
   3: 'LARGE',
   4: 'FEATURED',
   5: 'LIMITED',
-  6: 'EARNED',
 };
 
 /** The room at `scale`x, without selection or ghosts, as a PNG data URL (SNAPSHOT). */

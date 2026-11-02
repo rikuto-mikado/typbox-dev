@@ -9,6 +9,7 @@ import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
 import { thumbnail, TIER_LABEL, type FurnitureSpec } from './roomRender';
 import { ChallengesTab } from './ChallengePanel';
+import { CollectionTab } from './CollectionTab';
 import { CategoryChips } from './CategoryChips';
 import { SegmentIndicator } from './SegmentIndicator';
 
@@ -24,7 +25,7 @@ const SPLASH_MS = 1700;
 const CRATE_SHAKE_MS = 1000;
 const BAR_CELLS = 20;
 
-export type ShopTab = 'buffs' | 'furniture' | 'challenges';
+export type ShopTab = 'buffs' | 'furniture' | 'collection' | 'challenges';
 
 interface BitsShopModalProps {
   isOpen: boolean;
@@ -299,7 +300,6 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const [tab, setTab] = useState<ShopTab>(initialTab);
   const [state, setState] = useState<BitsShopState | null>(null);
   const [wishArmed, setWishArmed] = useState<string | null>(null);
-  const [giftNote, setGiftNote] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomState | null>(null);
   const [now, setNow] = useState(() => Date.now());
   // Each opening starts on the tab the caller asked for (derived during
@@ -451,21 +451,6 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
       setBuyError((err as Error).message || t.starWishFailed);
     }
   };
-  const handleOpenGift = async () => {
-    setBuyError(null);
-    try {
-      const next = await api.bits.festivalGift();
-      setState(next);
-      onPurchased(next);
-      const r = await api.room.get();
-      setRoom(r);
-      const piece = furnitureById.get(next.gift_piece) ?? r.catalog?.find((c) => c.id === next.gift_piece);
-      setGiftNote(tf(t.giftGot, { name: piece?.name ?? next.gift_piece }));
-    } catch (err: unknown) {
-      setBuyError((err as Error).message || t.starWishFailed);
-    }
-  };
-
   const handleWish = async (use: StarWish) => {
     setBuyError(null);
     try {
@@ -617,7 +602,11 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     );
   };
 
-  const cooldownLeft = state?.buff_cooldown_until ? new Date(state.buff_cooldown_until).getTime() - now : 0;
+  // Each buff cools down on its own timer; the others stay on sale meanwhile.
+  const cooldownLeft = (itemId: string) => {
+    const until = state?.buff_cooldowns?.[itemId];
+    return until ? new Date(until).getTime() - now : 0;
+  };
 
   const buyButton = (itemId: string, price: number, blockedLabel: string | null, accent = '#fbbf24') => {
     const short = balance < price;
@@ -720,6 +709,9 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             className="py-1 border border-amber-300/40 text-amber-300 text-[10px] uppercase tracking-wider cursor-pointer hover:border-amber-300"
           >
             {tf(wishArmed === id ? t.bitsWishConfirm : t.bitsWishPiece, { n: state?.starlight?.uses?.festival ?? 5 })}
+            {state?.starlight?.guard_on && state.starlight.stars - (state.starlight.uses?.festival ?? 5) < state.starlight.cost && (
+              <span className="block normal-case tracking-normal text-[9px] font-bold">{t.starWishStopsGuard}</span>
+            )}
           </button>
         )}
         {/* Older servers (one weekly lineup, no groups) have no reserve. */}
@@ -769,13 +761,14 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             <div className={`text-[10px] ${textMuted}`}>{tf(t.bitsRate, { n: BITS_PER_HOUR })}</div>
           </div>
 
-          <div className={`relative grid grid-cols-3 border-l border-t ${borderCol} text-[10px] uppercase tracking-wider`} role="tablist">
+          <div className={`relative grid grid-cols-4 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
             <SegmentIndicator activeKey={tab} colorClass="bg-amber-500/10" />
             {(
               [
                 ['buffs', t.bitsTabBuffs],
                 ['challenges', t.chTab],
                 ['furniture', t.bitsTabFurniture],
+                ['collection', t.bitsTabCollection],
               ] as Array<[ShopTab, string]>
             ).map(([id, label]) => (
               <button
@@ -785,7 +778,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 aria-selected={tab === id}
                 onClick={() => setTab(id)}
                 data-seg-active={tab === id}
-                className={`px-2.5 py-1.5 border-r border-b ${borderCol} cursor-pointer seg-btn ${
+                className={`px-0.5 sm:px-2.5 py-1.5 border-r border-b ${borderCol} cursor-pointer seg-btn ${
                   tab === id ? 'text-amber-400 font-bold' : `${textMuted} hover:text-amber-400`
                 }`}
               >
@@ -826,32 +819,6 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsReserveGone}</p>
                 </div>
               )}
-              {state?.festival?.gift && (
-                <div className="p-2.5 border border-emerald-500/40 space-y-1.5">
-                  <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider">
-                    <span className="font-bold text-emerald-400">{t.giftTitle}</span>
-                    <span className={`tabular-nums ${textMuted}`}>
-                      {tf(t.giftProgress, {
-                        h: (Math.min(state.festival.gift.minutes, state.festival.gift.needed) / 60).toFixed(1),
-                        need: state.festival.gift.needed / 60,
-                      })}
-                    </span>
-                  </div>
-                  {state.festival.gift.claimed ? (
-                    <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{giftNote ?? t.giftClaimed}</div>
-                  ) : state.festival.gift.open_today && state.festival.gift.minutes >= state.festival.gift.needed ? (
-                    <button
-                      type="button"
-                      onClick={handleOpenGift}
-                      className="w-full py-1.5 bg-emerald-500 text-zinc-950 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-                    >
-                      {t.giftOpen}
-                    </button>
-                  ) : (
-                    <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.giftWaiting}</div>
-                  )}
-                </div>
-              )}
               {room &&
                 shopSections.map((section) => (
                   <div key={section.every} className="space-y-1.5">
@@ -877,6 +844,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             </div>
           )}
 
+          {tab === 'collection' && <CollectionTab state={state} loadError={loadError} borderCol={borderCol} textMuted={textMuted} />}
+
           {tab === 'challenges' && (
             <>
               <ChallengesTab
@@ -900,7 +869,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 <div className="space-y-1.5">
                   <StarlightSky starlight={state.starlight} />
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.starlightHint}</p>
-                  <StarWishes starlight={state.starlight} coolingDown={cooldownLeft > 0} onWish={handleWish} />
+                  <StarWishes starlight={state.starlight} onWish={handleWish} />
                 </div>
               )}
 
@@ -918,7 +887,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                   />
                 ) : (
                   <div className={`p-3 border border-dashed ${borderCol} text-[10px] ${textMuted}`}>
-                    {cooldownLeft > 0 ? tf(t.bitsCooldownLine, { t: formatLeft(cooldownLeft) }) : t.bitsNoBuff}
+                    {t.bitsNoBuff}
                   </div>
                 )}
                 {cancelNotice && !state?.active_buff && (
@@ -1000,6 +969,9 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                               ))}
                             </div>
                           )}
+                          {buff.cooldown_hours != null && (
+                            <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.bitsCooldownAfter, { n: buff.cooldown_hours })}</div>
+                          )}
                           {buff.max_bonus ? (
                             <div className={`text-[9px] ${textMuted}`}>
                               {tf(t.bitsPayback, { x: (buff.max_bonus / buff.price).toFixed(2) })}
@@ -1045,8 +1017,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                             buff.price,
                             busy
                               ? t.bitsSlotBusy
-                              : cooldownLeft > 0
-                              ? tf(t.bitsCooldownButton, { t: formatLeft(cooldownLeft) })
+                              : cooldownLeft(buff.item_id) > 0
+                              ? tf(t.bitsCooldownButton, { t: formatLeft(cooldownLeft(buff.item_id)) })
                               : buff.needs_category && !lockTarget
                               ? t.bitsPickCategory
                               : null,

@@ -197,10 +197,13 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({
       <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
         <div className="flex items-center space-x-2">
           <Moon className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-          <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">{t.moonCalendarTitle}</h2>
+          <div className="min-w-0">
+            <h2 className="font-mono text-xs uppercase tracking-widest font-semibold whitespace-nowrap">{t.moonCalendarTitle}</h2>
+            <div className={`sm:hidden font-mono text-[10px] truncate ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</div>
+          </div>
         </div>
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`font-mono text-[10px] truncate ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</span>
+          <span className={`hidden sm:inline font-mono text-[10px] truncate ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</span>
           {festivals && (
             <div className={`relative flex shrink-0 border font-mono text-[10px] ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
               <SegmentIndicator activeKey={view} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />

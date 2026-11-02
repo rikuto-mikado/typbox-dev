@@ -22,12 +22,22 @@ deleted or marked DONE counts as slain once another head has really been cut
 down. Down in time: the full loot. Out of time: a share of the loot in step
 with the damage dealt.
 
+The boss hits back: on a fixed clock from the moment the raid began it attacks,
+unless the damage dealt since its last attack parries it. Attacks are replayed
+from the hits like HP (a session running across the moment counts for it), and
+what they take is kept in BitPurchase.struck, which the ledger counts as spent.
+They never take the balance below zero.
+
 RIVAL: a 72-hour duel against an NPC whose day runs on a schedule drawn
 from the date (rival_day), the same for everyone. Like a raid, it starts
 the moment it is bought. Your side is the minutes of logs committed inside
 those 72 hours; theirs is the part of their schedule that falls inside
 them (a session they are in the middle of counts from the start). Win: the
 prize; tie: the entry fee back; lose: nothing.
+
+INVERTED: beat a regular boss or rival INVERT_AT times and its other side opens
+(INVERTED_RAIDS / INVERTED_RIVALS, keyed '<base>_inverted'). The rule itself
+turns over, so more study alone doesn't win it, and the first clear pays a bonus.
 """
 
 import random
@@ -56,7 +66,9 @@ ESCAPE_SHARE = 0.4
 #          hits its category's head) · regen (heals 120 min after a day with
 #          no log) · dodge (a hit misses one time in four) · nocturne (a log
 #          committed in the daytime misses) · beans (short logs hit double)
-#          · none.
+#          · reverse_armor (logs of 60 min or more do nothing) · afterimage
+#          (the same category as the last hit misses) · none.
+#   attack: added below (RAID_ATTACKS): what it does back, and how often.
 RAIDS = {
     "golem": {
         "name": "GOLEM",
@@ -64,7 +76,7 @@ RAIDS = {
         "price": 800,
         "hp": 1200,
         "days": 5,
-        "loot": 1300,
+        "loot": 1500,
         "trait": "armor",
         "trait_line": "Logs under 60 minutes bounce off.",
     },
@@ -74,7 +86,7 @@ RAIDS = {
         "price": 800,
         "hp": 1200,
         "days": 5,
-        "loot": 1400,
+        "loot": 1600,
         "trait": "night",
         "trait_line": "Heals 1 hour at every midnight.",
     },
@@ -84,7 +96,7 @@ RAIDS = {
         "price": 900,
         "hp": 1200,
         "days": 5,
-        "loot": 1500,
+        "loot": 1700,
         "trait": "heads",
         "trait_line": "One head per category: a log only hits its own.",
     },
@@ -94,7 +106,7 @@ RAIDS = {
         "price": 800,
         "hp": 1200,
         "days": 5,
-        "loot": 1400,
+        "loot": 1600,
         "trait": "regen",
         "trait_line": "A full day without a log heals it 2 hours.",
     },
@@ -104,7 +116,7 @@ RAIDS = {
         "price": 900,
         "hp": 1200,
         "days": 5,
-        "loot": 1500,
+        "loot": 1700,
         "trait": "dodge",
         "trait_line": "Dodges one hit in four.",
     },
@@ -114,7 +126,7 @@ RAIDS = {
         "price": 1500,
         "hp": 1800,
         "days": 7,
-        "loot": 3000,
+        "loot": 3400,
         "trait": "none",
         "trait_line": "30 hours of HP and a week to bring it down.",
     },
@@ -125,7 +137,7 @@ RAIDS = {
         "price": 600,
         "hp": 900,
         "days": 4,
-        "loot": 1100,
+        "loot": 1250,
         "trait": "armor",
         "trait_line": "Logs under 60 minutes bounce off.",
         "event": "newyear",
@@ -136,7 +148,7 @@ RAIDS = {
         "price": 800,
         "hp": 1000,
         "days": 6,
-        "loot": 1500,
+        "loot": 1700,
         "trait": "heads",
         "trait_line": "One head per subject: a log only reaches its own.",
         "event": "tanabata",
@@ -147,7 +159,7 @@ RAIDS = {
         "price": 1000,
         "hp": 1500,
         "days": 7,
-        "loot": 2200,
+        "loot": 2500,
         "trait": "regen",
         "trait_line": "A full day without a log heals it 2 hours.",
         "event": "summer",
@@ -158,7 +170,7 @@ RAIDS = {
         "price": 700,
         "hp": 1000,
         "days": 6,
-        "loot": 1300,
+        "loot": 1500,
         "trait": "nocturne",
         "trait_line": "Logs committed 05:00-17:59 pass right through.",
         "event": "halloween",
@@ -169,7 +181,7 @@ RAIDS = {
         "price": 800,
         "hp": 1100,
         "days": 6,
-        "loot": 1450,
+        "loot": 1650,
         "trait": "regen",
         "trait_line": "A full day without a log heals it 2 hours.",
         "event": "hanami",
@@ -180,7 +192,7 @@ RAIDS = {
         "price": 500,
         "hp": 700,
         "days": 3,
-        "loot": 900,
+        "loot": 1050,
         "trait": "beans",
         "trait_line": "Logs of 30 minutes or less hit for double.",
         "event": "setsubun",
@@ -191,7 +203,7 @@ RAIDS = {
         "price": 600,
         "hp": 800,
         "days": 5,
-        "loot": 1050,
+        "loot": 1200,
         "trait": "dodge",
         "trait_line": "Dodges one hit in four.",
         "event": "valentine",
@@ -202,7 +214,7 @@ RAIDS = {
         "price": 1000,
         "hp": 1400,
         "days": 8,
-        "loot": 2000,
+        "loot": 2300,
         "trait": "night",
         "trait_line": "Heals 1 hour at every midnight.",
         "event": "tsukimi",
@@ -213,7 +225,7 @@ RAIDS = {
         "price": 700,
         "hp": 1000,
         "days": 6,
-        "loot": 1300,
+        "loot": 1500,
         "trait": "nocturne",
         "trait_line": "Logs committed 05:00-17:59 pass right through.",
         "event": "culture",
@@ -224,12 +236,145 @@ RAIDS = {
         "price": 900,
         "hp": 1200,
         "days": 5,
-        "loot": 1600,
+        "loot": 1850,
         "trait": "dodge",
         "trait_line": "Dodges one hit in four.",
         "event": "christmas",
     },
 }
+
+# How often a boss attacks (hours), the damage since its last attack that
+# parries it, and (name, BITS an attack takes).
+ATTACK_EVERY = 24
+ATTACK_PARRY = 60
+RAID_ATTACKS = {
+    "golem": ("BOULDER THROW", 75),
+    "nightmare": ("NIGHT TERROR", 80),
+    "hydra": ("VENOM SPIT", 85),
+    "warden": ("CHAIN LASH", 80),
+    "phantom": ("COLD TOUCH", 85),
+    "titan": ("EARTHQUAKE", 170),
+    "kagami": ("MOCHI SLAM", 60),
+    "river": ("STARFALL", 85),
+    "august": ("HEATSTROKE", 125),
+    "jack": ("TRICK", 75),
+    "fubuki": ("PETAL STORM", 80),
+    "oni": ("IRON CLUB", 50),
+    "bitter": ("AFTERTASTE", 60),
+    "tsukuyomi": ("MOONBEAM", 115),
+    "stagefright": ("BLANK MIND", 75),
+    "krampus": ("BIRCH SWITCH", 90),
+}
+for _boss, (_name, _dmg) in RAID_ATTACKS.items():
+    RAIDS[_boss]["attack"] = {
+        "name": _name,
+        "every": ATTACK_EVERY,
+        "parry": ATTACK_PARRY,
+        "dmg": _dmg,
+    }
+
+# The other side of each regular boss: 2.5 times the HP, attacks twice as often
+# and harder to parry. Keys on top of the plain ones:
+#   inverted_of: the boss it is the other side of · first_bonus: extra loot on
+#   the first clear · heal / heal_noon: NIGHT heals this much, at noon as well ·
+#   regen_below / regen_heal: REGEN counts a day under these minutes as empty,
+#   and heals this much · regrow: when a head falls, this share of each other
+#   head's HP comes back · no_crit: long logs hit for their length only.
+INVERT_AT = 3
+
+
+def _inverted_attack(name, dmg):
+    return {"name": name, "every": 12, "parry": 180, "dmg": dmg}
+
+
+INVERTED_RAIDS = {
+    "golem_inverted": {
+        "name": "GOLEM // INVERTED",
+        "title": "THE WALL THAT WALKS",
+        "price": 1200,
+        "hp": 3000,
+        "days": 5,
+        "loot": 2600,
+        "first_bonus": 2000,
+        "trait": "reverse_armor",
+        "trait_line": "Logs of 60 minutes or more bounce off. Chip away at it.",
+        "attack": _inverted_attack("AVALANCHE", 120),
+        "inverted_of": "golem",
+    },
+    "nightmare_inverted": {
+        "name": "NIGHTMARE // INVERTED",
+        "title": "IT NO LONGER NEEDS THE DARK",
+        "price": 1200,
+        "hp": 3000,
+        "days": 5,
+        "loot": 2800,
+        "first_bonus": 2000,
+        "trait": "night",
+        "trait_line": "Heals 2 hours at midnight, and again at noon.",
+        "heal": 120,
+        "heal_noon": True,
+        "attack": _inverted_attack("SLEEP PARALYSIS", 120),
+        "inverted_of": "nightmare",
+    },
+    "hydra_inverted": {
+        "name": "HYDRA // INVERTED",
+        "title": "CUT ONE, THE REST GROW BACK",
+        "price": 1400,
+        "hp": 3000,
+        "days": 5,
+        "loot": 3000,
+        "first_bonus": 2000,
+        "trait": "heads",
+        "trait_line": "One head per category. When a head falls, the others heal a quarter.",
+        "regrow": 0.25,
+        "attack": _inverted_attack("ACID BREATH", 130),
+        "inverted_of": "hydra",
+    },
+    "warden_inverted": {
+        "name": "WARDEN // INVERTED",
+        "title": "THE STREAK KEEPS YOU",
+        "price": 1200,
+        "hp": 3600,
+        "days": 5,
+        "loot": 2800,
+        "first_bonus": 2000,
+        "trait": "regen",
+        "trait_line": "A day under 2 hours of logs heals it 4 hours.",
+        "regen_below": 120,
+        "regen_heal": 240,
+        "attack": _inverted_attack("LOCKDOWN", 120),
+        "inverted_of": "warden",
+    },
+    "phantom_inverted": {
+        "name": "PHANTOM // INVERTED",
+        "title": "NEVER THE SAME WAY TWICE",
+        "price": 1400,
+        "hp": 3000,
+        "days": 5,
+        "loot": 3000,
+        "first_bonus": 2000,
+        "trait": "afterimage",
+        "trait_line": "The same category twice in a row misses. Keep switching.",
+        "attack": _inverted_attack("POSSESSION", 130),
+        "inverted_of": "phantom",
+    },
+    "titan_inverted": {
+        "name": "TITAN // INVERTED",
+        "title": "THE WAR NEVER ENDED",
+        "price": 2200,
+        "hp": 4500,
+        "days": 7,
+        "loot": 5600,
+        "first_bonus": 4000,
+        "trait": "none",
+        "trait_line": "Critical hits do nothing. 75 hours of HP, one week.",
+        "no_crit": True,
+        "attack": _inverted_attack("WORLD BREAKER", 220),
+        "inverted_of": "titan",
+    },
+}
+RAIDS.update(INVERTED_RAIDS)
+
 NIGHT_HEAL = 60
 REGEN_HEAL = 120
 DODGE_CHANCE = 0.25
@@ -508,6 +653,131 @@ RIVALS = {
         "hidden": "small_hours",
     },
 }
+
+# The other side of each regular rival: their own ground. `rule` decides which
+# of your logs count (a session counts by when it began):
+#   hours: (from, until) local hours, may wrap midnight · max_log: only logs of
+#   at most this long · last_round: only the last 24 hours · sweep: every round
+#   must be won.
+
+
+def _inverted_rival(base, **over):
+    plan = {k: v for k, v in RIVALS[base].items() if k not in ("week", "sessions")}
+    return {
+        **plan,
+        "name": f"{RIVALS[base]['name']} // INVERTED",
+        "inverted_of": base,
+        **over,
+    }
+
+
+INVERTED_RIVALS = {
+    "orion_inverted": _inverted_rival(
+        "orion",
+        tag="UP BEFORE THE SUN",
+        motto="By noon, it is already over.",
+        price=1200,
+        prize=2400,
+        first_bonus=2000,
+        rule={"hours": (4, 12)},
+        rule_line="Only sessions you start between 04:00 and 11:59 count.",
+        sessions=[
+            (270, 150, "LINEAR ALGEBRA"),
+            (435, 120, "ENGLISH"),
+            (570, 90, "ANALYSIS"),
+        ],
+        sleep=(1290, 255),
+    ),
+    "nova_inverted": _inverted_rival(
+        "nova",
+        tag="THE SUN NEVER CAME UP",
+        motto="Come and find me where I live.",
+        price=1100,
+        prize=2200,
+        first_bonus=2000,
+        rule={"hours": (20, 4)},
+        rule_line="Only sessions you start between 20:00 and 03:59 count.",
+        sessions=[
+            (0, 120, "READING"),
+            (1230, 90, "ALGORITHMS"),
+            (1330, 90, "SYSTEMS"),
+        ],
+    ),
+    "rush_inverted": _inverted_rival(
+        "rush",
+        tag="THE DEADLINE IS NOW",
+        motto="Three days of mine against one of yours.",
+        price=1000,
+        prize=2000,
+        first_bonus=2000,
+        rule={"last_round": True},
+        rule_line="Only your logs in the last 24 hours count against all 72 of theirs.",
+        sessions=[
+            (600, 120, "PAST PAPERS"),
+            (900, 90, "MOCK EXAM"),
+            (1230, 90, "REVIEW"),
+        ],
+    ),
+    "kai_inverted": _inverted_rival(
+        "kai",
+        tag="THE TIMER NEVER STOPS",
+        motto="Anything longer than thirty minutes is daydreaming.",
+        price=1100,
+        prize=2200,
+        first_bonus=2000,
+        rule={"max_log": 30},
+        rule_line="Only logs of 30 minutes or less count.",
+        sessions=[
+            (m, 25, topic)
+            for m, topic in (
+                (510, "CHEMISTRY"), (540, "CHEMISTRY"), (570, "CHEMISTRY"), (600, "CHEMISTRY"),
+                (630, "CHEMISTRY"), (660, "CHEMISTRY"), (810, "HISTORY"), (840, "HISTORY"),
+                (870, "HISTORY"), (900, "HISTORY"), (930, "HISTORY"), (960, "HISTORY"),
+            )
+        ],
+        life=[(420, 505, "SHARPENING PENCILS"), (690, 805, "AT THE LIBRARY"), (990, 1410, "RESETTING THE TIMER")],
+    ),
+    "mika_inverted": _inverted_rival(
+        "mika",
+        tag="MISSED THE LAST TRAIN ON PURPOSE",
+        motto="Every stop. Every day. No days off.",
+        price=1000,
+        prize=2000,
+        first_bonus=2000,
+        rule={"sweep": True},
+        rule_line="Win all three rounds, or you lose the duel.",
+        sessions=[
+            (320, 135, "VOCAB ON THE TRAIN"),
+            (470, 135, "NOTES AT THE DESK"),
+            (620, 135, "THE LONG WAY ROUND"),
+            (1000, 135, "PODCAST NOTES"),
+            (1180, 135, "REVIEW"),
+        ],
+        sleep=(1340, 300),
+        life=[(770, 995, "AT WORK"), (1140, 1175, "COOKING DINNER")],
+    ),
+    "ace_inverted": _inverted_rival(
+        "ace",
+        tag="NOTHING LEFT BUT FIRST PLACE",
+        motto="I no longer remember what second place felt like.",
+        price=2000,
+        prize=4500,
+        first_bonus=3500,
+        stretch=0.05,
+        rule={},
+        rule_line="Fourteen hours a day, every day. No tricks.",
+        sessions=[
+            (270, 240, "PROOFS"),
+            (525, 240, "PAST EXAMS"),
+            (780, 240, "LAB REPORT"),
+            (1035, 120, "REVIEW"),
+        ],
+        sleep=(1320, 255),
+        life=[(1160, 1320, "FLASHCARDS, IN BED")],
+    ),
+}
+RIVALS.update(INVERTED_RIVALS)
+
 DUEL_DAYS = 3  # shown as three 24-hour rounds
 DUEL_LENGTH = timedelta(days=DUEL_DAYS)
 
@@ -515,6 +785,8 @@ RAID_PREFIX = "raid_"
 RIVAL_PREFIX = "rival_"
 CHALLENGE_IDS = [RAID_PREFIX + b for b in RAIDS] + [RIVAL_PREFIX + r for r in RIVALS]
 HEADED_RAID_IDS = [RAID_PREFIX + b for b, s in RAIDS.items() if s["trait"] == "heads"]
+# How a challenge counts as beaten.
+BEATEN = ("down", "won")
 
 
 class ChallengeError(Exception):
@@ -639,6 +911,30 @@ def _logged_minutes(user, start, end):
     )
 
 
+def _in_hours(hour, window):
+    begin, until = window
+    return begin <= hour < until if begin < until else hour >= begin or hour < until
+
+
+def _duel_minutes(user, rule, start, end):
+    """Your minutes for a stretch of the duel, as an INVERTED rival's rule counts
+    them. A session counts by when it began."""
+    if not rule or not ("hours" in rule or "max_log" in rule):
+        return _logged_minutes(user, start, end)
+    total = 0
+    for created, minutes in StudyLog.objects.filter(
+        user=user, created_at__gte=start, created_at__lt=end
+    ).values_list("created_at", "duration_minutes"):
+        if "max_log" in rule and minutes > rule["max_log"]:
+            continue
+        if "hours" in rule and not _in_hours(
+            _local(user, created - timedelta(minutes=minutes)).hour, rule["hours"]
+        ):
+            continue
+        total += minutes
+    return total
+
+
 def rival_prize(rival_id, user, now):
     """What winning pays for a duel bought now."""
     spec = RIVALS[rival_id]
@@ -656,6 +952,7 @@ def duel_score(purchase, now):
     user = purchase.user
     rival_id = _key(purchase.item_id)
     first, _ = duel_window(purchase)
+    rule = RIVALS[rival_id].get("rule")
     rounds = []
     for i in range(DUEL_DAYS):
         start = first + timedelta(days=i)
@@ -667,7 +964,12 @@ def duel_score(purchase, now):
                 "end": end,
                 # Logs can't be committed in the future: the whole round
                 # counts (so a log committed this very instant is never cut off).
-                "mine": _logged_minutes(user, start, end) if state != "pending" else 0,
+                "mine": (
+                    0
+                    if state == "pending"
+                    or (rule and rule.get("last_round") and i < DUEL_DAYS - 1)
+                    else _duel_minutes(user, rule, start, end)
+                ),
                 "theirs": (
                     _rival_minutes(user, rival_id, start, end, now)
                     if state != "pending"
@@ -677,6 +979,17 @@ def duel_score(purchase, now):
             }
         )
     return rounds
+
+
+def duel_outcome(rival_id, rounds):
+    """'won' | 'tie' | 'lost' for a finished duel's rounds."""
+    if (RIVALS[rival_id].get("rule") or {}).get("sweep"):
+        if all(r["mine"] > r["theirs"] for r in rounds):
+            return "won"
+        return "tie" if all(r["mine"] >= r["theirs"] for r in rounds) else "lost"
+    mine = sum(r["mine"] for r in rounds)
+    theirs = sum(r["theirs"] for r in rounds)
+    return "won" if mine > theirs else "tie" if mine == theirs else "lost"
 
 
 # ==========================================
@@ -691,7 +1004,13 @@ def _hit(spec, minutes, kind):
     counted = min(minutes, MAX_HIT_MINUTES)
     if spec["trait"] == "beans" and minutes <= BEAN_MINUTES:
         return counted * 2
+    if spec.get("no_crit"):
+        return counted
     return int(round(counted * CRIT_MULTIPLIER)) if minutes >= CRIT_MINUTES else counted
+
+
+def _landed_kind(spec, minutes):
+    return "crit" if minutes >= CRIT_MINUTES and not spec.get("no_crit") else "hit"
 
 
 def _heals(purchase, spec, upto):
@@ -701,20 +1020,26 @@ def _heals(purchase, spec, upto):
     end = min(upto, purchase.expires_at)
     out = []
     day = start_day
+    night_heal = spec.get("heal", NIGHT_HEAL)
     while True:
+        if spec["trait"] == "night" and spec.get("heal_noon"):
+            noon = _at(user, day, 720)
+            if purchase.created_at < noon <= end:
+                out.append((noon, night_heal))
         midnight = _midnight(user, day + timedelta(days=1))
         if midnight > end:
             break
         if spec["trait"] == "night":
-            out.append((midnight, NIGHT_HEAL))
+            out.append((midnight, night_heal))
         elif spec["trait"] == "regen" and day > start_day:
             begin = _midnight(user, day)
-            logged = any(
-                begin <= datetime.fromisoformat(e["at"]) < midnight
+            logged = sum(
+                e.get("min", 0)
                 for e in purchase.state.get("events", [])
+                if begin <= datetime.fromisoformat(e["at"]) < midnight
             )
-            if not logged:
-                out.append((midnight, REGEN_HEAL))
+            if (logged < spec["regen_below"]) if "regen_below" in spec else not logged:
+                out.append((midnight, spec.get("regen_heal", REGEN_HEAL)))
         day += timedelta(days=1)
     return out
 
@@ -727,9 +1052,16 @@ def raid_hp(purchase, now):
     heads = state.get("heads")
     if heads:
         left = [h["max"] for h in heads]
+        regrow = spec.get("regrow")
         for e in events:
             if e.get("head") is not None and e["dmg"]:
+                standing = left[e["head"]] > 0
                 left[e["head"]] = max(0, left[e["head"]] - e["dmg"])
+                if regrow and standing and left[e["head"]] == 0:
+                    left = [
+                        min(h["max"], hp + int(h["max"] * regrow)) if hp else 0
+                        for hp, h in zip(left, heads)
+                    ]
         # No log can hit a head without its in-progress category any more, so
         # it stops standing in the way, but only once a head has been cut down
         # by real hits: dropping categories alone slays nothing.
@@ -754,6 +1086,58 @@ def raid_hp(purchase, now):
         if hp == 0:
             break
     return hp, None, spec["hp"]
+
+
+def raid_attacks(purchase, upto):
+    """[{'at', 'dealt', 'parried', 'dmg'}]: the attacks due by `upto`, replayed
+    from the hits. A hit counts for the attack after its session BEGAN, so a
+    session running across the moment parries it once it is committed."""
+    state = purchase.state or {}
+    attack = state.get("attack")
+    if not attack:
+        return []
+    hits = sorted(
+        (
+            datetime.fromisoformat(e["at"]) - timedelta(minutes=e.get("min", 0)),
+            e["dmg"],
+        )
+        for e in state.get("events", [])
+        if e.get("dmg")
+    )
+    out = []
+    every = timedelta(hours=attack["every"])
+    moment = purchase.created_at + every
+    previous = None
+    while moment <= upto and moment < purchase.expires_at:
+        dealt = sum(
+            dmg for began, dmg in hits if (previous is None or began > previous) and began <= moment
+        )
+        parried = dealt >= attack["parry"]
+        out.append(
+            {
+                "at": moment,
+                "dealt": dealt,
+                "parried": parried,
+                "dmg": 0 if parried else attack["dmg"],
+            }
+        )
+        previous, moment = moment, moment + every
+    return out
+
+
+def _sync_attacks(purchase, now):
+    """Brings what the boss has taken up to date. An attack never takes the
+    balance below zero: what it couldn't take stays due."""
+    from .economy import bits_summary  # economy imports this module
+
+    if not (purchase.state or {}).get("attack"):
+        return
+    total = sum(a["dmg"] for a in raid_attacks(purchase, min(now, purchase.expires_at)))
+    if total > purchase.struck:
+        total = min(total, purchase.struck + max(0, bits_summary(purchase.user)["balance"]))
+    if total != purchase.struck:
+        purchase.struck = total
+        purchase.save(update_fields=["struck"])
 
 
 def _hydra_heads(user):
@@ -785,6 +1169,7 @@ def _live(user):
 
 
 def _settle(purchase, outcome, payout, now):
+    _sync_attacks(purchase, now)
     state = dict(purchase.state or {})
     state["outcome"] = outcome
     purchase.state = state
@@ -816,16 +1201,15 @@ def settle_expired(user, now=None):
                 share = int(spec["loot"] * ESCAPE_SHARE * (max_hp - hp) / max_hp)
                 _settle(locked, "escaped", share, now)
             else:
-                days = duel_score(locked, locked.expires_at)
-                mine = sum(d["mine"] for d in days)
-                theirs = sum(d["theirs"] for d in days)
-                prize = (locked.state or {}).get("prize", 0)
-                if mine > theirs:
-                    _settle(locked, "won", prize, now)
-                elif mine == theirs:
-                    _settle(locked, "tie", locked.price, now)
-                else:
-                    _settle(locked, "lost", 0, now)
+                outcome = duel_outcome(
+                    _key(locked.item_id), duel_score(locked, locked.expires_at)
+                )
+                payout = {
+                    "won": (locked.state or {}).get("prize", 0),
+                    "tie": locked.price,
+                    "lost": 0,
+                }[outcome]
+                _settle(locked, outcome, payout, now)
     for purchase in _live(user).filter(
         item_id__in=HEADED_RAID_IDS, expires_at__gt=now
     ):
@@ -836,7 +1220,23 @@ def settle_expired(user, now=None):
                 .first()
             )
             if locked is not None and raid_hp(locked, now)[0] <= 0:
-                _settle(locked, "down", RAIDS[_key(locked.item_id)]["loot"], now)
+                _settle(locked, "down", _down_loot(locked), now)
+    for purchase in _live(user).filter(
+        item_id__startswith=RAID_PREFIX, expires_at__gt=now
+    ):
+        with transaction.atomic():
+            locked = (
+                BitPurchase.objects.select_for_update()
+                .filter(pk=purchase.pk, remaining_uses=1)
+                .select_related("user")
+                .first()
+            )
+            if locked is not None:
+                _sync_attacks(locked, now)
+
+
+def _down_loot(purchase):
+    return RAIDS[_key(purchase.item_id)]["loot"] + (purchase.state or {}).get("bonus", 0)
 
 
 def active_challenge(user, now=None):
@@ -878,6 +1278,9 @@ def last_result(user, now=None):
         "outcome": (p.state or {}).get("outcome"),
         "payout": p.payout,
         "price": p.price,
+        "struck": p.struck,
+        "first_clear": (p.state or {}).get("outcome") in BEATEN
+        and bool((p.state or {}).get("bonus")),
         "finished_at": p.expires_at,
     }
 
@@ -914,9 +1317,27 @@ def _picked_heads(user, category_ids):
     return [found[i] for i in ids]
 
 
-def _on_offer(spec, user, now):
+def defeats(user):
+    """{item_id: times beaten} from the settled challenges."""
+    beaten = {}
+    for item_id in BitPurchase.objects.filter(
+        user=user,
+        item_id__in=CHALLENGE_IDS,
+        remaining_uses=0,
+        state__outcome__in=BEATEN,
+    ).values_list("item_id", flat=True):
+        beaten[item_id] = beaten.get(item_id, 0) + 1
+    return beaten
+
+
+def _on_offer(spec, user, now, beaten=None):
     """Whether a challenger can be taken on now: always, for the regulars. A
-    festival's only while it runs, and a hidden one once it shows itself."""
+    festival's only while it runs, a hidden one once it shows itself, and an
+    INVERTED one once its other side has been beaten INVERT_AT times."""
+    if spec.get("inverted_of"):
+        beaten = defeats(user) if beaten is None else beaten
+        kind_prefix = RAID_PREFIX if spec.get("hp") else RIVAL_PREFIX
+        return beaten.get(kind_prefix + spec["inverted_of"], 0) >= INVERT_AT
     event = spec.get("event")
     if not event:
         return True
@@ -936,6 +1357,10 @@ def _on_offer(spec, user, now):
     return True
 
 
+def _first_bonus(spec, item_id, beaten):
+    return 0 if beaten.get(item_id) else spec.get("first_bonus", 0)
+
+
 def start(user, item_id, now=None, category_ids=None):
     """Debits the entry fee and starts a challenge, or raises ChallengeError.
     HYDRA takes `category_ids` (2-3 of the user's in-progress categories);
@@ -950,6 +1375,11 @@ def start(user, item_id, now=None, category_ids=None):
     if not _on_offer(spec, user, now):
         raise ChallengeError("That challenger isn't here right now.")
     state = {}
+    if kind == "raid" and spec["trait"] == "afterimage" and (
+        Category.objects.filter(user=user, completed_at__isnull=True).count()
+        < HYDRA_MIN_HEADS
+    ):
+        raise ChallengeError("It needs at least two categories in progress.")
     if kind == "raid" and spec["trait"] == "heads":
         cats = (
             _picked_heads(user, category_ids)
@@ -970,13 +1400,19 @@ def start(user, item_id, now=None, category_ids=None):
             raise ChallengeError("A challenge is already running.")
         if bits_summary(user)["balance"] < spec["price"]:
             raise ChallengeError("Not enough BITS.")
+        first_bonus = _first_bonus(spec, item_id, defeats(user))
         if kind == "raid":
             expires = now + timedelta(days=spec["days"])
             state["events"] = []
+            state["attack"] = dict(spec["attack"])
+            if first_bonus:
+                state["bonus"] = first_bonus
         else:
             expires = now + DUEL_LENGTH
-            state["prize"] = rival_prize(key, user, now)
+            state["prize"] = rival_prize(key, user, now) + first_bonus
             state["ends"] = expires.isoformat()
+            if first_bonus:
+                state["bonus"] = first_bonus
         return BitPurchase.objects.create(
             user=user,
             item_id=item_id,
@@ -1047,10 +1483,14 @@ def apply_to_new_log(log, now=None):
             kind = "miss"
         elif spec["trait"] == "heads" and (head is None or heads_before[head] == 0):
             kind = "nohead"
+        elif spec["trait"] == "reverse_armor" and minutes >= 60:
+            kind = "block"
         elif spec["trait"] == "dodge" and random.random() < DODGE_CHANCE:
             kind = "miss"
+        elif spec["trait"] == "afterimage" and _same_as_last_hit(state, log):
+            kind = "miss"
         else:
-            kind = "crit" if minutes >= CRIT_MINUTES else "hit"
+            kind = _landed_kind(spec, minutes)
         damage = _hit(spec, minutes, kind)
         events = list(state.get("events", []))
         events.append(
@@ -1061,6 +1501,7 @@ def apply_to_new_log(log, now=None):
                 "dmg": damage,
                 "kind": kind,
                 "head": head,
+                "cat": log.category_id,
             }
         )
         state["events"] = events
@@ -1068,8 +1509,9 @@ def apply_to_new_log(log, now=None):
         purchase.save(update_fields=["state"])
         hp, heads, max_hp = raid_hp(purchase, now)
         down = hp <= 0
+        loot = _down_loot(purchase)
         if down:
-            _settle(purchase, "down", spec["loot"], now)
+            _settle(purchase, "down", loot, now)
         return {
             "kind": "raid",
             "name": spec["name"],
@@ -1079,8 +1521,17 @@ def apply_to_new_log(log, now=None):
             "hp": hp,
             "max_hp": max_hp,
             "down": down,
-            "payout": spec["loot"] if down else 0,
+            "payout": loot if down else 0,
         }
+
+
+def _same_as_last_hit(state, log):
+    """PHANTOM // INVERTED: whether this log is in the category of the last hit
+    that landed. The first hit always lands."""
+    landed = [
+        e for e in state.get("events", []) if e.get("kind") in ("hit", "crit")
+    ]
+    return bool(landed) and landed[-1].get("cat") == log.category_id
 
 
 def _raid_events_for_log(log):
@@ -1132,14 +1583,14 @@ def on_log_edited(log, now=None):
         elif spec["trait"] == "armor" and minutes < 60:
             e["kind"] = "block"
         else:
-            e["kind"] = "crit" if minutes >= CRIT_MINUTES else "hit"
+            e["kind"] = _landed_kind(spec, minutes)
         e["min"] = log.duration_minutes
         e["dmg"] = _hit(spec, minutes, e["kind"])
         state["events"] = events
         purchase.state = state
         purchase.save(update_fields=["state"])
         if raid_hp(purchase, now)[0] <= 0:
-            _settle(purchase, "down", spec["loot"], now)
+            _settle(purchase, "down", _down_loot(purchase), now)
 
 
 # ==========================================
@@ -1150,6 +1601,39 @@ def on_log_edited(log, now=None):
 def _interval(user, day, start, length):
     begin = _at(user, day, start)
     return begin, begin + timedelta(minutes=length)
+
+
+def _serialize_attack(purchase, now):
+    """The boss's next move and the last ones it made, or None for a raid
+    started before bosses hit back."""
+    attack = (purchase.state or {}).get("attack")
+    if not attack:
+        return None
+    done = raid_attacks(purchase, now)
+    every = timedelta(hours=attack["every"])
+    previous = done[-1]["at"] if done else None
+    following = (previous or purchase.created_at) + every
+    dealt = sum(
+        e["dmg"]
+        for e in (purchase.state or {}).get("events", [])
+        if e.get("dmg")
+        and (
+            previous is None
+            or datetime.fromisoformat(e["at"]) - timedelta(minutes=e.get("min", 0)) > previous
+        )
+    )
+    return {
+        "name": attack["name"],
+        "dmg": attack["dmg"],
+        "every": attack["every"],
+        "parry": attack["parry"],
+        "next_at": following if following < purchase.expires_at else None,
+        "dealt": dealt,
+        "log": [
+            {"at": a["at"].isoformat(), "parried": a["parried"], "dmg": a["dmg"]}
+            for a in done[-4:]
+        ],
+    }
 
 
 def serialize_challenge(purchase, now=None):
@@ -1184,7 +1668,11 @@ def serialize_challenge(purchase, now=None):
             "hp": hp,
             "max_hp": max_hp,
             "days": spec["days"],
-            "loot": spec["loot"],
+            "loot": _down_loot(purchase),
+            "first_bonus": state.get("bonus", 0),
+            "inverted_of": spec.get("inverted_of"),
+            "struck": purchase.struck,
+            "attack": _serialize_attack(purchase, now),
             "heads": (
                 [
                     {
@@ -1250,6 +1738,10 @@ def serialize_challenge(purchase, now=None):
         "tag": spec["tag"],
         "motto": spec["motto"],
         "prize": (purchase.state or {}).get("prize", 0),
+        "first_bonus": (purchase.state or {}).get("bonus", 0),
+        "inverted_of": spec.get("inverted_of"),
+        "rule_line": spec.get("rule_line"),
+        "sweep": bool((spec.get("rule") or {}).get("sweep")),
         "starts_at": start,
         "ends_at": end,
         "days": days,
@@ -1261,59 +1753,107 @@ def serialize_challenge(purchase, now=None):
     }
 
 
+def _raid_offer(key, spec, beaten, hydra_ok, suggested):
+    item_id = RAID_PREFIX + key
+    bonus = _first_bonus(spec, item_id, beaten)
+    return {
+        "item_id": item_id,
+        "key": key,
+        **{
+            k: spec[k]
+            for k in ("name", "title", "price", "hp", "days", "trait", "trait_line")
+        },
+        "loot": spec["loot"] + bonus,
+        "first_bonus": bonus,
+        "attack": {k: spec["attack"][k] for k in ("name", "dmg", "every", "parry")},
+        "event": spec.get("event"),
+        "available": hydra_ok if spec["trait"] in ("heads", "afterimage") else True,
+        # HYDRA: how many heads to pick, and the ones suggested.
+        **(
+            {
+                "heads": [HYDRA_MIN_HEADS, HYDRA_MAX_HEADS],
+                "suggested": [c.id for c in suggested],
+            }
+            if spec["trait"] == "heads"
+            else {}
+        ),
+    }
+
+
+def _rival_offer(key, spec, beaten, user, now):
+    item_id = RIVAL_PREFIX + key
+    bonus = _first_bonus(spec, item_id, beaten)
+    return {
+        "item_id": item_id,
+        "key": key,
+        **{k: spec[k] for k in ("name", "tag", "motto", "price")},
+        "event": spec.get("event"),
+        "prize": rival_prize(key, user, now) + bonus,
+        "first_bonus": bonus,
+        "rule_line": spec.get("rule_line"),
+        # Minutes their schedule puts into a duel bought now.
+        "projected": _rival_minutes(
+            user, key, now, now + DUEL_LENGTH, now + DUEL_LENGTH
+        ),
+        "ends_at": now + DUEL_LENGTH,
+    }
+
+
+def _inversion(item_id, inverted_key, beaten, offer):
+    """Where a regular challenger's other side stands: nothing until it has
+    been beaten once, then the count, then the offer itself."""
+    wins = beaten.get(item_id, 0)
+    if not wins or inverted_key not in {**INVERTED_RAIDS, **INVERTED_RIVALS}:
+        return None
+    return {
+        "wins": wins,
+        "need": INVERT_AT,
+        "offer": offer() if wins >= INVERT_AT else None,
+    }
+
+
 def offers(user, now=None):
     """The challenge catalog, cheapest first like the buffs (ties keep the
-    catalog order)."""
+    catalog order). INVERTED challengers ride on their other side's row."""
     now = now or timezone.now()
     suggested = _hydra_heads(user)
     hydra_ok = len(suggested) >= HYDRA_MIN_HEADS
+    beaten = defeats(user)
     return {
         "raids": [
             {
-                "item_id": RAID_PREFIX + key,
-                "key": key,
-                **{
-                    k: spec[k]
-                    for k in (
-                        "name",
-                        "title",
-                        "price",
-                        "hp",
-                        "days",
-                        "loot",
-                        "trait",
-                        "trait_line",
-                    )
-                },
-                "event": spec.get("event"),
-                "available": hydra_ok if spec["trait"] == "heads" else True,
-                # HYDRA: how many heads to pick, and the ones suggested.
-                **(
-                    {
-                        "heads": [HYDRA_MIN_HEADS, HYDRA_MAX_HEADS],
-                        "suggested": [c.id for c in suggested],
-                    }
-                    if spec["trait"] == "heads"
-                    else {}
+                **_raid_offer(key, spec, beaten, hydra_ok, suggested),
+                "wins": beaten.get(RAID_PREFIX + key, 0),
+                "inversion": _inversion(
+                    RAID_PREFIX + key,
+                    f"{key}_inverted",
+                    beaten,
+                    lambda key=key: _raid_offer(
+                        f"{key}_inverted",
+                        RAIDS[f"{key}_inverted"],
+                        beaten,
+                        hydra_ok,
+                        suggested,
+                    ),
                 ),
             }
             for key, spec in sorted(RAIDS.items(), key=lambda kv: kv[1]["price"])
-            if _on_offer(spec, user, now)
+            if not spec.get("inverted_of") and _on_offer(spec, user, now, beaten)
         ],
         "rivals": [
             {
-                "item_id": RIVAL_PREFIX + key,
-                "key": key,
-                **{k: spec[k] for k in ("name", "tag", "motto", "price")},
-                "event": spec.get("event"),
-                "prize": rival_prize(key, user, now),
-                # Minutes their schedule puts into a duel bought now.
-                "projected": _rival_minutes(
-                    user, key, now, now + DUEL_LENGTH, now + DUEL_LENGTH
+                **_rival_offer(key, spec, beaten, user, now),
+                "wins": beaten.get(RIVAL_PREFIX + key, 0),
+                "inversion": _inversion(
+                    RIVAL_PREFIX + key,
+                    f"{key}_inverted",
+                    beaten,
+                    lambda key=key: _rival_offer(
+                        f"{key}_inverted", RIVALS[f"{key}_inverted"], beaten, user, now
+                    ),
                 ),
-                "ends_at": now + DUEL_LENGTH,
             }
             for key, spec in sorted(RIVALS.items(), key=lambda kv: kv[1]["price"])
-            if _on_offer(spec, user, now)
+            if not spec.get("inverted_of") and _on_offer(spec, user, now, beaten)
         ],
     }

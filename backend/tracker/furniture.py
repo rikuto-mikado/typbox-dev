@@ -23,7 +23,6 @@ import random
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
-from django.db.models import Count, Sum
 from django.utils import timezone
 
 from . import festivals
@@ -39,7 +38,7 @@ MAX_PLACED = 64
 #   id, name, category (editor tab), layer, w, h (tiles), price and
 #   tier: 0 starter (free, owned by everyone, never sold) · 1 small ·
 #         2 medium · 3 large · 4 featured · 5 limited (sold during its
-#         `event`, see festivals.py) · 6 earned (never sold, see EARNED).
+#         `event`, see festivals.py).
 # Colour variants add  base (the art to draw) and  recolor  ({hex: hex}
 # swaps applied to that art); plain pieces draw the art named by their id.
 with open(Path(__file__).with_name("furniture_catalog.json"), encoding="utf-8") as fh:
@@ -105,16 +104,6 @@ def fit_of(item_id):
 
 
 STARTER_IDS = [item_id for item_id, spec in FURNITURE.items() if spec["tier"] == 0]
-
-# What study itself earns: (minutes logged, logs committed) to have it.
-EARNED = {
-    "trophy_100h": (6000, 0),
-    "trophy_500h": (30000, 0),
-    "trophy_1000h": (60000, 0),
-    "medal_logs100": (0, 100),
-    "medal_logs1000": (0, 1000),
-}
-
 
 def event_pieces(festival_id):
     return [
@@ -280,10 +269,6 @@ def inventory(user):
         "item_id", flat=True
     ):
         owned[item_id] = owned.get(item_id, 0) + 1
-    totals = user.study_logs.aggregate(minutes=Sum("duration_minutes"), logs=Count("id"))
-    for item_id, (minutes, logs) in EARNED.items():
-        if (totals["minutes"] or 0) >= minutes and totals["logs"] >= logs:
-            owned[item_id] = 1
     return owned
 
 
@@ -481,7 +466,7 @@ def room_state(user, profile, now=None, with_catalog=True):
     when the client already holds the current version (see CATALOG_VERSION)."""
     owned = inventory(user)
     state = {
-        # Sanitized: an earned piece can stop being owned while it is placed.
+        # Sanitized: a piece can stop being owned while it is placed.
         "layout": sanitize_layout(stored_layout(profile), owned),
         "inventory": owned,
         "rooms": rooms_state(profile, owned),

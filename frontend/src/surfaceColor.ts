@@ -1,8 +1,6 @@
-// OKLCH color math for the generated Surface Theme series (surfaceThemes.ts).
-// OKLCH is used instead of HSL because its lightness is perceptual: an
-// L 0.20 yellow and an L 0.20 blue look equally dark, so every hue in a
-// series sits at the same brightness and the contrast a theme is built on
-// (chroma or hue) is the only thing that changes between them.
+// OKLCH color math, used to keep text readable on the status card. OKLCH rather
+// than HSL because its lightness is perceptual: an L 0.20 yellow and an L 0.20
+// blue look equally dark.
 
 function toLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -52,12 +50,6 @@ export function oklch(l: number, c: number, h: number): string {
   return `#${hex(rgb[0])}${hex(rgb[1])}${hex(rgb[2])}`;
 }
 
-export function oklchAlpha(l: number, c: number, h: number, alpha: number): string {
-  const hex = oklch(l, c, h);
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
 function relativeLuminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => toLinear(parseInt(hex.slice(i, i + 2), 16) / 255));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -70,12 +62,7 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/**
- * Text color of hue `h` / chroma `c`, starting at lightness `l` and walked
- * away from the backgrounds until it reaches `ratio` against every one of
- * them — lighter on dark surfaces, darker on light ones.
- */
-export function readableText(l: number, c: number, h: number, backgrounds: string[], ratio: number): string {
+function readableText(l: number, c: number, h: number, backgrounds: string[], ratio: number): string {
   const step = relativeLuminance(backgrounds[0]) < 0.18 ? 0.01 : -0.01;
   let lightness = l;
   let color = oklch(lightness, c, h);
@@ -86,6 +73,11 @@ export function readableText(l: number, c: number, h: number, backgrounds: strin
   return color;
 }
 
+/**
+ * Text color of hue `h` / chroma `c`, starting at lightness `l` and walked
+ * away from the backgrounds until it reaches `ratio` against every one of
+ * them — lighter on dark surfaces, darker on light ones.
+ */
 /** #rrggbb → [L, C, h] in OKLCH. */
 export function hexToOklch(hex: string): [number, number, number] {
   const [r, g, b] = [1, 3, 5].map((i) => toLinear(parseInt(hex.slice(i, i + 2), 16) / 255));

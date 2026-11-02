@@ -8,7 +8,7 @@
 // (spread evenly up to LV.3000) opens a cursor; one is an Ascension reward.
 import type { ChronoUnlock } from './chronometerThemes';
 
-export type CursorKind = 'chess' | 'arrow' | 'tool' | 'sky' | 'solar' | 'glyph' | 'creature';
+export type CursorKind = 'chess' | 'arrow' | 'tool' | 'sky' | 'solar' | 'glyph' | 'creature' | 'festival';
 
 export interface CursorTheme {
   id: string;
@@ -31,6 +31,7 @@ export const CURSOR_KINDS: Array<{ id: CursorKind; label: string }> = [
   { id: 'solar', label: 'SOLAR' },
   { id: 'glyph', label: 'GLYPH' },
   { id: 'creature', label: 'CREATURE' },
+  { id: 'festival', label: 'FESTIVAL' },
 ];
 
 const FREE: ChronoUnlock = { type: 'default' };
@@ -123,6 +124,17 @@ const ROWS: Row[] = [
   ['bat', 'BAT', 'creature', [8, 4], lv(2455), 'A violet bat, wings spread. Points with its head.'],
   ['jellyfish', 'JELLYFISH', 'creature', [4, 1], lv(2727), 'Pink bell, violet tentacles. Points with the top of its bell.'],
   ['owl', 'OWL', 'creature', [2, 1], lv(3000), 'A wide-eyed brown owl. Points with its left ear tuft.'],
+  // Rewards on the festivals' bars.
+  ['fest-newyear', 'DARUMA', 'festival', [5, 1], { type: 'festival', id: 'fest-newyear' }, 'Roly-poly and red, one eye still blank. Points with the top of its head.'],
+  ['fest-setsubun', 'ONI MASK', 'festival', [1, 1], { type: 'festival', id: 'fest-setsubun' }, 'Red face, gold horns. Points with the tip of its left horn.'],
+  ['fest-valentine', 'GANACHE HEART', 'festival', [3, 1], { type: 'festival', id: 'fest-valentine' }, 'A heart of dark chocolate. Points with the top of its left lobe.'],
+  ['fest-hanami', 'SAKURA', 'festival', [6, 1], { type: 'festival', id: 'fest-hanami' }, 'Five petals. Points with the topmost one.'],
+  ['fest-tanabata', 'TANZAKU', 'festival', [3, 1], { type: 'festival', id: 'fest-tanabata' }, 'A paper wish on its string. Points with the knot.'],
+  ['fest-summer', 'HANABI', 'festival', [5, 0], { type: 'festival', id: 'fest-summer' }, 'A firework at full bloom. Points with its top spark.'],
+  ['fest-tsukimi', 'MOON RABBIT', 'festival', [3, 1], { type: 'festival', id: 'fest-tsukimi' }, 'Looks up, ears first. Points with the tip of its left ear.'],
+  ['fest-halloween', 'JACK', 'festival', [5, 1], { type: 'festival', id: 'fest-halloween' }, 'Carved and lit. Points with its stem.'],
+  ['fest-culture', 'MEGAPHONE', 'festival', [1, 1], { type: 'festival', id: 'fest-culture' }, 'For announcements nobody asked for. Points with its handle.'],
+  ['fest-christmas', 'STAR ON THE PINE', 'festival', [5, 0], { type: 'festival', id: 'fest-christmas' }, 'A small tree with a star on top. Points with the star.'],
 ];
 
 export const CURSOR_THEMES: CursorTheme[] = ROWS.map(([id, name, kind, hotspot, unlock, desc], i) => ({

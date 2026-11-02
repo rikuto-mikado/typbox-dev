@@ -2,7 +2,7 @@
  * TYPBOX Status Card Renderer
  * Pure Canvas 2D drawing for the STATUS CARD GENERATOR: one 1080×1080 card
  * painted over the user's active Surface Theme (same palette, corner wash
- * and PRESTIGE art as the dashboard). Kept free of React so it can render
+ * as the dashboard). Kept free of React so it can render
  * off-screen.
  */
 import type { Category, StudyLog } from './App';
@@ -27,8 +27,6 @@ export interface StatusCardData {
   logs: StudyLog[];
   surface: SurfaceThemePair;
   isDark: boolean;
-  /** Decoded PRESTIGE backdrop for `surface`, if it has one. */
-  surfaceArt: CanvasImageSource | null;
   showCategories: boolean;
   /** The open MY ROOM room, already drawn (renderRoom at 1 px per art
    *  pixel), or null to leave the room off the card. */
@@ -161,16 +159,6 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, S: number, data: StatusCar
   ctx.fillStyle = pal.bgMain;
   ctx.fillRect(0, 0, S, S);
 
-  if (data.surfaceArt) {
-    // `cover`, anchored top-center like the dashboard.
-    const img = data.surfaceArt as HTMLImageElement;
-    const iw = img.naturalWidth || img.width || S;
-    const ih = img.naturalHeight || img.height || S;
-    const scale = Math.max(S / iw, S / ih);
-    ctx.drawImage(img, (S - iw * scale) / 2, 0, iw * scale, ih * scale);
-    return;
-  }
-
   // Mirrors getSurfaceBackgroundStyle(): accent corner washes in dark mode
   // plus a soft glow from the top edge.
   const radial = (cx: number, cy: number, r: number, color: string) => {
@@ -180,7 +168,7 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, S: number, data: StatusCar
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, S, S);
   };
-  const wash = { classic: [0.34, 0.14], chroma: [0.16, 0.06], complement: [0.26, 0.1], prestige: [0, 0] }[
+  const wash = { simple: [0.12, 0.05], duo: [0.15, 0.06] }[
     data.surface.series
   ];
   if (pal.dark) {
@@ -743,15 +731,3 @@ function paintSlot(ctx: CanvasRenderingContext2D, S: number, pal: Palette) {
   ctx.restore();
 }
 
-/** Decodes a PRESTIGE `url("data:…")` backdrop so the card can paint it. */
-export function loadSurfaceArt(pair: SurfaceThemePair, isDark: boolean): Promise<HTMLImageElement | null> {
-  const css = pair.art ? (isDark ? pair.art.dark : pair.art.light) : '';
-  const m = /^url\("(.*)"\)$/.exec(css);
-  if (!m) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = m[1];
-  });
-}

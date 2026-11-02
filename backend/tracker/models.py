@@ -53,7 +53,6 @@ class UserProfile(models.Model):
     weather_unit = models.CharField(max_length=1, blank=True, default="")
     # null = never chosen on any device (first sync adopts the device's value).
     weather_hidden = models.BooleanField(null=True, blank=True, default=None)
-    surface_fx = models.BooleanField(null=True, blank=True, default=None)
     # UI font theme and Ambient Mode overlay ids (frontend catalogs, unlocks
     # decided client-side like chrono_theme). Blank = never synced yet.
     ui_font = models.CharField(max_length=32, blank=True, default="")
@@ -84,9 +83,6 @@ class UserProfile(models.Model):
     last_guard = models.JSONField(default=dict, blank=True)
     crate_omen = models.CharField(max_length=32, blank=True, default="")
     shop_salt = models.PositiveIntegerField(default=0)
-    # FESTIVALS (festivals.py): the years a festival's present was opened,
-    # as 'christmas-2026'.
-    festival_gifts = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -188,7 +184,7 @@ class StudyLog(models.Model):
 class BitPurchase(models.Model):
     """
     One shop purchase: the BITS ledger's only debit (balance = derived
-    earnings + sum(payout) - sum of (price - refunded)). A buff's live state rides on the same row:
+    earnings + sum(payout) - sum of (price - refunded + struck)). A buff's live state rides on the same row:
     it applies to logs committed before expires_at while it still has
     minutes / uses left (null = that limit does not apply).
     """
@@ -224,6 +220,9 @@ class BitPurchase(models.Model):
     # What a CHALLENGE paid back when it was settled (loot, prize, refund on
     # a tie); counted as earned by the ledger (economy.bits_summary).
     payout = models.PositiveIntegerField(default=0)
+    # What a raid boss's attacks took (see challenges.py); the ledger counts it
+    # as spent.
+    struck = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

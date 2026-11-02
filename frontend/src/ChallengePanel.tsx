@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Lock } from 'lucide-react';
-import type { ActiveChallenge, ActiveRaid, ActiveRival, BitsShopState, ChallengeResult, RaidHitKind } from './api';
+import { ChevronLeft, ChevronRight, Loader2, Lock, RefreshCcw, Swords } from 'lucide-react';
+import type { ActiveChallenge, ActiveRaid, ActiveRival, BitsShopState, ChallengeResult, Festival, FestivalPass, Inversion, RaidHitKind } from './api';
 import { CategoryChips, type ChipCategory } from './CategoryChips';
 import { BitShard } from './BitsBadge';
 import { BOSS_ART, RIVAL_ART, challengeAccent, challengeRank, type PixelArt } from './challengeArt';
@@ -89,8 +89,8 @@ export const HpCells: React.FC<{ hp: number; max: number; accent: string; cells?
   );
 };
 
-const hitColor = (k: RaidHitKind | 'heal') =>
-  k === 'crit' ? '#fde047' : k === 'heal' ? '#4ade80' : k === 'hit' ? '#fafafa' : '#a1a1aa';
+const hitColor = (k: RaidHitKind | 'heal' | 'attack' | 'parry') =>
+  k === 'crit' ? '#fde047' : k === 'heal' || k === 'parry' ? '#4ade80' : k === 'hit' ? '#fafafa' : k === 'attack' ? '#fb7185' : '#a1a1aa';
 
 /** A two-tap button: arm, then confirm within three seconds. */
 const ConfirmButton: React.FC<{ label: string; confirm: string; onConfirm: () => Promise<void> | void; borderCol: string; textMuted: string }> = ({
@@ -130,14 +130,111 @@ const ConfirmButton: React.FC<{ label: string; confirm: string; onConfirm: () =>
   );
 };
 
+// ----------------------------------------------------------------- invert
+/** Plays the turn, swapping sides out of sight. Reduced-motion users just get
+ *  the swap. Returns the class for what turns, and the toggle. */
+const useTurn = (onSwap: () => void) => {
+  const [phase, setPhase] = useState<'out' | 'in' | null>(null);
+  const timers = useRef<number[]>([]);
+  useEffect(() => {
+    const list = timers.current;
+    return () => list.forEach((id) => window.clearTimeout(id));
+  }, []);
+  const turn = () => {
+    if (phase) return;
+    setPhase('out');
+    timers.current.push(
+      window.setTimeout(() => {
+        onSwap();
+        setPhase('in');
+        timers.current.push(window.setTimeout(() => setPhase(null), 430));
+      }, 200)
+    );
+  };
+  return { turn, turnClass: phase === 'out' ? 'ch-turn-out' : phase === 'in' ? 'ch-turn-in' : '' };
+};
+
+/** The corner of a challenger's stage: how far to its other side, then the switch. */
+const InvertControl: React.FC<{ inversion?: Inversion<unknown> | null; inverted: boolean; onTurn: () => void; accent: string }> = ({
+  inversion,
+  inverted,
+  onTurn,
+  accent,
+}) => {
+  const { t } = useI18n();
+  if (!inversion) return null;
+  if (!inversion.offer) {
+    return (
+      <span className="absolute top-1.5 right-1.5 z-[2] px-1.5 py-1 border border-zinc-600 bg-zinc-950/85 text-[8px] uppercase tracking-wider tabular-nums text-zinc-400">
+        {tf(t.chInvertProgress, { a: inversion.wins, b: inversion.need })}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onTurn}
+      aria-pressed={inverted}
+      className="absolute top-1.5 right-1.5 z-[2] flex items-center gap-1 px-2 py-1.5 border bg-zinc-950/85 text-[9px] font-bold uppercase tracking-wider cursor-pointer ch-glint"
+      style={{ borderColor: accent, color: accent }}
+    >
+      <RefreshCcw className="w-3 h-3" />
+      {inverted ? t.chRevert : t.chInvert}
+    </button>
+  );
+};
+
+/** Stage background: the other side's is darker and bleeds red. */
+const stageGlow = (accent: string, inverted: boolean, y = 62) =>
+  inverted
+    ? `radial-gradient(ellipse 70% 60% at 50% ${y}%, ${accent}38, transparent 72%), linear-gradient(#1a0506, #050102)`
+    : `radial-gradient(ellipse 60% 55% at 50% ${y}%, ${accent}30, transparent 70%), linear-gradient(#0c0c10, #050507)`;
+
 // ------------------------------------------------------------------- raid
 interface Float {
   id: number;
   text: string;
-  kind: RaidHitKind | 'heal';
+  kind: RaidHitKind | 'heal' | 'attack';
 }
 
 const RAID_SEEN_KEY = 'typbox_raid_hit_seen';
+const ATTACK_SEEN_KEY = 'typbox_raid_attack_seen';
+
+/** What the boss is about to do, and how close the study since its last attack
+ *  comes to parrying it. */
+const AttackPanel: React.FC<{ raid: ActiveRaid; now: number; borderCol: string; textMuted: string }> = ({ raid, now, borderCol, textMuted }) => {
+  const { t } = useI18n();
+  const attack = raid.attack;
+  if (!attack) return null;
+  const ready = attack.dealt >= attack.parry;
+  const nextAt = attack.next_at ? new Date(attack.next_at).getTime() : null;
+  return (
+    <div className={`px-3 py-2 border-t ${borderCol} space-y-1`}>
+      <div className="flex items-center justify-between gap-2 text-[9px] uppercase tracking-wider">
+        <span className="flex items-center gap-1.5 min-w-0">
+          <Swords className="w-3 h-3 shrink-0 text-rose-400" />
+          <span className="truncate text-rose-400 font-bold tabular-nums">
+            {nextAt !== null ? tf(t.chAttackNext, { name: attack.name, t: left(nextAt - now) }) : t.chAttackNone}
+          </span>
+        </span>
+        <span className="shrink-0 text-rose-400 tabular-nums">−{fmt(attack.dmg)}</span>
+      </div>
+      {nextAt !== null && (
+        <div className="flex items-center gap-2">
+          <span className="relative flex-1 h-1.5 bg-zinc-500/20 overflow-hidden">
+            <span className="absolute inset-y-0 left-0 transition-[width] duration-500" style={{ width: `${Math.min(100, (attack.dealt / attack.parry) * 100)}%`, background: ready ? '#34d399' : '#fb7185' }} />
+          </span>
+          <span className={`shrink-0 text-[9px] uppercase tracking-wider tabular-nums ${ready ? 'text-emerald-400 font-bold' : textMuted}`}>
+            {ready ? t.chAttackParried : tf(t.chAttackParry, { a: hours(attack.dealt), b: hours(attack.parry) })}
+          </span>
+        </div>
+      )}
+      {(raid.struck ?? 0) > 0 && (
+        <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.chAttackTaken, { n: fmt(raid.struck ?? 0) })}</div>
+      )}
+    </div>
+  );
+};
 
 export const RaidCard: React.FC<{ raid: ActiveRaid; borderCol: string; textMuted: string; onForfeit: () => Promise<void> }> = ({
   raid,
@@ -152,7 +249,34 @@ export const RaidCard: React.FC<{ raid: ActiveRaid; borderCol: string; textMuted
   const [floats, setFloats] = useState<Float[]>([]);
   const [flash, setFlash] = useState(0);
   const [ghost, setGhost] = useState<number | undefined>(undefined);
+  const [struck, setStruck] = useState(0);
   const timers = useRef<number[]>([]);
+  const inverted = Boolean(raid.inverted_of);
+
+  // An attack that landed since this card was last open shakes the stage once.
+  const lastAttack = raid.attack?.log[raid.attack.log.length - 1];
+  useEffect(() => {
+    if (!lastAttack || lastAttack.parried) return;
+    const key = `${raid.id}-${lastAttack.at}`;
+    let seen: string | null = null;
+    try {
+      seen = localStorage.getItem(ATTACK_SEEN_KEY);
+    } catch {
+      // storage unavailable: just play it
+    }
+    if (seen === key) return;
+    try {
+      localStorage.setItem(ATTACK_SEEN_KEY, key);
+    } catch {
+      // storage unavailable: it may play again
+    }
+    const id = window.setTimeout(() => {
+      setStruck((n) => n + 1);
+      setFloats((f) => [...f, { id: Date.now(), text: `−${lastAttack.dmg} BITS`, kind: 'attack' }]);
+      window.setTimeout(() => setFloats([]), 1400);
+    }, 500);
+    return () => window.clearTimeout(id);
+  }, [raid.id, lastAttack]);
 
   // Opening the card right after a commit replays that hit once, so the
   // blow lands where it can be seen.
@@ -219,8 +343,9 @@ export const RaidCard: React.FC<{ raid: ActiveRaid; borderCol: string; textMuted
 
       {/* Stage: always a dark screen, whatever the theme. */}
       <div
-        className="relative h-52 sm:h-60 flex items-end justify-center overflow-hidden"
-        style={{ background: `radial-gradient(ellipse 60% 55% at 50% 62%, ${accent}26, transparent 70%), linear-gradient(#0c0c10, #050507)` }}
+        key={struck}
+        className={`relative h-52 sm:h-60 flex items-end justify-center overflow-hidden ${struck ? 'ch-struck' : ''}`}
+        style={{ background: stageGlow(accent, inverted) }}
       >
         <div
           className="absolute inset-x-0 bottom-0 h-16 opacity-40"
@@ -233,7 +358,7 @@ export const RaidCard: React.FC<{ raid: ActiveRaid; borderCol: string; textMuted
         <span className="absolute bottom-7 w-36 h-3 rounded-[50%] bg-black ch-shadow" />
         <div className="relative mb-8">
           <div key={flash} className={flash ? 'ch-hit' : ''}>
-            <div className={`ch-bob ${raid.trait === 'dodge' ? 'ch-flicker' : ''}`}>
+            <div className={`ch-bob ${raid.trait === 'dodge' || raid.trait === 'afterimage' ? 'ch-flicker' : ''}`}>
               {art && <Pixel art={art} className="w-36 h-36 sm:w-44 sm:h-44" style={{ filter: `drop-shadow(0 0 18px ${accent}55)` }} />}
             </div>
           </div>
@@ -289,6 +414,8 @@ export const RaidCard: React.FC<{ raid: ActiveRaid; borderCol: string; textMuted
         </div>
       </div>
 
+      <AttackPanel raid={raid} now={now} borderCol={borderCol} textMuted={textMuted} />
+
       <div className={`px-3 py-2 border-t ${borderCol} min-h-[4.5rem]`}>
         <div className={`text-[9px] tracking-[0.3em] mb-1 ${textMuted}`}>{t.chCombatLog}</div>
         <CombatLog raid={raid} textMuted={textMuted} />
@@ -318,9 +445,15 @@ const CombatLog: React.FC<{ raid: ActiveRaid; textMuted: string }> = ({ raid, te
           : e.hit === 'miss'
           ? t.chToastMiss
           : 'NO HEAD',
-      kind: e.hit as RaidHitKind | 'heal',
+      kind: e.hit as RaidHitKind | 'heal' | 'attack' | 'parry',
     })),
     ...raid.heals.map((h) => ({ at: h.at, label: '', value: tf(t.chHealed, { h: hours(h.minutes) }), kind: 'heal' as const })),
+    ...(raid.attack?.log ?? []).map((a) => ({
+      at: a.at,
+      label: raid.attack?.name ?? '',
+      value: a.parried ? t.chAttackBlocked : tf(t.chAttackLanded, { n: fmt(a.dmg) }),
+      kind: a.parried ? ('parry' as const) : ('attack' as const),
+    })),
   ]
     .sort((a, b) => (a.at < b.at ? 1 : -1))
     .slice(0, 6);
@@ -332,7 +465,7 @@ const CombatLog: React.FC<{ raid: ActiveRaid; textMuted: string }> = ({ raid, te
           <span>
             <span className={textMuted}>{formatTime(r.at)}</span> {r.label}
           </span>
-          <span className="font-bold" style={{ color: i === 0 || r.kind === 'heal' ? hitColor(r.kind) : undefined }}>
+          <span className="font-bold" style={{ color: i === 0 || r.kind === 'heal' || r.kind === 'attack' || r.kind === 'parry' ? hitColor(r.kind) : undefined }}>
             {r.value}
           </span>
         </li>
@@ -359,6 +492,12 @@ const RIVAL_LINES: Record<string, { ahead: string; behind: string; studying: str
   choco: { ahead: 'I have a very good reason.', behind: 'This changes nothing. I will temper harder.', studying: 'Do not talk to me about ratios.' },
   usagi: { ahead: 'It looks small from up here.', behind: 'Gravity is on your side.', studying: 'Orbits are just falling, slowly.' },
   iincho: { ahead: 'As scheduled.', behind: 'That is not on the schedule.', studying: 'Please hold your questions.' },
+  orion_inverted: { ahead: 'Where were you this morning?', behind: 'Then I will start earlier.', studying: 'The sun is not up. I am.' },
+  nova_inverted: { ahead: 'You are too bright to see in here.', behind: 'So you have found the dark.', studying: 'Quiet. It is finally night.' },
+  rush_inverted: { ahead: 'Tick. Tick. Tick.', behind: 'THAT was your last day? Fine.', studying: 'NO. TIME.' },
+  kai_inverted: { ahead: 'Your sessions run too long.', behind: 'Sharp. Keep it under thirty.', studying: 'The timer is the only thing that talks.' },
+  mika_inverted: { ahead: 'One lost day is all it takes.', behind: 'Every day? Really? Then tomorrow too.', studying: 'This train does not stop.' },
+  ace_inverted: { ahead: 'You were never in this race.', behind: 'I have forgotten how this feels.', studying: '...' },
 };
 
 type RivalStatus =
@@ -634,6 +773,15 @@ export const RivalCard: React.FC<{ rival: ActiveRival; borderCol: string; textMu
             </div>
           </div>
 
+          {rival.rule_line && (
+            <div className="px-3 pb-2 flex items-start gap-2 text-[10px]">
+              <span className="px-1 py-0.5 border text-[8px] uppercase tracking-wider shrink-0" style={{ borderColor: `${accent}66`, color: accent }}>
+                {t.chRule}
+              </span>
+              <span className="font-sans leading-snug">{rival.rule_line}</span>
+            </div>
+          )}
+
           <div className="px-3 pb-3 space-y-1.5">
             <div className={`flex justify-between gap-2 text-[9px] uppercase tracking-[0.2em] ${textMuted}`}>
               <span>{t.chTotal}</span>
@@ -756,7 +904,11 @@ export const ChallengeResultCard: React.FC<{ result: ChallengeResult; borderCol:
           ) : (
             t.chResultNothing
           )}
+          {result.first_clear && <span className="ml-1" style={{ color: accent }}>· {t.chResultFirst}</span>}
         </span>
+        {(result.struck ?? 0) > 0 && (
+          <span className="block text-[9px] uppercase tracking-wider tabular-nums text-rose-400">{tf(t.chResultStruck, { n: fmt(result.struck ?? 0) })}</span>
+        )}
       </span>
       <button
         type="button"
@@ -778,7 +930,7 @@ export const ChallengeResultCard: React.FC<{ result: ChallengeResult; borderCol:
 
 // ------------------------------------------------------------------- tab
 /** A horizontal, snap-scrolling strip with arrow buttons on wider screens. */
-const Strip: React.FC<{ children: React.ReactNode; borderCol: string; textMuted: string; label: string }> = ({ children, borderCol, textMuted, label }) => {
+export const Strip: React.FC<{ children: React.ReactNode; borderCol: string; textMuted: string; label: string }> = ({ children, borderCol, textMuted, label }) => {
   const ref = useRef<HTMLDivElement>(null);
   const nudge = (dir: number) => ref.current?.scrollBy({ left: dir * 260, behavior: 'smooth' });
   const arrow = `hidden sm:flex absolute top-1/2 -translate-y-1/2 z-10 w-6 h-10 items-center justify-center border ${borderCol} bg-zinc-950/85 ${textMuted} hover:text-zinc-100 cursor-pointer`;
@@ -840,8 +992,19 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
   const blocked = active ? t.chRunning : null;
   const [raidKey, setRaidKey] = useState('golem');
   const [rivalKey, setRivalKey] = useState('orion');
-  const raid = offers?.raids.find((r) => r.key === raidKey) ?? offers?.raids[0];
-  const rival = offers?.rivals.find((r) => r.key === rivalKey) ?? offers?.rivals[0];
+  // Which side of the chosen challenger is showing.
+  const [raidTurned, setRaidTurned] = useState(false);
+  const [rivalTurned, setRivalTurned] = useState(false);
+  const raidTurn = useTurn(() => setRaidTurned((v) => !v));
+  const rivalTurn = useTurn(() => setRivalTurned((v) => !v));
+  const pickedRaid = offers?.raids.find((r) => r.key === raidKey) ?? offers?.raids[0];
+  const pickedRival = offers?.rivals.find((r) => r.key === rivalKey) ?? offers?.rivals[0];
+  const raidOther = pickedRaid?.inversion?.offer ?? null;
+  const rivalOther = pickedRival?.inversion?.offer ?? null;
+  const raidInverted = raidTurned && Boolean(raidOther);
+  const rivalInverted = rivalTurned && Boolean(rivalOther);
+  const raid = raidInverted && raidOther ? raidOther : pickedRaid;
+  const rival = rivalInverted && rivalOther ? rivalOther : pickedRival;
 
   // HYDRA: the picked heads, falling back to the suggestion; ids that are
   // no longer in progress drop out.
@@ -853,20 +1016,48 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
     else onHydraPick(picked.length >= maxHeads ? [...picked.slice(1), id] : [...picked, id]);
   };
 
+  // The festival's own challengers, for the banner and the strips' marks.
+  const festival = state?.festival?.active ?? null;
+  const eventAccent = festival?.accent ?? '#fbbf24';
+  const eventChallengers: EventChallenger[] = festival
+    ? [
+        ...(offers?.raids ?? []).filter((r) => r.event === festival.id).map((r) => ({ kind: 'raid' as const, key: r.key, name: r.name, line: r.title, wins: r.wins ?? 0 })),
+        ...(offers?.rivals ?? []).filter((r) => r.event === festival.id).map((r) => ({ kind: 'rival' as const, key: r.key, name: r.name, line: r.tag, wins: r.wins ?? 0 })),
+      ]
+    : [];
+  const raidSection = useRef<HTMLElement>(null);
+  const rivalSection = useRef<HTMLElement>(null);
+  const openFromBanner = (c: EventChallenger) => {
+    if (c.kind === 'raid') {
+      setRaidKey(c.key);
+      setRaidTurned(false);
+    } else {
+      setRivalKey(c.key);
+      setRivalTurned(false);
+    }
+    (c.kind === 'raid' ? raidSection : rivalSection).current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const limitedCount = (rows: Array<{ event?: string | null }>) => rows.filter((r) => r.event).length;
+
   return (
     <div className="space-y-4">
+      {/* A running fight always comes first. */}
+      {active && (
+        <div className="space-y-1.5">
+          <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.chActive}</div>
+          {active.kind === 'raid' ? (
+            <RaidCard raid={active} borderCol={borderCol} textMuted={textMuted} onForfeit={onForfeit} />
+          ) : (
+            <RivalCard rival={active} borderCol={borderCol} textMuted={textMuted} onForfeit={onForfeit} />
+          )}
+        </div>
+      )}
+
       {state?.last_challenge && <ChallengeResultCard result={state.last_challenge} borderCol={borderCol} textMuted={textMuted} />}
 
-      <div className="space-y-1.5">
-        <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.chActive}</div>
-        {active?.kind === 'raid' ? (
-          <RaidCard raid={active} borderCol={borderCol} textMuted={textMuted} onForfeit={onForfeit} />
-        ) : active?.kind === 'rival' ? (
-          <RivalCard rival={active} borderCol={borderCol} textMuted={textMuted} onForfeit={onForfeit} />
-        ) : (
-          <div className={`p-3 border border-dashed ${borderCol} text-[10px] ${textMuted}`}>{t.chNone}</div>
-        )}
-      </div>
+      {festival && <FestivalBanner festival={festival} pass={state?.festival?.pass} challengers={eventChallengers} onPick={openFromBanner} />}
+
+      {state && !active && <div className={`p-3 border border-dashed ${borderCol} text-[10px] ${textMuted}`}>{t.chNone}</div>}
 
       {loadError && <div className="p-2 border border-rose-500/40 text-rose-400 text-[10px]">{loadError}</div>}
       {!state && !loadError && (
@@ -876,25 +1067,35 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
       )}
 
       {offers && raid && (
-        <section className="space-y-2">
+        <section ref={raidSection} className="space-y-2 scroll-mt-2">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-[10px] uppercase tracking-[0.25em] font-bold">{t.chRaids}</span>
-            <span className={`text-[9px] uppercase tracking-wider ${textMuted}`}>{tf(t.chCount, { n: offers.raids.length })}</span>
+            <span className={`text-[9px] uppercase tracking-wider ${textMuted}`}>
+              {tf(t.chCount, { n: offers.raids.length })}
+              {limitedCount(offers.raids) > 0 && (
+                <span className="font-bold" style={{ color: eventAccent }}>
+                  {' '}· {tf(t.chEventCount, { n: limitedCount(offers.raids) })}
+                </span>
+              )}
+            </span>
           </div>
           <p className={`m-0 text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.chRaidsHint}</p>
           <Strip borderCol={borderCol} textMuted={textMuted} label={t.chRaids}>
-            {offers.raids.map((r) => {
+            {limitedFirst(offers.raids).map((r) => {
               const accent = challengeAccent(r.key);
-              const on = r.key === raid.key;
+              const on = r.key === pickedRaid?.key;
               return (
                 <button
                   key={r.item_id}
                   type="button"
                   role="option"
                   aria-selected={on}
-                  onClick={() => setRaidKey(r.key)}
-                  className={`relative shrink-0 snap-start w-28 border text-left overflow-hidden cursor-pointer transition-all ${on ? '' : `${borderCol} opacity-70 hover:opacity-100`}`}
-                  style={on ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}55, 0 0 18px ${accent}33` } : undefined}
+                  onClick={() => {
+                    setRaidKey(r.key);
+                    setRaidTurned(false);
+                  }}
+                  className={`relative shrink-0 snap-start w-28 border text-left overflow-hidden cursor-pointer transition-all ${on ? '' : r.event ? '' : `${borderCol} opacity-70 hover:opacity-100`}`}
+                  style={on ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}55, 0 0 18px ${accent}33` } : r.event ? { borderColor: eventAccent } : undefined}
                 >
                   <span
                     className="relative h-20 flex items-end justify-center"
@@ -903,6 +1104,8 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                     <RankBadge challengeKey={r.key} className="top-0 left-0" />
                     {BOSS_ART[r.key] && <Pixel art={BOSS_ART[r.key]} className={`w-16 h-16 mb-1 ${on ? 'ch-bob' : ''} ${r.available ? '' : 'grayscale opacity-50'}`} />}
                     {!r.available && <Lock className="absolute top-1.5 right-1.5 w-3 h-3 text-zinc-400" />}
+                    {r.inversion?.offer && <RefreshCcw className="absolute top-1.5 right-1.5 w-3 h-3" style={{ color: accent }} />}
+                    {r.event && <LimitedRibbon accent={eventAccent} className="absolute top-0 right-0" />}
                   </span>
                   <span className="block px-1.5 py-1">
                     <span className="block text-[10px] font-bold tracking-[0.15em] truncate" style={{ color: accent }}>
@@ -916,23 +1119,27 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
               );
             })}
           </Strip>
-          <OfferDetail accent={challengeAccent(raid.key)} borderCol={borderCol}>
+          <OfferDetail accent={challengeAccent(raid.key)} borderCol={borderCol} minHeight="min-h-[31rem] sm:min-h-[19.5rem]">
             <div
-              className="relative h-36 sm:h-auto sm:w-44 shrink-0 flex items-end justify-center overflow-hidden"
-              style={{ background: `radial-gradient(ellipse 60% 55% at 50% 66%, ${challengeAccent(raid.key)}30, transparent 70%), linear-gradient(#0c0c10, #050507)` }}
+              className="relative flex-1 min-h-[8.5rem] sm:flex-none sm:w-44 shrink-0 flex items-end justify-center overflow-hidden transition-[background] duration-300"
+              style={{ background: stageGlow(challengeAccent(raid.key), raidInverted, 66) }}
             >
               <RankBadge challengeKey={raid.key} className="top-0 left-0" />
+              {raid.event && <LimitedRibbon accent={eventAccent} className="absolute top-0 right-0 z-[1]" />}
+              <InvertControl inversion={pickedRaid?.inversion} inverted={raidInverted} onTurn={raidTurn.turn} accent={challengeAccent(raid.key)} />
               <span className="absolute bottom-3 w-24 h-2 rounded-[50%] bg-black ch-shadow" />
               {BOSS_ART[raid.key] && (
-                <Pixel
-                  key={raid.key}
-                  art={BOSS_ART[raid.key]}
-                  className={`relative w-28 h-28 mb-4 ch-in ${raid.available ? '' : 'grayscale opacity-60'}`}
-                  style={{ filter: `drop-shadow(0 0 14px ${challengeAccent(raid.key)}55)` }}
-                />
+                <span className={`inline-block ${raidTurn.turnClass}`}>
+                  <Pixel
+                    key={raid.key}
+                    art={BOSS_ART[raid.key]}
+                    className={`relative mb-4 ${raid.heads ? 'w-28 h-28' : 'w-44 h-44 sm:w-28 sm:h-28'} ${raidTurn.turnClass ? '' : 'ch-in'} ${raid.available ? '' : 'grayscale opacity-60'}`}
+                    style={{ filter: `drop-shadow(0 0 14px ${challengeAccent(raid.key)}55)` }}
+                  />
+                </span>
               )}
             </div>
-            <div className="flex-1 min-w-0 p-3 flex flex-col gap-2">
+            <div className="sm:flex-1 min-w-0 p-3 flex flex-col gap-2">
               <div>
                 <div className={`text-[8px] uppercase tracking-[0.3em] ${textMuted}`}>{raid.title}</div>
                 <div className="text-base font-bold tracking-[0.15em] leading-tight" style={{ color: challengeAccent(raid.key) }}>
@@ -945,12 +1152,24 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                 </span>
                 <span className="font-sans leading-snug">{raid.trait_line}</span>
               </div>
+              {raid.attack && (
+                <div className="flex items-start gap-2 text-[10px]">
+                  <span className="px-1 py-0.5 border border-rose-500/50 text-rose-400 text-[8px] uppercase tracking-wider shrink-0">{t.chAttackLabel}</span>
+                  <span className="font-sans leading-snug">
+                    {tf(t.chAttackOffer, { name: raid.attack.name, n: fmt(raid.attack.dmg), h: raid.attack.every, p: hours(raid.attack.parry) })}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-4 gap-2">
                 <Stat label={t.chHp} value={hours(raid.hp)} textMuted={textMuted} />
                 <Stat label={t.chTime} value={tf(t.chDays, { n: raid.days })} textMuted={textMuted} />
                 <Stat label={t.chLoot} value={`+${fmt(raid.loot)}`} className="text-amber-400" textMuted={textMuted} />
                 <Stat label={t.chEntry} value={fmt(raid.price)} textMuted={textMuted} />
               </div>
+              {(raid.first_bonus ?? 0) > 0 && (
+                <div className="text-[9px] uppercase tracking-wider font-bold text-amber-400 tabular-nums">{tf(t.chFirstClear, { n: fmt(raid.first_bonus ?? 0) })}</div>
+              )}
+              {raidInverted && <p className={`m-0 text-[9px] font-sans ${textMuted}`}>{t.chInvertedHint}</p>}
               {raid.heads && (
                 <div className={`p-2 border ${borderCol} space-y-1`}>
                   <div className={`flex justify-between gap-2 text-[8px] uppercase tracking-[0.2em] ${textMuted}`}>
@@ -960,23 +1179,27 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                     </span>
                   </div>
                   {categories.length >= minHeads ? (
-                    <CategoryChips
-                      categories={categories}
-                      selected={picked}
-                      onToggle={togglePick}
-                      disabled={Boolean(active)}
-                      borderCol={borderCol}
-                      textMuted={textMuted}
-                      caption={
-                        picked.length
-                          ? picked
-                              .map((id) => categories.find((c) => String(c.id) === id))
-                              .filter(Boolean)
-                              .map((c) => c!.code)
-                              .join(' · ') + ` → ${tf(t.chHeadHp, { h: hours(Math.floor(raid.hp / Math.max(1, picked.length))) })}`
-                          : null
-                      }
-                    />
+                    // However many categories there are, the list scrolls rather than
+                    // growing the card.
+                    <div className="max-h-[5.25rem] overflow-y-auto overscroll-contain">
+                      <CategoryChips
+                        categories={categories}
+                        selected={picked}
+                        onToggle={togglePick}
+                        disabled={Boolean(active)}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                        caption={
+                          picked.length
+                            ? picked
+                                .map((id) => categories.find((c) => String(c.id) === id))
+                                .filter(Boolean)
+                                .map((c) => c!.code)
+                                .join(' · ') + ` → ${tf(t.chHeadHp, { h: hours(Math.floor(raid.hp / Math.max(1, picked.length))) })}`
+                            : null
+                        }
+                      />
+                    </div>
                   ) : (
                     <div className="text-[10px] font-sans text-rose-400">{tf(t.chNeedCategories, { n: minHeads, have: categories.length })}</div>
                   )}
@@ -1001,25 +1224,35 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
       )}
 
       {offers && rival && (
-        <section className="space-y-2">
+        <section ref={rivalSection} className="space-y-2 scroll-mt-2">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-[10px] uppercase tracking-[0.25em] font-bold">{t.chRivals}</span>
-            <span className={`text-[9px] uppercase tracking-wider ${textMuted}`}>{tf(t.chCount, { n: offers.rivals.length })}</span>
+            <span className={`text-[9px] uppercase tracking-wider ${textMuted}`}>
+              {tf(t.chCount, { n: offers.rivals.length })}
+              {limitedCount(offers.rivals) > 0 && (
+                <span className="font-bold" style={{ color: eventAccent }}>
+                  {' '}· {tf(t.chEventCount, { n: limitedCount(offers.rivals) })}
+                </span>
+              )}
+            </span>
           </div>
           <p className={`m-0 text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.chRivalsHint}</p>
           <Strip borderCol={borderCol} textMuted={textMuted} label={t.chRivals}>
-            {offers.rivals.map((r) => {
+            {limitedFirst(offers.rivals).map((r) => {
               const accent = challengeAccent(r.key);
-              const on = r.key === rival.key;
+              const on = r.key === pickedRival?.key;
               return (
                 <button
                   key={r.item_id}
                   type="button"
                   role="option"
                   aria-selected={on}
-                  onClick={() => setRivalKey(r.key)}
-                  className={`shrink-0 snap-start w-36 sm:w-auto sm:flex-1 sm:min-w-36 flex items-center gap-2 p-1.5 pl-2.5 mt-2 ml-1 border text-left cursor-pointer transition-all ${on ? '' : `${borderCol} opacity-70 hover:opacity-100`}`}
-                  style={on ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}55, 0 0 18px ${accent}33`, background: `${accent}10` } : undefined}
+                  onClick={() => {
+                    setRivalKey(r.key);
+                    setRivalTurned(false);
+                  }}
+                  className={`relative shrink-0 snap-start w-36 sm:w-auto sm:flex-1 sm:min-w-36 flex items-center gap-2 p-1.5 pl-2.5 mt-2 ml-1 border text-left cursor-pointer transition-all ${on ? '' : r.event ? '' : `${borderCol} opacity-70 hover:opacity-100`}`}
+                  style={on ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}55, 0 0 18px ${accent}33`, background: `${accent}10` } : r.event ? { borderColor: eventAccent } : undefined}
                 >
                   <span className="relative w-10 h-10 shrink-0 flex items-end justify-center border bg-zinc-950" style={{ borderColor: `${accent}66`, backgroundImage: `linear-gradient(${accent}26, transparent)` }}>
                     <RankBadge challengeKey={r.key} className="-top-2 -left-2" />
@@ -1031,19 +1264,26 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                     </span>
                     <span className={`block text-[8px] uppercase tracking-wider truncate ${textMuted}`}>{r.tag}</span>
                   </span>
+                  {r.event && <LimitedRibbon accent={eventAccent} className="absolute top-0 right-0" />}
                 </button>
               );
             })}
           </Strip>
-          <OfferDetail accent={challengeAccent(rival.key)} borderCol={borderCol}>
+          <OfferDetail accent={challengeAccent(rival.key)} borderCol={borderCol} minHeight="min-h-[25.5rem] sm:min-h-[13.25rem]">
             <div
-              className="relative h-32 sm:h-auto sm:w-44 shrink-0 flex items-end justify-center overflow-hidden bg-zinc-950"
-              style={{ backgroundImage: `radial-gradient(ellipse 60% 60% at 50% 80%, ${challengeAccent(rival.key)}33, transparent 70%)` }}
+              className="relative flex-1 min-h-32 sm:flex-none sm:w-44 shrink-0 flex items-end justify-center overflow-hidden bg-zinc-950 transition-[background] duration-300"
+              style={{ background: stageGlow(challengeAccent(rival.key), rivalInverted, 80) }}
             >
               <RankBadge challengeKey={rival.key} className="top-0 left-0" />
-              {RIVAL_ART[rival.key] && <Pixel key={rival.key} art={RIVAL_ART[rival.key]} className="w-24 h-24 ch-in" />}
+              {rival.event && <LimitedRibbon accent={eventAccent} className="absolute top-0 right-0 z-[1]" />}
+              <InvertControl inversion={pickedRival?.inversion} inverted={rivalInverted} onTurn={rivalTurn.turn} accent={challengeAccent(rival.key)} />
+              {RIVAL_ART[rival.key] && (
+                <span className={`inline-block ${rivalTurn.turnClass}`}>
+                  <Pixel key={rival.key} art={RIVAL_ART[rival.key]} className={`w-40 h-40 sm:w-24 sm:h-24 ${rivalTurn.turnClass ? '' : 'ch-in'}`} />
+                </span>
+              )}
             </div>
-            <div className="flex-1 min-w-0 p-3 flex flex-col gap-2">
+            <div className="sm:flex-1 min-w-0 p-3 flex flex-col gap-2">
               <div>
                 <div className={`text-[8px] uppercase tracking-[0.3em] ${textMuted}`}>{rival.tag}</div>
                 <div className="text-base font-bold tracking-[0.15em] leading-tight" style={{ color: challengeAccent(rival.key) }}>
@@ -1051,12 +1291,23 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                 </div>
                 <p className={`m-0 mt-1 text-[11px] font-sans italic ${textMuted}`}>“{rival.motto}”</p>
               </div>
+              {rival.rule_line && (
+                <div className="flex items-start gap-2 text-[10px]">
+                  <span className="px-1 py-0.5 border text-[8px] uppercase tracking-wider shrink-0" style={{ borderColor: `${challengeAccent(rival.key)}66`, color: challengeAccent(rival.key) }}>
+                    {t.chRule}
+                  </span>
+                  <span className="font-sans leading-snug">{rival.rule_line}</span>
+                </div>
+              )}
               <div className="grid grid-cols-4 gap-2">
                 <Stat label={t.chTheyStudy} value={`~${(rival.projected / 60).toFixed(1)}H`} textMuted={textMuted} />
                 <Stat label={t.chTime} value={t.chDuelLength} textMuted={textMuted} />
                 <Stat label={t.chPrize} value={`+${fmt(rival.prize)}`} className="text-amber-400" textMuted={textMuted} />
                 <Stat label={t.chEntry} value={fmt(rival.price)} textMuted={textMuted} />
               </div>
+              {(rival.first_bonus ?? 0) > 0 && (
+                <div className="text-[9px] uppercase tracking-wider font-bold text-amber-400 tabular-nums">{tf(t.chFirstClear, { n: fmt(rival.first_bonus ?? 0) })}</div>
+              )}
               <p className={`m-0 text-[9px] font-sans ${textMuted}`}>{tf(t.chDuelWhen, { time: formatDateTime(rival.ends_at) })}</p>
               <div className="mt-auto flex flex-col">{buyButton(rival.item_id, rival.price, blocked, challengeAccent(rival.key))}</div>
             </div>
@@ -1067,8 +1318,184 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
   );
 };
 
-const OfferDetail: React.FC<{ accent: string; borderCol: string; children: React.ReactNode }> = ({ accent, borderCol, children }) => (
-  <div className={`flex flex-col sm:flex-row border ${borderCol} overflow-hidden`} style={{ borderColor: `${accent}66`, boxShadow: `inset 0 1px 0 ${accent}44` }}>
+// ------------------------------------------------------------------ event
+/** Whole days left of a festival, counting today, by the user's calendar. */
+const festivalDaysLeft = (festival: Festival, timeZone: string) => {
+  const p = getZonedParts(new Date(), timeZone);
+  const [endMonth, endDay] = festival.end.split('-').map(Number);
+  // NEW YEAR runs across December 31: an end earlier in the year is next year's.
+  const startMonth = Number(festival.start.split('-')[0]);
+  const year = endMonth < startMonth && p.month >= startMonth ? p.year + 1 : p.year;
+  return Math.round((Date.UTC(year, endMonth - 1, endDay) - Date.UTC(p.year, p.month - 1, p.day)) / 86_400_000) + 1;
+};
+
+interface EventChallenger {
+  kind: 'raid' | 'rival';
+  key: string;
+  name: string;
+  line: string;
+  wins: number;
+}
+
+/** The bar: what you have logged since the festival began, and what is on it. */
+const PassBar: React.FC<{ pass: FestivalPass; accent: string }> = ({ pass, accent }) => {
+  const { t } = useI18n();
+  const share = Math.min(100, (pass.minutes / pass.goal) * 100);
+  const done = pass.minutes >= pass.goal;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2 text-[9px] uppercase tracking-[0.25em]">
+        <span className="font-bold text-zinc-300">{t.chPassTitle}</span>
+        <span className="font-bold tabular-nums tracking-wider" style={{ color: accent }}>
+          {done ? t.chPassDone : tf(t.chPassHours, { a: (pass.minutes / 60).toFixed(1), b: pass.goal / 60 })}
+        </span>
+      </div>
+      <div className="relative h-3 bg-zinc-800/90 border border-zinc-700">
+        <div className="absolute inset-y-0 left-0 transition-[width] duration-700" style={{ width: `${share}%`, background: `linear-gradient(90deg, ${accent}99, ${accent})`, boxShadow: `0 0 12px ${accent}88` }} />
+        {pass.steps.slice(0, -1).map((step) => (
+          <span key={step.at} className="absolute inset-y-0 w-px bg-zinc-950/80" style={{ left: `${(step.at / pass.goal) * 100}%` }} />
+        ))}
+      </div>
+      <div className="grid grid-cols-5 gap-1">
+        {pass.steps.map((step) => (
+          <div
+            key={step.at}
+            className={`flex flex-col items-center justify-end gap-0.5 p-1 border text-center ${step.reached ? '' : 'border-zinc-800 bg-zinc-950/50'}`}
+            style={step.reached ? { borderColor: accent, background: `${accent}1f` } : undefined}
+          >
+            {step.kind === 'bits' && <BitShard className={`${step === pass.steps[pass.steps.length - 1] ? 'w-7 h-7' : 'w-5 h-5'} ${step.reached ? '' : 'grayscale opacity-50'}`} />}
+            {step.kind === 'cursor' && (
+              <img src={`/cursors/pixel-${step.cursor}.svg`} alt="" className={`h-6 ${step.reached ? '' : 'grayscale opacity-50'}`} style={{ imageRendering: 'pixelated' }} />
+            )}
+            <span className={`text-[8px] font-bold uppercase tracking-wider tabular-nums leading-3 ${step.reached ? 'text-zinc-100' : 'text-zinc-500'}`}>
+              {step.kind === 'bits' ? tf(t.chPassBits, { n: fmt(step.bits ?? 0) }) : t.chPassCursor}
+            </span>
+            <span className="text-[8px] tabular-nums leading-3 text-zinc-500">{Math.round(step.at / 60)}H</span>
+          </div>
+        ))}
+      </div>
+      <p className="m-0 text-[10px] font-sans leading-snug text-zinc-400">{t.chPassHint}</p>
+    </div>
+  );
+};
+
+/** One line on the dashboard while a festival runs: its bar, and the way in. */
+export const FestivalStrip: React.FC<{ festival: Festival; pass: FestivalPass; onOpen: () => void }> = ({ festival, pass, onOpen }) => {
+  const { t, timeZone } = useI18n();
+  const accent = festival.accent;
+  const days = festivalDaysLeft(festival, timeZone);
+  const reached = pass.steps.filter((s) => s.reached).length;
+  // Left open past its last midnight, before the next answer from the server.
+  if (days < 1) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={t.chStripTitle}
+      className="w-full grid grid-cols-[1fr_auto] sm:flex sm:items-center gap-x-3 sm:gap-x-4 gap-y-1.5 px-3 py-2 border text-left text-zinc-100 cursor-pointer font-mono group"
+      style={{ borderColor: accent, background: `radial-gradient(ellipse 45% 180% at 0% 50%, ${accent}3d, transparent 72%), linear-gradient(90deg, #0c0c10, #050507)` }}
+    >
+      <span className="min-w-0 sm:shrink-0">
+        <span className="block text-[8px] uppercase tracking-[0.25em] font-bold leading-3" style={{ color: accent }}>
+          {t.chEventLabel}
+        </span>
+        <span className="block text-[11px] sm:text-xs font-bold tracking-[0.12em] leading-4 truncate sm:whitespace-nowrap">{festival.name}</span>
+      </span>
+      {/* A row of its own on a phone: the bar is the point, so it gets the width. */}
+      <span className="col-span-2 order-last sm:order-none relative sm:flex-1 h-2 bg-zinc-800 border border-zinc-700">
+        <span className="absolute inset-y-0 left-0" style={{ width: `${Math.min(100, (pass.minutes / pass.goal) * 100)}%`, background: accent, boxShadow: `0 0 10px ${accent}` }} />
+      </span>
+      <span className="shrink-0 flex items-center gap-2 sm:gap-3">
+        <span className="text-right text-[9px] uppercase tracking-wider tabular-nums leading-3">
+          <span className="block font-bold whitespace-nowrap">{pass.minutes >= pass.goal ? t.chPassDone : tf(t.chPassHours, { a: (pass.minutes / 60).toFixed(1), b: pass.goal / 60 })}</span>
+          <span className="block text-zinc-400 mt-0.5 whitespace-nowrap">
+            {reached}/{pass.steps.length} · {days <= 1 ? t.chEventLastDay : tf(t.chEventDays, { n: days })}
+          </span>
+        </span>
+        <ChevronRight className="w-4 h-4 shrink-0 text-zinc-500 group-hover:text-zinc-200" />
+      </span>
+    </button>
+  );
+};
+
+/** What only this festival brings, at the top of the tab. Each challenger
+ *  opens its card further down. */
+const FestivalBanner: React.FC<{ festival: Festival; pass?: FestivalPass | null; challengers: EventChallenger[]; onPick: (c: EventChallenger) => void }> = ({ festival, pass, challengers, onPick }) => {
+  const { t, timeZone } = useI18n();
+  const accent = festival.accent;
+  const days = festivalDaysLeft(festival, timeZone);
+  return (
+    <section
+      className="relative overflow-hidden border text-zinc-100"
+      style={{ borderColor: accent, background: `radial-gradient(ellipse 70% 120% at 12% 0%, ${accent}38, transparent 70%), linear-gradient(120deg, #0c0c10, #050507)` }}
+      aria-label={festival.name}
+    >
+      <div className="relative p-3 sm:p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[9px] uppercase tracking-[0.3em] font-bold" style={{ color: accent }}>
+              {t.chEventLabel}
+            </div>
+            <div className="text-xl sm:text-2xl font-bold tracking-[0.12em] leading-tight">{festival.name}</div>
+            <p className="m-0 mt-0.5 text-[11px] font-sans italic text-zinc-400">{festival.tagline}</p>
+          </div>
+          <span className="shrink-0 px-2 py-1 text-[10px] font-bold uppercase tracking-wider tabular-nums text-zinc-950" style={{ background: accent }}>
+            {days <= 1 ? t.chEventLastDay : tf(t.chEventDays, { n: days })}
+          </span>
+        </div>
+        {pass && <PassBar pass={pass} accent={accent} />}
+        {challengers.length > 0 && (
+          <div className="grid sm:grid-cols-2 gap-2">
+            {challengers.map((c) => {
+              const art = c.kind === 'raid' ? BOSS_ART[c.key] : RIVAL_ART[c.key];
+              const ink = challengeAccent(c.key);
+              return (
+                <button
+                  key={`${c.kind}-${c.key}`}
+                  type="button"
+                  onClick={() => onPick(c)}
+                  className="flex items-center gap-2.5 p-1.5 text-left border bg-zinc-950/70 cursor-pointer transition-colors hover:bg-zinc-900 min-w-0"
+                  style={{ borderColor: `${ink}88` }}
+                >
+                  <span className="relative w-14 h-14 shrink-0 flex items-end justify-center bg-zinc-950" style={{ backgroundImage: `radial-gradient(ellipse 70% 60% at 50% 70%, ${ink}40, transparent 72%)` }}>
+                    {art && <Pixel art={art} className="w-[3.25rem] h-[3.25rem]" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[8px] uppercase tracking-[0.2em] text-zinc-400">{c.kind === 'raid' ? t.chEventBoss : t.chEventRival}</span>
+                    <span className="block text-[12px] font-bold tracking-[0.12em] truncate" style={{ color: ink }}>
+                      {c.name}
+                    </span>
+                    <span className="block text-[9px] uppercase tracking-wider truncate text-zinc-400">{c.wins ? tf(t.chEventBeaten, { n: c.wins }) : c.line}</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 shrink-0 text-zinc-500" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+/** The strip's mark for a challenger only here for the festival. */
+const LimitedRibbon: React.FC<{ accent: string; className?: string }> = ({ accent, className = '' }) => {
+  const { t } = useI18n();
+  return (
+    <span className={`px-1 text-[8px] font-bold uppercase leading-[14px] tracking-wider text-zinc-950 ${className}`} style={{ background: accent }}>
+      {t.chEventTag}
+    </span>
+  );
+};
+
+/** Limited ones first; otherwise the catalog's order. */
+const limitedFirst = <T extends { event?: string | null }>(rows: T[]) => [...rows].sort((a, b) => Number(Boolean(b.event)) - Number(Boolean(a.event)));
+
+/** The chosen challenger. Its height is set by the tallest one (`minHeight`), so
+ *  switching never moves what is below: the spare height goes to the stage on
+ *  phones, and above the button on wider screens. */
+const OfferDetail: React.FC<{ accent: string; borderCol: string; minHeight: string; children: React.ReactNode }> = ({ accent, borderCol, minHeight, children }) => (
+  <div data-offer-detail className={`flex flex-col sm:flex-row border ${borderCol} ${minHeight} overflow-hidden`} style={{ borderColor: `${accent}66`, boxShadow: `inset 0 1px 0 ${accent}44` }}>
     {children}
   </div>
 );
@@ -1120,7 +1547,7 @@ export const ChallengeTicker: React.FC<{ challenge: ActiveChallenge; textMuted: 
         )}
       </span>
       <span className="font-bold shrink-0" style={{ color: accent }}>
-        {challenge.name}
+        {challenge.name.replace(' // INVERTED', '')}
       </span>
       {challenge.kind === 'raid' && (
         <span className="w-12 shrink-0">

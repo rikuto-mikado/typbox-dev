@@ -434,13 +434,181 @@ const SLOT_ROOMS: ShowcaseRoom[] = [
 
 export const NEWS_ARTICLES: NewsArticle[] = [
   {
+    id: 'festival-bar',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'The festival bar',
+    lede: 'Every hour you log during a festival now fills a bar, and the bar pays out along the way: BITS, a cursor of that festival\'s own, and the biggest BITS at the very end.',
+    blocks: [
+      { type: 'figure', kind: 'festbar', caption: 'The bar during the Culture Festival, and the ten cursors the festivals give out.' },
+      {
+        type: 'stats',
+        items: [
+          ['Festivals with a bar', '10'],
+          ['Steps on each bar', '5'],
+          ['Goal', '5 hours per festival day'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'While a festival runs, a line at the top of the dashboard shows how far you have come, and the banner under CHALLENGES shows what is next. The goal follows the length of the festival: five hours for each of its days, so Setsubun asks for 15 hours and the whole of August for 155. Only what you commit during the festival counts, plus a session that runs past its last midnight. The bar starts with this Culture Festival; earlier festivals have none.',
+      },
+      {
+        type: 'p',
+        text: 'The five steps are BITS, the festival\'s cursor, BITS, BITS, and three times the BITS for finishing. The cursor stays yours for good, and the BITS come round again next year. It is all worked out from your logs, so a BITS reset or a backup of nothing but logs brings every step back. Delete the logs that reached a step while the festival is still running, and the step goes too.',
+      },
+    ],
+  },
+  {
+    id: 'cooldown-price',
+    date: 'EARLY NOV 2026',
+    tag: 'BALANCE',
+    title: 'Every way of playing, on equal terms',
+    lede: 'Buff cooldowns no longer last 24 hours for everything. Each buff now has a timer of its own, so another can run while one rests, and seven buffs that only paid off in a narrow case got cheaper.',
+    blocks: [
+      { type: 'figure', kind: 'cooldowns', caption: 'How long each buff rests after it ends. The others stay on sale meanwhile.' },
+      {
+        type: 'p',
+        text: 'With one cooldown for all, WARM-UP was hardly worth buying: gone in a few hours, then a whole day with no buff at all. Now only the buff you just used has to rest, and for as long as suits it: 6 hours for WARM-UP, 8 for STORM RUNNER, 36 for HYPERDRIVE. Run WARM-UP after WARM-UP, go straight from it into NIGHT SHIFT, or rotate through the shop. One buff still runs at a time. A MYSTERY CRATE rests for 14 hours, and so does whichever buff it opened into, for that buff\'s own time.',
+      },
+      {
+        type: 'stats',
+        items: [
+          ['OVERCLOCK', '800 → 600'],
+          ['STORM RUNNER', '800 → 600'],
+          ['LUNAR TIDE', '900 → 500'],
+          ['WEEKEND SURGE', '1,000 → 600'],
+          ['LUCKY BYTE', '1,000 → 600'],
+          ['DEEP DIVE', '1,500 → 1,200'],
+          ['HYPERDRIVE', '1,800 → 1,200'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'DEEP DIVE also pays +300 for a two-hour log, up from +250, so it no longer loses money for someone who studies in two-hour blocks. A buff already running keeps the price it was bought at.',
+      },
+    ],
+  },
+  {
+    id: 'fewer-themes',
+    date: 'EARLY NOV 2026',
+    tag: 'CHANGE',
+    title: 'Fewer Surface Themes, drawn by hand',
+    lede: 'There were 912, and too many of them were nearly the same. Now there are 61, every one chosen by hand, and you get one every 50 ranks.',
+    blocks: [
+      { type: 'figure', kind: 'themes', caption: 'A few of the 61: blacks, whites and paper colours, then a deep field against one signal colour.' },
+      {
+        type: 'stats',
+        items: [
+          ['SIMPLE', '31'],
+          ['DUOTONE', '30'],
+          ['A new one every', '50 ranks'],
+          ['Ranks', '3,000, as before'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'SIMPLE themes keep to blacks, whites and paper colours, so only the accent has any colour. DUOTONE themes set one deep colour against one signal colour: navy and orange, forest and gold, black and red.',
+      },
+      {
+        type: 'p',
+        text: 'Themes now arrive on the round numbers: LV.0050, LV.0100, LV.0150 and so on, so the next one is always easy to work out. They alternate between the two series, and the last rank of every division, from INITIATE to MONOLITH, is always a DUOTONE. That is about 8 hours of study apart at first, then 17, and 21 near the end of a cycle.',
+      },
+      {
+        type: 'p',
+        text: 'If you were using a theme that has gone, you have been moved to the closest one that is left. The illustrated Ascension themes and their motion switch went with the rest. Ascension itself stays, with its badge and its cursors and chronometer faces.',
+      },
+    ],
+  },
+  {
+    id: 'trophies',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'COLLECTION: 52 trophies',
+    lede: 'Trophies have moved out of your room and into a tab of their own, and there are a lot more of them.',
+    blocks: [
+      { type: 'figure', kind: 'trophies', caption: 'Seven kinds, in six metals from BRONZE to MYTHIC.' },
+      {
+        type: 'stats',
+        items: [
+          ['Trophies', '52'],
+          ['Study hours', 'up to 10,000'],
+          ['Longest streak', 'up to 365 days'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'A new tab beside FURNITURE keeps study hours, sessions logged, days studied, your longest streak, challengers beaten, other sides beaten and festival bars finished. Pick a kind, scroll along the row, and choose any piece to put it on the stage. Below them is your record against every challenger. Trophies and medals used to be furniture; any that were standing in a room have moved here.',
+      },
+    ],
+  },
+  {
+    id: 'inverted',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'The other side',
+    lede: 'Bosses hit back now. Beat one three times and a new button appears on its card: press it, and it turns around. And backups now bring back everything.',
+    blocks: [
+      { type: 'figure', kind: 'inverted', caption: 'The twelve regulars, and what is on the other side of each.' },
+      {
+        type: 'stats',
+        items: [
+          ['Wins to open it', '3'],
+          ['Inverted challengers', '12'],
+          ['First clear bonus', 'up to +4,000'],
+        ],
+      },
+      { type: 'h', text: 'BOSSES HIT BACK' },
+      {
+        type: 'p',
+        text: 'Every boss now attacks once a day, on a clock that starts when the raid does. If you have dealt an hour of damage since its last attack, you parry it. If not, it takes BITS: 50 to 170 depending on the boss. A blow that bounced or missed parries nothing. A session running across the moment still counts, so committing it afterwards gives those BITS back. An attack never takes your balance below zero, and giving up stops it. Loot went up by about 15% to pay for the danger.',
+      },
+      { type: 'h', text: 'INVERT' },
+      {
+        type: 'p',
+        text: 'Your first win over a regular boss or rival puts a small 1/3 on its card. At 3/3 it becomes a button. Press INVERT and it turns around, with its own rules, fee and prize. Press again to turn it back. Once a fight has started, the side is fixed. Being studious is not enough here: the rules have turned over, so each of these asks you to study differently.',
+      },
+      {
+        type: 'stats',
+        items: [
+          ['GOLEM', 'Logs of 60 min or more bounce off'],
+          ['NIGHTMARE', 'Heals 2h at midnight and at noon'],
+          ['HYDRA', 'A head falls, the others heal a quarter'],
+          ['WARDEN', 'A day under 2h heals it 4h'],
+          ['PHANTOM', 'The same category twice misses'],
+          ['TITAN', 'No criticals. 75 hours of HP'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'Inverted bosses have 2.5 times the HP (WARDEN 3 times), attack every 12 hours, and take 3 hours of damage to parry.',
+      },
+      {
+        type: 'stats',
+        items: [
+          ['ORION', 'Only sessions started 04:00-11:59 count'],
+          ['NOVA', 'Only sessions started 20:00-03:59 count'],
+          ['RUSH', 'Your last 24 hours against their 72'],
+          ['KAI', 'Only logs of 30 min or less count'],
+          ['MIKA', 'About 11 hours a day. Win all three rounds'],
+          ['ACE', 'Fourteen hours a day. No tricks'],
+        ],
+      },
+      { type: 'h', text: 'BACKUPS BRING IT ALL BACK' },
+      {
+        type: 'p',
+        text: 'A JSON backup now also holds your purchases, buff bonuses, wins, rooms, STARLIGHT and settings, so export, clear and import puts your balance and furniture back where they were. Two things cannot come back as they were: a challenge still running gives back its entry fee instead, and a running buff ends with the usual refund. Backups made before this change still work, and pay at the base rate as they always did.',
+      },
+    ],
+  },
+  {
     id: 'festival-year',
     date: 'EARLY NOV 2026',
     tag: 'GUIDE',
     title: 'The festival year',
     lede: 'Ten festivals, on the same dates every year. Each one brings its own challengers, its own furniture and a rule you will not meet anywhere else. Here is who to expect, and when.',
     blocks: [
-      { type: 'figure', kind: 'festivals', caption: 'The whole year, by the boss waiting at each festival.' },
+      { type: 'figure', kind: 'festyear', caption: 'The whole year: ten festivals, on the same dates every year.' },
       {
         type: 'stats',
         items: [
@@ -580,7 +748,6 @@ export const NEWS_ARTICLES: NewsArticle[] = [
           'At night the room falls dark, and only what gives light pushes back.',
           'Five new windows look out on a city, a forest, the sea and a peak, with the real time of day and whatever is falling outside.',
           'Curtains, a bathroom, a bedroom, rugs, a study carrel and more. Pets settle down to sleep at night.',
-          'Trophies cannot be bought: they arrive at 100, 500 and 1,000 hours, and medals at 100 and 1,000 logs.',
         ],
       },
     ],
@@ -598,14 +765,14 @@ export const NEWS_ARTICLES: NewsArticle[] = [
         items: [
           ['One star', 'A day with a log no buff paid on'],
           ['A save', '7 stars · once per buff'],
-          ['Buff cooldown', '24 hours'],
+          ['Buff cooldown', 'One timer per buff'],
           ['Logs lock', '3 days after their commit'],
         ],
       },
       { type: 'h', text: 'STARLIGHT' },
       {
         type: 'p',
-        text: 'Every day with a log no buff paid on is a star, up to 14, and that goes for the logs you already have. A log only counts if it was committed within two days of its date. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. Stars can also re-deal the furniture shop (2), show what the next MYSTERY CRATE holds (3) or cut a cooldown by 12 hours (3).',
+        text: 'Every day with a log no buff paid on is a star, up to 14, and that goes for the logs you already have. A log only counts if it was committed within two days of its date. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. Stars can also re-deal the furniture shop (2) or show what the next MYSTERY CRATE holds (3).',
       },
       {
         type: 'list',
@@ -620,7 +787,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'BUFF COOLDOWN' },
       {
         type: 'p',
-        text: 'The next buff can be bought 24 hours after the last one ends, however it ended. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected.',
+        text: 'After a buff ends, however it ended, that buff rests on its own timer, from 6 hours for WARM-UP to 36 for HYPERDRIVE. Other buffs stay on sale. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected.',
       },
       { type: 'h', text: 'LOGS' },
       {
@@ -703,23 +870,23 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       {
         type: 'stats',
         items: [
-          ['IRON CONTRACT', '2.0×'],
-          ['DEEP DIVE', '1.87×'],
+          ['LUNAR TIDE · DEEP DIVE', '2.3–2.4×'],
+          ['HYPERDRIVE · IRON CONTRACT · WEEKEND SURGE', '2.0–2.1×'],
+          ['OVERCLOCK · STORM RUNNER', '1.67×'],
           ['NIGHT SHIFT · EARLY BIRD · FOCUS CHIP', '1.5×'],
-          ['HYPERDRIVE · CATEGORY LOCK · LUNAR TIDE', '1.33–1.39×'],
-          ['WARM-UP · OVERCLOCK · STORM RUNNER · WEEKEND SURGE', '1.2–1.25×'],
+          ['CATEGORY LOCK · WARM-UP', '1.25–1.33×'],
           ['LUCKY BYTE · MYSTERY CRATE', 'Luck'],
         ],
       },
       { type: 'h', text: 'You put in 5+ hours every day' },
       {
         type: 'p',
-        text: 'IRON CONTRACT (1,500) is the best return in the shop: three calendar days of 5 hours each, starting the midnight after you sign, and the log that completes day 3 pays +3,000. Miss one day and the stake is gone, and cancelling refunds nothing. Only sign when the next three days are clear.',
+        text: 'IRON CONTRACT (1,500) is the biggest sure payout in the shop: three calendar days of 5 hours each, starting the midnight after you sign, and the log that completes day 3 pays +3,000. Miss one day and the stake is gone, and cancelling refunds nothing. Only sign when the next three days are clear.',
       },
       { type: 'h', text: 'You study in long sittings' },
       {
         type: 'p',
-        text: 'DEEP DIVE (1,500) pays by the length of a single log: 2h +250, 3h +450, 4h +700, up to four logs (+2,800). Shorter logs neither pay nor use anything up, so there is nothing to lose by mixing them in. HYPERDRIVE (1,800) also suits long days, but it needs 3 hours on every full day it runs and returns less.',
+        text: 'DEEP DIVE (1,200) pays by the length of a single log: 2h +300, 3h +450, 4h +700, up to four logs (+2,800). Shorter logs neither pay nor use anything up, so there is nothing to lose by mixing them in. HYPERDRIVE (1,200) also suits long days, but it needs 3 hours on every full day it runs.',
       },
       { type: 'h', text: 'You keep a fixed rhythm' },
       {
@@ -742,16 +909,16 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'A lighter week, or your first buff' },
       {
         type: 'p',
-        text: 'WARM-UP (400) is the safest: ×2 on 5 hours spread over 48 hours (+500). OVERCLOCK (800) is the same ×2 squeezed into 24 hours, up to 10 hours (+1,000); only worth it on a day you can actually study ten.',
+        text: 'WARM-UP (400) is the safest: ×2 on 5 hours spread over 48 hours (+500). OVERCLOCK (600) is the same ×2 squeezed into 24 hours, up to 10 hours (+1,000); it pays for itself from 6 hours in a day.',
       },
       { type: 'h', text: 'Timing and luck' },
       {
         type: 'list',
         items: [
-          'LUNAR TIDE (900): the rate follows the moon at the moment each log is committed, from +100 BITS/h at full moon to almost nothing at new moon, and dim-moon logs still use up its 12 hours. Check MOON NOW on the card and buy it in the days before a full moon.',
-          'STORM RUNNER (800): pays on logs committed in rain, snow, a storm or below 0°C, for 5 days. The weather is read at commit time from the CHRONOMETER readout, which uses your time zone\'s city unless you switch on PRECISE LOCATION in the weather settings. In a snowy winter that can make it pay on most logs.',
-          'WEEKEND SURGE (1,000): +50 BITS/h over Saturday and Sunday. It needs 20 hours of weekend study just to break even; buy it for a weekend you plan to spend at the desk.',
-          'LUCKY BYTE (1,000): each log has a 1-in-5 chance to pay triple. On average that is +40% of each log\'s base BITS (the first 3 hours of it count), on up to 20 logs; even very short logs use one up. It breaks even at about 25 hours of logs in its 72 hours, and pays well above that if you log long sessions.',
+          'LUNAR TIDE (500): the rate follows the moon at the moment each log is committed, from +100 BITS/h at full moon to almost nothing at new moon, and dim-moon logs still use up its 12 hours. Check MOON NOW on the card and buy it in the days before a full moon.',
+          'STORM RUNNER (600): pays on logs committed in rain, snow, a storm or below 0°C, for 5 days. The weather is read at commit time from the CHRONOMETER readout, which uses your time zone\'s city unless you switch on PRECISE LOCATION in the weather settings. In a snowy winter that can make it pay on most logs.',
+          'WEEKEND SURGE (600): +50 BITS/h over Saturday and Sunday. It needs 12 hours of weekend study to break even; buy it for a weekend you plan to spend at the desk.',
+          'LUCKY BYTE (600): each log has a 1-in-5 chance to pay triple. On average that is +40% of each log\'s base BITS (the first 3 hours of it count), on up to 20 logs; even very short logs use one up. It breaks even at about 15 hours of logs in its 72 hours, and pays well above that if you log long sessions.',
           'MYSTERY CRATE (700): better than it looks. 80% of rolls are a buff that costs more than 700, and the average roll is worth 822 at shop prices. It never rolls CATEGORY LOCK, STORM RUNNER, LUNAR TIDE or IRON CONTRACT.',
         ],
       },
@@ -834,7 +1001,6 @@ export const NEWS_ARTICLES: NewsArticle[] = [
     title: 'Every buff plays differently now',
     lede: 'Most buffs used to be the same deal: pay, cover the hours, come out a little ahead. Six of them were reworked so each one rewards a different way of studying, and most carry a risk to match.',
     blocks: [
-      { type: 'figure', kind: 'buffs', caption: 'The buff icons, with their class letters.' },
       {
         type: 'stats',
         items: [
@@ -849,10 +1015,10 @@ export const NEWS_ARTICLES: NewsArticle[] = [
         items: [
           'EARLY BIRD (800): ×3 at dawn. The next three mornings, logs committed 05:00–09:00 earn +200 BITS/h, up to 2 hours a morning (+1,200). Miss a morning and the buff ends; what is left of it is lost.',
           'NIGHT SHIFT (900): climbs on back-to-back nights. +100 BITS/h the first night, +150 the next, +200 the third, up to 3 hours a night (+1,350). Skip a night and the rate falls back to +100.',
-          'OVERCLOCK (800): a one-day sprint. ×2 for 24 hours, up to 10 hours (+1,000). Whatever is left after the day is gone.',
-          'HYPERDRIVE (1,800): ×2 on 25 hours over 96 hours (+2,500), but every full day it runs needs 3 hours of logs, or the drive shuts down.',
+          'OVERCLOCK (600): a one-day sprint. ×2 for 24 hours, up to 10 hours (+1,000). Whatever is left after the day is gone.',
+          'HYPERDRIVE (1,200): ×2 on 25 hours over 96 hours (+2,500), but every full day it runs needs 3 hours of logs, or the drive shuts down.',
           'FOCUS CHIP (800): +100 for each session of 50 minutes or more (up to 12). A log under 25 minutes burns the chip out and ends it.',
-          'DEEP DIVE (1,500): pays by session length. 2h earns +250, 3h +450, 4h +700, up to four sessions (+2,800).',
+          'DEEP DIVE (1,200): pays by session length. 2h earns +300, 3h +450, 4h +700, up to four sessions (+2,800).',
         ],
       },
       { type: 'h', text: 'Unchanged' },
@@ -1199,7 +1365,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
           'EARLY BIRD (650): ×2 for logs committed between 05:00 and 09:00. NIGHT SHIFT for mornings.',
           'MYSTERY CRATE (700): opens into one of nine buffs at random. HYPERDRIVE is in there, rarely.',
           'CATEGORY LOCK (900): pick a category and its logs earn ×2 for up to 12 hours.',
-          'DEEP DIVE (1,200): +250 for each single session of two hours or more.',
+          'DEEP DIVE (1,200): pays by the length of a session, from +300 for two hours.',
         ],
       },
       {
@@ -1419,7 +1585,6 @@ export const NEWS_ARTICLES: NewsArticle[] = [
         type: 'list',
         items: [
           'Each theme is a pair: switch polarity at any time to see its other side.',
-          'Prestige themes add optional motion effects.',
         ],
       },
     ],

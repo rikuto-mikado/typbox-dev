@@ -18,6 +18,7 @@ import { BitsBadge, BitShard } from './BitsBadge';
 import { BUFF_ART, lookOf } from './buffArt';
 import { BOSS_ART, RIVAL_ART, challengeAccent, type PixelArt } from './challengeArt';
 import { HpCells, Pixel } from './ChallengePanel';
+import { GRADES, trophyArt } from './trophyArt';
 import { BuffIcon } from './BuffIcon';
 import { PACK_ART } from './roomArtPacks';
 import { thumbnail, type FurnitureSpec } from './roomRender';
@@ -28,7 +29,7 @@ import { MoonPhaseCalendar } from './MoonPhaseCalendar';
 import { SegmentIndicator } from './SegmentIndicator';
 import { StarlightSky } from './StarlightSky';
 import { StatusRankList } from './StatusRankList';
-import { CLEARANCE_LEVELS, NOISE_PROFILES, SURFACE_THEME_PAIRS } from './telemetryFeatures';
+import { CLEARANCE_LEVELS, NOISE_PROFILES, SURFACE_THEME_PAIRS, getSurfaceThemeById } from './telemetryFeatures';
 import { ThemeToggleIcon } from './ThemeToggleIcon';
 import { getZonedParts, tf, useI18n } from './i18n';
 import { getUserStatusOption } from './userStatus';
@@ -43,6 +44,12 @@ import { segmentStyle } from './categoryStyle';
 // app. Motion pauses under prefers-reduced-motion.
 
 export type FigureKind =
+  | 'festbar'
+  | 'festyear'
+  | 'cooldowns'
+  | 'themes'
+  | 'trophies'
+  | 'inverted'
   | 'pairs'
   | 'challenges'
   | 'starlight'
@@ -771,7 +778,7 @@ const GUIDE_RISKS = ['SAFE', 'TIMING', 'CAN END EARLY', 'ALL OR NOTHING', 'LUCK'
 const GUIDE_BUFFS: Array<{ id: string; name: string; risk: number; line: string }> = [
   { id: 'warm_up', name: 'WARM-UP', risk: 0, line: '×2 ON 5H OVER 48H' },
   { id: 'category_lock', name: 'CATEGORY LOCK', risk: 0, line: '×2 ON ONE CATEGORY FOR 72H' },
-  { id: 'deep_dive', name: 'DEEP DIVE', risk: 0, line: '2H +250 · 3H +450 · 4H +700' },
+  { id: 'deep_dive', name: 'DEEP DIVE', risk: 0, line: '2H +300 · 3H +450 · 4H +700' },
   { id: 'overclock', name: 'OVERCLOCK', risk: 1, line: '×2 ON 10H — WITHIN 24H' },
   { id: 'weekend_surge', name: 'WEEKEND SURGE', risk: 1, line: '+50/H · SAT + SUN ONLY' },
   { id: 'storm_runner', name: 'STORM RUNNER', risk: 1, line: 'RAIN · SNOW · STORM · <0°C' },
@@ -786,8 +793,8 @@ const GUIDE_BUFFS: Array<{ id: string; name: string; risk: number; line: string 
 ];
 // Paybacks as of November 2026, used until (or unless) the shop answers.
 const GUIDE_PAYBACK_FALLBACK: Record<string, number> = {
-  warm_up: 1.25, category_lock: 1.33, deep_dive: 1.87, overclock: 1.25, weekend_surge: 1.2, storm_runner: 1.25,
-  lunar_tide: 1.33, night_shift: 1.5, focus_chip: 1.5, early_bird: 1.5, hyperdrive: 1.39, iron_contract: 2,
+  warm_up: 1.25, category_lock: 1.33, deep_dive: 2.33, overclock: 1.67, weekend_surge: 2, storm_runner: 1.67, lunar_tide: 2.4,
+  night_shift: 1.5, focus_chip: 1.5, early_bird: 1.5, hyperdrive: 2.08, iron_contract: 2, lucky_byte: 2, mystery_crate: 1.6,
 };
 const GUIDE_STYLES: Array<{ label: string; ids: string[] }> = [
   { label: '5H+ DAILY', ids: ['iron_contract'] },
@@ -800,7 +807,7 @@ const GUIDE_STYLES: Array<{ label: string; ids: string[] }> = [
   { label: 'TIMING & LUCK', ids: ['lunar_tide', 'storm_runner', 'weekend_surge', 'lucky_byte', 'mystery_crate'] },
 ];
 const GUIDE_Y_MIN = 1;
-const GUIDE_Y_MAX = 2.1;
+const GUIDE_Y_MAX = 2.6;
 
 const BuffGuideFigure: React.FC<FigureContext> = ({ borderCol, textMuted, isDark }) => {
   const [payback, setPayback] = useState<Record<string, number>>(GUIDE_PAYBACK_FALLBACK);
@@ -1337,10 +1344,218 @@ const LaunchFigure: React.FC<FigureContext> = ({ textMuted }) => {
   );
 };
 
+// ------------------------------------------------------------- festival bar
+const FEST_ROWS: Array<[id: string, name: string, from: [number, number], to: [number, number], color: string]> = [
+  ['newyear', 'NEW YEAR', [12, 31], [1, 3], '#ef4444'],
+  ['setsubun', 'SETSUBUN', [2, 1], [2, 3], '#dc2626'],
+  ['valentine', 'VALENTINE', [2, 10], [2, 14], '#fb7185'],
+  ['hanami', 'HANAMI', [3, 25], [4, 10], '#f9a8d4'],
+  ['tanabata', 'TANABATA', [7, 1], [7, 7], '#818cf8'],
+  ['summer', 'SUMMER', [8, 1], [8, 31], '#22d3ee'],
+  ['tsukimi', 'TSUKIMI', [9, 15], [9, 25], '#fde68a'],
+  ['halloween', 'HALLOWEEN', [10, 25], [10, 31], '#f97316'],
+  ['culture', 'CULTURE', [11, 1], [11, 7], '#c084fc'],
+  ['christmas', 'CHRISTMAS', [12, 20], [12, 25], '#34d399'],
+];
+
+const FestBarFigure: React.FC = () => {
+  const accent = '#c084fc';
+  const steps: Array<{ at: number; label: string; reached: boolean; cursor?: boolean; big?: boolean }> = [
+    { at: 7, label: '+280', reached: true },
+    { at: 14, label: 'CURSOR', reached: true, cursor: true },
+    { at: 21, label: '+280', reached: true },
+    { at: 28, label: '+280', reached: false },
+    { at: 35, label: '+840', reached: false, big: true },
+  ];
+  return (
+    <div className="p-3 sm:p-4 space-y-3 text-zinc-100 font-mono" style={{ background: `radial-gradient(ellipse 70% 120% at 12% 0%, ${accent}38, transparent 70%), linear-gradient(120deg, #0c0c10, #050507)` }}>
+      <div className="flex items-baseline justify-between gap-2 text-[10px] tracking-[0.2em]">
+        <span className="font-bold">CULTURE FESTIVAL</span>
+        <span className="font-bold tabular-nums" style={{ color: accent }}>
+          24.5 / 35H
+        </span>
+      </div>
+      <div className="h-3 bg-zinc-800 border border-zinc-700">
+        <div className="h-full" style={{ width: '70%', background: accent, boxShadow: `0 0 12px ${accent}` }} />
+      </div>
+      <div className="grid grid-cols-5 gap-1">
+        {steps.map((s) => (
+          <div key={s.at} className="flex flex-col items-center justify-end gap-0.5 p-1 border" style={s.reached ? { borderColor: accent, background: `${accent}1f` } : { borderColor: '#27272a' }}>
+            {s.cursor ? (
+              <img src="/cursors/pixel-fest-culture.svg" alt="" className="h-6" style={{ imageRendering: 'pixelated' }} />
+            ) : (
+              <BitShard className={`${s.big ? 'w-7 h-7' : 'w-5 h-5'} ${s.reached ? '' : 'grayscale opacity-50'}`} />
+            )}
+            <span className={`text-[9px] font-bold tabular-nums ${s.reached ? '' : 'text-zinc-500'}`}>{s.label}</span>
+            <span className="text-[8px] tabular-nums text-zinc-500">{s.at}H</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap justify-between gap-2 pt-1 border-t border-white/10">
+        {FEST_ROWS.map(([id, name]) => (
+          <img key={id} src={`/cursors/pixel-fest-${id}.svg`} alt={name} title={name} className="h-7" style={{ imageRendering: 'pixelated' }} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const dayOfYear = (month: number, day: number) => (Date.UTC(2027, month - 1, day) - Date.UTC(2027, 0, 1)) / 86_400_000;
+
+/** The year as one line per festival. */
+const FestYearFigure: React.FC = () => (
+  <div className="p-3 sm:p-4 bg-zinc-950 text-zinc-300 font-mono space-y-1">
+    <div className="flex ml-20 sm:ml-24 text-[8px] text-zinc-500 tabular-nums">
+      {Array.from({ length: 12 }, (_, i) => (
+        <span key={i} className="flex-1 border-l border-white/10 pl-0.5">
+          {i + 1}
+        </span>
+      ))}
+    </div>
+    {[...FEST_ROWS].sort((a, b) => dayOfYear(...a[2]) - dayOfYear(...b[2])).map(([id, name, from, to, color]) => {
+      const start = dayOfYear(...from);
+      const end = dayOfYear(...to);
+      const parts = end >= start ? [[start, end]] : [[start, 364], [0, end]];
+      return (
+        <div key={id} className="flex items-center gap-1">
+          <span className="w-[4.75rem] sm:w-[5.75rem] shrink-0 text-[9px] font-bold tracking-wider truncate" style={{ color }}>
+            {name}
+          </span>
+          <span className="relative flex-1 h-2.5 bg-white/5">
+            {parts.map(([a, b]) => (
+              <span key={a} className="absolute inset-y-0" style={{ left: `${(a / 365) * 100}%`, width: `${Math.max(1, ((b - a + 1) / 365) * 100)}%`, background: color, boxShadow: `0 0 8px ${color}88` }} />
+            ))}
+          </span>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const COOLDOWNS: Array<[name: string, hours: number]> = [
+  ['WARM-UP', 6],
+  ['STORM RUNNER', 8],
+  ['OVERCLOCK', 12],
+  ['LUNAR TIDE', 12],
+  ['WEEKEND SURGE', 12],
+  ['LUCKY BYTE', 12],
+  ['MYSTERY CRATE', 14],
+  ['FOCUS CHIP', 16],
+  ['CATEGORY LOCK', 16],
+  ['NIGHT SHIFT', 18],
+  ['EARLY BIRD', 20],
+  ['DEEP DIVE', 24],
+  ['IRON CONTRACT', 24],
+  ['HYPERDRIVE', 36],
+];
+
+const CooldownsFigure: React.FC = () => (
+  <div className="p-3 sm:p-4 bg-zinc-950 font-mono space-y-1">
+    {COOLDOWNS.map(([name, hours]) => (
+      <div key={name} className="flex items-center gap-2 text-[9px]">
+        <span className="w-24 shrink-0 font-bold tracking-wider text-zinc-300 truncate">{name}</span>
+        <span className="flex-1 h-2.5 bg-white/5">
+          <span className="block h-full bg-amber-400" style={{ width: `${(hours / 36) * 100}%` }} />
+        </span>
+        <span className="w-7 shrink-0 text-right tabular-nums text-amber-300">{hours}H</span>
+      </div>
+    ))}
+  </div>
+);
+
+const SHOWN_THEMES = ['monolith', 'sand-black', 'kraft-charcoal', 'cream-black', 'harbor', 'forest-gold', 'swiss', 'plum-apricot'];
+
+/** Each theme's two sides, split down the middle. */
+const ThemesFigure: React.FC = () => (
+  <div className="p-3 bg-zinc-950 grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono">
+    {SHOWN_THEMES.map((id) => {
+      const pair = getSurfaceThemeById(id);
+      return (
+        <div key={id} className="min-w-0">
+          <div className="flex h-20">
+            {[pair.dark, pair.light].map((p) => (
+              <div key={p.label} className="flex-1 p-1.5" style={{ background: p.bgMain }}>
+                <div className="h-full p-1 border text-[8px] font-bold tabular-nums" style={{ background: p.bgCard, borderColor: p.border, color: p.textMain }}>
+                  12.4H
+                  <div className="mt-1 h-1" style={{ background: pair.accentHex }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-1 text-[8px] tracking-wider text-zinc-400 truncate">{pair.name}</div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const TROPHY_KINDS = ['hours', 'logs', 'days', 'streak', 'beaten', 'inverted', 'festival'];
+
+const TrophiesFigure: React.FC = () => (
+  <div className="p-3 bg-zinc-950 grid grid-cols-7 gap-1">
+    {TROPHY_KINDS.map((group, i) => (
+      <div key={group} className="space-y-1">
+        {[(i % 3) + 1, (i % 3) + 4].map((grade) => (
+          <div key={grade} className="aspect-square flex items-center justify-center" style={{ background: `radial-gradient(circle, ${GRADES[grade - 1].color}26, transparent 70%)` }}>
+            <Pixel art={trophyArt(group, grade, true)} className="w-full h-full" />
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+);
+
+// ---------------------------------------------------------------- inverted
+const INVERTED_PAIRS: Array<[kind: 'raid' | 'rival', key: string]> = [
+  ['raid', 'golem'],
+  ['raid', 'nightmare'],
+  ['raid', 'hydra'],
+  ['raid', 'warden'],
+  ['raid', 'phantom'],
+  ['raid', 'titan'],
+  ['rival', 'orion'],
+  ['rival', 'nova'],
+  ['rival', 'rush'],
+  ['rival', 'kai'],
+  ['rival', 'mika'],
+  ['rival', 'ace'],
+];
+
+/** Each regular above its other side. */
+const InvertedFigure: React.FC = () => (
+  <div className="p-3 bg-zinc-950 grid grid-cols-6 gap-1 sm:gap-2">
+    {INVERTED_PAIRS.map(([kind, key]) => {
+      const table = kind === 'raid' ? BOSS_ART : RIVAL_ART;
+      return (
+        <div key={key} className="min-w-0">
+          <div className="aspect-square flex items-end justify-center">
+            <Pixel art={table[key]} className="w-full h-full" />
+          </div>
+          <div className="aspect-square flex items-end justify-center" style={{ background: 'linear-gradient(#1a0506, #050102)' }}>
+            <Pixel art={table[`${key}_inverted`]} className="w-full h-full" style={{ filter: `drop-shadow(0 0 6px ${challengeAccent(`${key}_inverted`)}55)` }} />
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
 // ---------------------------------------------------------------- frame
 export const NewsFigure: React.FC<{ kind: FigureKind; caption?: string } & FigureContext> = ({ kind, caption, ...ctx }) => {
   const body = (() => {
     switch (kind) {
+      case 'festbar':
+        return <FestBarFigure />;
+      case 'festyear':
+        return <FestYearFigure />;
+      case 'cooldowns':
+        return <CooldownsFigure />;
+      case 'themes':
+        return <ThemesFigure />;
+      case 'trophies':
+        return <TrophiesFigure />;
+      case 'inverted':
+        return <InvertedFigure />;
       case 'pairs':
         return <PairsFigure {...ctx} />;
       case 'festivals':

@@ -95,8 +95,11 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
   } catch (err: unknown) {
     const error = err as Error;
     console.error(`TypBox API fetch error to [${url}]:`, error);
+    // The address and the advice are for whoever runs the server, not its users.
     throw new Error(
-      `Unable to connect to backend (${url}): ${error.message}. Please verify CORS and backend status.`,
+      import.meta.env.DEV
+        ? `Unable to connect to backend (${url}): ${error.message}. Please verify CORS and backend status.`
+        : 'Could not reach the server. Check your connection and try again.',
       { cause: err }
     );
   }
@@ -175,11 +178,10 @@ export interface AuthUserResponse {
   week_start?: string;
   chrono_theme?: string;
   user_statuses?: string[];
-  /** Weather widget + motion FX prefs (blank / null = never synced). */
+  /** Weather widget prefs (blank / null = never synced). */
   weather_theme?: string;
   weather_unit?: string;
   weather_hidden?: boolean | null;
-  surface_fx?: boolean | null;
   ui_font?: string;
   ambient_theme?: string;
   ambient_clock?: boolean | null;
@@ -224,12 +226,38 @@ export interface ActiveRaid {
   max_hp: number;
   days: number;
   loot: number;
+  /** Part of the loot that only the first clear pays. */
+  first_bonus?: number;
+  inverted_of?: string | null;
+  /** BITS its attacks have taken so far. */
+  struck?: number;
+  /** Null for a raid started before bosses hit back. */
+  attack?: BossAttack | null;
   /** HYDRA only: one head per category. */
   heads: Array<{ code: string; color: string; hp: number; max: number }> | null;
   /** The latest hits, newest first. */
   events: Array<{ at: string; minutes: number; damage: number; hit: RaidHitKind; head: string | null }>;
   /** The latest heals (NIGHTMARE's midnights, WARDEN's empty days). */
   heals: Array<{ at: string; minutes: number }>;
+}
+
+export interface BossAttack {
+  name: string;
+  dmg: number;
+  /** Hours between attacks. */
+  every: number;
+  /** The damage since its last attack that parries the next one. */
+  parry: number;
+  next_at: string | null;
+  dealt: number;
+  log: Array<{ at: string; parried: boolean; dmg: number }>;
+}
+
+/** Where a regular challenger's other side stands: absent until beaten once. */
+export interface Inversion<Offer> {
+  wins: number;
+  need: number;
+  offer: Offer | null;
 }
 
 export interface ActiveRival {
@@ -245,6 +273,12 @@ export interface ActiveRival {
   tag: string;
   motto: string;
   prize: number;
+  first_bonus?: number;
+  inverted_of?: string | null;
+  /** INVERTED: which of your logs count. */
+  rule_line?: string | null;
+  /** INVERTED MIKA: every round must be won. */
+  sweep?: boolean;
   /** The duel runs the 72 hours from the purchase. */
   starts_at: string;
   /** Older servers omit it (their duels end at expires_at). */
@@ -275,9 +309,15 @@ export interface RaidOffer {
   trait_line: string;
   /** HYDRA needs two categories in progress. */
   available: boolean;
+  /** The festival it came with, for those only here while one runs. */
+  event?: string | null;
   /** HYDRA: [fewest, most] heads to pick, and the category ids suggested. */
   heads?: [number, number];
   suggested?: number[];
+  first_bonus?: number;
+  attack?: Pick<BossAttack, 'name' | 'dmg' | 'every' | 'parry'>;
+  wins?: number;
+  inversion?: Inversion<RaidOffer> | null;
 }
 
 export interface RivalOffer {
@@ -292,6 +332,26 @@ export interface RivalOffer {
   projected: number;
   /** When a duel bought now would end (72 hours on). */
   ends_at: string;
+  event?: string | null;
+  first_bonus?: number;
+  rule_line?: string | null;
+  wins?: number;
+  inversion?: Inversion<RivalOffer> | null;
+}
+
+/** What study and the challenges have earned (backend collection.py). */
+export interface CollectionState {
+  invert_at: number;
+  groups: Array<{ id: string; name: string; progress: number }>;
+  trophies: Array<{ id: string; group: string; need: number; grade: number; earned: boolean }>;
+  records: Array<{
+    kind: 'raid' | 'rival';
+    key: string;
+    name: string;
+    event: string | null;
+    wins: number;
+    inverted: { key: string; name: string; unlocked: boolean; wins: number } | null;
+  }>;
 }
 
 export interface ChallengeResult {
@@ -303,6 +363,8 @@ export interface ChallengeResult {
   outcome: 'down' | 'escaped' | 'won' | 'lost' | 'tie' | 'forfeit';
   payout: number;
   price: number;
+  struck?: number;
+  first_clear?: boolean;
   finished_at: string;
 }
 
@@ -316,6 +378,8 @@ export interface BitsBuff {
   tagline: string;
   detail: string;
   price: number;
+  /** Hours before it can be bought again, once it ends. */
+  cooldown_hours?: number;
   /** Older servers omit the fields below; cards then show the text alone. */
   window?: 'any' | 'night' | 'morning' | 'weekend' | 'weather';
   expires?: 'hours' | 'weekend' | 'contract' | 'mornings';
@@ -389,11 +453,9 @@ export interface Starlight {
   uses?: Record<StarWish | 'festival', number>;
   /** What the next MYSTERY CRATE holds, if the stars were asked. */
   omen?: string | null;
-  /** The running cooldown has already been shortened. */
-  dawn_used?: boolean;
 }
 
-export type StarWish = 'reroll' | 'omen' | 'dawn';
+export type StarWish = 'reroll' | 'omen';
 
 /** A festival (backend tracker/festivals.py); dates are 'MM-DD', every year. */
 export interface Festival {
@@ -407,22 +469,33 @@ export interface Festival {
   end: string;
 }
 
+export interface FestivalPass {
+  minutes: number;
+  goal: number;
+  steps: Array<{ at: number; kind: 'bits' | 'cursor'; bits?: number; cursor?: string; reached: boolean }>;
+}
+
 export interface BitsShopState {
   bits: BitsSummary;
   active_buff: BitsActiveBuff | null;
   /** When the next buff can be bought, while it cools down. */
-  buff_cooldown_until?: string | null;
+  /** Buffs still cooling down, by id: when each can be bought again. */
+  buff_cooldowns?: Record<string, string>;
   starlight?: Starlight;
   festival?: {
     active: Festival | null;
     calendar: Festival[];
-    gift: { minutes: number; needed: number; opens: string; open_today: boolean; claimed: boolean } | null;
+    /** The running festival's bar. */
+    pass?: FestivalPass | null;
+    /** What the bars have opened, for good. */
+    unlocks?: { cursors: string[] };
   };
   buffs: BitsBuff[];
   /** Older servers omit the challenge fields. */
   active_challenge?: ActiveChallenge | null;
   challenges?: { raids: RaidOffer[]; rivals: RivalOffer[] };
   last_challenge?: ChallengeResult | null;
+  collection?: CollectionState;
 }
 
 /** One tier of the shop lineup (furniture.SHOP_ROTATION). */
@@ -534,19 +607,13 @@ export const api = {
   },
   bits: {
     get: async () => apiFetch<BitsShopState>('/bits/'),
-    /** Ends the running buff early; `refunded` is what came back. */
     /** Spends stars on a wish. */
     starlight: async (use: StarWish | 'festival', itemId?: string) =>
       apiFetch<BitsShopState>('/bits/starlight/', {
         method: 'POST',
         body: JSON.stringify({ use, item_id: itemId }),
       }),
-    /** Opens this year's present. */
-    festivalGift: async () =>
-      apiFetch<BitsShopState & { gift_piece: string }>('/bits/festival/gift/', {
-        method: 'POST',
-        body: JSON.stringify({}),
-      }),
+    /** Ends the running buff early; `refunded` is what came back. */
     cancel: async () =>
       apiFetch<BitsShopState & { refunded: number }>('/bits/cancel/', {
         method: 'POST',
@@ -612,7 +679,6 @@ export const api = {
         weather_theme: string;
         weather_unit: string;
         weather_hidden: boolean | null;
-        surface_fx: boolean | null;
         ui_font: string;
         ambient_theme: string;
         ambient_clock: boolean | null;
@@ -766,8 +832,9 @@ export const api = {
         method: 'DELETE',
       });
     },
-    importBackup: async (payload: { categories?: unknown[]; logs: unknown[] }) => {
-      return apiFetch<{ imported_logs: number; skipped_logs?: number; created_categories: number }>('/logs/import-backup/', {
+    exportEconomy: async () => apiFetch<Record<string, unknown>>('/logs/export-economy/'),
+    importBackup: async (payload: { categories?: unknown[]; logs: unknown[]; economy?: unknown }) => {
+      return apiFetch<{ imported_logs: number; skipped_logs?: number; created_categories: number; restored_purchases?: number }>('/logs/import-backup/', {
         method: 'POST',
         body: JSON.stringify(payload),
       });

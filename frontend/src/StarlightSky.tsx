@@ -345,7 +345,7 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
 
 // ---------------------------------------------------------------- wishes
 
-/** A falling star, an eye of stars and a sun on the horizon: the three wishes. */
+/** A falling star and an eye of stars: the two wishes. */
 const WISH_ICONS: Record<StarWish, React.ReactNode> = {
   reroll: (
     <>
@@ -361,28 +361,19 @@ const WISH_ICONS: Record<StarWish, React.ReactNode> = {
       <path d="M16 13.6Q16 16 18.4 16Q16 16 16 18.4Q16 16 13.6 16Q16 16 16 13.6Z" fill="currentColor" />
     </>
   ),
-  dawn: (
-    <>
-      <path d="M8 21a8 8 0 0 1 16 0" fill="none" stroke="currentColor" strokeWidth="1.1" />
-      <path d="M3 21 L29 21" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      <path d="M16 6v4M6.5 10.5l2.8 2.8M25.5 10.5l-2.8 2.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-    </>
-  ),
 };
 
-const WISHES: Array<{ use: StarWish; name: 'starWishReroll' | 'starWishOmen' | 'starWishDawn'; line: 'starWishRerollLine' | 'starWishOmenLine' | 'starWishDawnLine' }> = [
+const WISHES: Array<{ use: StarWish; name: 'starWishReroll' | 'starWishOmen'; line: 'starWishRerollLine' | 'starWishOmenLine' }> = [
   { use: 'reroll', name: 'starWishReroll', line: 'starWishRerollLine' },
   { use: 'omen', name: 'starWishOmen', line: 'starWishOmenLine' },
-  { use: 'dawn', name: 'starWishDawn', line: 'starWishDawnLine' },
 ];
 
 /** What stars can buy besides a save, on the same night as the sky above. Two
  *  taps each, like everything that spends. */
 export const StarWishes: React.FC<{
   starlight: Starlight;
-  coolingDown: boolean;
   onWish: (use: StarWish) => Promise<void>;
-}> = ({ starlight, coolingDown, onWish }) => {
+}> = ({ starlight, onWish }) => {
   const { t } = useI18n();
   const [armed, setArmed] = useState<StarWish | null>(null);
   useEffect(() => {
@@ -393,14 +384,14 @@ export const StarWishes: React.FC<{
   return (
     <div className="space-y-1.5 font-mono">
       <div className="text-[10px] uppercase tracking-[0.28em] text-amber-400/90">{t.starWishes}</div>
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-2 gap-1">
         {WISHES.map(({ use, name, line }) => {
           const cost = starlight.uses?.[use] ?? 0;
           const told = use === 'omen' ? starlight.omen : null;
           const short = starlight.stars < cost;
-          const dawnSpent = use === 'dawn' && Boolean(starlight.dawn_used) && coolingDown;
-          const noCooldown = use === 'dawn' && !coolingDown;
-          const blocked = short || Boolean(told) || noCooldown || dawnSpent;
+          const blocked = short || Boolean(told);
+          // Spending below the guard's price switches it off: say so before it happens.
+          const stopsGuard = !blocked && starlight.guard_on && starlight.stars - cost < starlight.cost;
           const isArmed = armed === use;
           return (
             <button
@@ -424,8 +415,9 @@ export const StarWishes: React.FC<{
               </svg>
               <span className="text-[10px] font-semibold tracking-wider uppercase leading-tight">{name && t[name]}</span>
               <span className="text-[9px] font-sans leading-tight opacity-70">
-                {told ?? (noCooldown ? t.starWishNeedCooldown : dawnSpent ? t.starWishDawnSpent : t[line])}
+                {told ?? t[line]}
               </span>
+              {stopsGuard && <span className="text-[9px] font-bold leading-tight text-amber-300">{t.starWishStopsGuard}</span>}
               <span className="mt-auto flex items-center justify-center gap-0.5 min-h-3">
                 {isArmed ? (
                   <span className="text-[9px] font-bold tracking-wider">{t.starWishConfirm}</span>

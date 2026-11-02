@@ -19,15 +19,13 @@ import {
   Timer,
   Pause,
   Play,
-  Sparkles,
 } from 'lucide-react';
 import type { Category, StudyLog } from './App';
 import { useI18n, tf } from './i18n';
-import { drawStatusCard, loadSurfaceArt, STATUS_CARD_SIZE } from './statusCard';
+import { drawStatusCard, STATUS_CARD_SIZE } from './statusCard';
 import { api } from './api';
 import { renderRoom, type FurnitureSpec, type RoomLayout } from './roomRender';
-import { CHROMA_THEME_PAIRS, CLASSIC_THEME_PAIRS, COMPLEMENT_THEME_PAIRS, resolveSurfaceThemeId } from './surfaceThemes';
-import { PRESTIGE_THEME_PAIRS } from './surfacePrestige';
+import { DUO_THEME_PAIRS, SIMPLE_THEME_PAIRS, resolveSurfaceThemeId } from './surfaceThemes';
 import { buildHintRows, buildNamespaceRows, type PaletteCommandItem, type TerminalContext, type TerminalIO } from './terminalCommands';
 import { SegmentIndicator } from './SegmentIndicator';
 
@@ -48,13 +46,13 @@ export function isRewardUnlocked(userClearanceLevel: number, requiredLevel: numb
 // ==========================================
 // 1. TELEMETRY CLEARANCE LEVEL SYSTEM (3,000 RANKS // 0H-1,000H PER CYCLE)
 // ==========================================
-// Prestige / Ascension model: rather than one 30,000H lifetime climb, the
+// Ascension model: rather than one 30,000H lifetime climb, the
 // full 10-division / 3,000-rank ladder now repeats every CYCLE_HOURS worth
 // of lifetime study. Reaching the end of a cycle (LV.3000 / 1,000H) makes
 // ASCENSION available — a deliberate, user-triggered reset of the *display*
 // back to LV.1 under a new cycle number. Nothing is actually deleted:
 // titles, Surface Themes and log history all persist forever; only the
-// current-cycle level readout restarts, exactly like a Prestige reset.
+// current-cycle level readout restarts, like a new game plus.
 export const CYCLE_HOURS = 1000;
 
 export interface ClearanceLevel {
@@ -507,17 +505,17 @@ export function getClearanceStatus(
   };
 }
 
-export interface PrestigeBadge {
+export interface AscensionBadge {
   label: string;
   colorHex: string;
   isPrism: boolean;
 }
 
 // Escalating cosmetic tiers for repeat Ascension: gold -> platinum -> an
-// animated prismatic treatment (CSS class `.prestige-prism-text`, index.css)
+// animated prismatic treatment (CSS class `.ascension-prism-text`, index.css)
 // for players who have cycled three or more times.
 // eslint-disable-next-line react-refresh/only-export-components
-export function getPrestigeBadge(totalAscensions: number): PrestigeBadge | null {
+export function getAscensionBadge(totalAscensions: number): AscensionBadge | null {
   if (totalAscensions <= 0) return null;
   // Deliberately does NOT repeat "CYCLE XX" (that's already shown by its own
   // badge wherever this chip appears) — this shows the Ascension *tier*
@@ -1873,7 +1871,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center space-x-2.5">
             <span
-              className="px-2 py-1 text-xs font-bold text-zinc-950"
+              className="shrink-0 whitespace-nowrap px-2 py-1 text-xs font-bold text-zinc-950"
               style={{ backgroundColor: clearance.current.color }}
             >
               LV.{String(clearance.current.level).padStart(4, '0')}
@@ -1924,8 +1922,8 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
 
         {/* Progress Bar */}
         <div className="space-y-1">
-          <div className="flex justify-between text-[10px]">
-            <span>
+          <div className="flex flex-wrap justify-between gap-x-3 text-[10px]">
+            <span className="whitespace-nowrap">
               {tf(t.currentLv, { lv: String(clearance.current.level).padStart(4, '0'), h: clearance.current.requiredHours })}
             </span>
             {clearance.ascensionAvailable && onClaimAscension ? (
@@ -1982,7 +1980,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
               />
             </div>
 
-            <div className={`flex flex-wrap border ${borderCol} text-[10px]`}>
+            <div className={`flex overflow-x-auto [scrollbar-width:none] border ${borderCol} text-[10px]`}>
               {(
                 [
                   { id: 'all', label: t.all },
@@ -1999,7 +1997,7 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
                     setFilterMode(m.id);
                     if (m.id === 'rewards') setSelectedDiv(null);
                   }}
-                  className={`px-2 py-1 uppercase cursor-pointer ${
+                  className={`shrink-0 whitespace-nowrap px-2 py-1 uppercase cursor-pointer ${
                     filterMode === m.id
                       ? isDark
                         ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -2249,7 +2247,6 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
         avatarImg = null;
       }
     }
-    const surfaceArt = await loadSurfaceArt(surfacePair, isDark);
     // Web fonts used by the card may still be loading on first open.
     await document.fonts?.ready;
 
@@ -2268,7 +2265,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
       };
     }
 
-    const draw = (art: HTMLImageElement | null) => drawStatusCard(canvas, {
+    drawStatusCard(canvas, {
       username,
       avatarColor,
       avatarImg,
@@ -2282,21 +2279,9 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
       logs,
       surface: surfacePair,
       isDark,
-      surfaceArt: art,
       showCategories: showCategoriesOnCard,
       room,
     });
-    draw(surfaceArt);
-    // Some browsers (older Safari) taint a canvas once an SVG is drawn on
-    // it, which would break Download / Copy. Fall back to the palette-only
-    // backdrop rather than export nothing.
-    if (surfaceArt) {
-      try {
-        canvas.toDataURL('image/png');
-      } catch {
-        draw(null);
-      }
-    }
   }, [
     showCategoriesOnCard,
     showRoomOnCard,
@@ -2367,7 +2352,7 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs hover:underline cursor-pointer"
+            className="shrink-0 whitespace-nowrap text-xs hover:underline cursor-pointer"
           >
             [ESC]
           </button>
@@ -3284,15 +3269,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 };
 
 // ==========================================
-// 6. DUAL-POLARITY SURFACE THEME PAIRS (900 PAIRS + 12 PRESTIGE)
-//    300 CLASSIC + 300 CHROMA (saturation contrast) + 300 COMPLEMENT (hue
-//    contrast), see surfaceThemes.ts; PRESTIGE art themes in surfacePrestige.ts.
+// 6. DUAL-POLARITY SURFACE THEME PAIRS (61 PAIRS, see surfaceThemes.ts)
 // ==========================================
-
-// Ambient motion layer a theme may carry (SurfaceFx.tsx). Purely
-// decorative and switchable off; it never changes the static palette.
-// Only the PRESTIGE themes use it.
-export type SurfaceFx = 'dust' | 'stars' | 'embers' | 'glitch' | 'pulse' | 'matrix' | 'aurora' | 'sweep';
 
 export interface SurfacePolarityPalette {
   label: string;
@@ -3305,7 +3283,7 @@ export interface SurfacePolarityPalette {
   glowTint: string;
 }
 
-export type SurfaceSeries = 'classic' | 'chroma' | 'complement' | 'prestige';
+export type SurfaceSeries = 'simple' | 'duo';
 
 export interface SurfaceThemePair {
   id: string;
@@ -3318,30 +3296,17 @@ export interface SurfaceThemePair {
   clearanceHintLv: number;
   dark: SurfacePolarityPalette;
   light: SurfacePolarityPalette;
-  // Prestige-exclusive themes ignore clearanceHintLv entirely and gate on
-  // Ascension count instead — a reward track that only grows for players
-  // who keep cycling past LV.3000, independent of in-cycle rank.
-  requiredAscensions?: number;
   series: SurfaceSeries;
-  /** PRESTIGE backdrop: a CSS `url(...)` per polarity (surfacePrestige.ts). */
-  art?: { dark: string; light: string };
-  fx?: SurfaceFx;
 }
 
-// Centralized unlock check for a Surface Theme: prestige-exclusive themes
-// gate on lifetime Ascension count, everything else gates on
-// UserClearanceStatus.rewardUnlockLevel (which stays maxed forever once the
-// first Ascension is claimed, since completing a cycle requires passing
-// every normal reward threshold at least once).
+// Centralized unlock check for a Surface Theme: UserClearanceStatus.rewardUnlockLevel
+// stays maxed forever once the first Ascension is claimed.
 // eslint-disable-next-line react-refresh/only-export-components
 export function isThemeUnlocked(
   pair: SurfaceThemePair,
   status: { rewardUnlockLevel: number; totalAscensions: number }
 ): boolean {
   if (IS_DEMO_MODE) return true;
-  if (pair.requiredAscensions && pair.requiredAscensions > 0) {
-    return status.totalAscensions >= pair.requiredAscensions;
-  }
   return status.rewardUnlockLevel >= pair.clearanceHintLv;
 }
 
@@ -3358,59 +3323,27 @@ function mixHex(hexA: string, hexB: string, t: number): string {
   return `#${toHex(lerp(ar, br))}${toHex(lerp(ag, bg))}${toHex(lerp(ab, bb))}`;
 }
 
-// Weaves the three series together inside each division (CLASSIC, CHROMA,
-// COMPLEMENT, CLASSIC, ...) so every few ranks unlock a different kind of
-// theme instead of 30 classics in a row. Each series keeps its catalog
-// order within a division, which puts its most distinct picks first.
-function interleaveSeries(...series: SurfaceThemePair[][]): SurfaceThemePair[] {
-  const result: SurfaceThemePair[] = [];
-  CLEARANCE_DIVISIONS.forEach((div) => {
-    const lists = series.map((list) => list.filter((p) => p.divisionCode === div.code));
-    const longest = Math.max(...lists.map((l) => l.length));
-    for (let i = 0; i < longest; i++) {
-      lists.forEach((list) => {
-        if (list[i]) result.push(list[i]);
-      });
-    }
-  });
-  return result;
-}
+// One Surface Theme every THEME_RANK_STEP ranks, on the round numbers, so there is
+// always one in sight and the next is easy to work out. Inside a division they
+// alternate SIMPLE and DUOTONE, which makes the last rank of every division
+// (INITIATE, CADET, ...) a DUOTONE, the prize for finishing it. 'monolith' stays
+// pinned to LV.1: it is the fallback for locked selections.
+const THEME_RANK_STEP = 50;
 
-// Rebalances every pair's clearanceHintLv with even spacing across its own
-// division's level range (CLEARANCE_DIVISIONS[].minLevel..maxLevel), rather
-// than the ad-hoc numbers assigned while authoring each batch. With 900
-// pairs spread over 3,000 ranks a new Surface Theme unlocks roughly every
-// ~3 ranks (and interleaved with the 60 Noise profiles below, a visual or
-// audio reward lands every few dozen ranks instead of droughts stretching
-// across whole divisions). 'monolith' stays pinned to LV.1 since it's the
-// universal unlock-gate fallback theme used for locked selections.
-function rebalanceThemeClearanceLevels(pairs: SurfaceThemePair[]): SurfaceThemePair[] {
-  const groups = new Map<string, SurfaceThemePair[]>();
-  pairs.forEach((pair) => {
-    const list = groups.get(pair.divisionCode) ?? [];
-    list.push(pair);
-    groups.set(pair.divisionCode, list);
-  });
-
-  const result: SurfaceThemePair[] = [];
+function scheduleThemes(simple: SurfaceThemePair[], duo: SurfaceThemePair[]): SurfaceThemePair[] {
+  const result: SurfaceThemePair[] = simple.filter((p) => p.id === 'monolith').map((p) => ({ ...p, clearanceHintLv: 1 }));
   CLEARANCE_DIVISIONS.forEach((div) => {
-    const list = groups.get(div.code) ?? [];
-    const span = div.maxLevel - div.minLevel;
-    list.forEach((pair, i) => {
-      const level =
-        pair.id === 'monolith'
-          ? 1
-          : div.minLevel + Math.round(((i + 1) / (list.length + 1)) * span);
-      result.push({ ...pair, clearanceHintLv: level });
-    });
+    const a = simple.filter((p) => p.divisionCode === div.code && p.id !== 'monolith');
+    const b = duo.filter((p) => p.divisionCode === div.code);
+    const merged = a.flatMap((p, i) => (b[i] ? [p, b[i]] : [p]));
+    merged.forEach((pair, i) => result.push({ ...pair, clearanceHintLv: div.minLevel - 1 + (i + 1) * THEME_RANK_STEP }));
   });
   return result;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const SURFACE_THEME_PAIRS: SurfaceThemePair[] = [
-  ...rebalanceThemeClearanceLevels(interleaveSeries(CLASSIC_THEME_PAIRS, CHROMA_THEME_PAIRS, COMPLEMENT_THEME_PAIRS)),
-  ...PRESTIGE_THEME_PAIRS,
+  ...scheduleThemes(SIMPLE_THEME_PAIRS, DUO_THEME_PAIRS),
 ];
 
 // Fast lookup of theme reward by Clearance Level
@@ -3428,10 +3361,8 @@ export function getSurfaceThemeById(id: string): SurfaceThemePair {
 
 // Dark-mode corner wash strength per series: [top-right, top-left] mix of the accent into bgMain.
 const CORNER_WASH: Record<SurfaceSeries, [number, number]> = {
-  classic: [0.34, 0.14],
-  chroma: [0.16, 0.06],
-  complement: [0.26, 0.1],
-  prestige: [0, 0],
+  simple: [0.12, 0.05],
+  duo: [0.15, 0.06],
 };
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -3441,27 +3372,9 @@ export function getSurfaceBackgroundStyle(
 ): React.CSSProperties {
   const pal = isDark ? pair.dark : pair.light;
 
-  if (pair.art) {
-    return {
-      backgroundColor: pal.bgMain,
-      color: pal.textMain,
-      backgroundImage: isDark ? pair.art.dark : pair.art.light,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center top',
-    };
-  }
-
-  // No patterns: a soft glow from the top edge, plus — in dark mode — an
-  // accent wash in both top corners so a dark surface reads as a deep
-  // colored room rather than a flat fill. For the CHROMA and COMPLEMENT
-  // series the accent is the saturated / opposite hue, so the wash carries
-  // the theme's contrast into the page itself. Both anchors stay at the TOP
-  // of the box: this style is applied to the page's root wrapper, whose
-  // height grows with scrollable content, so a bottom-anchored gradient
-  // would sit far off-screen.
-  // The wash is lighter on the generated series: a CHROMA accent is the
-  // theme's most saturated color, and at full strength it would tint the
-  // near-grey field the series contrasts against.
+  // A soft glow from the top edge, plus, in dark mode, an accent wash in both top
+  // corners so a dark surface reads as a deep coloured room. Both anchors stay at
+  // the TOP: this style is on the page's root wrapper, which grows with the content.
   const [washStrong, washSoft] = CORNER_WASH[pair.series];
   const images: string[] = [];
   if (isDark) {
@@ -3487,20 +3400,15 @@ interface SurfaceThemeSelectorPanelProps {
   userTotalHours: number;
   borderCol: string;
   textMuted: string;
-  /** Motion FX layer for PRESTIGE themes (device-local preference). */
-  fxEnabled: boolean;
-  onToggleFx: () => void;
 }
 
 type SurfaceSeriesFilter = 'all' | SurfaceSeries;
 
-const SERIES_FILTERS: SurfaceSeriesFilter[] = ['all', 'classic', 'chroma', 'complement', 'prestige'];
+const SERIES_FILTERS: SurfaceSeriesFilter[] = ['all', 'simple', 'duo'];
 
 const SERIES_BADGE: Record<SurfaceSeries, string> = {
-  classic: 'border-zinc-500/40 text-zinc-400',
-  chroma: 'border-cyan-500/40 text-cyan-400',
-  complement: 'border-orange-500/40 text-orange-400',
-  prestige: 'border-amber-400/60 text-amber-300',
+  simple: 'border-zinc-500/40 text-zinc-400',
+  duo: 'border-orange-500/40 text-orange-400',
 };
 
 export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps> = ({
@@ -3513,8 +3421,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   userTotalHours,
   borderCol,
   textMuted,
-  fxEnabled,
-  onToggleFx,
 }) => {
   const { t } = useI18n();
   const [unlockFilter, setUnlockFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
@@ -3554,7 +3460,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           item.pairLabel.toLowerCase().includes(q) ||
           item.series.includes(q) ||
           item.divisionCode.toLowerCase().includes(q) ||
-          (item.fx ?? '').includes(q) ||
           item.description.toLowerCase().includes(q)
         );
       }
@@ -3563,16 +3468,14 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
   }, [unlockFilter, selectedDiv, seriesFilter, searchQuery, checkUnlocked]);
 
   const seriesCounts = useMemo(() => {
-    const counts: Record<SurfaceSeriesFilter, number> = { all: SURFACE_THEME_PAIRS.length, classic: 0, chroma: 0, complement: 0, prestige: 0 };
+    const counts: Record<SurfaceSeriesFilter, number> = { all: SURFACE_THEME_PAIRS.length, simple: 0, duo: 0 };
     SURFACE_THEME_PAIRS.forEach((p) => (counts[p.series] += 1));
     return counts;
   }, []);
   const seriesLabel: Record<SurfaceSeriesFilter, string> = {
     all: t.all,
-    classic: t.seriesClassic,
-    chroma: t.seriesChroma,
-    complement: t.seriesComplement,
-    prestige: t.seriesPrestige,
+    simple: t.seriesSimple,
+    duo: t.seriesDuo,
   };
 
   const getReqHoursForLevel = (lv: number): number => {
@@ -3602,22 +3505,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-          {/* Motion FX switch (only PRESTIGE themes with an fx actually animate) */}
-          <button
-            type="button"
-            onClick={onToggleFx}
-            aria-pressed={fxEnabled}
-            title={t.surfaceFxHint}
-            className={`px-3 py-1.5 border flex items-center space-x-1.5 text-[10px] font-bold cursor-pointer transition-colors ${
-              fxEnabled ? 'border-emerald-500/60 text-emerald-400' : `${borderCol} ${textMuted}`
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>
-              {t.surfaceFxLabel}: {fxEnabled ? t.surfaceFxOn : t.surfaceFxOff}
-            </span>
-            {activePair.fx && <span className="font-normal opacity-70">({activePair.fx.toUpperCase()})</span>}
-          </button>
           {/* Instant Polarity Switcher to preview both sides of the active pair */}
           <button
             type="button"
@@ -3655,7 +3542,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               </span>
               {isDark && (
                 <span
-                  className="px-1 py-0.2 text-[8px] font-bold text-zinc-950"
+                  className="shrink-0 whitespace-nowrap px-1 py-0.2 text-[8px] font-bold text-zinc-950"
                   style={{ backgroundColor: activePair.accentHex }}
                 >
                   LIVE
@@ -3689,7 +3576,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
               </span>
               {!isDark && (
                 <span
-                  className="px-1 py-0.2 text-[8px] font-bold text-zinc-950"
+                  className="shrink-0 whitespace-nowrap px-1 py-0.2 text-[8px] font-bold text-zinc-950"
                   style={{ backgroundColor: activePair.accentHex }}
                 >
                   LIVE
@@ -3769,7 +3656,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
             </div>
           </div>
 
-          {/* Series Filter: CLASSIC / CHROMA (saturation) / COMPLEMENT (hue) / PRESTIGE.
+          {/* Series Filter: SIMPLE / DUOTONE.
               Container draws top/left, each cell right/bottom, so the grid stays
               closed when the row wraps on narrow screens; cells grow to fill each row. */}
           <div className={`flex flex-wrap border-l border-t ${borderCol} text-[10px] sm:w-fit`} title={t.seriesHint}>
@@ -3790,7 +3677,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           {/* Division Filter Strip — horizontally scrollable on mobile so 11
               buttons never spend multiple lines of the limited viewport height. */}
           <div className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 -mx-0.5 px-0.5 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:pb-0">
-            {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10', 'PRESTIGE'].map(
+            {['ALL', 'DIV-01', 'DIV-02', 'DIV-03', 'DIV-04', 'DIV-05', 'DIV-06', 'DIV-07', 'DIV-08', 'DIV-09', 'DIV-10'].map(
               (divCode) => (
                 <button
                   key={divCode}
@@ -3814,7 +3701,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           {filteredThemes.map((item) => {
             const isSelected = item.id === activeThemeId;
             const isUnlocked = checkUnlocked(item);
-            const isPrestigeExclusive = Boolean(item.requiredAscensions && item.requiredAscensions > 0);
             const reqHours = getReqHoursForLevel(item.clearanceHintLv);
             const hoursRemaining = Math.max(0, +(reqHours - userTotalHours).toFixed(1));
 
@@ -3826,15 +3712,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   if (isUnlocked) {
                     setLockedNotice(null);
                     onSelectThemeId(item.id);
-                  } else if (isPrestigeExclusive) {
-                    setLockedNotice(
-                      tf(t.themePrestigeNotice, {
-                        code: item.code,
-                        name: item.name,
-                        n: item.requiredAscensions ?? 0,
-                        have: userTotalAscensions,
-                      })
-                    );
                   } else {
                     setLockedNotice(
                       tf(t.noiseLockedNotice, {
@@ -3874,14 +3751,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                       <span className="px-1.5 py-0.2 border border-emerald-500/40 text-emerald-400 text-[9px] font-bold uppercase shrink-0">
                         {t.filterUnlocked}
                       </span>
-                    ) : isPrestigeExclusive ? (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.2 border border-amber-400/60 text-amber-300 flex items-center space-x-1 shrink-0`}
-                        title={tf(t.prestigeRequires, { n: item.requiredAscensions ?? 0 })}
-                      >
-                        <Lock className="w-2.5 h-2.5" />
-                        <span>✦ ×{item.requiredAscensions}</span>
-                      </span>
                     ) : (
                       <span
                         className={`text-[9px] px-1.5 py-0.2 border ${borderCol} text-amber-400 flex items-center space-x-1 shrink-0`}
@@ -3898,11 +3767,6 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                   <div className="flex items-center justify-between text-[9px]">
                     <span className={`truncate ${textMuted}`}>{item.pairLabel}</span>
                     <span className="flex items-center gap-1 shrink-0 ml-1">
-                      {item.fx && (
-                        <span className="uppercase px-1 border border-fuchsia-500/40 text-fuchsia-400" title={t.surfaceFxHint}>
-                          FX·{item.fx}
-                        </span>
-                      )}
                       <span className={`uppercase px-1 border ${SERIES_BADGE[item.series]}`}>{seriesLabel[item.series]}</span>
                     </span>
                   </div>

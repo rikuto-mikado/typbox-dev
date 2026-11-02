@@ -54,7 +54,7 @@ export function buildTerminalCatalogs(
     ambients: byUnlockRank(AMBIENT_THEMES).map((a) => ruleEntry(a, activeAmbientId, progress, t)),
     cursors: CURSOR_THEMES.map((c) => ruleEntry(c, activeCursorId, progress, t)),
     surfaces: SURFACE_THEME_PAIRS.map<TerminalEntry>((pair) => {
-      const req = pair.requiredAscensions ? `ASCENSION ×${pair.requiredAscensions}` : levelLabel(pair.clearanceHintLv);
+      const req = levelLabel(pair.clearanceHintLv);
       return {
         id: pair.id,
         code: pair.code,

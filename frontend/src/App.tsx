@@ -48,9 +48,10 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight } from './api';
-import { ChallengeTicker } from './ChallengePanel';
+import { ChallengeTicker, FestivalStrip } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
 import { resolveSurfaceThemeId } from './surfaceThemes';
+import { setFestivalUnlocks } from './festivalUnlocks';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
 import { StatusRankList } from './StatusRankList';
@@ -99,7 +100,7 @@ import {
   getSurfaceBackgroundStyle,
   SURFACE_THEME_PAIRS,
   isThemeUnlocked,
-  getPrestigeBadge,
+  getAscensionBadge,
   Award,
   type AnalyticsHorizonMode,
   CYCLE_HOURS,
@@ -137,7 +138,6 @@ import {
   type ChronoProgress,
 } from './chronometerThemes';
 import { ChronoDisplay, ChronometerThemePicker } from './ChronometerFace';
-import { SurfaceFxLayer } from './SurfaceFx';
 import { SegmentIndicator } from './SegmentIndicator';
 import { WeatherBadge, WeatherPanel, isWeatherThemeUnlocked, useWeather, type SyncedWeatherPrefs } from './Weather';
 import { DEFAULT_WEATHER_THEME, WEATHER_THEMES, type WeatherThemeId } from './weatherThemes';
@@ -240,7 +240,6 @@ export interface AuthUser {
   weather_theme?: string;
   weather_unit?: string;
   weather_hidden?: boolean | null;
-  surface_fx?: boolean | null;
   ui_font?: string;
   ambient_theme?: string;
   ambient_clock?: boolean | null;
@@ -250,7 +249,6 @@ export interface AuthUser {
 
 /** Account-synced UI prefs that go through the debounced PATCH queue. */
 type UiPrefsPatch = SyncedWeatherPrefs & {
-  surface_fx?: boolean;
   ui_font?: string;
   ambient_theme?: string;
   cursor_theme?: string;
@@ -350,12 +348,9 @@ const getRecentDateString = (daysAgo: number, timeZone: string): string => {
 
 const THEME_STORAGE_KEY = 'typbox_theme';
 const SURFACE_THEME_STORAGE_KEY = 'typbox_surface_theme';
-// Motion FX for PRESTIGE Surface Themes: a device-local comfort setting (like
-// polarity), so it isn't synced to the account.
-const SURFACE_FX_STORAGE_KEY = 'typbox_surface_fx';
 const ASCENSION_STORAGE_PREFIX = 'typbox_ascension_';
 
-// Ascension (Prestige) claims are device-local, same as polarity/sound prefs —
+// Ascension claims are device-local, same as polarity/sound prefs —
 // there is no dedicated backend field for this yet, so a claim made on one
 // device won't sync to another. Nothing destructive happens either way:
 // worst case is being re-prompted to claim an already-claimed cycle.
@@ -366,17 +361,17 @@ const getStoredAscensions = (username: string | undefined): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
 
-const PrestigeChip: React.FC<{ totalAscensions: number; className?: string }> = ({
+const AscensionChip: React.FC<{ totalAscensions: number; className?: string }> = ({
   totalAscensions,
   className = '',
 }) => {
   const { t } = useI18n();
-  const badge = getPrestigeBadge(totalAscensions);
+  const badge = getAscensionBadge(totalAscensions);
   if (!badge) return null;
   return (
     <span
       className={`px-1.5 py-0.5 text-[10px] font-bold border tracking-wider shrink-0 ${
-        badge.isPrism ? 'prestige-prism-text border-white/30' : ''
+        badge.isPrism ? 'ascension-prism-text border-white/30' : ''
       } ${className}`}
       style={badge.isPrism ? undefined : { color: badge.colorHex, borderColor: `${badge.colorHex}80` }}
       title={tf(t.ascendedTimes, { n: totalAscensions })}
@@ -686,13 +681,7 @@ export default function App() {
   // UI Preferences (Persisted across reloads and responsive to OS preferences)
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [surfaceThemeId, setSurfaceThemeId] = useState<string>(getInitialSurfaceTheme);
-  const [surfaceFxEnabled, setSurfaceFxEnabled] = useState<boolean>(
-    () => typeof window === 'undefined' || localStorage.getItem(SURFACE_FX_STORAGE_KEY) !== 'off'
-  );
 
-  useEffect(() => {
-    localStorage.setItem(SURFACE_FX_STORAGE_KEY, surfaceFxEnabled ? 'on' : 'off');
-  }, [surfaceFxEnabled]);
   const [periodView, setPeriodView] = useState<PeriodView>('weekly');
 
   // Time zone: account-synced (UserProfile.timezone), cached in
@@ -729,7 +718,7 @@ export default function App() {
   const [ambientThemeId, setAmbientThemeId] = useState<string>(getInitialAmbientTheme);
   const [ambientDim, setAmbientDim] = useState<AmbientDim>(getInitialAmbientDim);
   const [ambientPreviewId, setAmbientPreviewId] = useState<string | null>(null);
-  // Debounced account sync for small UI prefs (weather widget, motion FX):
+  // Debounced account sync for small UI prefs (weather widget):
   // clicking through options sends one PATCH. Pending local changes always
   // win over a server value pulled in the meantime (see applyServerSurfaceTheme).
   const pendingUiPrefsRef = React.useRef<UiPrefsPatch>({});
@@ -835,7 +824,7 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
-  // Prestige / Ascension cycle claim count (device-local, see getStoredAscensions).
+  // Ascension cycle claim count (device-local, see getStoredAscensions).
   // Re-synced from localStorage during render (not an Effect) whenever the
   // signed-in username changes, following React's "adjusting state when a
   // prop changes" pattern — the guard prevents any re-render loop.
@@ -1095,7 +1084,11 @@ export default function App() {
   const festivalState = user && buffState?.userId === user.id ? buffState.festival : undefined;
   /** Adopts a fresh /bits/ answer: the running buff and challenge, and the
    *  server's spent / payouts (a settled challenge changes the balance). */
+  // Bumped when the FESTIVAL PASS opens something, for what reads its rewards.
+  const [festivalUnlockTick, setFestivalUnlockTick] = useState(0);
   const applyShopState = useCallback((userId: number, state: BitsShopState) => {
+    const opened = state.festival?.unlocks;
+    if (opened && setFestivalUnlocks(opened.cursors)) setFestivalUnlockTick((n) => n + 1);
     setBuffState({
       userId,
       buff: state.active_buff,
@@ -1541,7 +1534,7 @@ export default function App() {
     }
     if (isWeekStart(me.week_start)) setWeekStart(me.week_start);
 
-    // Weather widget + motion FX: same rules — account wins, unless this
+    // Weather widget: same rules — account wins, unless this
     // device has an unsent change, or the account has never stored a value
     // (then this device's value is pushed up instead of being reset).
     const pendingUi = pendingUiPrefsRef.current;
@@ -1549,13 +1542,6 @@ export default function App() {
     if (!('weather_theme' in pendingUi || 'weather_unit' in pendingUi || 'weather_hidden' in pendingUi)) {
       const push = applyServerWeatherPrefs(me);
       if (push) Object.assign(firstUiSync, push);
-    }
-    if (!('surface_fx' in pendingUi) && me.surface_fx !== undefined) {
-      if (me.surface_fx === null) {
-        firstUiSync.surface_fx = localStorage.getItem(SURFACE_FX_STORAGE_KEY) !== 'off';
-      } else {
-        setSurfaceFxEnabled(me.surface_fx);
-      }
     }
     // UI font / Ambient overlay: blank (or null) on the account = never
     // synced, so push this device's pick up instead of resetting it.
@@ -1972,6 +1958,7 @@ export default function App() {
       const res = await api.logs.importBackup({
         categories: Array.isArray(parsed.categories) ? parsed.categories : [],
         logs: parsed.logs,
+        ...(parsed.economy ? { economy: parsed.economy } : {}),
       });
       await loadUserData();
       refreshActiveBuff();
@@ -1981,7 +1968,7 @@ export default function App() {
           logs: res.imported_logs,
           cats: res.created_categories,
           skipped: res.skipped_logs ?? 0,
-        }),
+        }) + (res.restored_purchases ? ` ${tf(t.msgImportedEconomy, { n: res.restored_purchases })}` : ''),
       });
     } catch (err: unknown) {
       const error = err as Error;
@@ -3218,6 +3205,10 @@ export default function App() {
 
   // Chronometer Theme unlocks: Clearance level (like Surface Themes / Noise),
   // plus achievement-style rules on streaks, log count and Ascensions.
+  // Signed out: what one account's bars opened mustn't stay open on this device.
+  // Before the memo below, which reads it; repeating it changes nothing.
+  if (!authLoading && !user) setFestivalUnlocks([]);
+  // festivalUnlockTick: a festival's bar opens cursors, read through this.
   const chronoProgress = useMemo<ChronoProgress>(
     () => ({
       rewardUnlockLevel: clearanceStatus.rewardUnlockLevel,
@@ -3227,7 +3218,8 @@ export default function App() {
       totalHours: user ? clearanceStatus.totalHours : 0,
       longestSessionMinutes: user ? logs.reduce((mx, l) => Math.max(mx, l.durationMinutes), 0) : 0,
     }),
-    [clearanceStatus.rewardUnlockLevel, clearanceStatus.totalAscensions, clearanceStatus.totalHours, user, streakStats.longestStreak, logs]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [festivalUnlockTick, clearanceStatus.rewardUnlockLevel, clearanceStatus.totalAscensions, clearanceStatus.totalHours, user, streakStats.longestStreak, logs]
   );
 
   // A face that is (no longer) unlocked falls back to the default without
@@ -3376,9 +3368,7 @@ export default function App() {
       `Created At (${timeZone})`,
       // A record of what each log earned: the base rate (per log, floored;
       // the balance floors once over the total, so it can be a few BITS
-      // more) and any buff extra. The JSON backup carries the same fields;
-      // importing never restores a bonus (the server ignores them), so a
-      // file can't mint BITS.
+      // more) and any buff extra. The JSON backup carries the same fields.
       'Base BITS',
       'Buff Bonus BITS',
       'Buff',
@@ -3408,19 +3398,29 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const handleExportJSON = () => {
+  const handleExportJSON = async () => {
     if (logs.length === 0) {
       alert(t.errNoLogsExport);
+      return;
+    }
+    // A backup without its purchases would quietly restore a poorer account,
+    // so no file at all is better than one without them.
+    let economy: Record<string, unknown>;
+    try {
+      economy = await api.logs.exportEconomy();
+    } catch (err: unknown) {
+      alert(tf(t.errExportEconomy, { msg: (err as Error).message }));
       return;
     }
     const exportData = {
       user: user?.username || 'anonymous',
       exportedAt: new Date().toISOString(),
       timezone: timeZone,
-      // For the record only (import ignores it, like each log's bonusBits).
+      // For the record only (import works the balance out again).
       bits: { balance: bitsBalance, bonus: logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) },
       categories,
       logs,
+      economy,
     };
     const jsonContent = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonContent], { type: 'application/json' });
@@ -3490,15 +3490,7 @@ export default function App() {
   const textMuted = 'text-[var(--tb-text-muted)]';
   const inputBg =
     'bg-[var(--tb-bg-input)] border-[var(--tb-border)] text-[var(--tb-text-main)] focus:border-emerald-500';
-  // PRESTIGE art is pinned to the viewport so the composition frames the
-  // dashboard instead of being stretched down the full page height.
-  const surfaceBgStyle = useMemo(
-    () => ({
-      ...getSurfaceBackgroundStyle(activeSurfacePair, isDark),
-      ...(activeSurfacePair.art ? { backgroundAttachment: 'fixed' } : {}),
-    }),
-    [activeSurfacePair, isDark]
-  );
+  const surfaceBgStyle = useMemo(() => getSurfaceBackgroundStyle(activeSurfacePair, isDark), [activeSurfacePair, isDark]);
 
   return (
     <I18nContext.Provider value={i18n}>
@@ -3506,15 +3498,6 @@ export default function App() {
       className={`isolate min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
     >
-      {/* PRESTIGE Surface Theme motion layer (behind everything; see SurfaceFx.tsx) */}
-      {surfaceFxEnabled && activeSurfacePair.fx && (
-        <SurfaceFxLayer
-          key={`${activeSurfacePair.id}-${isDark ? 'd' : 'l'}`}
-          fx={activeSurfacePair.fx}
-          accentHex={activeSurfacePair.accentHex}
-          isDark={isDark}
-        />
-      )}
 
       {/* Ambient Mode: the chosen overlay while the stopwatch runs
           unattended (screen kept awake by useKeepAwake above), or a
@@ -3567,8 +3550,8 @@ export default function App() {
           {/* Brand Logo */}
           <div className="flex items-center space-x-2 min-w-0">
             <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
-            <span className="font-mono text-base sm:text-lg font-bold tracking-tighter">TYPBOX</span>
-            <span className={`font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
+            <span className="font-mono text-base sm:text-lg font-bold tracking-tighter whitespace-nowrap">TYPBOX</span>
+            <span className={`hidden min-[360px]:inline font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
               .me
             </span>
           </div>
@@ -3711,7 +3694,7 @@ export default function App() {
                         >
                           LV.{String(clearanceStatus.current.level).padStart(4, '0')}
                         </span>
-                        <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} className="ml-1.5" />
+                        <AscensionChip totalAscensions={clearanceStatus.totalAscensions} className="ml-1.5" />
                         <span className="font-bold truncate ml-2 flex-1">
                           {clearanceStatus.current.title}
                         </span>
@@ -3838,6 +3821,10 @@ export default function App() {
       ========================================== */}
       <main className="max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8">
         {/* GUEST BANNER (Rendered only when not authenticated) */}
+        {user && buffState?.userId === user.id && buffState.festival?.active && buffState.festival.pass && (
+          <FestivalStrip festival={buffState.festival.active} pass={buffState.festival.pass} onOpen={() => openBitsShop('challenges')} />
+        )}
+
         {!user && !authLoading && (
           <section className={`border ${borderCol} ${bgCard} p-5 sm:p-8 relative overflow-hidden`}>
             <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -3877,14 +3864,17 @@ export default function App() {
 
         {/* API Error Notification */}
         {apiError && (
-          <div className="p-4 border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs font-mono flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <AlertCircle className="w-4 h-4 text-rose-400" />
-              <span>{apiError} {t.apiErrorHint}</span>
+          <div className="p-3 sm:p-4 border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs font-mono flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 mt-px shrink-0 text-rose-400" />
+              <span className="min-w-0 break-words">
+                {apiError}
+                {import.meta.env.DEV ? ` ${t.apiErrorHint}` : ''}
+              </span>
             </div>
             <button
               onClick={loadUserData}
-              className="px-3 py-1.5 border border-rose-500/40 hover:bg-rose-500/20 text-xs"
+              className="w-full sm:w-auto shrink-0 min-h-[38px] px-4 py-1.5 border border-rose-500/40 hover:bg-rose-500/20 text-xs font-bold tracking-wider whitespace-nowrap cursor-pointer"
             >
               {t.retry}
             </button>
@@ -3928,7 +3918,7 @@ export default function App() {
                 <span className={`text-[10px] px-1.5 py-0.2 border ${borderCol} ${textMuted}`}>
                   {tf(t.cycleN, { n: String(clearanceStatus.cycleNumber).padStart(2, '0') })}
                 </span>
-                <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} />
+                <AscensionChip totalAscensions={clearanceStatus.totalAscensions} />
               </div>
 
               <div className="flex items-center space-x-2 min-w-0">
@@ -4324,9 +4314,9 @@ export default function App() {
                       inputMode === 'manual' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1 pointer-events-none'
                     }`}
                   >
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-[2fr_3fr] sm:grid-cols-2 gap-2 sm:gap-4">
                       <div>
-                        <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
+                        <label className={`block font-mono text-[11px] uppercase mb-1.5 whitespace-nowrap ${textMuted}`}>
                           {t.durationMin}
                         </label>
                         <input
@@ -4339,14 +4329,14 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
+                        <label className={`block font-mono text-[11px] uppercase mb-1.5 whitespace-nowrap ${textMuted}`}>
                           {t.date}
                         </label>
                         <input
                           type="date"
                           value={logDate}
                           onChange={(e) => setLogDate(e.target.value)}
-                          className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
+                          className={`w-full min-w-0 min-h-[42px] lg:min-h-0 px-2 sm:px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
                         />
                       </div>
                     </div>
@@ -4419,14 +4409,14 @@ export default function App() {
                         </div>
                       </div>
                       <div>
-                        <label className={`block font-mono text-[11px] uppercase mb-1.5 ${textMuted}`}>
+                        <label className={`block font-mono text-[11px] uppercase mb-1.5 whitespace-nowrap ${textMuted}`}>
                           {t.date}
                         </label>
                         <input
                           type="date"
                           value={logDate}
                           onChange={(e) => setLogDate(e.target.value)}
-                          className={`w-full min-h-[42px] lg:min-h-0 px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
+                          className={`w-full min-w-0 min-h-[42px] lg:min-h-0 px-2 sm:px-3 py-2.5 lg:py-2 text-base sm:text-sm font-mono border outline-none ${inputBg}`}
                         />
                       </div>
                     </div>
@@ -4613,8 +4603,8 @@ export default function App() {
                   ).map(([label, value, unit, tone]) => (
                     <div key={label} className={`px-2.5 py-1.5 border-r border-b ${borderCol} min-w-0`}>
                       <span className={`block text-[9px] uppercase tracking-wider truncate ${textMuted}`}>{label}</span>
-                      <span className="flex items-baseline gap-1">
-                        <span className={`text-base leading-tight font-light tabular-nums ${tone}`}>{value}</span>
+                      <span className="flex flex-wrap items-baseline gap-x-1">
+                        <span className={`text-base leading-tight font-light tabular-nums whitespace-nowrap ${tone}`}>{value}</span>
                         {unit && <span className={`text-[9px] ${textMuted}`}>{unit}</span>}
                       </span>
                     </div>
@@ -4803,7 +4793,8 @@ export default function App() {
                     </div>
                   ) : (
                     <span className={textMuted}>
-                      {t.inspectHint}
+                      <span className="sm:hidden">{t.inspectHintShort}</span>
+                      <span className="hidden sm:inline">{t.inspectHint}</span>
                     </span>
                   )}
                 </div>
@@ -5303,11 +5294,11 @@ export default function App() {
                         <div
                           key={day.date}
                           {...trendBarProps(idx)}
-                          className={`flex-1 flex flex-col items-center h-full justify-end group ${trendBarRing(idx)} ${
+                          className={`flex-1 min-w-0 flex flex-col items-center h-full justify-end group ${trendBarRing(idx)} ${
                             day.isFuture ? 'opacity-45' : ''
                           }`}
                         >
-                          <span className={`font-mono text-[10px] mb-1.5 ${textMuted}`}>
+                          <span className={`font-mono text-[9px] sm:text-[10px] mb-1.5 whitespace-nowrap ${textMuted}`}>
                             {day.totalMinutes > 0 ? `${(day.totalMinutes / 60).toFixed(1)}h` : '-'}
                           </span>
 
@@ -5343,7 +5334,7 @@ export default function App() {
                           >
                             {day.weekday}
                           </span>
-                          <span className={`font-mono text-[11px] mt-0.5 ${day.isToday ? 'text-emerald-400 font-semibold' : ''}`}>
+                          <span className={`font-mono text-[9px] min-[360px]:text-[10px] sm:text-[11px] mt-0.5 whitespace-nowrap ${day.isToday ? 'text-emerald-400 font-semibold' : ''}`}>
                             {day.label}
                           </span>
                         </div>
@@ -5664,7 +5655,7 @@ export default function App() {
                       title={isWeekly ? t.rewindWeek : t.rewindMonth}
                     >
                       <ChevronLeft className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
-                      <span>{isWeekly ? t.minus1Wk : t.minus1Mo}</span>
+                      <span className="whitespace-nowrap">{isWeekly ? t.minus1Wk : t.minus1Mo}</span>
                     </button>
 
                     <button
@@ -5678,7 +5669,7 @@ export default function App() {
                       }`}
                       title={isWeekly ? t.advanceWeek : t.advanceMonth}
                     >
-                      <span>{isWeekly ? t.plus1Wk : t.plus1Mo}</span>
+                      <span className="whitespace-nowrap">{isWeekly ? t.plus1Wk : t.plus1Mo}</span>
                       <ChevronRight className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
                     </button>
 
@@ -5693,8 +5684,8 @@ export default function App() {
                       }`}
                       title={t.resetPresentTitle}
                     >
-                      <RotateCcw className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
-                      <span>{t.present}</span>
+                      <RotateCcw className="hidden sm:block w-3.5 h-3.5 lg:w-3 lg:h-3" />
+                      <span className="whitespace-nowrap">{t.present}</span>
                     </button>
                   </div>
                 </div>
@@ -5738,7 +5729,7 @@ export default function App() {
                     {t.recentLogs}
                   </h2>
                 </div>
-                <span className={`font-mono text-[11px] ${textMuted}`}>
+                <span className={`shrink-0 whitespace-nowrap font-mono text-[11px] ${textMuted}`}>
                   {user ? tf(t.nRecords, { n: logs.length }) : t.standby}
                 </span>
               </div>
@@ -6358,7 +6349,7 @@ export default function App() {
             </div>
 
             {/* Settings Navigation Tabs */}
-            <div className={`flex flex-wrap border-l border-t ${borderCol} text-[10px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
+            <div className={`grid grid-cols-3 sm:flex border-l border-t ${borderCol} text-[10px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
               {(
                 [
                   ['profile', t.tabProfile],
@@ -6375,7 +6366,7 @@ export default function App() {
                     key={tab}
                     type="button"
                     onClick={() => !active && setSettingsTab(tab)}
-                    className={`grow basis-1/3 sm:basis-0 px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
+                    className={`min-w-0 sm:grow sm:basis-0 px-1 sm:px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
                       active
                         ? isDark
                           ? 'bg-zinc-100 text-zinc-950 font-bold'
@@ -6383,7 +6374,8 @@ export default function App() {
                         : textMuted
                     }`}
                   >
-                    {label}
+                    <span className="hidden sm:inline">{label}</span>
+                    <span className="sm:hidden">{label.split(' / ').pop()}</span>
                   </button>
                 );
               })}
@@ -6393,7 +6385,7 @@ export default function App() {
                 Size container so inner lists can size themselves to its visible
                 height (100cqh). */}
             <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1 [container-type:size]">
-              {/* TAB 2: APPEARANCE // SURFACE (900 PAIRS) · TYPE · AMBIENT · CURSOR */}
+              {/* TAB 2: APPEARANCE // SURFACE · TYPE · AMBIENT · CURSOR */}
               {APPEARANCE_TABS.includes(settingsTab) && (
                 <div className="flex flex-col gap-3 sm:gap-4">
                   <div
@@ -6444,12 +6436,6 @@ export default function App() {
                         userTotalHours={clearanceStatus.totalHours}
                         borderCol={borderCol}
                         textMuted={textMuted}
-                        fxEnabled={surfaceFxEnabled}
-                        onToggleFx={() => {
-                          const next = !surfaceFxEnabled;
-                          setSurfaceFxEnabled(next);
-                          queueUiPrefsSave({ surface_fx: next });
-                        }}
                       />
                     )}
 
@@ -7312,7 +7298,7 @@ export default function App() {
       />
 
       {/* ==========================================
-          MODAL: ASCENSION CELEBRATION (Prestige cycle claimed)
+          MODAL: ASCENSION CELEBRATION (cycle claimed)
       ========================================== */}
       {showAscensionModal && (
         <div
@@ -7330,14 +7316,14 @@ export default function App() {
               {tf(t.welcomeCycle, { n: String(clearanceStatus.cycleNumber).padStart(2, '0') })}
             </div>
             <div className="flex justify-center">
-              <PrestigeChip totalAscensions={clearanceStatus.totalAscensions} />
+              <AscensionChip totalAscensions={clearanceStatus.totalAscensions} />
             </div>
             <p className={`text-xs leading-relaxed ${textMuted}`}>
               {t.ascensionBody}
             </p>
             {clearanceStatus.totalAscensions >= 1 && (
               <div className="text-[11px] text-emerald-400 border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-                {t.ascensionPrestigeHint}
+                {t.ascensionRewardHint}
               </div>
             )}
             <button

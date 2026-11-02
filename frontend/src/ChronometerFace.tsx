@@ -1182,6 +1182,8 @@ export function unlockRequirementLabel(u: ChronoUnlock, t: Dict): string {
       return tf(t.chronoReqHours, { n: u.value });
     case 'session':
       return tf(t.chronoReqSession, { n: u.value });
+    case 'festival':
+      return t.unlockFestival;
     default:
       return '';
   }
@@ -1204,6 +1206,8 @@ export function unlockLockedMessage(u: ChronoUnlock, name: string, progress: Chr
       return tf(t.chronoLockedHours, { n: u.value, cur: Math.floor(progress.totalHours), name });
     case 'session':
       return tf(t.chronoLockedSession, { n: u.value, cur: progress.longestSessionMinutes, name });
+    case 'festival':
+      return tf(t.unlockFestivalNotice, { name });
     default:
       return '';
   }
