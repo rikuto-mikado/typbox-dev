@@ -4014,6 +4014,47 @@ class SessionTimingAndEditTests(APITestCase):
             self.assertIsNone(self._starlight()["omen"])
             self.assertIn(self._shop()["active_buff"]["item_id"], BUFFS)
 
+    def test_an_omen_is_gone_when_the_crate_changes(self):
+        self._set_stars(9)
+        with self._at(2026, 3, 2, 11, 59):
+            self.assertEqual(self._wish("omen").status_code, 200)
+            star = self._starlight()
+            self.assertIsNotNone(star["omen"])
+            self.assertEqual(star["crate_turns_at"].astimezone(ZoneInfo("Asia/Tokyo")).hour, 12)
+        with self._at(2026, 3, 2, 12, 0):
+            star = self._starlight()
+            self.assertIsNone(star["omen"])
+            self.assertEqual(star["crate_turns_at"].astimezone(ZoneInfo("Asia/Tokyo")).hour, 18)
+            self.assertEqual(self._wish("omen").status_code, 200)  # a new crate to read
+            self.assertIsNotNone(self._starlight()["omen"])
+
+    def test_an_old_omen_does_not_decide_the_new_crate(self):
+        self._set_stars(6)
+        with self._at(2026, 3, 2, 11), mock.patch("tracker.economy.roll_crate", return_value="warm_up"):
+            self._wish("omen")
+        with self._at(2026, 3, 2, 12), mock.patch("tracker.economy.roll_crate", return_value="overclock"):
+            self._buy("mystery_crate")
+            self.assertEqual(self._shop()["active_buff"]["item_id"], "overclock")
+
+    def test_the_last_turn_of_the_day_ends_at_midnight(self):
+        self._set_stars(6)
+        with self._at(2026, 3, 2, 23, 30):
+            self.assertEqual(
+                self._starlight()["crate_turns_at"].astimezone(ZoneInfo("Asia/Tokyo")),
+                datetime(2026, 3, 3, 0, 0, tzinfo=ZoneInfo("Asia/Tokyo")),
+            )
+
+    def test_no_omen_for_a_crate_that_rests_past_the_change(self):
+        self._set_stars(6)
+        with self._at(2026, 3, 2, 12):
+            BitPurchase.objects.create(
+                user=self.user, item_id="warm_up", via="mystery_crate", price=700,
+                expires_at=timezone.now() - timedelta(hours=1),
+            )
+            self.assertTrue(self._starlight()["omen_too_late"])
+            self.assertEqual(self._wish("omen").status_code, 400)
+            self.assertEqual(self._stars(), 6)
+
     def test_an_unknown_or_refused_wish_takes_no_stars(self):
         self._set_stars(1)
         with self._at(2026, 3, 2, 12):
@@ -4902,6 +4943,22 @@ class FullBackupTests(APITestCase):
         rows = [{"item_id": "warm_up"}] * 20001
         res = self.client.post("/api/logs/import-backup/", {"logs": [], "economy": {"purchases": rows}}, format="json")
         self.assertEqual(res.status_code, 400)
+
+    def test_a_backup_keeps_an_omen_only_while_that_crate_is_on_the_shelf(self):
+        cases = [
+            ("2026-03-02T12:00:00Z", True),  # the coming change
+            ("2026-03-01T00:00:00Z", False),  # that crate has gone
+            ("9999-12-31T00:00:00Z", False),  # no omen outlives its crate
+            ("nope", False),
+            (None, False),
+        ]
+        for until, kept in cases:
+            UserProfile.objects.filter(user=self.user).update(crate_omen="", crate_omen_until=None)
+            economy = {"starlight": {"crate_omen": "warm_up", "crate_omen_until": until}}
+            with self._at(2026, 3, 2, 11):
+                res = self.client.post("/api/logs/import-backup/", {"logs": [], "economy": economy}, format="json")
+                self.assertEqual(res.status_code, 201, until)
+                self.assertEqual(self.client.get("/api/bits/").data["starlight"]["omen_id"] == "warm_up", kept, until)
 
     def test_an_end_time_without_an_offset_cannot_lock_the_shop(self):
         for ended in ("2026-03-02T00:00:00", "2026-03-02", "nope", 5):

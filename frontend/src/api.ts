@@ -453,6 +453,11 @@ export interface Starlight {
   uses?: Record<StarWish | 'festival', number>;
   /** What the next MYSTERY CRATE holds, if the stars were asked. */
   omen?: string | null;
+  omen_id?: string | null;
+  /** When the crate next changes, and what the stars saw goes with it. */
+  crate_turns_at?: string;
+  /** The crate is resting past that change: an omen would be wasted. */
+  omen_too_late?: boolean;
 }
 
 export type StarWish = 'reroll' | 'omen';

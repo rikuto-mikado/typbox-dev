@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
 import type { Starlight, StarWish } from './api';
 
@@ -372,8 +373,11 @@ const WISHES: Array<{ use: StarWish; name: 'starWishReroll' | 'starWishOmen'; li
  *  taps each, like everything that spends. */
 export const StarWishes: React.FC<{
   starlight: Starlight;
+  now: number;
+  /** "3h 12m": how the shop writes time left. */
+  formatLeft: (ms: number) => string;
   onWish: (use: StarWish) => Promise<void>;
-}> = ({ starlight, onWish }) => {
+}> = ({ starlight, now, formatLeft, onWish }) => {
   const { t } = useI18n();
   const [armed, setArmed] = useState<StarWish | null>(null);
   useEffect(() => {
@@ -387,9 +391,13 @@ export const StarWishes: React.FC<{
       <div className="grid grid-cols-2 gap-1">
         {WISHES.map(({ use, name, line }) => {
           const cost = starlight.uses?.[use] ?? 0;
-          const told = use === 'omen' ? starlight.omen : null;
+          const isOmen = use === 'omen';
+          const turnsAt = isOmen && starlight.crate_turns_at ? new Date(starlight.crate_turns_at).getTime() : 0;
+          // Until the shop has fetched the next crate, the clock already knows this one is gone.
+          const told = isOmen && now < turnsAt ? starlight.omen : null;
+          const tooLate = isOmen && now < turnsAt && !told && Boolean(starlight.omen_too_late);
           const short = starlight.stars < cost;
-          const blocked = short || Boolean(told);
+          const blocked = short || Boolean(told) || tooLate;
           // Spending below the guard's price switches it off: say so before it happens.
           const stopsGuard = !blocked && starlight.guard_on && starlight.stars - cost < starlight.cost;
           const isArmed = armed === use;
@@ -408,15 +416,31 @@ export const StarWishes: React.FC<{
               }}
               className={`star-wish relative min-w-0 min-h-[116px] px-1.5 pt-2 pb-1.5 flex flex-col items-center gap-1 text-center border overflow-hidden ${
                 blocked ? 'cursor-not-allowed' : 'cursor-pointer'
-              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !told ? 'star-wish-off' : ''}`}
+              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !told ? 'star-wish-off' : ''} ${told ? 'star-wish-told' : ''}`}
             >
-              <svg viewBox="0 0 32 32" className="w-8 h-8 shrink-0" aria-hidden="true">
-                {WISH_ICONS[use]}
-              </svg>
-              <span className="text-[10px] font-semibold tracking-wider uppercase leading-tight">{name && t[name]}</span>
-              <span className="text-[9px] font-sans leading-tight opacity-70">
-                {told ?? t[line]}
-              </span>
+              {told && starlight.omen_id ? (
+                <BuffIcon itemId={starlight.omen_id} className="star-omen-reveal w-8 h-8 shrink-0" />
+              ) : (
+                <svg viewBox="0 0 32 32" className="w-8 h-8 shrink-0" aria-hidden="true">
+                  {WISH_ICONS[use]}
+                </svg>
+              )}
+              {told ? (
+                <>
+                  <span className="text-[8px] tracking-wider uppercase leading-tight opacity-80">{t.starWishOmenNext}</span>
+                  <span className="text-[11px] font-bold tracking-wider uppercase leading-tight">{told}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-[10px] font-semibold tracking-wider uppercase leading-tight">{name && t[name]}</span>
+                  <span className="text-[9px] font-sans leading-tight opacity-70">{tooLate ? t.starWishOmenLate : t[line]}</span>
+                </>
+              )}
+              {isOmen && now < turnsAt && (
+                <span className="text-[8px] tracking-wider uppercase tabular-nums leading-tight opacity-70">
+                  {tf(t.starWishChangesIn, { t: formatLeft(turnsAt - now) })}
+                </span>
+              )}
               {stopsGuard && <span className="text-[9px] font-bold leading-tight text-amber-300">{t.starWishStopsGuard}</span>}
               <span className="mt-auto flex items-center justify-center gap-0.5 min-h-3">
                 {isArmed ? (

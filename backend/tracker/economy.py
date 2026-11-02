@@ -742,6 +742,7 @@ class StarlightError(Exception):
 
 # What the stars buy, besides saving a buff. Nothing here pays BITS.
 STAR_USES = {"reroll": 2, "omen": 3, "festival": 5}
+CRATE_TURN_HOURS = 6
 
 
 
@@ -756,6 +757,26 @@ def festival_state(user, now=None):
         "pass": festival_pass.pass_state(user, festival, local.date()) if festival else None,
         "unlocks": festival_pass.unlocks(user),
     }
+
+
+def crate_turns_at(user, now):
+    """When MYSTERY CRATE next changes: every 6 hours on the user's clock."""
+    local = _local_now(user, now)
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight + timedelta(hours=(local.hour // CRATE_TURN_HOURS + 1) * CRATE_TURN_HOURS)
+
+
+def _live_omen(profile, now):
+    """The buff the stars saw in this turn's crate, or "" once it has changed."""
+    if not profile or not profile.crate_omen or not profile.crate_omen_until:
+        return ""
+    return profile.crate_omen if profile.crate_omen_until > now else ""
+
+
+def _crate_rests_past_turn(user, now):
+    """An omen would be gone before this crate could be bought."""
+    until = buff_cooldowns(user, now).get("mystery_crate")
+    return bool(until and until >= crate_turns_at(user, now))
 
 
 def use_starlight(user, use, now=None, item_id=None):
@@ -778,10 +799,13 @@ def use_starlight(user, use, now=None, item_id=None):
             profile.shop_salt += 1
             fields = ["shop_salt"]
         else:
-            if profile.crate_omen:
+            if _live_omen(profile, now):
                 raise StarlightError("The stars have already spoken.")
+            if _crate_rests_past_turn(user, now):
+                raise StarlightError("The crate will have changed before it is ready.")
             profile.crate_omen = roll_crate(BUFFS["mystery_crate"])
-            fields = ["crate_omen"]
+            profile.crate_omen_until = crate_turns_at(user, now)
+            fields = ["crate_omen", "crate_omen_until"]
         if not _take_stars(profile, cost, now):
             raise StarlightError("Not enough stars.")
         if fields:
@@ -789,10 +813,11 @@ def use_starlight(user, use, now=None, item_id=None):
 
 
 def serialize_starlight(user, now=None):
+    now = now or timezone.now()
     profile = UserProfile.objects.filter(user=user).first()
     days = star_days(user, now)
     stars = star_count(user, profile.star_spends if profile else [], now)
-    omen = profile.crate_omen if profile else ""
+    omen = _live_omen(profile, now)
     return {
         "stars": stars,
         "max": STARLIGHT_MAX,
@@ -802,6 +827,10 @@ def serialize_starlight(user, now=None):
         "last_guard": (profile.last_guard if profile else {}) or None,
         "uses": STAR_USES,
         "omen": BUFFS[omen]["name"] if omen else None,
+        "omen_id": omen or None,
+        # A reading keeps the end it was given, even if the time zone moved since.
+        "crate_turns_at": profile.crate_omen_until if omen else crate_turns_at(user, now),
+        "omen_too_late": _crate_rests_past_turn(user, now),
     }
 
 
@@ -1441,7 +1470,7 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
             via = item_id
             # The stars may already have told what is inside.
             profile = UserProfile.objects.get(user=user)
-            runs = profile.crate_omen or roll_crate(spec)
+            runs = _live_omen(profile, now) or roll_crate(spec)
             if profile.crate_omen:
                 profile.crate_omen = ""
                 profile.save(update_fields=["crate_omen"])

@@ -20,7 +20,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from . import challenges
-from .economy import BUFFS, LEGACY_BUFFS, RUNNABLE_BUFFS, active_buff, refund_amount
+from .economy import BUFFS, LEGACY_BUFFS, RUNNABLE_BUFFS, crate_turns_at, active_buff, refund_amount
 from .furniture import (
     FURNITURE,
     ROOM_NAME_MAX,
@@ -94,6 +94,7 @@ def export_economy(user):
             "spends": profile.star_spends,
             "last_guard": profile.last_guard,
             "crate_omen": profile.crate_omen,
+            "crate_omen_until": profile.crate_omen_until,
             "shop_salt": profile.shop_salt,
         },
         "preferences": {key: getattr(profile, key) for key in PREFERENCES},
@@ -294,8 +295,17 @@ def _restore_starlight(profile, raw):
     ):
         profile.last_guard = {"at": guard["at"][:40], "name": guard["name"][:40]}
     omen = raw.get("crate_omen")
-    if not profile.crate_omen and isinstance(omen, str) and omen in RUNNABLE_BUFFS:
+    until = _moment(raw.get("crate_omen_until"))
+    # Only while that crate is still the one on the shelf, and never longer.
+    if (
+        not profile.crate_omen
+        and isinstance(omen, str)
+        and omen in RUNNABLE_BUFFS
+        and until
+        and timezone.now() < until <= crate_turns_at(profile.user, timezone.now())
+    ):
         profile.crate_omen = omen
+        profile.crate_omen_until = until
     profile.shop_salt = max(profile.shop_salt, _amount(raw.get("shop_salt"), 1_000_000))
 
 

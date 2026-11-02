@@ -82,6 +82,8 @@ class UserProfile(models.Model):
     star_spends = models.JSONField(default=list, blank=True)
     last_guard = models.JSONField(default=dict, blank=True)
     crate_omen = models.CharField(max_length=32, blank=True, default="")
+    # The crate changes on a clock, and what the stars saw changes with it.
+    crate_omen_until = models.DateTimeField(null=True, blank=True)
     shop_salt = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 

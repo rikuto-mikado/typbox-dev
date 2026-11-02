@@ -371,6 +371,14 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   // Keeps the lineup countdowns moving while the shop is open, and fetches
   // the next lineup as soon as one of its groups turns over.
   const lineupResetsAt = room?.weekly.resets_at;
+  // The crate changes on a clock: fetch the new one if the shop is left open.
+  const crateTurnsAtRaw = state?.starlight?.crate_turns_at;
+  const crateHasTurned = Boolean(crateTurnsAtRaw) && now >= new Date(crateTurnsAtRaw as string).getTime();
+  useEffect(() => {
+    if (!crateHasTurned) return;
+    api.bits.get().then(setState).catch(() => {});
+  }, [crateHasTurned]);
+
   useEffect(() => {
     if (!isOpen) return;
     const tick = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -603,6 +611,12 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   };
 
   // Each buff cools down on its own timer; the others stay on sale meanwhile.
+  // The crate on the shelf, while what the stars saw in it still holds.
+  const crateTurnsAt = state?.starlight?.crate_turns_at ? new Date(state.starlight.crate_turns_at).getTime() : 0;
+  const omenBuff =
+    state?.starlight?.omen_id && now < crateTurnsAt
+      ? state.buffs.find((b) => b.item_id === state.starlight?.omen_id) ?? null
+      : null;
   const cooldownLeft = (itemId: string) => {
     const until = state?.buff_cooldowns?.[itemId];
     return until ? new Date(until).getTime() - now : 0;
@@ -869,7 +883,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 <div className="space-y-1.5">
                   <StarlightSky starlight={state.starlight} />
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.starlightHint}</p>
-                  <StarWishes starlight={state.starlight} onWish={handleWish} />
+                  <StarWishes starlight={state.starlight} now={now} formatLeft={formatLeft} onWish={handleWish} />
                 </div>
               )}
 
@@ -972,12 +986,29 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                           {buff.cooldown_hours != null && (
                             <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.bitsCooldownAfter, { n: buff.cooldown_hours })}</div>
                           )}
+                          {buff.odds && omenBuff?.cooldown_hours != null && (
+                            <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>
+                              {tf(t.bitsOmenRests, { name: omenBuff.name, n: omenBuff.cooldown_hours })}
+                            </div>
+                          )}
                           {buff.max_bonus ? (
                             <div className={`text-[9px] ${textMuted}`}>
                               {tf(t.bitsPayback, { x: (buff.max_bonus / buff.price).toFixed(2) })}
                             </div>
                           ) : null}
-                          {buff.odds && (
+                          {buff.odds && omenBuff && (
+                            <div className="flex items-center gap-2 p-2 border border-amber-300/60 bg-amber-300/10">
+                              <BuffIcon itemId={omenBuff.item_id} className="star-omen-reveal w-9 h-9 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-[8px] uppercase tracking-wider text-amber-300">{t.bitsOmenSaw}</div>
+                                <div className="text-xs font-bold uppercase tracking-wider text-amber-200">{omenBuff.name}</div>
+                                <div className={`text-[8px] uppercase tracking-wider tabular-nums ${textMuted}`}>
+                                  {tf(t.starWishChangesIn, { t: formatLeft(crateTurnsAt - now) })}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {buff.odds && !omenBuff && (
                             <div className="space-y-1">
                               <div className={`text-[8px] uppercase tracking-wider ${textMuted}`}>{t.bitsCrateOdds}</div>
                               <div className="grid grid-cols-3 gap-1">

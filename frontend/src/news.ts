@@ -434,6 +434,46 @@ const SLOT_ROOMS: ShowcaseRoom[] = [
 
 export const NEWS_ARTICLES: NewsArticle[] = [
   {
+    id: 'buff-rests',
+    date: 'EARLY NOV 2026',
+    tag: 'GUIDE',
+    title: 'How long each buff rests',
+    lede: 'Every buff has a rest of its own, and the rest of the shop stays open while it waits. Here is the full list, and how MYSTERY CRATE now changes every 6 hours.',
+    blocks: [
+      {
+        type: 'stats',
+        items: [
+          ['WARM-UP', '6h'],
+          ['STORM RUNNER', '8h'],
+          ['OVERCLOCK', '12h'],
+          ['LUNAR TIDE', '12h'],
+          ['WEEKEND SURGE', '12h'],
+          ['LUCKY BYTE', '12h'],
+          ['MYSTERY CRATE', '14h'],
+          ['FOCUS CHIP', '16h'],
+          ['CATEGORY LOCK', '16h'],
+          ['NIGHT SHIFT', '18h'],
+          ['EARLY BIRD', '20h'],
+          ['DEEP DIVE', '24h'],
+          ['IRON CONTRACT', '24h'],
+          ['HYPERDRIVE', '36h'],
+        ],
+      },
+      {
+        type: 'p',
+        text: 'The rest starts when the buff ends, however it ended, and only holds back that one buff. Only one buff can run at a time, but as soon as it is over you can start any other that is ready. A buff you cancel before it has paid on any log does not rest at all.',
+      },
+      {
+        type: 'p',
+        text: 'A MYSTERY CRATE rests for 14 hours, and the buff it opened into rests for its own time as well. Every buff card shows its rest, and READY IN on the button counts down what is left.',
+      },
+      {
+        type: 'p',
+        text: 'The crate itself now changes every 6 hours: at 00:00, 06:00, 12:00 and 18:00 your time. OMEN shows what is inside this crate, on the wish card and on the crate\'s own card in place of the odds. When the crate changes, what the stars saw is gone and OMEN can be used again. If the crate would still be resting when it changes, OMEN stays off so no stars are wasted.',
+      },
+    ],
+  },
+  {
     id: 'festival-bar',
     date: 'EARLY NOV 2026',
     tag: 'NEW',
@@ -772,7 +812,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'STARLIGHT' },
       {
         type: 'p',
-        text: 'Every day with a log no buff paid on is a star, up to 14, and that goes for the logs you already have. A log only counts if it was committed within two days of its date. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. Stars can also re-deal the furniture shop (2) or show what the next MYSTERY CRATE holds (3).',
+        text: 'Every day with a log no buff paid on is a star, up to 14, and that goes for the logs you already have. A log only counts if it was committed within two days of its date. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. Stars can also re-deal the furniture shop (2) or show what MYSTERY CRATE holds (3). The crate changes every 6 hours (00:00, 06:00, 12:00 and 18:00 your time), and what the stars saw goes with it.',
       },
       {
         type: 'list',
