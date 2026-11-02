@@ -5,7 +5,7 @@
 // backend RoomTests checks every catalog base has an entry in one of these
 // files, so add the art in the same change as a new piece.
 // Paints ('surfaces') fill the whole wall / floor area they are given.
-import { books, box, C, foliage, hash, text, type Art } from './roomPaint';
+import { books, box, C, foliage, hash, text, type Art, disc } from './roomPaint';
 import { PACK_ART } from './roomArtPacks';
 
 const CORE_ART: Record<string, Art> = {
@@ -295,32 +295,57 @@ const CORE_ART: Record<string, Art> = {
 
   // ----------------------------------------------------------------- large
   bed: (p) => {
-    p.rect(0, 0, 3, 16, C.wood2);
-    p.rect(1, 1, 1, 14, C.wood);
-    p.rect(3, 7, 29, 5, C.white);
-    p.rect(4, 4, 6, 4, C.paper);
-    p.rect(4, 4, 6, 1, C.white);
-    p.rect(10, 6, 22, 6, C.indigo);
-    p.rect(10, 6, 22, 1, C.indigo2);
-    p.rect(10, 11, 22, 1, C.indigo2);
-    p.rect(3, 12, 29, 2, C.wood);
-    p.rect(3, 14, 2, 2, C.wood2);
-    p.rect(29, 14, 2, 2, C.wood2);
+    // headboard
+    p.rect(0, 1, 4, 13, C.wood2);
+    p.rect(1, 2, 2, 11, C.wood);
+    p.rect(0, 0, 4, 2, C.wood3);
+    // mattress
+    p.rect(4, 9, 27, 4, C.white);
+    p.rect(4, 12, 27, 1, C.paper2);
+    // pillows
+    p.rect(5, 5, 9, 5, C.paper2);
+    p.rect(5, 4, 9, 5, C.white);
+    p.rect(6, 8, 7, 1, C.paper);
+    // duvet, turned back at the top
+    p.rect(13, 6, 18, 7, C.indigo);
+    p.rect(13, 6, 18, 1, C.indigo2);
+    p.rect(13, 7, 4, 6, C.white);
+    p.rect(13, 7, 4, 1, C.paper);
+    p.rect(16, 7, 1, 6, C.paper2);
+    p.rect(20, 11, 11, 2, C.indigo2);
+    // frame, foot and legs
+    p.rect(4, 13, 27, 1, C.wood);
+    p.rect(30, 6, 2, 8, C.wood2);
+    p.rect(30, 5, 2, 1, C.wood3);
+    p.rect(4, 14, 2, 2, C.wood2);
+    p.rect(28, 14, 2, 2, C.wood2);
   },
   sofa: (p) => {
-    p.rect(1, 2, 30, 8, C.teal2);
-    p.rect(2, 3, 28, 6, C.teal);
-    p.rect(0, 5, 4, 9, C.teal2);
-    p.rect(28, 5, 4, 9, C.teal2);
-    p.rect(4, 9, 12, 4, C.teal);
-    p.rect(16, 9, 12, 4, C.teal);
-    p.rect(4, 9, 12, 1, C.teal3);
-    p.rect(16, 9, 12, 1, C.teal3);
-    p.rect(16, 9, 1, 4, C.teal2);
-    p.rect(8, 5, 5, 4, C.amber);
-    p.rect(1, 13, 30, 1, C.teal2);
-    p.rect(2, 14, 1, 2, C.wood2);
-    p.rect(29, 14, 1, 2, C.wood2);
+    // back, buttoned
+    p.rect(2, 1, 28, 8, C.teal2);
+    p.rect(3, 2, 26, 6, C.teal);
+    for (const x of [8, 16, 24]) p.px(x, 4, C.teal2);
+    p.rect(16, 2, 1, 6, C.teal2);
+    // cushions
+    p.rect(4, 8, 12, 5, C.teal);
+    p.rect(17, 8, 11, 5, C.teal);
+    p.rect(4, 8, 12, 1, C.teal3);
+    p.rect(17, 8, 11, 1, C.teal3);
+    p.rect(16, 8, 1, 5, C.teal2);
+    // rounded arms
+    p.rect(0, 6, 4, 8, C.teal2);
+    p.rect(28, 6, 4, 8, C.teal2);
+    p.rect(1, 5, 2, 1, C.teal);
+    p.rect(29, 5, 2, 1, C.teal);
+    p.rect(1, 6, 2, 1, C.teal3);
+    p.rect(29, 6, 2, 1, C.teal3);
+    // throw pillow
+    p.rect(22, 4, 5, 5, C.amber2);
+    p.rect(23, 5, 3, 3, C.amber);
+    // base and tapered legs
+    p.rect(0, 13, 32, 1, C.teal2);
+    p.rect(3, 14, 2, 2, C.wood);
+    p.rect(27, 14, 2, 2, C.wood);
   },
   bookcase_wide: (p) => {
     p.rect(0, 0, 32, 32, C.wood2);
@@ -517,12 +542,16 @@ const CORE_ART: Record<string, Art> = {
     p.px(15, 13, C.wood2);
   },
   floor_cushion: (p) => {
-    p.rect(1, 3, 14, 4, C.teal);
+    p.rect(1, 3, 14, 4, C.teal2);
     p.rect(0, 4, 16, 3, C.teal);
-    p.rect(1, 3, 14, 1, C.teal3);
-    p.rect(0, 7, 16, 1, C.teal2);
-    p.px(7, 5, C.teal2);
-    p.px(8, 5, C.teal2);
+    p.rect(2, 2, 12, 2, C.teal);
+    p.rect(3, 2, 10, 1, C.teal3);
+    p.rect(1, 4, 2, 1, C.teal3);
+    p.px(8, 4, C.teal2);
+    p.rect(1, 7, 14, 1, C.teal2);
+    // tassels
+    p.px(0, 7, C.amber2);
+    p.px(15, 7, C.amber2);
   },
   gaming_chair: (p) => {
     p.rect(1, 0, 6, 8, C.ink);
@@ -590,16 +619,20 @@ const CORE_ART: Record<string, Art> = {
       p.rect(2, 2 + r * 8, 4, 1, C.metal);
     }
   },
-  string_lights: (p, { on, night }) => {
-    const lit = on || night;
-    const bulbs = [C.red, C.amber, C.leaf3, C.sky, C.pink];
-    for (let x = 0; x < 32; x++) {
-      const y = 1 + Math.round(2.5 * Math.sin((x / 32) * Math.PI));
-      p.px(x, y, C.ink3);
-      if (x % 4 === 2) {
-        p.rect(x, y + 1, 1, 2, lit ? bulbs[(x / 4) % 5 | 0] : C.metal2);
-        if (lit) p.px(x, y + 3, C.glow);
-      }
+  string_lights: (p, env) => {
+    // the wire sags between two pins
+    const sag = [0, 1, 2, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 2, 1, 0];
+    for (let x = 0; x < 32; x++) p.px(x, 1 + sag[Math.floor(x / 2)], C.ink3);
+    p.rect(0, 0, 1, 2, C.metal2);
+    p.rect(31, 0, 1, 2, C.metal2);
+    const lit = env.on || env.night;
+    const colors = [C.amber, C.pink, C.sky, C.leaf3, C.orange];
+    for (let i = 0; i < 7; i++) {
+      const x = 2 + i * 4 + (i > 3 ? 1 : 0);
+      const y = 2 + sag[Math.floor(x / 2)];
+      p.px(x, y, C.ink2);
+      p.rect(x, y + 1, 2, 2, lit ? colors[i % colors.length] : C.metal3);
+      if (lit) p.px(x, y + 1, C.white);
     }
   },
   lava_lamp: (p, { on }) => {
@@ -636,17 +669,23 @@ const CORE_ART: Record<string, Art> = {
     p.rect(0, 5, 8, 1, C.ink3);
     p.rect(1, 6, 6, 2, C.pot2);
   },
-  fan: (p, { on }) => {
-    p.rect(1, 0, 6, 6, C.metal);
-    p.rect(2, 1, 4, 4, C.metal3);
-    if (on) {
-      p.rect(2, 3, 4, 1, C.white);
-      p.rect(3, 1, 1, 4, C.white);
-    } else {
-      p.rect(3, 2, 2, 2, C.white);
-    }
-    p.rect(3, 6, 2, 8, C.metal2);
-    p.rect(1, 14, 6, 2, C.metal3);
+  fan: (p, env) => {
+    // cage
+    disc(p, 4, 4, 4, C.metal2);
+    disc(p, 4, 4, 3, C.ink2);
+    // blades
+    const blade = env.on ? C.metal : C.paper2;
+    p.rect(3, 1, 2, 2, blade);
+    p.rect(5, 3, 2, 2, blade);
+    p.rect(3, 5, 2, 2, blade);
+    p.rect(1, 3, 2, 2, blade);
+    p.rect(3, 3, 2, 2, C.red);
+    // stem and base
+    p.rect(3, 8, 2, 5, C.metal2);
+    p.rect(4, 8, 1, 5, C.metal);
+    p.rect(1, 13, 6, 2, C.metal3);
+    p.rect(2, 13, 4, 1, C.metal2);
+    p.rect(0, 15, 8, 1, C.ink3);
   },
   globe: (p) => {
     p.rect(2, 0, 4, 7, C.sky2);

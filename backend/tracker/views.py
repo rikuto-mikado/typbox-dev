@@ -26,18 +26,23 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import challenges
 from .economy import (
+    BUFFS,
     PurchaseError,
     apply_buff_to_new_log,
     buy,
     cancel_buff,
     log_is_locked,
+    open_festival_gift,
     reset_economy,
-    restore_starlight,
     return_buff_draw,
     seal_contract_on_edit,
     shop_state,
+    star_lit_by,
+    StarlightError,
+    use_starlight,
 )
 from .furniture import (
+    FURNITURE,
     CATALOG_VERSION,
     ROOM_NAME_MAX,
     ROOM_SLOTS,
@@ -328,6 +333,10 @@ class CategoryViewSet(viewsets.ModelViewSet):
 # ==========================================
 
 
+MAX_IMPORTED_LOGS = 20000
+MAX_IMPORTED_CATEGORIES = 1000
+
+
 def _log_import_key(category_code, log_date, duration_minutes, created_at):
     """Identity of a log for duplicate detection on backup import."""
     created = (
@@ -371,9 +380,10 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         # STORM RUNNER reads the CHRONOMETER weather the client sends along
         # (optional; older clients send none and simply don't qualify).
         data = self.request.data
-        self._star_lit = apply_buff_to_new_log(
+        apply_buff_to_new_log(
             log, weather=data.get("weather") if hasattr(data, "get") else None
         )
+        self._star_lit = star_lit_by(log)
         # BOSS RAID / RIVAL: what the log did, sent back with it.
         self._challenge_hit = challenges.apply_to_new_log(log)
 
@@ -440,10 +450,13 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             deleted_purchases, _ = BitPurchase.objects.filter(
                 user=request.user
             ).delete()
-            profile.starlight = 0
-            profile.star_days = []
+            profile.star_spends = []
             profile.last_guard = {}
-            profile.save(update_fields=["starlight", "star_days", "last_guard"])
+            profile.crate_omen = ""
+            profile.festival_gifts = []
+            profile.save(
+                update_fields=["star_spends", "last_guard", "crate_omen", "festival_gifts"]
+            )
             if (
                 profile.room_layout
                 or profile.room_slots
@@ -483,12 +496,25 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         category isn't in the account or the backup are kept uncategorized
         rather than credited to some other category.
         """
+        if not isinstance(request.data, dict):
+            return Response(
+                {"detail": "Invalid backup format: expected a backup object."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         raw_categories = request.data.get("categories", [])
         raw_logs = request.data.get("logs", [])
 
         if not isinstance(raw_logs, list):
             return Response(
                 {"detail": "Invalid backup format: logs must be a list."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # All or nothing: quietly importing only part of a backup would lose logs.
+        if len(raw_logs) > MAX_IMPORTED_LOGS or (
+            isinstance(raw_categories, list) and len(raw_categories) > MAX_IMPORTED_CATEGORIES
+        ):
+            return Response(
+                {"detail": f"This backup is too large: at most {MAX_IMPORTED_LOGS} logs and {MAX_IMPORTED_CATEGORIES} categories."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -502,11 +528,11 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 for item in raw_categories:
                     if not isinstance(item, dict):
                         continue
-                    code = str(item.get("code", "")).strip().upper()[:10]
-                    name = str(item.get("name", "")).strip()[:100]
+                    code = str(item.get("code", "")).replace("\x00", "").strip().upper()[:10]
+                    name = str(item.get("name", "")).replace("\x00", "").strip()[:100]
                     if not code or not name or code in existing_cats:
                         continue
-                    color = str(item.get("color", "#10b981")).strip()[:20] or "#10b981"
+                    color = str(item.get("color", "#10b981")).replace("\x00", "").strip()[:20] or "#10b981"
                     # Backups from before the weekly switch only carry
                     # monthlyTargetHours; the number is taken as-is as the
                     # weekly target (no monthly -> weekly scaling), so a
@@ -520,7 +546,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                     )
                     try:
                         target_int = max(1, min(168, int(target)))
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError, OverflowError):
                         target_int = 5
                     raw_active = item.get("isActive", item.get("is_active", True))
                     is_active = raw_active if isinstance(raw_active, bool) else True
@@ -569,7 +595,14 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 )
             )
 
-            for entry in raw_logs[:5000]:
+            loose_keys = Counter(
+                ((code or "").upper(), day, minutes)
+                for code, day, minutes in StudyLog.objects.filter(user=request.user).values_list(
+                    "category__code", "date", "duration_minutes"
+                )
+            )
+
+            for entry in raw_logs:
                 if not isinstance(entry, dict):
                     continue
                 cat_code = (
@@ -590,7 +623,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 )
                 try:
                     dur_int = max(1, min(1440, int(raw_dur)))
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, OverflowError):
                     dur_int = 60
 
                 topic_str = ""
@@ -598,9 +631,29 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                 # Keep the original commit timestamp from the backup (UTC
                 # ISO-8601; naive values are treated as UTC).
                 raw_created = entry.get("createdAt") or entry.get("created_at")
-                created_dt = parse_datetime(str(raw_created)) if raw_created else None
-                if created_dt is not None and timezone.is_naive(created_dt):
-                    created_dt = timezone.make_aware(created_dt, dt_timezone.utc)
+                try:
+                    created_dt = parse_datetime(str(raw_created)) if raw_created else None
+                    if created_dt is not None and timezone.is_naive(created_dt):
+                        created_dt = timezone.make_aware(created_dt, dt_timezone.utc)
+                    if created_dt is not None:
+                        created_dt = created_dt.astimezone(dt_timezone.utc)
+                except (ValueError, OverflowError):  # no such moment
+                    created_dt = None
+                # A commit can't lie ahead: it would stay editable until then.
+                # It lands on the import's own time, so a second import of the
+                # same file has to recognise it without the timestamp.
+                if created_dt is not None and created_dt > timezone.now():
+                    created_dt = None
+                    loose = (cat_obj.code.upper() if cat_obj else "", parsed_date, dur_int)
+                    if loose_keys[loose] > 0:
+                        loose_keys[loose] -= 1
+                        skipped_logs += 1
+                        continue
+
+                # The buff that paid survives so a buffed day stays unlit, but
+                # its BITS do not come back (see clear_all).
+                raw_item = entry.get("bonusItem") or entry.get("bonus_item")
+                bonus_item = raw_item if isinstance(raw_item, str) and raw_item in BUFFS else ""
 
                 key = _log_import_key(
                     cat_obj.code if cat_obj else "", parsed_date, dur_int, created_dt
@@ -620,6 +673,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         duration_minutes=dur_int,
                         topic=topic_str,
                         is_public_to_hub=True,
+                        bonus_item=bonus_item,
                     )
                 )
 
@@ -633,13 +687,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         obj.created_at = original
                         restored.append(obj)
                 if restored:
-                    StudyLog.objects.bulk_update(restored, ["created_at"])
-
-            if request.data.get("starlight") is not None:
-                profile, _ = UserProfile.objects.select_for_update().get_or_create(
-                    user=request.user
-                )
-                restore_starlight(profile, request.data.get("starlight"))
+                    StudyLog.objects.bulk_update(restored, ["created_at"], batch_size=1000)
 
         return Response(
             {
@@ -709,6 +757,36 @@ class BitsCancelView(APIView):
         except PurchaseError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({**shop_state(request.user), "refunded": refunded})
+
+
+class BitsStarlightView(APIView):
+    """POST /api/bits/starlight/ - {"use": "reroll"|"omen"|"dawn"}: spend stars."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        use, item_id = data.get("use"), data.get("item_id")
+        if not isinstance(use, str) or not (item_id is None or isinstance(item_id, str)):
+            return Response({"detail": "Unknown wish."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            use_starlight(request.user, use, item_id=item_id)
+        except StarlightError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(shop_state(request.user))
+
+
+class BitsFestivalGiftView(APIView):
+    """POST /api/bits/festival/gift/ - Open this year's present."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        try:
+            piece = open_festival_gift(request.user)
+        except StarlightError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({**shop_state(request.user), "gift_piece": piece})
 
 
 class BitsChallengeForfeitView(APIView):
@@ -810,6 +888,8 @@ class RoomReserveView(APIView):
                     not isinstance(item_id, str)
                     or item_id
                     not in shop_lineup(request.user, profile=profile)["items"]
+                    # A limited piece ends with its festival: no holding it past that.
+                    or FURNITURE[item_id].get("event")
                 ):
                     return Response(
                         {

@@ -1364,6 +1364,11 @@ class RoomTests(APITestCase):
     """MY ROOM: weekly furniture shop, inventory and layout validation."""
 
     def setUp(self):
+        # These tests read the shop on the real date: keep any festival out of it.
+        for name, value in (("active_on", None), ("is_active", False)):
+            patcher = mock.patch(f"tracker.festivals.{name}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.user = User.objects.create_user(
             username="operator",
             email="operator@example.com",
@@ -1753,7 +1758,8 @@ class RoomTests(APITestCase):
             self.assertIn(
                 spec["layer"], ("wall", "floor", "wall_paint", "floor_paint"), item_id
             )
-            self.assertEqual(spec["price"] == 0, spec["tier"] == 0, item_id)
+            # Only what is never sold is free: starters and what study earns.
+            self.assertEqual(spec["price"] == 0, spec["tier"] in (0, 6), item_id)
             if "base" in spec:
                 base = FURNITURE[spec["base"]]
                 self.assertEqual(
@@ -2215,7 +2221,11 @@ class NewBuffTests(APITestCase):
             password="s3cure-pass-123",
         )
         self.client.force_authenticate(user=self.user)
-        StudyLog.objects.create(user=self.user, duration_minutes=6000)  # 10,000 BITS
+        self._fixture = StudyLog.objects.create(user=self.user, duration_minutes=6000)  # 10,000 BITS
+        # In the past: a log committed on the real today could fall inside a test's days.
+        StudyLog.objects.filter(pk=self._fixture.pk).update(
+            created_at=datetime(2020, 1, 1, tzinfo=dt_timezone.utc)
+        )
         UserProfile.objects.update_or_create(
             user=self.user, defaults={"timezone": "Asia/Tokyo"}
         )
@@ -2794,6 +2804,11 @@ class ChallengeTests(APITestCase):
     """CHALLENGES: BOSS RAID and RIVAL (challenges.py)."""
 
     def setUp(self):
+        # These tests read the shop on the real date: keep any festival out of it.
+        for name, value in (("active_on", None), ("is_active", False)):
+            patcher = mock.patch(f"tracker.festivals.{name}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         from zoneinfo import ZoneInfo
 
         self.user = User.objects.create_user(
@@ -3726,50 +3741,105 @@ class SessionTimingAndEditTests(APITestCase):
             self.client.post("/api/bits/reset/", {}, format="json")
             self.assertIsNone(self._cooldown())
 
-    # STARLIGHT
+    # STARLIGHT, worked out from the logs
+
+    def _starlight(self):
+        return self._shop()["starlight"]
 
     def _stars(self):
-        return self._shop()["starlight"]["stars"]
+        return self._starlight()["stars"]
 
     def _set_stars(self, n):
-        UserProfile.objects.filter(user=self.user).update(starlight=n)
+        """A clean slate holding `n` stars: the fixture's log stops counting."""
+        StudyLog.objects.filter(user=self.user).update(bonus_item="overclock")
+        UserProfile.objects.filter(user=self.user).update(star_spends=[])
+        for i in range(n):
+            day = date(2025, 1, 1) + timedelta(days=i)
+            log = StudyLog.objects.create(user=self.user, duration_minutes=1, date=day)
+            StudyLog.objects.filter(pk=log.pk).update(
+                created_at=datetime(day.year, day.month, day.day, 12, tzinfo=ZoneInfo("Asia/Tokyo"))
+            )
 
-    def test_a_log_without_a_buff_lights_one_star_a_day(self):
+    def test_old_logs_light_stars_up_to_the_cap(self):
+        self._set_stars(20)
+        with self._at(2026, 3, 2, 12):
+            starlight = self._starlight()
+            self.assertEqual(starlight["stars"], 14)
+            self.assertEqual(len(starlight["days"]), 20)
+
+    def test_one_star_a_day(self):
+        self._set_stars(0)
         with self._at(2026, 3, 2, 12):
             self.assertEqual(self._log(30)["star_lit"], 1)
             self.assertNotIn("star_lit", self._log(30))
             self.assertEqual(self._stars(), 1)
         with self._at(2026, 3, 3, 12):
             self.assertEqual(self._log(30)["star_lit"], 2)
-            self.assertEqual(self._shop()["starlight"]["days"], ["2026-03-02", "2026-03-03"])
 
-    def test_a_log_with_a_buff_running_lights_nothing(self):
+    def test_a_log_a_buff_paid_on_lights_nothing(self):
+        self._set_stars(0)
         with self._at(2026, 3, 2, 12):
             self._buy("overclock")
             self.assertNotIn("star_lit", self._log(30))
             self.assertEqual(self._stars(), 0)
 
-    def test_a_log_using_up_a_buff_lights_nothing(self):
+    def test_deleting_the_only_log_of_a_day_takes_its_star(self):
+        self._set_stars(0)
         with self._at(2026, 3, 2, 12):
-            self._buy("warm_up")
-            self._log(180)
-            self.assertNotIn("star_lit", self._log(120))
+            log = self._log(30)
+            self.assertEqual(self._stars(), 1)
+            self.client.delete(f"/api/logs/{log['id']}/")
             self.assertEqual(self._stars(), 0)
-            # The buff is over: the next log of the day does light one.
-            self.assertEqual(self._log(10)["star_lit"], 1)
 
-    def test_a_log_during_the_cooldown_lights_a_star(self):
-        with self._at(2026, 3, 2, 12):
-            self._buy("overclock")
-            self._log(60)
-            self.client.post("/api/bits/cancel/", {}, format="json")
-            self.assertEqual(self._log(10)["star_lit"], 1)
-
-    def test_the_gauge_stops_at_fourteen(self):
+    def test_spending_counts_only_the_stars_after_it(self):
         self._set_stars(14)
         with self._at(2026, 3, 2, 12):
-            self.assertEqual(self._log(30)["star_lit"], 14)
-            self.assertEqual(self._shop()["starlight"]["days"], ["2026-03-02"])
+            self.client.post("/api/bits/starlight/", {"use": "reroll"}, format="json")
+            self.assertEqual(self._stars(), 12)
+            self._log(30)  # today's star lands before today's spend
+            self.assertEqual(self._stars(), 12)
+        with self._at(2026, 3, 3, 12):
+            self._log(30)
+            self.assertEqual(self._stars(), 13)
+
+    def test_a_clear_empties_it_and_an_import_counts_again(self):
+        self._set_stars(0)
+        logs = [
+            {"date": f"2026-02-{d:02d}", "duration_minutes": 60, "createdAt": f"2026-02-{d:02d}T03:00:00Z"}
+            for d in range(1, 11)
+        ]
+        with self._at(2026, 3, 2, 12):
+            self._log(30)
+            self.client.post("/api/bits/starlight/", {"use": "reroll"}, format="json")
+            self.client.delete("/api/logs/clear-all/")
+            self.assertEqual(self._starlight()["stars"], 0)
+            self.assertEqual(self._starlight()["days"], [])
+            res = self.client.post(
+                "/api/logs/import-backup/", {"categories": [], "logs": logs}, format="json"
+            )
+            self.assertEqual(res.status_code, 201)
+            self.assertEqual(self._stars(), 10)
+
+    def test_a_bits_reset_forgets_what_was_spent(self):
+        self._set_stars(5)
+        with self._at(2026, 3, 2, 12):
+            self.client.post("/api/bits/starlight/", {"use": "reroll"}, format="json")
+            self.assertEqual(self._stars(), 3)
+            self.client.post("/api/bits/reset/", {}, format="json")
+            self.assertEqual(self._stars(), 6)  # the fixture's log lights too
+
+    def test_a_future_dated_log_lights_nothing(self):
+        self._set_stars(0)
+        with self._at(2026, 3, 2, 12):
+            res = self.client.post(
+                "/api/logs/",
+                {"duration_minutes": 30, "category": self.math.id, "date": "2026-03-20"},
+                format="json",
+            ).data
+            self.assertNotIn("star_lit", res)
+            self.assertEqual(self._stars(), 0)
+
+    # STARLIGHT saves a buff
 
     def test_starlight_saves_hyperdrive_once_for_seven_stars(self):
         self._set_stars(9)
@@ -3778,15 +3848,12 @@ class SessionTimingAndEditTests(APITestCase):
         with self._at(2026, 3, 4, 3, 0):  # the 3rd had no log
             shop = self._shop()
             self.assertIsNotNone(shop["active_buff"])
-            self.assertEqual(shop["active_buff"]["guarded"], True)
+            self.assertTrue(shop["active_buff"]["guarded"])
             self.assertEqual(shop["starlight"]["stars"], 2)
             self.assertEqual(shop["starlight"]["last_guard"]["name"], "HYPERDRIVE")
-            self._log(180)  # the 4th is fine
-        self._set_stars(7)
-        with self._at(2026, 3, 6, 3, 0):  # the 5th had no log: no second save
-            shop = self._shop()
-            self.assertIsNone(shop["active_buff"])
-            self.assertEqual(shop["starlight"]["stars"], 7)
+            self._log(180)
+        with self._at(2026, 3, 6, 3, 0):  # the 5th empty: no second save
+            self.assertIsNone(self._shop()["active_buff"])
 
     def test_too_few_stars_save_nothing(self):
         self._set_stars(6)
@@ -3801,16 +3868,31 @@ class SessionTimingAndEditTests(APITestCase):
         self._set_stars(14)
         with self._at(2026, 3, 2, 10):
             self._buy("hyperdrive")
-        with self._at(2026, 3, 5, 3, 0):  # the 3rd and the 4th both empty
+        with self._at(2026, 3, 5, 3, 0):
             shop = self._shop()
             self.assertIsNone(shop["active_buff"])
             self.assertEqual(shop["starlight"]["stars"], 14)
+
+    def test_a_second_request_finds_the_failure_already_covered(self):
+        from .economy import _rescue_or_close, active_buff
+
+        self._set_stars(14)
+        with self._at(2026, 3, 2, 10):
+            self._buy("hyperdrive")
+        with self._at(2026, 3, 4, 3, 0):
+            stale = BitPurchase.objects.select_related("user").get(
+                user=self.user, item_id="hyperdrive"
+            )
+            self.assertIsNotNone(active_buff(self.user))
+            self.assertEqual(self._stars(), 7)
+            self.assertTrue(_rescue_or_close(stale, timezone.now()))
+            self.assertEqual(self._stars(), 7)
 
     def test_starlight_saves_a_contract_day_and_it_still_pays(self):
         self._set_stars(7)
         with self._at(2026, 3, 2, 10):
             self._buy("iron_contract")
-        with self._at(2026, 3, 4, 3, 0):  # the 3rd was empty
+        with self._at(2026, 3, 4, 3, 0):
             buff = self._shop()["active_buff"]
             self.assertEqual(buff["contract"]["days"][0]["state"], "done")
             self.assertTrue(buff["contract"]["days"][0]["covered"])
@@ -3827,9 +3909,7 @@ class SessionTimingAndEditTests(APITestCase):
             with self._at(2026, 3, day, 12):
                 self._log(300)
         with self._at(2026, 3, 6, 3, 0):
-            shop = self._shop()
-            self.assertIsNone(shop["active_buff"])
-            self.assertEqual(shop["starlight"]["stars"], 7)
+            self.assertIsNone(self._shop()["active_buff"])
 
     def test_starlight_saves_early_bird_from_a_missed_morning(self):
         self._set_stars(7)
@@ -3842,155 +3922,512 @@ class SessionTimingAndEditTests(APITestCase):
             self.assertEqual(self._log(60)["bonus_bits"], 200)
 
     def test_starlight_saves_focus_chip_from_a_short_log(self):
-        self._set_stars(7)
+        self._set_stars(14)
         with self._at(2026, 3, 2, 12):
             self._buy("focus_chip")
             self.assertEqual(self._log(5)["bonus_bits"], 0)
             shop = self._shop()
             self.assertIsNotNone(shop["active_buff"])
-            self.assertEqual(shop["starlight"]["stars"], 0)
-            self._set_stars(7)
-            self._log(5)  # a second short log: the one save is gone
-            shop = self._shop()
-            self.assertIsNone(shop["active_buff"])
             self.assertEqual(shop["starlight"]["stars"], 7)
+            self._log(5)  # the one save is gone
+            self.assertIsNone(self._shop()["active_buff"])
 
     def test_a_buff_with_no_condition_shows_no_guard(self):
         with self._at(2026, 3, 2, 12):
             self._buy("overclock")
             self.assertFalse(self._shop()["active_buff"]["guardable"])
 
-    def test_a_reset_empties_the_gauge_but_keeps_the_sky(self):
-        with self._at(2026, 3, 2, 12):
-            self._log(30)
-            self.client.post("/api/bits/reset/", {}, format="json")
-            starlight = self._shop()["starlight"]
-            self.assertEqual(starlight["stars"], 0)
-            self.assertEqual(starlight["days"], ["2026-03-02"])
+    # STARLIGHT wishes
 
-    def test_a_full_clear_empties_the_sky_too(self):
-        with self._at(2026, 3, 2, 12):
-            self._log(30)
-            self.client.delete("/api/logs/clear-all/")
-            starlight = self._shop()["starlight"]
-            self.assertEqual((starlight["stars"], starlight["days"]), (0, []))
+    def _wish(self, use):
+        return self.client.post("/api/bits/starlight/", {"use": use}, format="json")
 
-    def test_an_import_lights_no_stars(self):
+    def test_a_reroll_deals_the_shop_again_for_two_stars(self):
+        from .furniture import shop_lineup
+
+        self._set_stars(2)
         with self._at(2026, 3, 2, 12):
-            res = self.client.post(
-                "/api/logs/import-backup/",
-                {"categories": [], "logs": [{"date": "2026-03-01", "duration_minutes": 60}]},
-                format="json",
-            )
-            self.assertEqual(res.status_code, 201)
+            before = shop_lineup(self.user)["items"]
+            self.assertEqual(self._wish("reroll").status_code, 200)
+            self.assertNotEqual(shop_lineup(self.user)["items"], before)
             self.assertEqual(self._stars(), 0)
+            self.assertEqual(self._wish("reroll").status_code, 400)
 
-    # STARLIGHT and backups
+    def test_an_omen_tells_what_the_next_crate_holds(self):
+        from .economy import BUFFS
 
-    def _import(self, starlight=None, logs=()):
-        body = {"categories": [], "logs": list(logs)}
-        if starlight is not None:
-            body["starlight"] = starlight
-        res = self.client.post("/api/logs/import-backup/", body, format="json")
-        self.assertEqual(res.status_code, 201)
-
-    def test_a_backup_restores_the_stars_after_a_full_clear(self):
+        self._set_stars(6)
         with self._at(2026, 3, 2, 12):
-            self._set_stars(0)
-            self.client.delete("/api/logs/clear-all/")
-            self._import({"stars": 2, "days": ["2026-03-01", "2026-02-20", "2026-03-01"]})
-            starlight = self._shop()["starlight"]
-            self.assertEqual(starlight["stars"], 2)
-            self.assertEqual(starlight["days"], ["2026-02-20", "2026-03-01"])
+            self.assertEqual(self._wish("omen").status_code, 200)
+            told = self._starlight()["omen"]
+            self.assertIsNotNone(told)
+            self.assertEqual(self._wish("omen").status_code, 400)
+            self.assertEqual(self._stars(), 3)  # refused without taking stars
+            self._buy("mystery_crate")
+            self.assertEqual(self._shop()["active_buff"]["name"], told)
+            self.assertIsNone(self._starlight()["omen"])
+            self.assertIn(self._shop()["active_buff"]["item_id"], BUFFS)
 
-    def test_a_backup_cannot_hold_more_stars_than_lit_days(self):
+    def test_dawn_shortens_a_cooldown_once(self):
+        self._set_stars(6)
         with self._at(2026, 3, 2, 12):
-            self.client.delete("/api/logs/clear-all/")
-            self._import({"stars": 14, "days": []})
-            self.assertEqual(self._stars(), 0)
-            self._import({"stars": 14, "days": ["2026-03-01"]})
-            self.assertEqual(self._stars(), 0)
+            self.assertEqual(self._wish("dawn").status_code, 400)  # nothing to shorten
+            self._buy("overclock")
+            self._log(60)
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.assertEqual(self._wish("dawn").status_code, 200)
+            self.assertEqual(self._wish("dawn").status_code, 400)
+            self.assertEqual(self._buy_status("warm_up"), 400)
+        with self._at(2026, 3, 3, 0, 1):
+            self.assertEqual(self._buy_status("warm_up"), 201)
 
-    def test_a_backup_cannot_light_days_before_typbox(self):
+    def test_an_unknown_or_refused_wish_takes_no_stars(self):
+        self._set_stars(1)
         with self._at(2026, 3, 2, 12):
-            self.client.delete("/api/logs/clear-all/")
-            self._import({"stars": 0, "days": ["0001-01-01", "2019-12-31", "2020-01-01"]})
-            self.assertEqual(self._shop()["starlight"]["days"], ["2020-01-01"])
+            self.assertEqual(self._wish("everything").status_code, 400)
+            self.assertEqual(self._wish("omen").status_code, 400)
+            self.assertEqual(self._stars(), 1)
+            self.assertEqual(self._starlight()["omen"], None)
 
-    def test_a_second_request_finds_the_failure_already_covered(self):
-        from .economy import _rescue_or_close, active_buff
-
-        self._set_stars(14)
-        with self._at(2026, 3, 2, 10):
-            self._buy("hyperdrive")
-        with self._at(2026, 3, 4, 3, 0):
-            # A second request that read the buff before the first spent stars.
-            stale = BitPurchase.objects.select_related("user").get(
-                user=self.user, item_id="hyperdrive"
-            )
-            self.assertIsNotNone(active_buff(self.user))
-            self.assertEqual(self._stars(), 7)
-            now = timezone.now()
-            self.assertTrue(_rescue_or_close(stale, now))
-            self.assertEqual(self._stars(), 7)
-            self.assertIsNotNone(self._shop()["active_buff"])
-
-    def test_importing_again_cannot_refill_the_gauge(self):
-        with self._at(2026, 3, 2, 12):
-            self.client.delete("/api/logs/clear-all/")
-            self._import({"stars": 1, "days": ["2026-03-01"]})
-            self._set_stars(0)  # spent
-            self._import({"stars": 14, "days": ["2026-02-01"]})
-            starlight = self._shop()["starlight"]
-            self.assertEqual(starlight["stars"], 0)
-            self.assertEqual(starlight["days"], ["2026-02-01", "2026-03-01"])
-
-    def test_a_backup_onto_an_account_with_stars_only_adds_to_the_sky(self):
-        with self._at(2026, 3, 2, 12):
-            self._log(30)
-            self._import({"stars": 14, "days": ["2026-02-27"]})
-            starlight = self._shop()["starlight"]
-            self.assertEqual(starlight["stars"], 1)
-            self.assertEqual(starlight["days"], ["2026-02-27", "2026-03-02"])
-
-    def test_a_backup_without_starlight_changes_nothing(self):
-        with self._at(2026, 3, 2, 12):
-            self._log(30)
-            self._import(None, [{"date": "2026-03-01", "duration_minutes": 60}])
-            starlight = self._shop()["starlight"]
-            self.assertEqual((starlight["stars"], starlight["days"]), (1, ["2026-03-02"]))
-
-    def test_a_malformed_starlight_is_ignored(self):
-        with self._at(2026, 3, 2, 12):
-            for junk in (
-                "lots",
-                7,
-                {"stars": 99, "days": "x"},
-                {"stars": True, "days": [1, None, "soon", "2026-13-40", "2099-01-01"]},
-                {"stars": -1},
-            ):
-                self._import(junk)
-            starlight = self._shop()["starlight"]
-            self.assertEqual((starlight["stars"], starlight["days"]), (0, []))
+    # Imports and buffs
 
     def test_an_imported_old_log_stays_sealed_and_a_new_one_is_open(self):
         with self._at(2026, 3, 10, 12):
-            self._import(
-                None,
-                [
-                    {"date": "2026-03-01", "duration_minutes": 60, "createdAt": "2026-03-01T03:00:00Z"},
-                    {"date": "2026-03-09", "duration_minutes": 30, "createdAt": "2026-03-09T03:00:00Z"},
-                ],
+            res = self.client.post(
+                "/api/logs/import-backup/",
+                {
+                    "categories": [],
+                    "logs": [
+                        {"date": "2026-03-01", "duration_minutes": 61, "createdAt": "2026-03-01T03:00:00Z"},
+                        {"date": "2026-03-09", "duration_minutes": 31, "createdAt": "2026-03-09T03:00:00Z"},
+                    ],
+                },
+                format="json",
             )
-            old = StudyLog.objects.get(user=self.user, duration_minutes=60)
-            recent = StudyLog.objects.get(user=self.user, duration_minutes=30)
+            self.assertEqual(res.status_code, 201)
+            old = StudyLog.objects.get(user=self.user, duration_minutes=61)
+            recent = StudyLog.objects.get(user=self.user, duration_minutes=31)
             self.assertEqual(self.client.delete(f"/api/logs/{old.id}/").status_code, 403)
             self.assertEqual(self.client.delete(f"/api/logs/{recent.id}/").status_code, 204)
 
     def test_an_import_neither_pays_a_running_buff_nor_starts_a_cooldown(self):
         with self._at(2026, 3, 2, 12):
             self._buy("overclock")
-            self._import(None, [{"date": "2026-03-01", "duration_minutes": 120}])
+            self.client.post(
+                "/api/logs/import-backup/",
+                {"categories": [], "logs": [{"date": "2026-03-01", "duration_minutes": 120}]},
+                format="json",
+            )
             self.assertEqual(self._buff("overclock").remaining_minutes, 600)
             self.assertIsNone(self._cooldown())
+
+    # FESTIVALS
+
+    def _offers(self):
+        c = self._shop()["challenges"]
+        return {o["key"] for o in c["raids"] + c["rivals"]}
+
+    def test_festival_challengers_come_and_go_with_it(self):
+        with self._at(2026, 12, 21, 12):
+            offers = self._offers()
+            self.assertIn("santa", offers)
+            self.assertIn("krampus", offers)
+            self.assertIn("golem", offers)
+            self.assertNotIn("jack", offers)
+            self.assertEqual(self._shop()["festival"]["active"]["id"], "christmas")
+        with self._at(2026, 12, 27, 12):
+            offers = self._offers()
+            self.assertNotIn("santa", offers)
+            self.assertIsNone(self._shop()["festival"]["active"])
+            self.assertEqual(self._buy_status("rival_santa"), 400)
+
+    def test_new_year_runs_across_the_turn_of_the_year(self):
+        for args in ((2026, 12, 31, 12), (2027, 1, 3, 12)):
+            with self._at(*args):
+                self.assertEqual(self._shop()["festival"]["active"]["id"], "newyear")
+        with self._at(2027, 1, 4, 12):
+            self.assertIsNone(self._shop()["festival"]["active"])
+
+    def test_santa_only_works_on_the_twenty_fourth(self):
+        from datetime import date as d
+        from .challenges import rival_day
+
+        minutes = lambda day: sum(s[1] for s in rival_day("santa", day))
+        self.assertLess(minutes(d(2026, 12, 21)), 60)
+        self.assertGreater(minutes(d(2026, 12, 24)), 400)
+
+    def test_rudolph_appears_after_santa_is_beaten(self):
+        with self._at(2026, 12, 21, 12):
+            self.assertNotIn("rudolph", self._offers())
+            self.assertEqual(self._buy_status("rival_rudolph"), 400)
+            self.assertEqual(self._buy_status("rival_santa"), 201)
+            self._log(600)
+        with self._at(2026, 12, 24, 12, 1):
+            self.assertEqual(self._shop()["last_challenge"]["outcome"], "won")
+            self.assertIn("rudolph", self._offers())
+
+    def test_jack_only_takes_hits_at_night(self):
+        with self._at(2026, 10, 27, 12):
+            self.assertEqual(self._buy_status("raid_jack"), 201)
+            self.assertEqual(self._log(60)["challenge_hit"]["hit"], "miss")
+        with self._at(2026, 10, 27, 22):
+            self.assertEqual(self._log(60)["challenge_hit"]["damage"], 60)
+
+    def test_the_ghost_only_shows_itself_in_the_small_hours(self):
+        with self._at(2026, 10, 27, 12):
+            self.assertNotIn("ghost", self._offers())
+        with self._at(2026, 10, 27, 3):
+            self.assertIn("ghost", self._offers())
+
+    def test_limited_furniture_sells_only_during_its_festival(self):
+        from .furniture import shop_lineup
+
+        with self._at(2026, 12, 21, 12):
+            lineup = shop_lineup(self.user)
+            self.assertIn("xmas_wreath", lineup["items"])
+            self.assertNotIn("hw_web", lineup["items"])
+            self.assertEqual(self._buy_status("xmas_wreath"), 201)
+        with self._at(2026, 12, 28, 12):
+            self.assertNotIn("xmas_candy_cane", shop_lineup(self.user)["items"])
+            self.assertEqual(self._buy_status("xmas_candy_cane"), 400)
+
+    def test_a_limited_piece_never_appears_in_the_regular_rotation(self):
+        from .furniture import _TIER_BASES, FURNITURE
+
+        for bases in _TIER_BASES.values():
+            for base in bases:
+                self.assertNotIn("event", FURNITURE[base])
+
+    def test_the_christmas_present_needs_five_hours_and_opens_once(self):
+        with self._at(2026, 12, 24, 12):
+            self.assertEqual(self.client.post("/api/bits/festival/gift/").status_code, 400)
+            self._log(200)
+            self.client.post(
+                "/api/logs/",
+                {"duration_minutes": 120, "category": self.math.id, "date": "2026-12-23"},
+                format="json",
+            )
+        with self._at(2026, 12, 25, 9):
+            before = self._shop()["bits"]["balance"]
+            res = self.client.post("/api/bits/festival/gift/")
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(res.data["gift_piece"], [p.item_id for p in BitPurchase.objects.filter(user=self.user)])
+            self.assertEqual(self._shop()["bits"]["balance"], before)
+            self.assertTrue(self._shop()["festival"]["gift"]["claimed"])
+            self.assertEqual(self.client.post("/api/bits/festival/gift/").status_code, 400)
+
+    def test_five_stars_wish_a_limited_piece_for_free(self):
+        self._set_stars(5)
+        with self._at(2026, 12, 21, 12):
+            res = self.client.post(
+                "/api/bits/starlight/", {"use": "festival", "item_id": "hw_web"}, format="json"
+            )
+            self.assertEqual(res.status_code, 400)  # not this festival's
+            self.assertEqual(self._stars(), 5)
+            res = self.client.post(
+                "/api/bits/starlight/", {"use": "festival", "item_id": "xmas_wreath"}, format="json"
+            )
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(self._stars(), 0)
+            self.assertTrue(BitPurchase.objects.filter(user=self.user, item_id="xmas_wreath").exists())
+
+    # What study earns
+
+    def test_trophies_arrive_with_the_hours_and_go_with_the_logs(self):
+        from .furniture import inventory
+
+        StudyLog.objects.filter(user=self.user).delete()
+        self.assertNotIn("trophy_100h", inventory(self.user))
+        StudyLog.objects.create(user=self.user, duration_minutes=6000)
+        self.assertIn("trophy_100h", inventory(self.user))
+        self.assertNotIn("trophy_500h", inventory(self.user))
+        StudyLog.objects.filter(user=self.user).delete()
+        self.assertNotIn("trophy_100h", inventory(self.user))
+
+    def test_a_trophy_cannot_be_bought(self):
+        StudyLog.objects.filter(user=self.user).delete()
+        StudyLog.objects.create(user=self.user, duration_minutes=60000)
+        self.assertEqual(self._buy_status("trophy_500h"), 400)
+
+    def test_a_limited_piece_cannot_be_held_past_its_festival(self):
+        with self._at(2026, 12, 21, 12):
+            res = self.client.post("/api/room/reserve/", {"item_id": "xmas_wreath"}, format="json")
+            self.assertEqual(res.status_code, 400)
+
+    # Export, then import: the same field names the client writes
+
+    def _exported(self):
+        """What the JSON export holds for the account's logs right now."""
+        cats = {c.id: c.code for c in Category.objects.filter(user=self.user)}
+        logs = []
+        for log in StudyLog.objects.filter(user=self.user):
+            logs.append(
+                {
+                    "id": log.id,
+                    "categoryId": log.category_id,
+                    "categoryCode": cats.get(log.category_id),
+                    "date": log.date.isoformat(),
+                    "durationMinutes": log.duration_minutes,
+                    "topic": "",
+                    "isPublicToHub": True,
+                    "createdAt": log.created_at.isoformat(),
+                    "bonusBits": log.bonus_bits,
+                    "bonusItem": log.bonus_item,
+                    "editableUntil": "2099-01-01T00:00:00Z",
+                }
+            )
+        categories = [
+            {"code": c.code, "name": c.name, "color": c.color, "weeklyTargetHours": 5}
+            for c in Category.objects.filter(user=self.user)
+        ]
+        return {"user": "operator", "bits": {"balance": 1}, "categories": categories, "logs": logs}
+
+    def _import_backup(self, backup):
+        return self.client.post("/api/logs/import-backup/", backup, format="json")
+
+    def _roundtrip_setup(self):
+        self._set_stars(0)
+        with self._at(2026, 3, 1, 12):
+            self._log(30)  # lit
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(60)  # a buff paid: unlit
+            self.client.post("/api/bits/cancel/", {}, format="json")
+        with self._at(2026, 3, 3, 12):
+            self._log(30, self.code)  # lit
+            self._log(45, self.code)  # same day
+
+    def test_a_round_trip_keeps_the_stars_and_the_logs(self):
+        self._roundtrip_setup()
+        with self._at(2026, 3, 4, 12):
+            before = self._starlight()
+            self.assertEqual(before["days"], ["2026-03-01", "2026-03-03"])
+            backup = self._exported()
+            shape = sorted(
+                (str(l["categoryCode"]), l["date"], l["durationMinutes"], l["createdAt"], l["bonusItem"])
+                for l in backup["logs"]
+                if l["durationMinutes"] <= 1440  # the fixture's oversized funding log
+            )
+            self.client.delete("/api/logs/clear-all/")
+            self.assertEqual(self._import_backup(backup).status_code, 201)
+            after = self._starlight()
+            self.assertEqual(after["days"], before["days"])
+            self.assertEqual(after["stars"], before["stars"])
+            again = sorted(
+                (str(l["categoryCode"]), l["date"], l["durationMinutes"], l["createdAt"], l["bonusItem"])
+                for l in self._exported()["logs"]
+                if l["durationMinutes"] < 1440
+            )
+            self.assertEqual(again, shape)
+            # The buff's BITS stay gone: only the base rate comes back.
+            self.assertFalse(StudyLog.objects.filter(user=self.user, bonus_bits__gt=0).exists())
+
+    def test_importing_the_same_backup_twice_changes_nothing(self):
+        self._roundtrip_setup()
+        with self._at(2026, 3, 4, 12):
+            backup = self._exported()
+            self.client.delete("/api/logs/clear-all/")
+            self._import_backup(backup)
+            count = StudyLog.objects.filter(user=self.user).count()
+            stars = self._stars()
+            res = self._import_backup(backup)
+            self.assertEqual(res.data["imported_logs"], 0)
+            self.assertEqual(StudyLog.objects.filter(user=self.user).count(), count)
+            self.assertEqual(self._stars(), stars)
+
+    def test_a_backup_from_before_stars_existed_still_imports(self):
+        with self._at(2026, 3, 4, 12):
+            self.client.delete("/api/logs/clear-all/")
+            res = self._import_backup(
+                {"logs": [{"date": "2026-03-01", "durationMinutes": 60, "createdAt": "2026-03-01T03:00:00Z", "starlight": {"stars": 14}}], "starlight": {"stars": 14, "days": []}}
+            )
+            self.assertEqual(res.status_code, 201)
+            self.assertEqual(self._stars(), 1)
+
+    def test_a_damaged_backup_never_breaks_the_import(self):
+        now_logs = [
+            {"date": "2026-13-45", "durationMinutes": "soon", "createdAt": "2026-13-45T00:00:00Z"},
+            {"date": None, "durationMinutes": None, "createdAt": "not a date"},
+            {"date": "2026-03-01", "durationMinutes": -5, "bonusItem": {"x": 1}},
+            {"date": "2026-03-01", "durationMinutes": 99999, "bonusItem": "not_a_buff"},
+            "garbage",
+            None,
+            7,
+        ]
+        with self._at(2026, 3, 4, 12):
+            self.client.delete("/api/logs/clear-all/")
+            res = self._import_backup({"categories": "nope", "logs": now_logs})
+            self.assertEqual(res.status_code, 201)
+            self.assertEqual(res.data["imported_logs"], 4)
+            self.assertEqual(self._shop()["bits"]["spent"], 0)
+            self.assertFalse(StudyLog.objects.exclude(bonus_item="").filter(user=self.user).exists())
+
+    def test_a_backup_that_is_not_an_object_is_refused(self):
+        for body in ([1, 2], "text", 7):
+            res = self.client.post("/api/logs/import-backup/", body, format="json")
+            self.assertEqual(res.status_code, 400)
+
+    def test_a_backup_too_large_is_refused_rather_than_cut_short(self):
+        logs = [{"date": "2026-03-01", "durationMinutes": 1}] * 20001
+        res = self._import_backup({"logs": logs})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(StudyLog.objects.filter(user=self.user, duration_minutes=1).exists())
+
+    def test_a_commit_time_ahead_of_now_is_not_kept(self):
+        with self._at(2026, 3, 4, 12):
+            self._import_backup(
+                {"logs": [{"date": "2026-03-01", "durationMinutes": 77, "createdAt": "2099-01-01T00:00:00Z"}]}
+            )
+            log = StudyLog.objects.get(user=self.user, duration_minutes=77)
+            self.assertLess(log.created_at.year, 2099)
+
+    # A rival's life outside their desk
+
+    def test_every_rival_has_a_life_outside_their_desk(self):
+        from .challenges import RIVALS, _life_of
+        from datetime import date as d
+
+        for key in RIVALS:
+            for day in (d(2026, 3, 2), d(2026, 3, 7)):  # a Monday and a Saturday
+                spans = _life_of(key, day)
+                self.assertTrue(spans, key)
+                for start, end, label in spans:
+                    self.assertTrue(0 <= start < end <= 1440, (key, start, end))
+                    self.assertLessEqual(len(label), 24, label)
+
+    def test_a_duel_says_what_the_rival_is_up_to(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("rival_orion")
+            life = self._shop()["active_challenge"]["life"]
+            self.assertTrue(life)
+            self.assertIn("AT SCHOOL", {span["label"] for span in life})
+
+    def test_oni_takes_double_from_short_logs(self):
+        with self._at(2027, 2, 2, 12):
+            self.assertEqual(self._buy_status("raid_oni"), 201)
+            self.assertEqual(self._log(30)["challenge_hit"]["damage"], 60)
+            self.assertEqual(self._log(31)["challenge_hit"]["damage"], 31)
+
+    def test_every_festival_has_someone_and_something_to_buy(self):
+        from .challenges import RAIDS, RIVALS
+        from .festivals import FESTIVALS
+        from .furniture import event_pieces
+
+        for festival in FESTIVALS:
+            who = [s for s in [*RAIDS.values(), *RIVALS.values()] if s.get("event") == festival["id"]]
+            self.assertTrue(who, festival["id"])
+            self.assertTrue(event_pieces(festival["id"]), festival["id"])
+            named = {s["name"] for s in who}
+            self.assertTrue(set(festival["challengers"]) <= named, festival["id"])
+
+    def test_no_two_festivals_share_a_day(self):
+        from datetime import date as d
+        from .festivals import FESTIVALS, _in_span
+
+        for offset in range(366):
+            day = d(2028, 1, 1) + timedelta(days=offset)
+            self.assertLessEqual(sum(_in_span(f, day) for f in FESTIVALS), 1, day)
+
+    # Holes found in review
+
+    def test_back_dating_lights_no_star(self):
+        self._set_stars(0)
+        with self._at(2026, 3, 20, 12):
+            for days in (3, 10, 30):
+                res = self.client.post(
+                    "/api/logs/",
+                    {"duration_minutes": 1, "category": self.math.id, "date": (date(2026, 3, 20) - timedelta(days=days)).isoformat()},
+                    format="json",
+                ).data
+                self.assertNotIn("star_lit", res)
+            self.assertEqual(self._stars(), 0)
+
+    def test_a_log_a_little_late_still_lights_its_day(self):
+        self._set_stars(0)
+        with self._at(2026, 3, 20, 12):
+            res = self.client.post(
+                "/api/logs/",
+                {"duration_minutes": 30, "category": self.math.id, "date": "2026-03-18"},
+                format="json",
+            ).data
+            self.assertEqual(res["star_lit"], 1)
+            self.assertEqual(self._starlight()["days"], ["2026-03-18"])
+
+    def test_back_dating_into_christmas_earns_no_present(self):
+        with self._at(2026, 12, 25, 9):
+            self.client.post(
+                "/api/logs/",
+                {"duration_minutes": 300, "category": self.math.id, "date": "2026-12-24"},
+                format="json",
+            )
+        # Committed on the 25th itself is still inside the festival, so it counts.
+        with self._at(2027, 12, 25, 9):
+            self.client.post(
+                "/api/logs/",
+                {"duration_minutes": 300, "category": self.math.id, "date": "2027-12-24"},
+                format="json",
+            )
+            StudyLog.objects.filter(date=date(2027, 12, 24)).update(
+                created_at=datetime(2027, 12, 1, tzinfo=ZoneInfo("Asia/Tokyo"))
+            )
+            self.assertEqual(self._shop()["festival"]["gift"]["minutes"], 0)
+
+    def test_a_trophy_lost_while_placed_does_not_block_saving(self):
+        from .furniture import inventory
+
+        StudyLog.objects.filter(user=self.user).delete()
+        log = StudyLog.objects.create(user=self.user, duration_minutes=6000)
+        room = self.client.get("/api/room/").data
+        layout = {"wall": room["layout"]["wall"], "floor": room["layout"]["floor"], "items": [{"id": "trophy_100h", "x": 1, "y": 10}]}
+        self.assertEqual(self.client.put("/api/room/", {"layout": layout}, format="json").status_code, 200)
+        log.delete()
+        self.assertNotIn("trophy_100h", inventory(self.user))
+        room = self.client.get("/api/room/").data
+        self.assertEqual(room["layout"]["items"], [])
+        self.assertEqual(self.client.put("/api/room/", {"layout": room["layout"]}, format="json").status_code, 200)
+
+    def test_import_survives_numbers_and_dates_out_of_range(self):
+        body = '{"categories":[{"code":"X\\u0000Y","name":"N\\u0000M","weeklyTargetHours":1e999}],"logs":[{"date":"2026-03-01","durationMinutes":1e999,"createdAt":"0001-01-01T00:00:00+14:00","categoryCode":"XY"}]}'
+        with self._at(2026, 3, 4, 12):
+            res = self.client.post("/api/logs/import-backup/", body, content_type="application/json")
+            self.assertEqual(res.status_code, 201, res.content)
+            self.assertEqual(res.data["imported_logs"], 1)
+
+    def test_a_future_commit_time_is_recognised_on_the_second_import(self):
+        backup = {"logs": [{"date": "2026-03-01", "durationMinutes": 77, "createdAt": "2099-01-01T00:00:00Z"}]}
+        with self._at(2026, 3, 4, 12):
+            self.assertEqual(self._import_backup(backup).data["imported_logs"], 1)
+            res = self._import_backup(backup)
+            self.assertEqual(res.data["imported_logs"], 0)
+            self.assertEqual(StudyLog.objects.filter(user=self.user, duration_minutes=77).count(), 1)
+
+    def test_too_many_categories_are_refused(self):
+        res = self._import_backup({"logs": [], "categories": [{"code": "X", "name": "X"}] * 1001})
+        self.assertEqual(res.status_code, 400)
+
+    def test_three_heads_share_the_whole_of_the_river(self):
+        with self._at(2027, 7, 3, 12):
+            self._buy("raid_river", categories=[self.math.id, self.code.id, self.spare.id])
+            self.assertEqual(self._hp(), 1000)
+
+    def test_the_present_gives_nothing_twice_when_all_is_owned(self):
+        from .furniture import event_pieces
+
+        for piece in event_pieces("christmas"):
+            BitPurchase.objects.create(user=self.user, item_id=piece, price=0)
+        with self._at(2026, 12, 24, 12):
+            self._log(300)
+        with self._at(2026, 12, 25, 9):
+            self.assertEqual(self.client.post("/api/bits/festival/gift/").status_code, 400)
+            self.assertFalse(self._shop()["festival"]["gift"]["claimed"])
+
+    def test_first_light_reports_when_it_is_spent(self):
+        self._set_stars(6)
+        with self._at(2026, 3, 2, 12):
+            self._buy("overclock")
+            self._log(60)
+            self.client.post("/api/bits/cancel/", {}, format="json")
+            self.assertFalse(self._starlight()["dawn_used"])
+            self.client.post("/api/bits/starlight/", {"use": "dawn"}, format="json")
+            self.assertTrue(self._starlight()["dawn_used"])
 

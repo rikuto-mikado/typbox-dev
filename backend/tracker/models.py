@@ -76,12 +76,17 @@ class UserProfile(models.Model):
     # stays buyable after it rotates out (furniture.reserved_piece). Blank =
     # nothing on hold; cleared when the piece is bought.
     shop_reserve = models.CharField(max_length=32, blank=True, default="")
-    # STARLIGHT (see economy.py): stars on the gauge, every local day a star
-    # was lit ('YYYY-MM-DD', kept for the night sky even once spent) and the
-    # last time it saved a buff ({'at', 'name'}).
-    starlight = models.PositiveSmallIntegerField(default=0)
-    star_days = models.JSONField(default=list, blank=True)
+    # STARLIGHT (see economy.py): the stars themselves come from the logs, so
+    # only what was spent is kept ([{'day', 'n'}]), with the last time it
+    # saved a buff ({'at', 'name'}), what the next MYSTERY CRATE holds if the
+    # stars were asked, and how many times the furniture shop was re-dealt.
+    star_spends = models.JSONField(default=list, blank=True)
     last_guard = models.JSONField(default=dict, blank=True)
+    crate_omen = models.CharField(max_length=32, blank=True, default="")
+    shop_salt = models.PositiveIntegerField(default=0)
+    # FESTIVALS (festivals.py): the years a festival's present was opened,
+    # as 'christmas-2026'.
+    festival_gifts = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

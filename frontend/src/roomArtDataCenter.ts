@@ -97,16 +97,20 @@ export const DATA_CENTER_ART: Record<string, Art> = {
     }
   },
   dc_cable_tray: (p) => {
-    p.rect(0, 0, 32, 1, S.m2);
-    p.rect(0, 1, 32, 2, S.m);
-    for (let x = 1; x < 32; x += 6) p.rect(x, 0, 1, 3, S.m3);
-    const cables = [S.a, C.amber2, C.red, C.leaf2, S.a3];
-    cables.forEach((c, i) => {
-      for (let x = 0; x < 32; x++) {
-        const sag = Math.round(Math.sin(((x + i * 5) / 32) * Math.PI * 2) * 1.2 + 1.2);
-        p.px(x, 3 + Math.min(4, (i % 3) + sag), c);
-      }
-    });
+    // hangers from the ceiling side
+    for (const x of [3, 28]) p.rect(x, 0, 1, 3, S.m2);
+    // bundled cables in the tray
+    p.rect(0, 2, 32, 1, S.a2);
+    p.rect(0, 3, 32, 1, S.a);
+    p.rect(0, 4, 32, 1, C.amber2);
+    p.rect(9, 2, 1, 3, C.ink3);
+    p.rect(21, 2, 1, 3, C.ink3);
+    // ventilated ladder tray
+    p.rect(0, 5, 32, 2, S.m);
+    p.rect(0, 5, 32, 1, S.m3);
+    for (let x = 1; x < 32; x += 3) p.px(x, 6, S.m2);
+    // a cable dropping out of it
+    p.rect(26, 7, 1, 1, S.a);
   },
   dc_control_desk: (p, { on }) => {
     for (const x of [1, 11, 21]) {

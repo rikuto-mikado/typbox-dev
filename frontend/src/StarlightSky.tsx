@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { tf, useI18n } from './i18n';
-import type { Starlight } from './api';
+import type { Starlight, StarWish } from './api';
 
 // STARLIGHT drawn as a real night sky: each guard is one of the two seven-star
 // dippers, lit star by star. The sky behind them is painted once onto a canvas
@@ -338,6 +338,104 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
         <span className={guardOn ? 'text-[#f6dcae]' : 'text-slate-300/60'}>
           {guardOn ? tf(t.starlightGuardOn, { n: guards }) : tf(t.starlightGuardOff, { n: cost - stars })}
         </span>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- wishes
+
+/** A falling star, an eye of stars and a sun on the horizon: the three wishes. */
+const WISH_ICONS: Record<StarWish, React.ReactNode> = {
+  reroll: (
+    <>
+      <path d="M28 4 L19 12" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1" strokeLinecap="round" />
+      <path d="M19 12 L13 17" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M10 15Q10 20 15 20Q10 20 10 25Q10 20 5 20Q10 20 10 15Z" fill="currentColor" />
+    </>
+  ),
+  omen: (
+    <>
+      <path d="M3 16Q16 3 29 16Q16 29 3 16Z" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <circle cx="16" cy="16" r="4.4" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M16 13.6Q16 16 18.4 16Q16 16 16 18.4Q16 16 13.6 16Q16 16 16 13.6Z" fill="currentColor" />
+    </>
+  ),
+  dawn: (
+    <>
+      <path d="M8 21a8 8 0 0 1 16 0" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M3 21 L29 21" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M16 6v4M6.5 10.5l2.8 2.8M25.5 10.5l-2.8 2.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </>
+  ),
+};
+
+const WISHES: Array<{ use: StarWish; name: 'starWishReroll' | 'starWishOmen' | 'starWishDawn'; line: 'starWishRerollLine' | 'starWishOmenLine' | 'starWishDawnLine' }> = [
+  { use: 'reroll', name: 'starWishReroll', line: 'starWishRerollLine' },
+  { use: 'omen', name: 'starWishOmen', line: 'starWishOmenLine' },
+  { use: 'dawn', name: 'starWishDawn', line: 'starWishDawnLine' },
+];
+
+/** What stars can buy besides a save, on the same night as the sky above. Two
+ *  taps each, like everything that spends. */
+export const StarWishes: React.FC<{
+  starlight: Starlight;
+  coolingDown: boolean;
+  onWish: (use: StarWish) => Promise<void>;
+}> = ({ starlight, coolingDown, onWish }) => {
+  const { t } = useI18n();
+  const [armed, setArmed] = useState<StarWish | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const id = window.setTimeout(() => setArmed(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [armed]);
+  return (
+    <div className="space-y-1.5 font-mono">
+      <div className="text-[10px] uppercase tracking-[0.28em] text-amber-400/90">{t.starWishes}</div>
+      <div className="grid grid-cols-3 gap-1">
+        {WISHES.map(({ use, name, line }) => {
+          const cost = starlight.uses?.[use] ?? 0;
+          const told = use === 'omen' ? starlight.omen : null;
+          const short = starlight.stars < cost;
+          const dawnSpent = use === 'dawn' && Boolean(starlight.dawn_used) && coolingDown;
+          const noCooldown = use === 'dawn' && !coolingDown;
+          const blocked = short || Boolean(told) || noCooldown || dawnSpent;
+          const isArmed = armed === use;
+          return (
+            <button
+              key={use}
+              type="button"
+              disabled={blocked}
+              onClick={() => {
+                if (!isArmed) {
+                  setArmed(use);
+                  return;
+                }
+                setArmed(null);
+                void onWish(use);
+              }}
+              className={`star-wish relative min-w-0 min-h-[116px] px-1.5 pt-2 pb-1.5 flex flex-col items-center gap-1 text-center border overflow-hidden ${
+                blocked ? 'cursor-not-allowed' : 'cursor-pointer'
+              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !told ? 'star-wish-off' : ''}`}
+            >
+              <svg viewBox="0 0 32 32" className="w-8 h-8 shrink-0" aria-hidden="true">
+                {WISH_ICONS[use]}
+              </svg>
+              <span className="text-[10px] font-semibold tracking-wider uppercase leading-tight">{name && t[name]}</span>
+              <span className="text-[9px] font-sans leading-tight opacity-70">
+                {told ?? (noCooldown ? t.starWishNeedCooldown : dawnSpent ? t.starWishDawnSpent : t[line])}
+              </span>
+              <span className="mt-auto flex items-center justify-center gap-0.5 min-h-3">
+                {isArmed ? (
+                  <span className="text-[9px] font-bold tracking-wider">{t.starWishConfirm}</span>
+                ) : (
+                  Array.from({ length: cost }, (_, i) => <Glint key={i} className="w-2 h-2" />)
+                )}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

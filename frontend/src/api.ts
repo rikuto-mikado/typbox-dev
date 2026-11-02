@@ -256,6 +256,8 @@ export interface ActiveRival {
   /** The rival's sessions from the purchase day to the last duel day. */
   plan: Array<{ start: string; end: string; topic: string }>;
   sleep: Array<{ start: string; end: string }>;
+  /** What they do away from the desk. Older servers omit it. */
+  life?: Array<{ start: string; end: string; label: string }>;
 }
 
 export type ActiveChallenge = ActiveRaid | ActiveRival;
@@ -383,6 +385,26 @@ export interface Starlight {
   /** Local days a star was lit, 'YYYY-MM-DD', oldest first. */
   days: string[];
   last_guard: { at: string; name: string } | null;
+  /** What each wish costs. */
+  uses?: Record<StarWish | 'festival', number>;
+  /** What the next MYSTERY CRATE holds, if the stars were asked. */
+  omen?: string | null;
+  /** The running cooldown has already been shortened. */
+  dawn_used?: boolean;
+}
+
+export type StarWish = 'reroll' | 'omen' | 'dawn';
+
+/** A festival (backend tracker/festivals.py); dates are 'MM-DD', every year. */
+export interface Festival {
+  id: string;
+  name: string;
+  tagline: string;
+  rule: string;
+  accent: string;
+  challengers: string[];
+  start: string;
+  end: string;
 }
 
 export interface BitsShopState {
@@ -391,6 +413,11 @@ export interface BitsShopState {
   /** When the next buff can be bought, while it cools down. */
   buff_cooldown_until?: string | null;
   starlight?: Starlight;
+  festival?: {
+    active: Festival | null;
+    calendar: Festival[];
+    gift: { minutes: number; needed: number; opens: string; open_today: boolean; claimed: boolean } | null;
+  };
   buffs: BitsBuff[];
   /** Older servers omit the challenge fields. */
   active_challenge?: ActiveChallenge | null;
@@ -403,6 +430,8 @@ export interface ShopGroup {
   tier: number;
   /** How many days each lineup of this tier lasts (1, 2 or 7). */
   every_days: number;
+  /** The festival behind a limited group (every_days 0). */
+  event?: Festival;
   items: string[];
   resets_at: string;
 }
@@ -506,6 +535,18 @@ export const api = {
   bits: {
     get: async () => apiFetch<BitsShopState>('/bits/'),
     /** Ends the running buff early; `refunded` is what came back. */
+    /** Spends stars on a wish. */
+    starlight: async (use: StarWish | 'festival', itemId?: string) =>
+      apiFetch<BitsShopState>('/bits/starlight/', {
+        method: 'POST',
+        body: JSON.stringify({ use, item_id: itemId }),
+      }),
+    /** Opens this year's present. */
+    festivalGift: async () =>
+      apiFetch<BitsShopState & { gift_piece: string }>('/bits/festival/gift/', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
     cancel: async () =>
       apiFetch<BitsShopState & { refunded: number }>('/bits/cancel/', {
         method: 'POST',
@@ -725,7 +766,7 @@ export const api = {
         method: 'DELETE',
       });
     },
-    importBackup: async (payload: { categories?: unknown[]; logs: unknown[]; starlight?: unknown }) => {
+    importBackup: async (payload: { categories?: unknown[]; logs: unknown[] }) => {
       return apiFetch<{ imported_logs: number; skipped_logs?: number; created_categories: number }>('/logs/import-backup/', {
         method: 'POST',
         body: JSON.stringify(payload),

@@ -15,7 +15,9 @@ import { ORBITAL_ART } from './roomArtOrbital';
 import { EXTRAS_ART } from './roomArtExtras';
 import { HARDWARE_LAB_ART } from './roomArtHardwareLab';
 import { HOME_ART } from './roomArtHome';
+import { FEST_ART } from './roomArtFest';
 import { JAPAN_ART } from './roomArtJapan';
+import { LIVING_ART } from './roomArtLiving';
 import { PLANTS_ART } from './roomArtPlants';
 import { STUDY_ART } from './roomArtStudy';
 import { TECH_ART } from './roomArtTech';
@@ -39,4 +41,6 @@ export const PACK_ART: Record<string, Art> = {
   ...ARCHIVE_ART,
   ...BASECAMP_ART,
   ...CYBER_STREET_ART,
+  ...LIVING_ART,
+  ...FEST_ART,
 };

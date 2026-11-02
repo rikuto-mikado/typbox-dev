@@ -89,7 +89,7 @@ const OUTLINE = 'rgba(17, 17, 20, 0.85)';
 const spriteCache = new Map<string, HTMLCanvasElement>();
 
 const sprite = (spec: FurnitureSpec, env: Omit<ArtEnv, 'w' | 'h'>): HTMLCanvasElement | null => {
-  const key = `${spec.id}|${env.on ? 1 : 0}|${env.night ? 1 : 0}`;
+  const key = `${spec.id}|${env.on ? 1 : 0}|${env.night ? 1 : 0}|${env.weather ?? ''}`;
   const hit = spriteCache.get(key);
   if (hit) return hit;
   const w = spec.w * TILE;
@@ -262,6 +262,25 @@ export const renderRoom = (
   const order = drawOrder(layout.items, catalog).filter((e) => e.i !== lifted);
   for (const { it, spec } of order) drawPiece(ctx, spec, it.x, it.y, env);
 
+  // Night falls over the room, and only its lights push back.
+  if (env.night) {
+    ctx.fillStyle = 'rgba(8, 10, 34, 0.5)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    for (const { it, spec } of order) {
+      if (spec.category !== 'lighting') continue;
+      const cx = (it.x + spec.w / 2) * TILE;
+      const cy = (it.y + Math.min(spec.h, 1) / 2) * TILE;
+      const r = 26 + spec.w * 6;
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      glow.addColorStop(0, env.on ? 'rgba(255, 214, 140, 0.42)' : 'rgba(255, 214, 140, 0.28)');
+      glow.addColorStop(1, 'rgba(255, 214, 140, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   const outline = (x: number, y: number, w: number, h: number, color: string) => {
     ctx.fillStyle = color;
     ctx.fillRect(x, y, w, 1);
@@ -315,6 +334,8 @@ export const TIER_LABEL: Record<number, string> = {
   2: 'MEDIUM',
   3: 'LARGE',
   4: 'FEATURED',
+  5: 'LIMITED',
+  6: 'EARNED',
 };
 
 /** The room at `scale`x, without selection or ghosts, as a PNG data URL (SNAPSHOT). */

@@ -349,9 +349,20 @@ const RIVAL_LINES: Record<string, { ahead: string; behind: string; studying: str
   kai: { ahead: 'Twenty-five minutes at a time. It adds up.', behind: 'Break is over. Back to it.', studying: 'Timer is running. Talk in 25.' },
   mika: { ahead: 'Small steps, every day.', behind: 'Wait, you study THAT much?', studying: 'Studying between stations.' },
   ace: { ahead: 'As expected.', behind: 'Interesting. I will adjust.', studying: 'Focus. Please.' },
+  santa: { ahead: 'Ho ho. You are on the list.', behind: 'I said I start on the 24th.', studying: 'Which way is Finland?' },
+  rudolph: { ahead: 'I can see further than you.', behind: 'Save it for the storm.', studying: 'Recalculating the route.' },
+  miko: { ahead: 'The year starts as it means to go on.', behind: 'The omens did say this might happen.', studying: 'Silence, please. This is a shrine.' },
+  sakura: { ahead: 'I will be gone soon. Catch up while you can.', behind: 'Not bad, for someone who stays.', studying: 'Reading under the trees.' },
+  orihime: { ahead: 'One thread at a time.', behind: 'I do have a lot on my loom.', studying: 'The cloth will not weave itself.' },
+  copycat: { ahead: 'How am I winning? Did you copy me?', behind: 'Great. Now can I see your notes?', studying: 'Almost done copying.' },
+  ghost: { ahead: 'I have had a long time to revise.', behind: 'Time is not a problem for me.', studying: 'Question four. Still.' },
+  choco: { ahead: 'I have a very good reason.', behind: 'This changes nothing. I will temper harder.', studying: 'Do not talk to me about ratios.' },
+  usagi: { ahead: 'It looks small from up here.', behind: 'Gravity is on your side.', studying: 'Orbits are just falling, slowly.' },
+  iincho: { ahead: 'As scheduled.', behind: 'That is not on the schedule.', studying: 'Please hold your questions.' },
 };
 
 type RivalStatus =
+  | { kind: 'life'; what: string; nextAt: number | null }
   | { kind: 'study'; topic: string; elapsed: number; len: number }
   | { kind: 'break'; topic: string; inMin: number }
   | { kind: 'sleep'; wakes: number }
@@ -363,7 +374,7 @@ interface Span {
   topic?: string;
 }
 
-const rivalStatus = (plan: Span[], sleep: Span[], now: number): RivalStatus => {
+const rivalStatus = (plan: Span[], sleep: Span[], now: number, life?: Span[]): RivalStatus => {
   const s = plan.find((p) => now >= p.start && now < p.end);
   if (s) return { kind: 'study', topic: s.topic ?? '', elapsed: Math.floor((now - s.start) / 60000), len: Math.round((s.end - s.start) / 60000) };
   const z = sleep.find((p) => now >= p.start && now < p.end);
@@ -373,6 +384,8 @@ const rivalStatus = (plan: Span[], sleep: Span[], now: number): RivalStatus => {
     return { kind: 'sleep', wakes: next ? next.end : z.end };
   }
   const next = plan.find((p) => p.start > now);
+  const doing = life?.find((p) => now >= p.start && now < p.end);
+  if (doing) return { kind: 'life', what: doing.topic ?? '', nextAt: next ? next.start : null };
   if (next && next.start - now <= 120 * 60000) return { kind: 'break', topic: next.topic ?? '', inMin: Math.ceil((next.start - now) / 60000) };
   return { kind: 'idle', nextAt: next ? next.start : null };
 };
@@ -391,8 +404,9 @@ const useRivalSpans = (rival: ActiveRival) =>
     () => ({
       plan: rival.plan.map((p) => ({ start: new Date(p.start).getTime(), end: new Date(p.end).getTime(), topic: p.topic })),
       sleep: rival.sleep.map((p) => ({ start: new Date(p.start).getTime(), end: new Date(p.end).getTime() })),
+      life: (rival.life ?? []).map((p) => ({ start: new Date(p.start).getTime(), end: new Date(p.end).getTime(), topic: p.label })),
     }),
-    [rival.plan, rival.sleep]
+    [rival.plan, rival.sleep, rival.life]
   );
 
 const useStatusText = () => {
@@ -404,6 +418,10 @@ const useStatusText = () => {
       ? tf(t.chBreak, { topic: s.topic, m: s.inMin })
       : s.kind === 'sleep'
       ? tf(t.chAsleep, { time: formatTime(s.wakes) })
+      : s.kind === 'life'
+      ? s.nextAt !== null
+        ? tf(t.chLife, { what: s.what, time: formatTime(s.nextAt) })
+        : tf(t.chLifeDone, { what: s.what })
       : s.nextAt !== null
       ? tf(t.chOffDesk, { time: formatTime(s.nextAt) })
       : t.chDoneToday;
@@ -414,10 +432,11 @@ const HOUR_PX = 28;
 /** The rival's day as a scrolling column (scrolled to now on open). The
  *  hours to come sit under fog: their sessions show only as shapes, no
  *  times or topics, so the day keeps some surprise. */
-const DayTimeline: React.FC<{ accent: string; plan: Span[]; sleep: Span[]; now: number; midnight: number; textMuted: string }> = ({
+const DayTimeline: React.FC<{ accent: string; plan: Span[]; sleep: Span[]; life?: Span[]; now: number; midnight: number; textMuted: string }> = ({
   accent,
   plan,
   sleep,
+  life,
   now,
   midnight,
   textMuted,
@@ -456,6 +475,22 @@ const DayTimeline: React.FC<{ accent: string; plan: Span[]; sleep: Span[]; now: 
               background: 'repeating-linear-gradient(135deg, rgba(113,113,122,0.14) 0 4px, transparent 4px 8px)',
             }}
           />
+        ))}
+        {/* Their day away from the desk: only what has already happened shows. */}
+        {life?.filter((s) => inDay(s) && s.start <= now).map((s) => (
+          <span
+            key={`l-${s.start}`}
+            className={`absolute left-1 right-1 px-1 text-[8px] leading-3 tracking-wider ${textMuted}`}
+            style={{
+              top: y(s.start),
+              height: Math.max(3, y(s.end) - y(s.start)),
+              background: 'rgba(113,113,122,0.1)',
+              borderLeft: '2px solid rgba(113,113,122,0.45)',
+            }}
+          >
+            {/* Kept in view while a long stretch scrolls past. */}
+            <span className="sticky top-0 block truncate">{s.topic}</span>
+          </span>
         ))}
         {plan.filter(inDay).map((s) => {
           const seen = s.start <= now;
@@ -502,8 +537,8 @@ export const RivalCard: React.FC<{ rival: ActiveRival; borderCol: string; textMu
   const { t, timeZone, formatTime } = useI18n();
   const now = useNow(20_000);
   const accent = challengeAccent(rival.key);
-  const { plan, sleep } = useRivalSpans(rival);
-  const status = rivalStatus(plan, sleep, now);
+  const { plan, sleep, life } = useRivalSpans(rival);
+  const status = rivalStatus(plan, sleep, now, life);
   const statusText = useStatusText();
   // A duel runs the 72 hours from the moment it was bought.
   const starts = new Date(rival.starts_at).getTime();
@@ -664,7 +699,7 @@ export const RivalCard: React.FC<{ rival: ActiveRival; borderCol: string; textMu
         {/* The rival's day: what has happened so far, the rest under fog. */}
         <div className={`p-3 border-t @xl:border-t-0 @xl:border-l ${borderCol} space-y-2 min-w-0`}>
           <div className={`text-[9px] uppercase tracking-[0.3em] ${textMuted}`}>{tf(t.chDayPlan, { name: rival.name })}</div>
-          <DayTimeline accent={accent} plan={plan} sleep={sleep} now={now} midnight={midnight} textMuted={textMuted} />
+          <DayTimeline accent={accent} life={life} plan={plan} sleep={sleep} now={now} midnight={midnight} textMuted={textMuted} />
         </div>
       </div>
 
@@ -1059,12 +1094,13 @@ export const ChallengeTicker: React.FC<{ challenge: ActiveChallenge; textMuted: 
         ? {
             plan: challenge.plan.map((p) => ({ start: new Date(p.start).getTime(), end: new Date(p.end).getTime(), topic: p.topic })),
             sleep: challenge.sleep.map((p) => ({ start: new Date(p.start).getTime(), end: new Date(p.end).getTime() })),
+            life: (challenge.life ?? []).map((p) => ({ start: new Date(p.start).getTime(), end: new Date(p.end).getTime(), topic: p.label })),
           }
         : null,
     [challenge]
   );
   const statusText = useStatusText();
-  const status = spans ? rivalStatus(spans.plan, spans.sleep, now) : null;
+  const status = spans ? rivalStatus(spans.plan, spans.sleep, now, spans.life) : null;
   const art = challenge.kind === 'raid' ? BOSS_ART[challenge.key] : RIVAL_ART[challenge.key];
   const online = status?.kind === 'study';
   const detail = challenge.kind === 'raid' ? tf(t.chTickerHp, { h: hours(challenge.hp) }) : status ? statusText(status) : '';

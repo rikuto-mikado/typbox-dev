@@ -60,6 +60,7 @@ import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { BitsShopModal, type ShopTab } from './BitsShopModal';
 import { MyRoomPanel } from './MyRoomPanel';
+import { Glint } from './StarlightSky';
 import { DashboardKpis } from './DashboardKpis';
 import { CategoryEditor } from './CategoryEditor';
 import { ColorSwatchGrid } from './ColorSwatchGrid';
@@ -758,6 +759,15 @@ export default function App() {
   );
 
   const weather = useWeather(timeZone, queueUiPrefsSave);
+  const weatherCode = weather.reading?.code;
+  const roomWeather =
+    weatherCode === undefined
+      ? null
+      : (weatherCode >= 71 && weatherCode <= 77) || weatherCode === 85 || weatherCode === 86
+      ? ('snow' as const)
+      : (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82) || weatherCode >= 95
+      ? ('rain' as const)
+      : null;
   // The reading sent along with each commit (STORM RUNNER pays on rough
   // weather). Kept in a ref so the commit callbacks don't re-create on
   // every weather refresh; nothing is sent while the readout is hidden.
@@ -1077,14 +1087,22 @@ export default function App() {
     buff: BitsActiveBuff | null;
     challenge: ActiveChallenge | null;
     starlight?: Starlight;
+    festival?: BitsShopState['festival'];
   } | null>(null);
   const activeBuff = user && buffState?.userId === user.id ? buffState.buff : null;
   const activeChallenge = user && buffState?.userId === user.id ? buffState.challenge : null;
   const starlight = user && buffState?.userId === user.id ? buffState.starlight : undefined;
+  const festivalState = user && buffState?.userId === user.id ? buffState.festival : undefined;
   /** Adopts a fresh /bits/ answer: the running buff and challenge, and the
    *  server's spent / payouts (a settled challenge changes the balance). */
   const applyShopState = useCallback((userId: number, state: BitsShopState) => {
-    setBuffState({ userId, buff: state.active_buff, challenge: state.active_challenge ?? null, starlight: state.starlight });
+    setBuffState({
+      userId,
+      buff: state.active_buff,
+      challenge: state.active_challenge ?? null,
+      starlight: state.starlight,
+      festival: state.festival,
+    });
     setUser((prev) => {
       if (!prev || prev.id !== userId) return prev;
       const cur = prev.bits;
@@ -1954,7 +1972,6 @@ export default function App() {
       const res = await api.logs.importBackup({
         categories: Array.isArray(parsed.categories) ? parsed.categories : [],
         logs: parsed.logs,
-        starlight: parsed.starlight,
       });
       await loadUserData();
       refreshActiveBuff();
@@ -2047,7 +2064,7 @@ export default function App() {
       // Logs and categories stay; only the buff bonuses come off them.
       setLogs((prev) => prev.map((l) => (l.bonusBits || l.bonusItem ? { ...l, bonusBits: 0, bonusItem: '' } : l)));
       setUser((prev) => (prev ? { ...prev, bits: res.bits } : prev));
-      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null, starlight: res.starlight });
+      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null, starlight: res.starlight, festival: res.festival });
       setResetBitsConfirmText('');
       const n = (v: number) => v.toLocaleString('en-US');
       setBitsReceipt({
@@ -2505,6 +2522,21 @@ export default function App() {
   };
 
   // A sealed log can't be changed: a tap gives the lock a shake and says why.
+  // The log behind each day's star: the first one no buff paid on. Worked out
+  // from the logs like the star itself, so an import needs nothing to restore.
+  const starLogIds = useMemo(() => {
+    const today = getRecentDateString(0, timeZone);
+    const first = new Map<string, StudyLog>();
+    for (const log of logs) {
+      // Committed around its date, as the server asks (economy._lights_a_star).
+      const lateBy = (Date.parse(log.createdAt) - Date.parse(`${log.date}T00:00:00Z`)) / 86_400_000;
+      if (log.bonusItem || log.date > today || lateBy < -1.5 || lateBy >= 3.5) continue;
+      const held = first.get(log.date);
+      if (!held || log.createdAt < held.createdAt) first.set(log.date, log);
+    }
+    return new Set([...first.values()].map((log) => log.id));
+  }, [logs, timeZone]);
+
   const handleSealedLogTap = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       e.currentTarget.firstElementChild?.animate(
@@ -3387,8 +3419,6 @@ export default function App() {
       timezone: timeZone,
       // For the record only (import ignores it, like each log's bonusBits).
       bits: { balance: bitsBalance, bonus: logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) },
-      // Import restores this onto an account that has no stars yet.
-      starlight: starlight ? { stars: starlight.stars, days: starlight.days } : undefined,
       categories,
       logs,
     };
@@ -4823,7 +4853,15 @@ export default function App() {
 
             {/* LUNAR CALENDAR PANEL */}
             <div data-panel="lunar" className={`tb-corners border ${borderCol} ${bgCard} p-5 sm:p-6 relative flex flex-col order-7 lg:order-none`}>
-              <MoonPhaseCalendar timeZone={timeZone} weekStart={weekStart} textMuted={textMuted} isDark={isDark} starDays={starlight?.days} />
+              <MoonPhaseCalendar
+                timeZone={timeZone}
+                weekStart={weekStart}
+                textMuted={textMuted}
+                isDark={isDark}
+                starDays={starlight?.days}
+                festivals={festivalState?.calendar}
+                onOpenShop={() => openBitsShop('challenges')}
+              />
             </div>
 
             {/* CATEGORY REGISTRY PANEL */}
@@ -5760,6 +5798,11 @@ export default function App() {
                                 <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60 font-semibold tabular-nums">
                                   {tf(t.logDurationChip, { min: log.durationMinutes, h: (log.durationMinutes / 60).toFixed(1) })}
                                 </span>
+                                {starLogIds.has(log.id) && (
+                                  <span title={t.logStarTitle} aria-label={t.logStarTitle} role="img" className="flex text-amber-300">
+                                    <Glint className="w-2.5 h-2.5" />
+                                  </span>
+                                )}
                                 {(log.bonusBits ?? 0) > 0 && (
                                   <span
                                     className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border font-bold tabular-nums"
@@ -6470,6 +6513,7 @@ export default function App() {
                   textMuted={textMuted}
                   onOpenShop={() => openBitsShop('furniture')}
                   userId={user?.id}
+                  weather={roomWeather}
                 />
               )}
 

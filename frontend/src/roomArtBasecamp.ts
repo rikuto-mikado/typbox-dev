@@ -142,18 +142,23 @@ export const BASECAMP_ART: Record<string, Art> = {
     });
   },
   camp_canoe: (p) => {
-    for (let x = 0; x < 32; x++) {
-      const t = Math.abs(x - 15.5) / 16;
-      const depth = Math.max(1, Math.round(5 * (1 - t * t)));
-      p.rect(x, 1, 1, depth, S.a);
-      p.px(x, 1, S.a3);
-      if (depth > 2) p.px(x, depth, S.a2);
-    }
-    p.rect(8, 1, 1, 3, S.w);
-    p.rect(23, 1, 1, 3, S.w);
-    p.rect(14, 1, 4, 1, S.w);
-    p.rect(4, 6, 1, 2, C.ink2);
-    p.rect(27, 6, 1, 2, C.ink2);
+    // rope slings on the wall
+    p.rect(6, 0, 1, 2, C.oak3);
+    p.rect(25, 0, 1, 2, C.oak3);
+    // the hull curving up at both ends
+    p.rect(0, 2, 2, 1, S.a);
+    p.rect(30, 2, 2, 1, S.a);
+    p.rect(1, 3, 30, 1, C.oak);
+    p.rect(2, 4, 28, 2, S.a);
+    p.rect(4, 6, 24, 1, S.a2);
+    p.rect(8, 7, 16, 1, S.a2);
+    p.rect(2, 4, 28, 1, S.a3);
+    // thwarts and stripe
+    for (const x of [9, 16, 23]) p.rect(x, 3, 1, 3, C.oak3);
+    p.rect(12, 5, 8, 1, C.white);
+    // paddle slung beneath
+    p.rect(3, 7, 3, 1, C.oak);
+    p.rect(6, 7, 1, 1, C.oak3);
   },
   camp_trail_map: (p) => {
     box(p, 0, 0, 16, 14, S.w, S.w2);

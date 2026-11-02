@@ -16,6 +16,8 @@ export interface ArtEnv {
   on: boolean;
   /** Local evening / night: windows go dark and show stars. */
   night: boolean;
+  /** What is falling outside right now (the CHRONOMETER weather). */
+  weather?: 'rain' | 'snow' | null;
   /** Pixel size of the area being drawn (the footprint, or the whole wall / floor for paints). */
   w: number;
   h: number;

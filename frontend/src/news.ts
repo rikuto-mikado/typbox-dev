@@ -434,17 +434,169 @@ const SLOT_ROOMS: ShowcaseRoom[] = [
 
 export const NEWS_ARTICLES: NewsArticle[] = [
   {
+    id: 'festival-year',
+    date: 'EARLY NOV 2026',
+    tag: 'GUIDE',
+    title: 'The festival year',
+    lede: 'Ten festivals, on the same dates every year. Each one brings its own challengers, its own furniture and a rule you will not meet anywhere else. Here is who to expect, and when.',
+    blocks: [
+      { type: 'figure', kind: 'festivals', caption: 'The whole year, by the boss waiting at each festival.' },
+      {
+        type: 'stats',
+        items: [
+          ['Festivals', '10'],
+          ['Bosses', '10'],
+          ['Rivals', '10, three of them hidden'],
+          ['Limited furniture', '38 pieces'],
+        ],
+      },
+      { type: 'p', text: 'See what is on under EVENTS in the LUNAR CALENDAR. Tap a marked day to read about its festival. Limited furniture is on sale in the BITS // EXCHANGE while its festival runs, and it comes back the next year, so nothing is gone for good. 5 STARLIGHT will wish for a piece outright.' },
+      { type: 'h', text: "NEW YEAR \u00b7 DEC 31 TO JAN 3" },
+      { type: 'figure', kind: 'fest-newyear', caption: "The offering woke up, and the shrine maiden has seen worse." },
+      { type: 'p', text: "KAGAMI is the New Year offering come to life, and it only feels one long sitting: logs under an hour bounce off. MIKO spends the holiday sweeping the shrine and selling charms, and studies before anyone else is up." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("THE FIRST MORNING", "Lion dance, an offering and a paddle on the wall.", 'wall_plain', 'floor_wood', 'ny_hagoita@2,1 ny_kagami@6,5 ny_shishi@9,5 kotatsu@3,8'),
+        ],
+      },
+      { type: 'h', text: "SETSUBUN \u00b7 FEB 1 TO 3" },
+      { type: 'figure', kind: 'fest-setsubun', caption: "Three days, and it hates small things thrown often." },
+      { type: 'p', text: "For once, short sessions are the weapon. ONI takes double damage from logs of 30 minutes or less, so this is the festival for a day of quick sittings. It is only here for three days." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("DEMONS OUT", "A mask on the wall and beans ready to throw.", 'wall_plain', 'floor_wood', 'st_oni_mask@7,1 st_bean_box@5,6 st_ehomaki@8,6'),
+        ],
+      },
+      { type: 'h', text: "VALENTINE \u00b7 FEB 10 TO 14" },
+      { type: 'figure', kind: 'fest-valentine', caption: "One of them has a very specific reason to study." },
+      { type: 'p', text: "BITTER is everything left in the box, and it dodges one hit in four. CHOCO splits the evening between mathematics and tempering chocolate, and is not going to lose to you." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("SOMETHING SWEET", "A fountain, a box and letters that may never be sent.", 'wall_plain', 'floor_wood', 'vt_letters@7,2 vt_fountain@3,3 vt_gift@8,4'),
+        ],
+      },
+      { type: 'h', text: "HANAMI \u00b7 MAR 25 TO APR 10" },
+      { type: 'figure', kind: 'fest-hanami', caption: "The storm, and the transfer student who came with it." },
+      { type: 'p', text: "FUBUKI is the storm that strips the trees, and every full day without a log it grows back. SAKURA transferred in with the blossoms and spends her afternoons under them. She leaves when they do." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("UNDER THE TREES", "A full-grown tree that fills the room, and somewhere to sit.", 'wall_plain', 'floor_wood', 'hn_lantern@7,1 hn_sakura_tree@1,3 hn_blue_sheet@6,7'),
+        ],
+      },
+      { type: 'h', text: "TANABATA \u00b7 JUL 1 TO 7" },
+      { type: 'figure', kind: 'fest-tanabata', caption: "A dragon of stars, and the weaver on her one night off." },
+      { type: 'p', text: "The RIVER OF HEAVEN is a dragon with one head for every subject you take it on with, and a log only reaches its own. ORIHIME works the loom through the day and looks at the river at night." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("ONE NIGHT A YEAR", "Wishes on the bamboo and magpies across the wall.", 'wall_plain', 'floor_wood', 'tb_magpie@6,1 tb_tanzaku@11,1 tb_bamboo@2,1 kotatsu@7,6'),
+        ],
+      },
+      { type: 'h', text: "SUMMER BREAK \u00b7 AUGUST" },
+      { type: 'figure', kind: 'fest-summer', caption: "The deadline itself, and someone who has not started." },
+      { type: 'p', text: "AUGUST 31 grows back two hours on every empty day, so an early start pays. Late in the month, someone else shows up asking to see your homework." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("THERE IS PLENTY OF TIME", "A mosquito net, shaved ice and a watermelon.", 'wall_plain', 'floor_wood', 'sm_uchiwa@8,1 sm_mosquito_net@1,3 sm_kakigori@7,6 sm_watermelon@9,6 sm_bug_cage@12,6'),
+        ],
+      },
+      { type: 'h', text: "TSUKIMI \u00b7 SEP 15 TO 25" },
+      { type: 'figure', kind: 'fest-tsukimi', caption: "Look up. Someone up there is keeping count." },
+      { type: 'p', text: "TSUKUYOMI rules the night and heals an hour at every midnight, so it takes steady work over eight days. USAGI studies orbital mechanics and pounds rice cakes on the moon between lessons." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("THE HARVEST MOON", "A window with the moon in it, dumplings and pampas grass.", 'wall_plain', 'floor_wood', 'tk_moon_window@6,0 tk_dango@4,4 tk_susuki@10,3'),
+        ],
+      },
+      { type: 'h', text: "HALLOWEEN \u00b7 OCT 25 TO 31" },
+      { type: 'figure', kind: 'fest-halloween', caption: "It only comes out after dark, and it is not alone." },
+      { type: 'p', text: "JACK can only be hit at night: logs committed from 05:00 to 17:59 pass right through him. If you are awake in the small hours, something else may show itself." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("AFTER DARK", "Switch it to night. The cauldron has been waiting.", 'wall_plain', 'floor_wood', 'hw_web@1,0 hw_tombstone@3,4 hw_cauldron@7,4 hw_ghost@11,4'),
+        ],
+      },
+      { type: 'h', text: "CULTURE FESTIVAL \u00b7 NOV 1 TO 7" },
+      { type: 'figure', kind: 'fest-culture', caption: "The night before you go on, and the person holding the schedule." },
+      { type: 'p', text: "STAGE FRIGHT only shows itself after dark: daytime logs pass right through. IINCHO, the class president, is running the whole festival from a laminated schedule, and still finds time to study." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("NOTHING IS READY", "A stall, a stage and a banner someone painted last night.", 'wall_plain', 'floor_wood', 'bk_banner@6,0 bk_curtain@10,1 bk_stall@1,2 bk_sign@6,3'),
+        ],
+      },
+      { type: 'h', text: "CHRISTMAS \u00b7 DEC 20 TO 25" },
+      { type: 'figure', kind: 'fest-christmas', caption: "He has one night, and he has not started. There is also the other list." },
+      { type: 'p', text: "SANTA barely works until the 24th, then studies route optimization, world geography and reindeer husbandry all night. KRAMPUS keeps the other list and dodges one hit in four. Log 5 hours from the 20th to the 24th and a present opens on the 25th, with a limited piece inside, free. Beat SANTA and someone else comes looking for you." },
+      {
+        type: 'rooms',
+        rooms: [
+          room("CHRISTMAS EVE", "The tree, the fireplace and a sleigh parked inside.", 'wall_plain', 'floor_wood', 'xmas_wreath@7,1 xmas_grand_tree@1,1 xmas_mantle@3,3 xmas_sleigh@8,4 xmas_sack@13,4'),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'festivals',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'FESTIVALS, and a room that lives through the day',
+    lede: 'Ten festivals now pass through TYPBOX, each with its own challengers, limited furniture and one rule of its own. Your room gets darker at night, and its windows look out on the real weather.',
+    blocks: [
+      { type: 'figure', kind: 'festivals', caption: 'The boss waiting at each festival. More are coming with them, and three of those are hidden.' },
+      {
+        type: 'stats',
+        items: [
+          ['Festivals', '10, the same dates every year'],
+          ['Limited pieces', '38, back again next year'],
+          ['Challengers', '20, three of them hidden'],
+          ['New designs', '73, with 22 old ones redrawn'],
+        ],
+      },
+      { type: 'link', article: 'festival-year', text: 'The festival year: who to expect, and when' },
+      { type: 'h', text: 'YOUR ROOM' },
+      {
+        type: 'rooms',
+        rooms: [
+          room(
+            'LIVES THROUGH THE DAY',
+            'Switch it to night: the lamps take over, the cat curls up and the city lights come on.',
+            'wall_plain',
+            'floor_wood',
+            'curtain_velvet@0,0 win_city@1,0 curtain_velvet@4,0 moon_phases@6,0 win_sea@10,0 chandelier@13,1 bed_platform@0,5 floor_lamp@5,5 pet_cat_loaf@6,6 sofa@8,5 desk_lamp@13,5 trophy_500h@15,4 rug_persian@2,8 pet_dog_nap@8,8 bathtub@11,9 xmas_candy_cane@0,8 pet_rabbit@6,10'
+          ),
+        ],
+      },
+      {
+        type: 'list',
+        items: [
+          'At night the room falls dark, and only what gives light pushes back.',
+          'Five new windows look out on a city, a forest, the sea and a peak, with the real time of day and whatever is falling outside.',
+          'Curtains, a bathroom, a bedroom, rugs, a study carrel and more. Pets settle down to sleep at night.',
+          'Trophies cannot be bought: they arrive at 100, 500 and 1,000 hours, and medals at 100 and 1,000 logs.',
+        ],
+      },
+    ],
+  },
+  {
     id: 'starlight',
     date: 'EARLY NOV 2026',
     tag: 'NEW',
     title: 'STARLIGHT, a buff cooldown and logs that settle',
     lede: 'Days without a buff now light a night sky that can save your next big run. Buffs take a breath between them, logs settle after three days, and a commit asks you to look before it lands.',
     blocks: [
-      { type: 'figure', kind: 'starlight', caption: 'Each dipper is seven days without a buff. A finished one covers one failure.' },
+      { type: 'figure', kind: 'starlight', caption: 'Each dipper is seven stars. A finished one covers one failure.' },
       {
         type: 'stats',
         items: [
-          ['One star', 'A day with a log and no buff running'],
+          ['One star', 'A day with a log no buff paid on'],
           ['A save', '7 stars · once per buff'],
           ['Buff cooldown', '24 hours'],
           ['Logs lock', '3 days after their commit'],
@@ -453,7 +605,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'STARLIGHT' },
       {
         type: 'p',
-        text: 'Commit a log while no buff runs and that day lights a star, up to 14. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. The stars you spend leave the gauge, but the days stay marked on the LUNAR CALENDAR.',
+        text: 'Every day with a log no buff paid on is a star, up to 14, and that goes for the logs you already have. A log only counts if it was committed within two days of its date. With 7 or more, a buff that fails its condition keeps running in exchange for 7 of them. Stars can also re-deal the furniture shop (2), show what the next MYSTERY CRATE holds (3) or cut a cooldown by 12 hours (3).',
       },
       {
         type: 'list',
@@ -468,7 +620,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'BUFF COOLDOWN' },
       {
         type: 'p',
-        text: 'The next buff can be bought 24 hours after the last one ends, however it ended. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected, and logs you commit in the meantime light stars.',
+        text: 'The next buff can be bought 24 hours after the last one ends, however it ended. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected.',
       },
       { type: 'h', text: 'LOGS' },
       {
@@ -493,7 +645,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'BACKUPS' },
       {
         type: 'p',
-        text: 'JSON backups now carry your stars. Importing one onto an account with no stars brings them back. On an account that has some, only the marked days are added, so the gauge cannot be refilled.',
+        text: 'Stars come from your logs, so a clear takes them with the logs, and importing a backup counts them again from its oldest log to its newest.',
       },
     ],
   },

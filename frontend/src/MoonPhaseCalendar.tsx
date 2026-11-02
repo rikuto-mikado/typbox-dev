@@ -1,5 +1,7 @@
-import React, { useId, useMemo } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { Moon } from 'lucide-react';
+import type { Festival } from './api';
+import { SegmentIndicator } from './SegmentIndicator';
 import { Glint } from './StarlightSky';
 import { getZonedParts, tf, useI18n, type Dict } from './i18n';
 import { orderedWeekdayLabels, weekdayPosition, type WeekStart } from './week';
@@ -130,12 +132,31 @@ interface MoonPhaseCalendarProps {
   weekStart: WeekStart;
   textMuted: string;
   isDark: boolean;
-  /** Days a STARLIGHT star was lit ('YYYY-MM-DD'): they stay lit once spent. */
+  /** Days a STARLIGHT star is lit for ('YYYY-MM-DD'). */
   starDays?: string[];
+  /** The year's festivals; the EVENTS view is left out until they arrive. */
+  festivals?: Festival[];
+  onOpenShop?: () => void;
 }
 
-export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, weekStart, textMuted, isDark, starDays }) => {
+/** The festival on a month and day, festivals being the same dates every year. */
+const festivalOn = (festivals: Festival[] | undefined, month: number, day: number) => {
+  const key = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return festivals?.find((f) => (f.start <= f.end ? f.start <= key && key <= f.end : key >= f.start || key <= f.end));
+};
+
+export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({
+  timeZone,
+  weekStart,
+  textMuted,
+  isDark,
+  starDays,
+  festivals,
+  onOpenShop,
+}) => {
   const { t } = useI18n();
+  const [view, setView] = useState<'moon' | 'events'>('moon');
+  const [picked, setPicked] = useState<string | null>(null);
   const { year, month, day: today } = useMemo(() => getZonedParts(new Date(), timeZone), [timeZone]);
 
   const todayFraction = useMemo(() => moonFraction(new Date(year, month - 1, today, 12, 0, 0)), [year, month, today]);
@@ -156,6 +177,15 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
       }),
     [year, month]
   );
+  // What the EVENTS view tells about: a tapped festival, today's or the next.
+  const todayFestival = festivalOn(festivals, month, today);
+  const upcoming = useMemo(() => {
+    if (!festivals?.length) return undefined;
+    const key = `${String(month).padStart(2, '0')}-${String(today).padStart(2, '0')}`;
+    const sorted = [...festivals].sort((a, b) => a.start.localeCompare(b.start));
+    return sorted.find((f) => f.start > key) ?? sorted[0];
+  }, [festivals, month, today]);
+  const shownFestival = festivals?.find((f) => f.id === picked) ?? todayFestival ?? upcoming;
   const leadingBlanks = weekdayPosition(new Date(year, month - 1, 1).getDay(), weekStart);
   const monthLabel = useMemo(
     () => new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1)),
@@ -169,13 +199,48 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
           <Moon className={`w-4 h-4 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
           <h2 className="font-mono text-xs uppercase tracking-widest font-semibold">{t.moonCalendarTitle}</h2>
         </div>
-        <span className={`font-mono text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`font-mono text-[10px] truncate ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthLabel}</span>
+          {festivals && (
+            <div className={`relative flex shrink-0 border font-mono text-[10px] ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
+              <SegmentIndicator activeKey={view} colorClass={isDark ? 'bg-zinc-100' : 'bg-zinc-900'} />
+              {(['moon', 'events'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  data-seg-active={view === v}
+                  onClick={() => setView(v)}
+                  className={`seg-btn px-1.5 py-0.5 cursor-pointer ${
+                    view === v ? `${isDark ? 'text-zinc-900' : 'text-white'} font-semibold` : textMuted
+                  }`}
+                >
+                  {v === 'moon' ? t.calTabMoon : t.calTabEvents}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* The calendar keeps its natural height (day cells stay close to square);
           it is never the panel stretched to line the dashboard columns up. */}
       <div className="pt-3 space-y-3 font-mono flex flex-col">
-        <div className="flex items-center gap-4">
+        {view === 'events' && shownFestival ? (
+          <div className="h-[56px] min-w-0 flex flex-col justify-center gap-0.5 pl-2.5 border-l-2" style={{ borderColor: shownFestival.accent }}>
+            <div className="flex items-baseline justify-between gap-2 min-w-0">
+              <span className="text-sm font-semibold truncate" style={{ color: shownFestival.accent }}>
+                {shownFestival.name}
+              </span>
+              <span className={`text-[10px] uppercase tracking-wider tabular-nums shrink-0 ${textMuted}`}>
+                {shownFestival === todayFestival
+                  ? tf(t.calEventNow, { date: shownFestival.end.replace('-', '/') })
+                  : tf(t.calEventNext, { date: shownFestival.start.replace('-', '/') })}
+              </span>
+            </div>
+            <p className={`text-[10px] font-sans leading-snug line-clamp-2 ${textMuted}`}>{shownFestival.rule}</p>
+          </div>
+        ) : (
+        <div className="flex items-center gap-4 h-[56px]">
           <MoonIcon fraction={todayFraction} size={40} isDark={isDark} glow={illuminated >= 40} />
           <div className="flex-1 min-w-0 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
@@ -204,6 +269,7 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
             <div className={`text-[10px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.moonIlluminated, { pct: illuminated })}</div>
           </div>
         </div>
+        )}
 
         <div className="flex flex-col">
           <div className={`grid grid-cols-7 gap-1 mb-1 text-center text-[9px] uppercase tracking-widest ${textMuted}`}>
@@ -219,13 +285,15 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
               const isToday = cell.day === today;
               const isPast = cell.day < today;
               const isFull = cell.phaseIdx === FULL_IDX;
+              const festival = view === 'events' ? festivalOn(festivals, month, cell.day) : undefined;
               const starLit = starDays?.includes(
                 `${year}-${String(month).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`
               );
               return (
                 <div
                   key={cell.day}
-                  title={`${t[PHASE_KEYS[cell.phaseIdx]]} · ${moonIllumination(cell.fraction)}%${starLit ? ` · ${t.moonStarLit}` : ''}`}
+                  onClick={festival ? () => setPicked(festival.id) : undefined}
+                  title={`${festival ? `${festival.name} · ` : ''}${t[PHASE_KEYS[cell.phaseIdx]]} · ${moonIllumination(cell.fraction)}%${starLit ? ` · ${t.moonStarLit}` : ''}`}
                   className={`relative flex items-center justify-center pt-2 pb-0.5 min-h-8 transition-colors ${
                     isToday
                       ? 'bg-emerald-500/10 ring-1 ring-inset ring-emerald-500/60'
@@ -262,6 +330,9 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
                   >
                     {cell.day}
                   </span>
+                  {festival && (
+                    <span className="absolute inset-x-0 bottom-0 h-[3px]" style={{ background: festival.accent }} />
+                  )}
                   {starLit && (
                     <Glint className="absolute top-0.5 right-0.5 w-2 h-2 text-amber-300" />
                   )}
@@ -284,6 +355,18 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
           isDark ? 'border-zinc-800/50' : 'border-zinc-200'
         }`}
       >
+        {view === 'events' && shownFestival ? (
+          <button
+            type="button"
+            onClick={onOpenShop}
+            className="w-full flex items-center justify-between gap-2 uppercase tracking-wider cursor-pointer hover:underline min-w-0"
+            style={{ color: shownFestival.accent }}
+          >
+            <span className="truncate">{shownFestival.challengers.join(' · ')}</span>
+            <span className="shrink-0">{t.calEventOpen} →</span>
+          </button>
+        ) : (
+        <>
         <span className={`flex items-center gap-1.5 ${textMuted}`}>
           <MoonIcon fraction={0.5} size={13} isDark={isDark} />
           <span className="uppercase tracking-wider">{t.moonNextFull}</span>
@@ -296,6 +379,8 @@ export const MoonPhaseCalendar: React.FC<MoonPhaseCalendarProps> = ({ timeZone, 
           <span className={`font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>{shortDate(nextNew)}</span>
           <span className="tabular-nums">· {daysUntil(nextNew)}D</span>
         </span>
+        </>
+        )}
       </div>
     </>
   );

@@ -17,10 +17,11 @@ keeps the balance in step automatically. On top of that:
   was cancelled early (cancel_buff);
 - a settled CHALLENGE (challenges.py) credits its payout.
 
-Between buffs there is a cooldown (BUFF_COOLDOWN), and STARLIGHT fills: a day
-with a log committed while no buff runs lights a star. With STARLIGHT_COST
-stars on the gauge, a buff that fails its condition keeps running in exchange
-for them, once per buff.
+Between buffs there is a cooldown (BUFF_COOLDOWN). STARLIGHT is worked out from
+the logs: every day with a log no buff paid on is a star, up to STARLIGHT_MAX.
+With STARLIGHT_COST stars on the gauge, a buff that fails its condition keeps
+running in exchange for them, once per buff; stars also buy small wishes
+(STAR_USES). Only what was spent is stored.
 
 balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded)
 
@@ -30,15 +31,15 @@ an instant balance after each commit; keep the two in sync.
 
 import math
 import random
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from datetime import timezone as dt_timezone
 
 from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
-from . import challenges
-from .furniture import FURNITURE, shop_lineup
+from . import challenges, festivals
+from .furniture import FURNITURE, event_pieces, shop_lineup
 from .models import BitPurchase, Category, StudyLog, UserProfile
 from .timezones import get_user_zone
 
@@ -64,10 +65,8 @@ BUFF_COOLDOWN = timedelta(hours=24)
 
 STARLIGHT_MAX = 14
 STARLIGHT_COST = 7
-# What a backup can bring back of the night sky: nothing lit before TYPBOX
-# existed, which also bounds how long the list can get.
-EARLIEST_STAR_DAY = date(2020, 1, 1)
-MAX_IMPORTED_STAR_DAYS = 5000
+# How long after its date a log can still light that day's star.
+STAR_LATE_DAYS = timedelta(days=2)
 
 
 def log_editable_until(log):
@@ -596,65 +595,20 @@ def _spend_starlight(buff, covering, now):
     with transaction.atomic():
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=buff.user)
         locked = BitPurchase.objects.select_for_update().filter(pk=buff.pk).first()
-        if locked is None or profile.starlight < STARLIGHT_COST:
+        if locked is None:
             return False
         state = dict(locked.state or {})
         if state.get("closed") or state.get("covered"):
             return False
+        if not _take_stars(profile, STARLIGHT_COST, now):
+            return False
         state["covered"] = [covering]
         locked.state = state
         locked.save(update_fields=["state"])
-        profile.starlight -= STARLIGHT_COST
         profile.last_guard = {"at": now.isoformat(), "name": spec_of(locked)["name"]}
-        profile.save(update_fields=["starlight", "last_guard"])
+        profile.save(update_fields=["last_guard"])
     buff.state = state
     return True
-
-
-def _light_star(log, now):
-    """A log committed with no buff running lights today's star (one a day).
-    Returns the stars on the gauge if it lit one, else None."""
-    day = _local_now(log.user, now).date().isoformat()
-    with transaction.atomic():
-        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=log.user)
-        if day in profile.star_days:
-            return None
-        profile.star_days = [*profile.star_days, day]
-        profile.starlight = min(STARLIGHT_MAX, profile.starlight + 1)
-        profile.save(update_fields=["star_days", "starlight"])
-        return profile.starlight
-
-
-def restore_starlight(profile, raw, now=None):
-    """STARLIGHT from a backup, onto a locked profile. The lit days merge into
-    the night sky. The gauge comes back only for an account with no stars of
-    its own (a clear-all or a new account), and every star on it must have its
-    lit day, so importing a file again can't refill it. Anything malformed is
-    ignored; old backups carry none of it."""
-    if not isinstance(raw, dict):
-        return
-    now = now or timezone.now()
-    today = _local_now(profile.user, now).date()
-    days = raw.get("days")
-    restored = set()
-    for value in days[:MAX_IMPORTED_STAR_DAYS] if isinstance(days, list) else []:
-        try:
-            day = datetime.strptime(value, "%Y-%m-%d").date()
-        except (TypeError, ValueError):
-            continue
-        if EARLIEST_STAR_DAY <= day <= today:
-            restored.add(day.isoformat())
-    stars = raw.get("stars")
-    if (
-        not profile.star_days
-        and not profile.starlight
-        and isinstance(stars, int)
-        and not isinstance(stars, bool)
-        and 0 <= stars <= min(STARLIGHT_MAX, len(restored))
-    ):
-        profile.starlight = stars
-    profile.star_days = sorted(restored | set(profile.star_days))
-    profile.save(update_fields=["starlight", "star_days"])
 
 
 def buff_cooldown_until(user, now=None):
@@ -676,20 +630,213 @@ def buff_cooldown_until(user, now=None):
         ended = last.expires_at
     else:
         return None
-    until = ended + BUFF_COOLDOWN
+    until = ended + BUFF_COOLDOWN - (DAWN_CUT if (last.state or {}).get("dawn") else timedelta())
     return until if until > now else None
 
 
-def serialize_starlight(user):
+def _lights_a_star(log_date, created_at, zone):
+    """Whether a log can light its day: committed around that date, so a day
+    can't be lit after the fact by back-dating. Backups keep commit times."""
+    committed = timezone.localtime(created_at, zone).date()
+    return log_date - timedelta(days=1) <= committed <= log_date + STAR_LATE_DAYS
+
+
+def star_days(user, now=None):
+    """The days STARLIGHT is lit for: every day up to today with a log no buff
+    paid on (no bonus_item, which a backup keeps), oldest first. Worked out
+    from the logs each time, so old logs, deletions, resets and imports need
+    no special handling."""
+    local = _local_now(user, now or timezone.now())
+    logs = StudyLog.objects.filter(user=user, bonus_item="", date__lte=local.date())
+    return sorted(
+        {
+            day
+            for day, created_at in logs.values_list("date", "created_at")
+            if _lights_a_star(day, created_at, local.tzinfo)
+        }
+    )
+
+
+def star_count(user, spends, now=None):
+    """The gauge: lit days add a star up to the cap and spending takes them,
+    in the order they happened (a day's star lands before that day's spend)."""
+    events = [(day.isoformat(), 0, 1) for day in star_days(user, now)]
+    events += [(s["day"], 1, -s["n"]) for s in spends]
+    stars = 0
+    for _, _, change in sorted(events):
+        stars = max(0, min(STARLIGHT_MAX, stars + change))
+    return stars
+
+
+def star_lit_by(log, now=None):
+    """The stars on the gauge if this new log was the first to light its day."""
+    local = _local_now(log.user, now or timezone.now())
+    if (
+        log.bonus_item
+        or log.date > local.date()
+        or not _lights_a_star(log.date, log.created_at, local.tzinfo)
+    ):
+        return None
+    others = StudyLog.objects.filter(user=log.user, date=log.date, bonus_item="").exclude(pk=log.pk)
+    if any(_lights_a_star(log.date, c, local.tzinfo) for c in others.values_list("created_at", flat=True)):
+        return None
+    profile = UserProfile.objects.filter(user=log.user).first()
+    return star_count(log.user, profile.star_spends if profile else [], now)
+
+
+def _take_stars(profile, n, now):
+    """Spends `n` stars from a locked profile, or returns False."""
+    if star_count(profile.user, profile.star_spends, now) < n:
+        return False
+    day = _local_now(profile.user, now).date().isoformat()
+    profile.star_spends = [*profile.star_spends, {"day": day, "n": n}]
+    profile.save(update_fields=["star_spends"])
+    return True
+
+
+class StarlightError(Exception):
+    pass
+
+
+# What the stars buy, besides saving a buff. Nothing here pays BITS.
+STAR_USES = {"reroll": 2, "omen": 3, "dawn": 3, "festival": 5}
+DAWN_CUT = timedelta(hours=12)
+
+
+GIFT_MINUTES = 300
+
+
+def _gift_key(festival, day):
+    return f"{festival['id']}-{day.year}"
+
+
+def festival_state(user, now=None):
+    """The year's festivals for the calendar, and what is on right now."""
+    local = _local_now(user, now or timezone.now())
+    festival = festivals.active_on(local.date())
+    gift = None
+    if festival and festival["id"] == "christmas":
+        profile = UserProfile.objects.filter(user=user).first()
+        earned = (
+            StudyLog.objects.filter(
+                user=user,
+                date__gte=local.date().replace(month=12, day=20),
+                date__lte=local.date().replace(month=12, day=24),
+                # Committed in the festival: no back-dating into it.
+                created_at__gte=_local_midnight(
+                    local.date().replace(month=12, day=20), local.tzinfo
+                ),
+            ).aggregate(m=Sum("duration_minutes"))["m"]
+            or 0
+        )
+        gift = {
+            "minutes": earned,
+            "needed": GIFT_MINUTES,
+            "opens": "12-25",
+            "open_today": (local.month, local.day) == (12, 25),
+            "claimed": bool(profile)
+            and _gift_key(festival, local.date()) in profile.festival_gifts,
+        }
+    return {
+        "active": festivals.serialize(festival) if festival else None,
+        "calendar": [festivals.serialize(f) for f in festivals.FESTIVALS],
+        "gift": gift,
+    }
+
+
+def open_festival_gift(user, now=None):
+    """Christmas Day: a limited piece the user lacks, free. Once a year, for
+    GIFT_MINUTES logged in the days before. Returns its id."""
+    now = now or timezone.now()
+    local = _local_now(user, now)
+    festival = festivals.active_on(local.date())
+    state = festival_state(user, now)["gift"]
+    if not state or not state["open_today"] or state["minutes"] < GIFT_MINUTES:
+        raise StarlightError("There is no present to open.")
+    with transaction.atomic():
+        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
+        key = _gift_key(festival, local.date())
+        if key in profile.festival_gifts:
+            raise StarlightError("This year's present is already open.")
+        pieces = event_pieces(festival["id"])
+        owned = set(user.bit_purchases.filter(item_id__in=pieces).values_list("item_id", flat=True))
+        lacking = [p for p in pieces if p not in owned]
+        if not lacking:
+            raise StarlightError("You already own every piece of this festival.")
+        piece = random.choice(lacking)
+        BitPurchase.objects.create(user=user, item_id=piece, price=0)
+        profile.festival_gifts = [*profile.festival_gifts, key]
+        profile.save(update_fields=["festival_gifts"])
+        return piece
+
+
+def use_starlight(user, use, now=None, item_id=None):
+    """Spends stars on a wish, or raises StarlightError."""
+    now = now or timezone.now()
+    cost = STAR_USES.get(use)
+    if cost is None:
+        raise StarlightError("Unknown wish.")
+    with transaction.atomic():
+        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
+        fields = []
+        if use == "festival":
+            festival = festivals.active_on(_local_now(user, now).date())
+            if not festival or item_id not in event_pieces(festival["id"]):
+                raise StarlightError("That piece isn't part of a festival right now.")
+            if user.bit_purchases.filter(item_id=item_id).exists():
+                raise StarlightError("You already own this piece.")
+            BitPurchase.objects.create(user=user, item_id=item_id, price=0)
+        elif use == "reroll":
+            profile.shop_salt += 1
+            fields = ["shop_salt"]
+        elif use == "omen":
+            if profile.crate_omen:
+                raise StarlightError("The stars have already spoken.")
+            profile.crate_omen = roll_crate(BUFFS["mystery_crate"])
+            fields = ["crate_omen"]
+        else:
+            if buff_cooldown_until(user, now) is None:
+                raise StarlightError("No cooldown to shorten.")
+            last = (
+                BitPurchase.objects.select_for_update()
+                .filter(user=user, item_id__in=RUNNABLE_BUFFS)
+                .order_by("-created_at")
+                .first()
+            )
+            if (last.state or {}).get("dawn"):
+                raise StarlightError("This cooldown has already been shortened.")
+            last.state = {**(last.state or {}), "dawn": True}
+            last.save(update_fields=["state"])
+        if not _take_stars(profile, cost, now):
+            raise StarlightError("Not enough stars.")
+        if fields:
+            profile.save(update_fields=fields)
+
+
+def _dawn_used(user):
+    last = (
+        BitPurchase.objects.filter(user=user, item_id__in=RUNNABLE_BUFFS)
+        .order_by("-created_at")
+        .first()
+    )
+    return bool(last and (last.state or {}).get("dawn"))
+
+
+def serialize_starlight(user, now=None):
     profile = UserProfile.objects.filter(user=user).first()
-    stars = profile.starlight if profile else 0
+    days = star_days(user, now)
+    stars = star_count(user, profile.star_spends if profile else [], now)
+    omen = profile.crate_omen if profile else ""
     return {
         "stars": stars,
         "max": STARLIGHT_MAX,
         "cost": STARLIGHT_COST,
         "guard_on": stars >= STARLIGHT_COST,
-        "days": profile.star_days if profile else [],
+        "days": [day.isoformat() for day in days],
         "last_guard": (profile.last_guard if profile else {}) or None,
+        "uses": STAR_USES,
+        "omen": BUFFS[omen]["name"] if omen else None,
+        "dawn_used": _dawn_used(user),
     }
 
 
@@ -871,8 +1018,7 @@ def apply_buff_to_new_log(log, now=None, weather=None):
     Pays the active buff's bonus onto a just-created log and draws the buff
     down. Called once per log from StudyLogViewSet.perform_create (never for
     backup imports or edits). `weather`: the CHRONOMETER reading sent with
-    the commit (STORM RUNNER only). With no buff to pay it, the log lights
-    STARLIGHT instead: returns the stars on the gauge if it lit one.
+    the commit (STORM RUNNER only).
     """
     now = now or timezone.now()
     with transaction.atomic():
@@ -880,7 +1026,7 @@ def apply_buff_to_new_log(log, now=None, weather=None):
         UserProfile.objects.select_for_update().get_or_create(user=log.user)
         buff = active_buff(log.user, now) or _just_expired_buff(log, now)
         if buff is None:
-            return _light_star(log, now)
+            return
         # A BITS reset (or a cancel) may have removed it since the lookup:
         # the log is already saved, so just skip the bonus.
         buff = BitPurchase.objects.select_for_update().filter(pk=buff.pk).first()
@@ -1172,6 +1318,7 @@ def shop_state(user, now=None):
         "active_buff": serialize_buff(active_buff(user, now)),
         "buff_cooldown_until": buff_cooldown_until(user, now),
         "starlight": serialize_starlight(user),
+        "festival": festival_state(user, now),
         "buffs": [
             serialize_buff_offer(item_id, spec) for item_id, spec in BUFFS.items()
         ],
@@ -1235,7 +1382,8 @@ def reset_economy(user):
     category: all purchases (buffs and furniture, so a running buff too) are
     dropped, buff bonuses are taken off the logs and MY ROOM goes back to
     the starter room (all five rooms and their SAVEs, and the shop reserve).
-    STARLIGHT's gauge empties; the stars already lit stay in the night sky. The balance falls back to the base rate for the hours
+    What was spent of STARLIGHT is forgotten, and the bonuses going means every
+    day with a log lights again. The balance falls back to the base rate for the hours
     already logged. Returns (purchases deleted, logs whose bonus was cleared).
     """
     with transaction.atomic():
@@ -1243,9 +1391,13 @@ def reset_economy(user):
         # the far side of the reset.
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
         deleted, _ = BitPurchase.objects.filter(user=user).delete()
-        profile.starlight = 0
+        profile.star_spends = []
         profile.last_guard = {}
-        profile.save(update_fields=["starlight", "last_guard"])
+        profile.crate_omen = ""
+        profile.festival_gifts = []
+        profile.save(
+            update_fields=["star_spends", "last_guard", "crate_omen", "festival_gifts"]
+        )
         cleared = (
             StudyLog.objects.filter(user=user)
             .filter(Q(bonus_bits__gt=0) | ~Q(bonus_item=""))
@@ -1320,7 +1472,12 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
         runs, run_spec = item_id, spec
         if "crate" in spec:
             via = item_id
-            runs = roll_crate(spec)
+            # The stars may already have told what is inside.
+            profile = UserProfile.objects.get(user=user)
+            runs = profile.crate_omen or roll_crate(spec)
+            if profile.crate_omen:
+                profile.crate_omen = ""
+                profile.save(update_fields=["crate_omen"])
             run_spec = BUFFS[runs]
         return BitPurchase.objects.create(
             user=user,

@@ -52,15 +52,26 @@ export const ACTIVE_ART: Record<string, Art> = {
     p.rect(1, 14, 14, 2, S.m2);
   },
   punching_bag: (p) => {
-    p.rect(2, 0, 12, 1, C.ink2);
-    p.rect(12, 0, 2, 32, C.ink2);
-    p.rect(10, 30, 6, 2, C.ink2);
-    p.rect(4, 1, 1, 3, C.metal3);
-    p.rect(1, 4, 7, 18, S.a);
-    p.rect(1, 4, 7, 2, S.a2);
-    p.rect(2, 6, 2, 14, S.a3);
-    p.rect(1, 20, 7, 2, S.a2);
-    p.rect(1, 12, 7, 1, S.a2);
+    // gallows stand
+    p.rect(1, 2, 2, 28, C.metal3);
+    p.rect(1, 2, 1, 28, C.metal2);
+    p.rect(1, 1, 13, 2, C.metal3);
+    p.rect(1, 1, 13, 1, C.metal2);
+    p.rect(0, 30, 16, 2, C.ink3);
+    p.rect(0, 30, 16, 1, C.metal3);
+    // chain
+    for (let y = 3; y < 7; y += 2) p.px(10, y, C.metal);
+    p.rect(8, 6, 5, 1, C.metal2);
+    // the bag itself
+    p.rect(7, 7, 7, 1, S.a2);
+    p.rect(6, 8, 9, 15, S.a);
+    p.rect(7, 23, 7, 1, S.a2);
+    p.rect(7, 8, 1, 15, S.a3);
+    p.rect(13, 8, 2, 15, S.a2);
+    p.rect(6, 11, 9, 2, C.ink2);
+    p.rect(6, 19, 9, 2, C.ink2);
+    p.rect(9, 14, 3, 4, C.white);
+    p.rect(10, 15, 1, 2, S.a2);
   },
   skateboard_wall: (p) => {
     p.rect(2, 0, 4, 16, S.a);
@@ -73,13 +84,25 @@ export const ACTIVE_ART: Record<string, Art> = {
     p.rect(6, 12, 1, 2, C.ink2);
   },
   surfboard: (p) => {
-    for (let y = 0; y < 31; y++) {
-      const half = Math.min(3, Math.round(Math.sin((y / 31) * Math.PI) * 4));
-      p.rect(4 - half, y, half * 2, 1, S.a);
-    }
-    p.rect(3, 4, 1, 24, S.a3);
-    p.rect(1, 14, 6, 2, S.b);
-    p.rect(3, 29, 2, 3, C.ink2);
+    // pointed nose and full body
+    p.rect(3, 0, 2, 1, S.a3);
+    p.rect(2, 1, 4, 2, S.a);
+    p.rect(1, 3, 6, 21, S.a);
+    p.rect(2, 24, 4, 3, S.a);
+    p.rect(3, 27, 2, 1, S.a2);
+    p.rect(1, 3, 1, 21, S.a3);
+    p.rect(6, 3, 1, 21, S.a2);
+    // racing stripes and stringer
+    p.rect(1, 9, 6, 2, S.b);
+    p.rect(1, 12, 6, 1, C.white);
+    p.rect(4, 1, 1, 26, S.a2);
+    // fin and leash
+    p.rect(3, 28, 2, 2, S.b2);
+    p.rect(6, 25, 1, 3, C.ink3);
+    p.px(7, 28, C.ink3);
+    // rack foot
+    p.rect(0, 30, 8, 2, C.wood2);
+    p.rect(0, 30, 8, 1, C.wood3);
   },
   basketball_hoop: (p) => {
     box(p, 0, 0, 16, 10, C.white, S.a);

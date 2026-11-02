@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap } from 'lucide-react';
-import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState } from './api';
-import { Glint, StarlightSky } from './StarlightSky';
+import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState, type StarWish } from './api';
+import { Glint, StarlightSky, StarWishes } from './StarlightSky';
 import { BITS_PER_HOUR } from './bits';
 import { BitShard, StudyTime } from './BitsBadge';
 import { lookOf } from './buffArt';
@@ -298,6 +298,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const { t } = useI18n();
   const [tab, setTab] = useState<ShopTab>(initialTab);
   const [state, setState] = useState<BitsShopState | null>(null);
+  const [wishArmed, setWishArmed] = useState<string | null>(null);
+  const [giftNote, setGiftNote] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomState | null>(null);
   const [now, setNow] = useState(() => Date.now());
   // Each opening starts on the tab the caller asked for (derived during
@@ -432,6 +434,50 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     }
   };
 
+  const handleWishPiece = async (itemId: string) => {
+    if (wishArmed !== itemId) {
+      setWishArmed(itemId);
+      window.setTimeout(() => setWishArmed((cur) => (cur === itemId ? null : cur)), CONFIRM_WINDOW_MS);
+      return;
+    }
+    setWishArmed(null);
+    setBuyError(null);
+    try {
+      const next = await api.bits.starlight('festival', itemId);
+      setState(next);
+      onPurchased(next);
+      setRoom(await api.room.get());
+    } catch (err: unknown) {
+      setBuyError((err as Error).message || t.starWishFailed);
+    }
+  };
+  const handleOpenGift = async () => {
+    setBuyError(null);
+    try {
+      const next = await api.bits.festivalGift();
+      setState(next);
+      onPurchased(next);
+      const r = await api.room.get();
+      setRoom(r);
+      const piece = furnitureById.get(next.gift_piece) ?? r.catalog?.find((c) => c.id === next.gift_piece);
+      setGiftNote(tf(t.giftGot, { name: piece?.name ?? next.gift_piece }));
+    } catch (err: unknown) {
+      setBuyError((err as Error).message || t.starWishFailed);
+    }
+  };
+
+  const handleWish = async (use: StarWish) => {
+    setBuyError(null);
+    try {
+      const next = await api.bits.starlight(use);
+      setState(next);
+      onPurchased(next);
+      if (use === 'reroll') setRoom(await api.room.get());
+    } catch (err: unknown) {
+      setBuyError((err as Error).message || t.starWishFailed);
+    }
+  };
+
   const handleForfeitChallenge = async () => {
     setBuyError(null);
     try {
@@ -495,10 +541,11 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const reserveGone = Boolean(reserve && lineup && !lineup.items.includes(reserve));
   // One section per turnover rate (weekly, every 2 days, daily); an older
   // server without groups shows its single lineup.
+  const eventGroup = lineup?.groups?.find((g) => g.every_days === 0);
   const shopSections: Array<{ every: number; items: string[]; resetsAt: string }> = !lineup
     ? []
     : lineup.groups?.length
-    ? [7, 2, 1]
+    ? [0, 7, 2, 1]
         .map((every) => lineup.groups!.filter((g) => g.every_days === every))
         .filter((groups) => groups.length > 0)
         .map((groups) => ({
@@ -508,7 +555,13 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
         }))
     : [{ every: 0, items: lineup.items, resetsAt: lineup.resets_at }];
   const everyLabel = (every: number) =>
-    every === 1 ? t.bitsShopEvery1 : every === 2 ? t.bitsShopEvery2 : t.bitsShopEvery7;
+    every === 0 && eventGroup?.event
+      ? tf(t.bitsEventHeading, { name: eventGroup.event.name })
+      : every === 1
+      ? t.bitsShopEvery1
+      : every === 2
+      ? t.bitsShopEvery2
+      : t.bitsShopEvery7;
 
   const handleReserve = async (itemId: string | null) => {
     setCancelNotice(null);
@@ -660,8 +713,17 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
         </div>
         {/* One of each piece: owned ones can't be bought again. */}
         {buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)}
+        {spec.tier === 5 && owned === 0 && (state?.starlight?.stars ?? 0) >= (state?.starlight?.uses?.festival ?? 5) && (
+          <button
+            type="button"
+            onClick={() => handleWishPiece(id)}
+            className="py-1 border border-amber-300/40 text-amber-300 text-[10px] uppercase tracking-wider cursor-pointer hover:border-amber-300"
+          >
+            {tf(wishArmed === id ? t.bitsWishConfirm : t.bitsWishPiece, { n: state?.starlight?.uses?.festival ?? 5 })}
+          </button>
+        )}
         {/* Older servers (one weekly lineup, no groups) have no reserve. */}
-        {owned === 0 && lineup?.groups && reserveButton(id)}
+        {owned === 0 && lineup?.groups && spec.tier !== 5 && reserveButton(id)}
       </div>
     );
   };
@@ -764,14 +826,44 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsReserveGone}</p>
                 </div>
               )}
+              {state?.festival?.gift && (
+                <div className="p-2.5 border border-emerald-500/40 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider">
+                    <span className="font-bold text-emerald-400">{t.giftTitle}</span>
+                    <span className={`tabular-nums ${textMuted}`}>
+                      {tf(t.giftProgress, {
+                        h: (Math.min(state.festival.gift.minutes, state.festival.gift.needed) / 60).toFixed(1),
+                        need: state.festival.gift.needed / 60,
+                      })}
+                    </span>
+                  </div>
+                  {state.festival.gift.claimed ? (
+                    <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{giftNote ?? t.giftClaimed}</div>
+                  ) : state.festival.gift.open_today && state.festival.gift.minutes >= state.festival.gift.needed ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenGift}
+                      className="w-full py-1.5 bg-emerald-500 text-zinc-950 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                    >
+                      {t.giftOpen}
+                    </button>
+                  ) : (
+                    <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.giftWaiting}</div>
+                  )}
+                </div>
+              )}
               {room &&
                 shopSections.map((section) => (
                   <div key={section.every} className="space-y-1.5">
-                    {section.every > 0 && (
+                    {(section.every > 0 || eventGroup) && (
                       <div className="flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-wider">
-                        <span className="font-bold">{everyLabel(section.every)}</span>
+                        <span className="font-bold" style={section.every === 0 ? { color: eventGroup?.event?.accent } : undefined}>
+                          {everyLabel(section.every)}
+                        </span>
                         <span className={`tabular-nums ${textMuted}`}>
-                          {tf(t.bitsShopNewIn, { t: formatLeft(new Date(section.resetsAt).getTime() - now) })}
+                          {tf(section.every === 0 ? t.bitsEventEndsIn : t.bitsShopNewIn, {
+                            t: formatLeft(new Date(section.resetsAt).getTime() - now),
+                          })}
                         </span>
                       </div>
                     )}
@@ -808,6 +900,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 <div className="space-y-1.5">
                   <StarlightSky starlight={state.starlight} />
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.starlightHint}</p>
+                  <StarWishes starlight={state.starlight} coolingDown={cooldownLeft > 0} onWish={handleWish} />
                 </div>
               )}
 

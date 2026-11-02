@@ -58,12 +58,14 @@ export const HOME_ART: Record<string, Art> = {
     p.rect(9, 23, 12, 1, S.m2);
   },
   pouf: (p) => {
-    p.rect(1, 2, 6, 1, S.a3);
+    p.rect(2, 1, 4, 1, S.a3);
+    p.rect(1, 2, 6, 1, S.a);
     p.rect(0, 3, 8, 4, S.a);
-    p.rect(0, 6, 8, 1, S.a2);
-    p.px(4, 4, S.a2);
-    p.px(2, 5, S.a2);
-    p.px(6, 5, S.a2);
+    p.rect(1, 7, 6, 1, S.a2);
+    // knitted ribs
+    for (const x of [1, 3, 5]) p.rect(x, 3, 1, 4, S.a2);
+    p.rect(1, 2, 1, 1, S.a3);
+    p.rect(3, 2, 2, 1, S.a2);
   },
   bench: (p) => {
     p.rect(0, 2, 24, 2, S.w3);

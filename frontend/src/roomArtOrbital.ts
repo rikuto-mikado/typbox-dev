@@ -148,9 +148,21 @@ export const ORBITAL_ART: Record<string, Art> = {
     p.rect(1, 29, 14, 2, S.m2);
   },
   orb_handrail: (p) => {
-    for (const x of [1, 30]) p.rect(x, 2, 1, 5, S.m2);
-    p.rect(1, 2, 30, 2, S.a);
-    p.rect(1, 2, 30, 1, S.a3);
+    // wall brackets
+    for (const x of [2, 15, 29]) {
+      p.rect(x, 4, 1, 3, C.metal3);
+      p.rect(x - 1, 6, 3, 2, C.metal2);
+    }
+    // the rail, padded where hands go
+    p.rect(0, 3, 32, 2, C.metal);
+    p.rect(0, 3, 32, 1, C.white);
+    for (const x of [5, 18]) {
+      p.rect(x, 2, 8, 4, S.a);
+      p.rect(x, 2, 8, 1, S.a3);
+      p.rect(x, 5, 8, 1, S.a2);
+    }
+    p.rect(0, 2, 1, 4, C.metal3);
+    p.rect(31, 2, 1, 4, C.metal3);
   },
   orb_porthole: (p) => {
     disc(p, 8, 8, 7.5, S.m2);

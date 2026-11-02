@@ -177,27 +177,62 @@ export const EXTRAS_ART: Record<string, Art> = {
     p.rect(2, 28, 12, 1, S.m3);
   },
   knight_armor: (p) => {
-    p.rect(2, 0, 4, 6, S.m3);
-    p.rect(3, 3, 2, 1, C.ink);
-    p.rect(3, 0, 2, 1, S.b);
-    p.rect(1, 6, 6, 9, S.m3);
-    p.rect(2, 7, 4, 1, S.m);
-    p.rect(0, 7, 1, 8, S.m);
-    p.rect(7, 7, 1, 8, S.m);
-    p.rect(7, 2, 1, 14, C.metal);
-    p.rect(2, 15, 2, 11, S.m3);
-    p.rect(4, 15, 2, 11, S.m);
-    p.rect(1, 26, 6, 1, S.m2);
-    p.rect(0, 27, 8, 5, S.w2);
+    // plume and helm
+    p.rect(3, 0, 3, 1, S.b);
+    p.rect(4, 1, 3, 1, S.b3);
+    p.rect(2, 2, 4, 5, S.m);
+    p.rect(2, 2, 1, 5, S.m3);
+    p.rect(2, 4, 4, 1, C.ink);
+    p.px(3, 6, C.ink);
+    p.px(5, 6, C.ink);
+    // pauldrons and breastplate
+    p.rect(0, 8, 8, 2, S.m3);
+    p.rect(1, 10, 6, 6, S.m);
+    p.rect(2, 10, 1, 6, S.m3);
+    p.rect(4, 10, 1, 6, S.m2);
+    p.rect(1, 16, 6, 1, S.b);
+    // arms and sword held point-down
+    p.rect(0, 10, 1, 7, S.m2);
+    p.rect(7, 10, 1, 7, S.m2);
+    // tassets and legs
+    p.rect(1, 17, 6, 2, S.m2);
+    p.rect(1, 19, 2, 8, S.m);
+    p.rect(5, 19, 2, 8, S.m);
+    p.rect(1, 22, 2, 1, S.m3);
+    p.rect(5, 22, 2, 1, S.m3);
+    p.rect(1, 27, 3, 1, S.m2);
+    p.rect(5, 27, 3, 1, S.m2);
+    // plinth
+    p.rect(0, 28, 8, 4, C.wood2);
+    p.rect(0, 28, 8, 1, C.wood3);
+    p.rect(2, 30, 4, 1, C.amber2);
   },
   mannequin: (p) => {
-    p.rect(3, 0, 2, 2, '#e0c59f');
-    p.rect(1, 2, 6, 10, S.a);
-    p.rect(1, 2, 6, 1, S.a3);
-    p.rect(3, 4, 2, 6, S.a2);
-    p.rect(2, 12, 4, 2, S.a2);
-    p.rect(3, 14, 2, 14, C.walnut);
-    p.rect(1, 28, 6, 4, C.walnut);
+    // neck knob
+    p.rect(3, 0, 2, 1, C.wood3);
+    p.rect(3, 1, 2, 2, C.paper2);
+    // tailored form
+    p.rect(1, 3, 6, 2, S.a);
+    p.rect(1, 3, 6, 1, S.a3);
+    p.rect(0, 5, 8, 3, S.a);
+    p.rect(1, 8, 6, 3, S.a);
+    p.rect(2, 11, 4, 2, S.a2);
+    p.rect(1, 13, 6, 5, S.a);
+    p.rect(1, 18, 6, 1, S.a2);
+    // seams, buttons and a tape measure
+    p.rect(4, 3, 1, 15, S.a2);
+    p.px(3, 6, C.white);
+    p.px(3, 9, C.white);
+    p.rect(1, 12, 6, 1, C.amber);
+    // wooden pole and tripod
+    p.rect(3, 19, 2, 9, C.wood2);
+    p.rect(3, 19, 1, 9, C.wood3);
+    p.rect(2, 28, 4, 1, C.wood2);
+    p.px(1, 29, C.wood2);
+    p.px(6, 29, C.wood2);
+    p.rect(0, 30, 2, 2, C.wood2);
+    p.rect(6, 30, 2, 2, C.wood2);
+    p.rect(3, 29, 2, 3, C.wood2);
   },
   sewing_table: (p) => {
     p.rect(3, 2, 9, 2, S.a);

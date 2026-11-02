@@ -52,18 +52,32 @@ export const MUSIC_ART: Record<string, Art> = {
     p.rect(6, 0, 4, 1, C.ink);
   },
   cello: (p) => {
-    p.rect(3, 0, 2, 2, C.walnut);
-    p.rect(3, 2, 1, 9, C.ink);
-    disc(p, 4, 15, 3.4, S.w);
-    disc(p, 4, 22, 3.8, S.w);
-    p.rect(1, 15, 6, 7, S.w);
-    p.rect(1, 17, 1, 2, S.w2);
-    p.rect(6, 17, 1, 2, S.w2);
-    p.rect(3, 13, 2, 12, C.ink);
-    p.px(2, 19, C.ink);
-    p.px(5, 19, C.ink);
-    p.rect(2, 24, 4, 1, C.ink2);
-    p.rect(4, 26, 1, 6, C.metal3);
+    // scroll and pegs
+    p.rect(3, 0, 2, 2, S.w2);
+    p.px(4, 0, S.w3);
+    p.rect(2, 3, 4, 1, C.ink2);
+    p.rect(3, 2, 2, 4, S.w2);
+    // neck and fingerboard
+    p.rect(3, 6, 2, 8, C.ink2);
+    // upper bout
+    p.rect(1, 13, 6, 2, S.w);
+    p.rect(0, 15, 8, 3, S.w);
+    // waist
+    p.rect(1, 18, 6, 2, S.w2);
+    // lower bout
+    p.rect(0, 20, 8, 7, S.w);
+    p.rect(1, 27, 6, 1, S.w2);
+    p.rect(1, 15, 1, 3, S.w3);
+    p.rect(1, 20, 1, 6, S.w3);
+    // f-holes, bridge and strings
+    p.rect(1, 20, 1, 3, C.ink);
+    p.rect(6, 20, 1, 3, C.ink);
+    p.rect(3, 22, 2, 1, C.paper);
+    p.rect(3, 13, 1, 12, C.metal);
+    p.rect(3, 25, 2, 2, C.ink2);
+    // endpin
+    p.rect(4, 28, 1, 3, C.metal2);
+    p.rect(3, 31, 3, 1, C.ink3);
   },
   violin_wall: (p) => {
     p.rect(3, 0, 2, 1, C.ink2);
@@ -98,16 +112,24 @@ export const MUSIC_ART: Record<string, Art> = {
     p.rect(6, 7, 4, 1, C.metal);
   },
   mic_stand: (p) => {
-    disc(p, 4, 2, 1.8, C.metal2);
-    p.px(3, 1, C.metal);
-    p.rect(4, 4, 1, 3, C.ink2);
-    p.rect(3, 6, 1, 15, C.ink2);
-    p.px(4, 9, C.ink);
-    p.rect(1, 21, 6, 1, C.ink2);
-    p.px(0, 22, C.ink2);
-    p.px(3, 22, C.ink2);
-    p.px(7, 22, C.ink2);
-    p.rect(4, 12, 1, 6, C.red);
+    // boom arm reaching to the mic
+    p.rect(3, 4, 1, 16, C.metal2);
+    p.px(4, 4, C.metal);
+    for (let i = 0; i < 3; i++) p.px(4 + i, 3 - i, C.metal2);
+    // microphone: grille and barrel
+    p.rect(5, 0, 3, 2, C.metal);
+    p.px(6, 0, C.white);
+    p.rect(5, 2, 2, 2, C.ink2);
+    p.px(5, 4, C.red);
+    // clutch and cable
+    p.rect(2, 11, 3, 1, C.ink3);
+    p.px(4, 18, C.ink3);
+    p.px(5, 19, C.ink3);
+    // round base
+    p.rect(2, 20, 3, 1, C.metal3);
+    p.rect(0, 21, 7, 2, C.ink3);
+    p.rect(1, 21, 5, 1, C.metal3);
+    p.rect(0, 23, 7, 1, C.ink2);
   },
   dj_deck: (p, { on }) => {
     p.rect(0, 2, 24, 4, S.m2);
@@ -149,17 +171,30 @@ export const MUSIC_ART: Record<string, Art> = {
     p.rect(2, 7, 4, 1, C.ink2);
   },
   bass_guitar: (p) => {
-    p.rect(3, 0, 2, 3, C.ink);
-    p.rect(3, 3, 1, 10, S.w2);
-    p.rect(1, 13, 6, 6, S.a);
-    p.rect(2, 12, 4, 1, S.a);
-    p.rect(0, 15, 8, 3, S.a);
-    p.rect(1, 15, 6, 1, S.a3);
-    p.rect(3, 13, 2, 1, C.white);
-    p.rect(3, 16, 2, 1, C.ink2);
-    p.rect(1, 19, 6, 1, C.ink2);
-    p.rect(1, 20, 1, 4, C.ink2);
-    p.rect(6, 20, 1, 4, C.ink2);
+    // headstock with four tuners
+    p.rect(3, 0, 3, 3, C.ink3);
+    p.px(2, 0, C.metal);
+    p.px(2, 2, C.metal);
+    p.px(6, 0, C.metal);
+    p.px(6, 2, C.metal);
+    // long neck
+    p.rect(3, 3, 2, 9, S.w2);
+    p.px(3, 5, C.metal);
+    p.px(3, 8, C.metal);
+    // offset body
+    p.rect(3, 11, 4, 2, S.a);
+    p.rect(1, 13, 7, 7, S.a);
+    p.rect(0, 15, 8, 4, S.a);
+    p.rect(1, 20, 5, 2, S.a2);
+    p.rect(1, 13, 1, 5, S.a3);
+    // pickguard, pickup and bridge
+    p.rect(2, 15, 3, 4, C.white);
+    p.rect(3, 15, 2, 1, C.ink2);
+    p.rect(3, 19, 2, 1, C.metal);
+    p.rect(6, 19, 1, 2, C.ink2);
+    // stand foot
+    p.rect(1, 22, 6, 1, C.ink3);
+    p.rect(0, 23, 8, 1, C.ink2);
   },
   jukebox: (p, { on, night }) => {
     const lit = on || night;

@@ -110,14 +110,24 @@ export const CYBER_STREET_ART: Record<string, Art> = {
     p.rect(13, 7, 1, 1, S.m2);
   },
   cyber_cable_mess: (p) => {
-    const colors = [C.ink2, C.ink3, S.a2, C.ink2, S.b2];
-    colors.forEach((c, i) => {
-      for (let x = 0; x < 32; x++) {
-        const y = Math.round(Math.abs(Math.sin(((x + i * 7) / 32) * Math.PI * (1 + (i % 2)))) * (3 + (i % 3))) + i % 2;
-        p.px(x, Math.min(7, y), c);
-      }
-    });
-    p.rect(9, 3, 3, 2, S.a);
+    // cable clamp on the wall
+    p.rect(3, 0, 26, 2, C.ink3);
+    p.rect(3, 0, 26, 1, C.metal3);
+    // thick loops hanging from it
+    const loop = (x: number, w: number, depth: number, c: string) => {
+      p.rect(x, 2, 1, depth, c);
+      p.rect(x + w, 2, 1, depth, c);
+      p.rect(x + 1, 2 + depth, w - 1, 1, c);
+    };
+    loop(2, 10, 3, S.a);
+    loop(9, 12, 5, S.b);
+    loop(18, 9, 2, S.a2);
+    loop(24, 6, 4, S.b2);
+    // connectors and a warning tag
+    p.rect(13, 7, 2, 1, C.amber);
+    p.rect(1, 4, 2, 2, C.ink2);
+    p.px(1, 5, C.leaf3);
+    p.rect(28, 5, 2, 2, C.amber);
   },
   cyber_arcade_cab: (p, { on, night }) => {
     const lit = on || night;

@@ -23,8 +23,10 @@ import random
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+from django.db.models import Count, Sum
 from django.utils import timezone
 
+from . import festivals
 from .models import UserProfile
 from .timezones import get_user_zone, user_week_start, week_start_date
 
@@ -36,7 +38,8 @@ MAX_PLACED = 64
 # The catalog lives in furniture_catalog.json: one object per piece with
 #   id, name, category (editor tab), layer, w, h (tiles), price and
 #   tier: 0 starter (free, owned by everyone, never sold) · 1 small ·
-#         2 medium · 3 large · 4 featured.
+#         2 medium · 3 large · 4 featured · 5 limited (sold during its
+#         `event`, see festivals.py) · 6 earned (never sold, see EARNED).
 # Colour variants add  base (the art to draw) and  recolor  ({hex: hex}
 # swaps applied to that art); plain pieces draw the art named by their id.
 with open(Path(__file__).with_name("furniture_catalog.json"), encoding="utf-8") as fh:
@@ -102,6 +105,21 @@ def fit_of(item_id):
 
 
 STARTER_IDS = [item_id for item_id, spec in FURNITURE.items() if spec["tier"] == 0]
+
+# What study itself earns: (minutes logged, logs committed) to have it.
+EARNED = {
+    "trophy_100h": (6000, 0),
+    "trophy_500h": (30000, 0),
+    "trophy_1000h": (60000, 0),
+    "medal_logs100": (0, 100),
+    "medal_logs1000": (0, 1000),
+}
+
+
+def event_pieces(festival_id):
+    return [
+        item_id for item_id, spec in FURNITURE.items() if spec.get("event") == festival_id
+    ]
 DEFAULT_LAYOUT = {
     "wall": "wall_plain",
     "floor": "floor_wood",
@@ -166,20 +184,22 @@ def _bases_of_tier(tier):
 _TIER_BASES = {tier: _bases_of_tier(tier) for tier, _, _ in SHOP_ROTATION}
 
 
-def lineup_for(tier, count, index):
+def lineup_for(tier, count, index, salt=0):
     """
     The `count` pieces of one tier on show in lineup period `index`, the
     same for everyone. The tier's designs (bases) are dealt out from a
     shuffled deck, `count` per period, so none comes back until the whole
     deck has been shown: a missed piece returns within len(bases) / count
     periods (small ~33 days, medium ~88 days, large and featured ~32 weeks).
-    Each pick is a different design, shown in one of its colours.
+    Each pick is a different design, shown in one of its colours. `salt` deals
+    from another deck (a STARLIGHT wish).
     """
     by_base = _TIER_BASES[tier]
     bases = sorted(by_base)
     per_deck = max(1, len(bases) // count)
     deck, slot = divmod(index, per_deck)
-    random.Random(f"typbox-room-{tier}-deck-{deck}").shuffle(bases)
+    seed = f"typbox-room-{tier}-deck-{deck}" + (f"-{salt}" if salt else "")
+    random.Random(seed).shuffle(bases)
     return [
         random.Random(f"typbox-room-{tier}-{index}-{base}").choice(by_base[base])
         for base in bases[slot * count : (slot + 1) * count]
@@ -209,14 +229,32 @@ def shop_lineup(user, now=None, profile=None):
     """
     now = now or timezone.now()
     zone = get_user_zone(user) or timezone.get_current_timezone()
+    salt = (profile or UserProfile.objects.filter(user=user).first() or UserProfile()).shop_salt
+    today = timezone.localtime(now, zone).date()
     groups = []
+    festival = festivals.active_on(today)
+    if festival:
+        groups.append(
+            {
+                "tier": 5,
+                "every_days": 0,
+                "event": festivals.serialize(festival),
+                "items": event_pieces(festival["id"]),
+                "resets_at": timezone.make_aware(
+                    datetime.combine(
+                        festivals.last_day(festival, today) + timedelta(days=1), time.min
+                    ),
+                    zone,
+                ),
+            }
+        )
     for tier, count, every in SHOP_ROTATION:
         index, start = shop_period(user, every, now)
         groups.append(
             {
                 "tier": tier,
                 "every_days": every,
-                "items": lineup_for(tier, count, index),
+                "items": lineup_for(tier, count, index, salt),
                 "resets_at": timezone.make_aware(
                     datetime.combine(start + timedelta(days=every), time.min), zone
                 ),
@@ -242,6 +280,10 @@ def inventory(user):
         "item_id", flat=True
     ):
         owned[item_id] = owned.get(item_id, 0) + 1
+    totals = user.study_logs.aggregate(minutes=Sum("duration_minutes"), logs=Count("id"))
+    for item_id, (minutes, logs) in EARNED.items():
+        if (totals["minutes"] or 0) >= minutes and totals["logs"] >= logs:
+            owned[item_id] = 1
     return owned
 
 
@@ -439,7 +481,8 @@ def room_state(user, profile, now=None, with_catalog=True):
     when the client already holds the current version (see CATALOG_VERSION)."""
     owned = inventory(user)
     state = {
-        "layout": stored_layout(profile),
+        # Sanitized: an earned piece can stop being owned while it is placed.
+        "layout": sanitize_layout(stored_layout(profile), owned),
         "inventory": owned,
         "rooms": rooms_state(profile, owned),
         "active_room": active_slot(profile),

@@ -55,13 +55,20 @@ export const WALL_ART: Record<string, Art> = {
       p.rect(13, 9, 1, 2, C.ink2);
     }),
   moon_phases: (p) => {
-    p.rect(0, 3, 24, 1, S.w2);
-    const phases = [0, 0.4, 1, 0.4, 0];
-    phases.forEach((f, i) => {
-      const cx = 2.5 + i * 4.75;
-      disc(p, cx, 4, 2, C.paper);
-      if (f < 1) disc(p, cx + (i < 2 ? -1 : 1) * (1 + (1 - f) * 1.6), 4, 2, C.ink2);
-    });
+    // a thin wooden rail
+    p.rect(0, 6, 24, 1, S.w2);
+    p.rect(0, 7, 24, 1, S.w);
+    // a crescent, a half and a full moon on brass hooks
+    disc(p, 4, 3, 3, C.glow);
+    disc(p, 5.6, 2.6, 2.6, C.ink2);
+    disc(p, 12, 3, 3, C.ink3);
+    p.rect(12, 0, 3, 6, C.ink3);
+    for (let y = 0; y < 6; y++) {
+      for (let x = 9; x < 12; x++) if ((x + 0.5 - 12) ** 2 + (y + 0.5 - 3) ** 2 <= 9) p.px(x, y, C.glow);
+    }
+    disc(p, 20, 3, 3, C.glow);
+    p.px(19, 2, C.amber);
+    p.px(21, 4, C.amber);
   },
   poster_sunset: (p) =>
     framed(p, 16, 24, '#fde68a', () => {
@@ -288,13 +295,17 @@ export const WALL_ART: Record<string, Art> = {
     text(p, Math.floor((24 - textWidth('HOME')) / 2), 1, 'HOME', C.white);
   },
   banner_flags: (p) => {
-    for (let x = 0; x < 32; x++) p.px(x, Math.round(Math.sin((x / 31) * Math.PI) * 2), C.ink3);
-    const flags = [S.a, S.b, C.amber, C.leaf3, S.a, S.b, C.amber];
-    flags.forEach((c, i) => {
-      const x = 1 + i * 4.3;
-      const y = 1 + Math.round(Math.sin(((x + 1) / 31) * Math.PI) * 2);
-      for (let d = 0; d < 4; d++) p.rect(Math.round(x) + Math.floor(d / 2), y + d, 3 - d, 1, c);
-    });
+    const sag = [0, 1, 2, 2, 3, 3, 3, 2, 2, 1, 0];
+    for (let x = 0; x < 32; x++) p.px(x, 1 + sag[Math.floor(x / 3)], C.ink3);
+    for (let i = 0; i < 8; i++) {
+      const x = 1 + i * 4;
+      const y = 2 + sag[Math.floor(x / 3)];
+      const [c, c2] = i % 2 ? [S.b, S.b2] : [S.a, S.a2];
+      p.rect(x, y, 3, 1, c);
+      p.rect(x, y + 1, 3, 1, c2);
+      p.px(x + 1, y + 2, c2);
+      p.px(x, y, i % 2 ? S.b3 : S.a3);
+    }
   },
   barometer: (p) => {
     disc(p, 4, 4, 3.8, S.w);

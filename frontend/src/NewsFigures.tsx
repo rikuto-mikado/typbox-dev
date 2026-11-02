@@ -16,7 +16,7 @@ import { useAmbientCanvas } from './useAmbientCanvas';
 import { api } from './api';
 import { BitsBadge, BitShard } from './BitsBadge';
 import { BUFF_ART, lookOf } from './buffArt';
-import { BOSS_ART, RIVAL_ART, challengeAccent } from './challengeArt';
+import { BOSS_ART, RIVAL_ART, challengeAccent, type PixelArt } from './challengeArt';
 import { HpCells, Pixel } from './ChallengePanel';
 import { BuffIcon } from './BuffIcon';
 import { PACK_ART } from './roomArtPacks';
@@ -46,6 +46,17 @@ export type FigureKind =
   | 'pairs'
   | 'challenges'
   | 'starlight'
+  | 'festivals'
+  | 'fest-newyear'
+  | 'fest-setsubun'
+  | 'fest-valentine'
+  | 'fest-hanami'
+  | 'fest-tanabata'
+  | 'fest-summer'
+  | 'fest-tsukimi'
+  | 'fest-halloween'
+  | 'fest-culture'
+  | 'fest-christmas'
   | 'buffguide'
   | 'packs6'
   | 'newbuffs'
@@ -581,6 +592,93 @@ const RIVAL_DEMO = [
   { key: 'nova', name: 'NOVA', tag: 'NIGHT OWL', lines: ['ASLEEP · UP AT 11:00', 'STUDYING · ALGORITHMS · 1:05'] },
   { key: 'rush', name: 'RUSH', tag: 'CRAMMER', lines: ['OFF THE DESK · BACK AT 20:30', 'STUDYING · MOCK EXAM · 2:10'] },
 ];
+type CastMember = { name: string; role: string; art: PixelArt; key: string };
+const boss = (key: string, name: string): CastMember => ({ key, name, role: 'BOSS', art: BOSS_ART[key] });
+const rival = (key: string, name: string, role = 'RIVAL'): CastMember => ({ key, name, role, art: RIVAL_ART[key] });
+
+const FESTIVAL_CAST: Record<string, CastMember[]> = {
+  newyear: [boss('kagami', 'KAGAMI'), rival('miko', 'MIKO')],
+  setsubun: [boss('oni', 'ONI')],
+  valentine: [boss('bitter', 'BITTER'), rival('choco', 'CHOCO')],
+  hanami: [boss('fubuki', 'FUBUKI'), rival('sakura', 'SAKURA')],
+  tanabata: [boss('river', 'RIVER OF HEAVEN'), rival('orihime', 'ORIHIME')],
+  summer: [boss('august', 'AUGUST 31'), rival('copycat', '???', 'HIDDEN')],
+  tsukimi: [boss('tsukuyomi', 'TSUKUYOMI'), rival('usagi', 'USAGI')],
+  halloween: [boss('jack', 'JACK'), rival('ghost', '???', 'HIDDEN')],
+  culture: [boss('stagefright', 'STAGE FRIGHT'), rival('iincho', 'IINCHO')],
+  christmas: [boss('krampus', 'KRAMPUS'), rival('santa', 'SANTA'), rival('rudolph', '???', 'HIDDEN')],
+};
+
+/** One festival's challengers, as they appear in the exchange. */
+const FestivalCastFigure: React.FC<FigureContext & { festival: string }> = ({ festival, borderCol, textMuted }) => {
+  const cast = FESTIVAL_CAST[festival] ?? [];
+  return (
+    <div className="grid gap-px font-mono" style={{ gridTemplateColumns: `repeat(${cast.length}, minmax(0, 1fr))` }} aria-hidden>
+      {cast.map((c, i) => {
+        const accent = challengeAccent(c.key);
+        const hidden = c.role === 'HIDDEN';
+        return (
+          <div key={c.key} className={`min-w-0 p-2 border ${borderCol} flex flex-col items-center gap-1`}>
+            <div
+              className="w-full h-28 flex items-end justify-center"
+              style={{ background: `radial-gradient(ellipse 60% 60% at 50% 62%, ${hidden ? '#71717a' : accent}38, transparent 72%)` }}
+            >
+              <div className="ch-bob" style={{ animationDelay: `${i * -0.5}s` }}>
+                <Pixel
+                  art={c.art}
+                  className="w-24 h-24"
+                  style={hidden ? { filter: 'brightness(0) opacity(0.65)' } : { filter: `drop-shadow(0 0 8px ${accent}66)` }}
+                />
+              </div>
+            </div>
+            <div className="text-[11px] font-bold tracking-wider truncate max-w-full" style={{ color: hidden ? undefined : accent }}>
+              {c.name}
+            </div>
+            <div className={`text-[10px] tracking-widest ${textMuted}`}>{c.role}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const FESTIVAL_FACES: Array<[name: string, dates: string, art: PixelArt, key: string]> = [
+  ['NEW YEAR', 'DEC 31 - JAN 3', BOSS_ART.kagami, 'kagami'],
+  ['SETSUBUN', 'FEB 1 - 3', BOSS_ART.oni, 'oni'],
+  ['VALENTINE', 'FEB 10 - 14', BOSS_ART.bitter, 'bitter'],
+  ['HANAMI', 'MAR 25 - APR 10', BOSS_ART.fubuki, 'fubuki'],
+  ['TANABATA', 'JUL 1 - 7', BOSS_ART.river, 'river'],
+  ['SUMMER BREAK', 'AUGUST', BOSS_ART.august, 'august'],
+  ['TSUKIMI', 'SEP 15 - 25', BOSS_ART.tsukuyomi, 'tsukuyomi'],
+  ['HALLOWEEN', 'OCT 25 - 31', BOSS_ART.jack, 'jack'],
+  ['CULTURE FESTIVAL', 'NOV 1 - 7', BOSS_ART.stagefright, 'stagefright'],
+  ['CHRISTMAS', 'DEC 20 - 25', BOSS_ART.krampus, 'krampus'],
+];
+
+const FestivalsFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => (
+  <div className="grid grid-cols-2 sm:grid-cols-5 gap-px font-mono" aria-hidden>
+    {FESTIVAL_FACES.map(([name, dates, art, key], i) => {
+      const accent = challengeAccent(key);
+      return (
+        <div key={name} className={`min-w-0 p-2 border ${borderCol} flex flex-col items-center gap-1`}>
+          <div
+            className="w-full h-24 flex items-end justify-center"
+            style={{ background: `radial-gradient(ellipse 60% 60% at 50% 62%, ${accent}33, transparent 72%)` }}
+          >
+            <div className="ch-bob" style={{ animationDelay: `${i * -0.4}s` }}>
+              <Pixel art={art} className="w-20 h-20" style={{ filter: `drop-shadow(0 0 8px ${accent}55)` }} />
+            </div>
+          </div>
+          <div className="text-[10px] font-bold tracking-wider truncate max-w-full" style={{ color: accent }}>
+            {name}
+          </div>
+          <div className={`text-[10px] tabular-nums truncate max-w-full ${textMuted}`}>{dates}</div>
+        </div>
+      );
+    })}
+  </div>
+);
+
 const ChallengesFigure: React.FC<FigureContext> = ({ borderCol, textMuted }) => {
   const tick = useTicker(900);
   const per = RAID_DEMO_HITS.length + 2; // five hits, a beat down, a beat to swap
@@ -1245,6 +1343,19 @@ export const NewsFigure: React.FC<{ kind: FigureKind; caption?: string } & Figur
     switch (kind) {
       case 'pairs':
         return <PairsFigure {...ctx} />;
+      case 'festivals':
+        return <FestivalsFigure {...ctx} />;
+      case 'fest-newyear':
+      case 'fest-setsubun':
+      case 'fest-valentine':
+      case 'fest-hanami':
+      case 'fest-tanabata':
+      case 'fest-summer':
+      case 'fest-tsukimi':
+      case 'fest-halloween':
+      case 'fest-culture':
+      case 'fest-christmas':
+        return <FestivalCastFigure {...ctx} festival={kind.slice(5)} />;
       case 'starlight':
         return <StarlightSky starlight={{ stars: 9, max: 14, cost: 7, guard_on: true, days: [], last_guard: null }} />;
       case 'challenges':

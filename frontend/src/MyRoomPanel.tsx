@@ -74,6 +74,8 @@ interface MyRoomPanelProps {
   onOpenShop: () => void;
   /** Keys the "seen" list for NEW badges per account on this device. */
   userId?: number;
+  /** What is falling outside right now, for the view windows. */
+  weather?: 'rain' | 'snow' | null;
 }
 
 const localHour = (timeZone: string) => {
@@ -154,7 +156,7 @@ const writeSeen = (userId: number | undefined, seen: Set<string>) => {
   }
 };
 
-export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, borderCol, textMuted, onOpenShop, userId }) => {
+export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, borderCol, textMuted, onOpenShop, userId, weather }) => {
   const { t } = useI18n();
   const [room, setRoom] = useState<RoomState | null>(null);
   const [layout, setLayout] = useState<RoomLayout | null>(null);
@@ -273,13 +275,13 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
   useEffect(() => {
     if (!canvasRef.current || !layout || !room) return;
     renderRoom(canvasRef.current, layout, catalog, {
-      env: { on: lit, night },
+      env: { on: lit, night, weather },
       selected,
       lifted: drag?.moved ? drag.index : -1,
       ghost,
       grid: showGrid,
     });
-  }, [layout, room, catalog, lit, night, selected, drag, ghost, showGrid]);
+  }, [layout, room, catalog, lit, night, weather, selected, drag, ghost, showGrid]);
 
   if (loadError) {
     return <div className="p-3 border border-rose-500/40 text-rose-400 font-mono text-[11px]">{loadError}</div>;

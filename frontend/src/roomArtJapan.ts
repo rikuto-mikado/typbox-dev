@@ -19,11 +19,16 @@ export const JAPAN_ART: Record<string, Art> = {
     p.rect(0, 15, 24, 1, S.a2);
   },
   zabuton: (p) => {
-    p.rect(0, 5, 8, 3, S.a);
-    p.rect(1, 4, 6, 1, S.a);
-    p.rect(1, 4, 6, 1, S.a3);
-    p.px(4, 5, S.a2);
-    p.rect(0, 7, 8, 1, S.a2);
+    p.rect(1, 3, 6, 1, S.a3);
+    p.rect(0, 4, 8, 3, S.a);
+    p.rect(0, 4, 8, 1, S.a3);
+    p.rect(0, 6, 8, 1, S.a2);
+    p.px(4, 4, S.a2);
+    // corner and centre tufts
+    p.px(0, 3, C.amber);
+    p.px(7, 3, C.amber);
+    p.px(4, 3, C.amber);
+    p.rect(1, 7, 6, 1, S.a2);
   },
   byobu: (p) => {
     for (let i = 0; i < 4; i++) {
@@ -118,13 +123,22 @@ export const JAPAN_ART: Record<string, Art> = {
     p.rect(19, 4, 3, 3, C.leaf2);
   },
   futon: (p) => {
-    p.rect(0, 2, 6, 3, C.white);
-    p.rect(0, 2, 6, 1, C.paper2);
-    p.rect(5, 1, 27, 5, S.a);
-    p.rect(5, 1, 27, 1, S.a3);
-    for (let x = 8; x < 32; x += 6) p.rect(x, 3, 3, 1, S.a2);
-    p.rect(0, 6, 32, 2, C.paper);
-    p.rect(0, 7, 32, 1, C.paper2);
+    // tatami-side mattress, layered
+    p.rect(0, 5, 32, 3, C.paper2);
+    p.rect(0, 5, 32, 1, C.white);
+    p.rect(1, 7, 30, 1, C.metal);
+    // buckwheat pillow
+    p.rect(1, 2, 7, 3, C.white);
+    p.rect(1, 2, 7, 1, C.paper);
+    p.rect(2, 4, 5, 1, C.paper2);
+    // quilt, with its pattern and a turned-back corner
+    p.rect(8, 2, 24, 4, S.a);
+    p.rect(8, 2, 24, 1, S.a3);
+    for (let x = 11; x < 32; x += 5) p.px(x, 4, S.a3);
+    for (let x = 13; x < 32; x += 5) p.px(x, 3, S.a2);
+    p.rect(8, 2, 3, 4, C.white);
+    p.rect(10, 2, 1, 4, C.paper2);
+    p.rect(8, 5, 24, 1, S.a2);
   },
   chabudai: (p) => {
     // teapot and two cups on a low round table
