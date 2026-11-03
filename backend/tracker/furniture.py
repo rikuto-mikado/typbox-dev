@@ -112,11 +112,98 @@ def event_pieces(festival_id):
 DEFAULT_LAYOUT = {
     "wall": "wall_plain",
     "floor": "floor_wood",
-    "items": [
-        {"id": "starter_desk", "x": 6, "y": 7},
-        {"id": "starter_chair", "x": 9, "y": 7},
-    ],
+    # An empty room. Nothing shows until a starter pack: see starter_required.
+    "items": [],
 }
+
+# ==========================================
+# Starter packs
+# ==========================================
+# Everyone starts with nothing at all: no walls, no floor, no desk. The first
+# furniture anyone gets is one of these, a finished room; the rest of the shop
+# stays locked until then (a BITS reset goes back to this). Once a user owns any
+# furniture the free basics are theirs too, and the packs are gone.
+#
+# Balance: 2,500 BITS is about 25 hours of study, once per economy. A pack is a
+# room's worth of pieces, small ones with one or two that change its whole look,
+# worth just under the cheapest large piece (20,000). Large and featured pieces
+# stay out of it: those are what the weeks of saving are for.
+# tests.StarterPackTests holds every pack to this.
+STARTER_PACK_PRICE = 2500
+STARTER_PACK_VALUE = (17000, 19999)
+# The chair tucked into the desk, as the editor lets you.
+_DESK = [("starter_desk", 6, 7), ("starter_chair", 7, 7)]
+
+
+def _pack(name, line, wall, floor, items):
+    placed = [{"id": item_id, "x": x, "y": y} for item_id, x, y in items]
+    return {
+        "name": name,
+        "line": line,
+        "layout": {"wall": wall, "floor": floor, "items": placed},
+    }
+
+
+STARTER_PACKS = {
+    "pack_study": _pack(
+        "STUDY NOOK", "A proper desk, ready for a long evening", "wall_navy", "floor_wood",
+        _DESK + [
+            ("timetable", 6, 1), ("certificate", 10, 2), ("crate_shelf", 2, 7), ("floor_lamp", 5, 6),
+            ("rug_round", 6, 9), ("plant_pot", 10, 8),
+        ],
+    ),
+    "pack_cozy": _pack(
+        "COZY CORNER", "Flowers on the wall, somewhere soft to sit", "wall_floral", "floor_wood",
+        _DESK + [
+            ("poster_cat", 6, 1), ("sunset_lamp", 10, 7), ("beanbag", 11, 8), ("floor_cushion", 3, 9),
+            ("succulents", 5, 8),
+        ],
+    ),
+    "pack_cyber": _pack(
+        "CYBER DEN", "A back alley that happens to have a desk", "cyber_graffiti_wall", "floor_concrete",
+        _DESK + [("cyber_lantern_string", 6, 0), ("cyber_cable_mess", 12, 3), ("cyber_crates", 10, 7)],
+    ),
+    "pack_washitsu": _pack(
+        "WASHITSU", "Tatami, a paper lantern and a wind chime", "wall_plain", "floor_tatami",
+        _DESK + [
+            ("noren", 2, 1), ("chochin", 12, 0), ("furin", 14, 1), ("andon", 3, 7), ("zabuton", 10, 8),
+        ],
+    ),
+    "pack_camp": _pack(
+        "BASE CAMP", "A log cabin with the fire already lit", "camp_log_wall", "floor_wood",
+        _DESK + [
+            ("camp_axe_wall", 2, 2), ("camp_campfire", 4, 9), ("camp_folding_chair", 3, 7),
+            ("camping_lantern", 10, 7),
+        ],
+    ),
+}
+
+
+def pack_piece_ids(pack):
+    """The pieces a pack sells: everything in its room but the free ones."""
+    layout = pack["layout"]
+    ids = [layout["wall"], layout["floor"]] + [item["id"] for item in layout["items"]]
+    return [item_id for item_id in dict.fromkeys(ids) if FURNITURE[item_id]["tier"] != 0]
+
+
+def owns_furniture(user):
+    return user.bit_purchases.filter(item_id__in=FURNITURE).exists()
+
+
+def starter_packs_state():
+    return [
+        {
+            "id": pack_id,
+            "name": pack["name"],
+            "line": pack["line"],
+            "price": STARTER_PACK_PRICE,
+            "value": sum(FURNITURE[item_id]["price"] for item_id in pack_piece_ids(pack)),
+            "layout": pack["layout"],
+            "pieces": pack_piece_ids(pack),
+        }
+        for pack_id, pack in STARTER_PACKS.items()
+    ]
+
 
 # The shop's rotation: (tier, pieces shown, days each lineup lasts). Cheap
 # pieces turn over fast so there is something new (and affordable, at ~100
@@ -263,11 +350,13 @@ def shop_lineup(user, now=None, profile=None):
 
 
 def inventory(user):
-    """{item_id: copies owned}; starters count as one copy each."""
+    """{item_id: copies owned}. Nothing until the first furniture is bought (a
+    starter pack): from then on the free basics count as one copy each."""
+    bought = list(user.bit_purchases.filter(item_id__in=FURNITURE).values_list("item_id", flat=True))
+    if not bought:
+        return {}
     owned = {item_id: 1 for item_id in STARTER_IDS}
-    for item_id in user.bit_purchases.filter(item_id__in=FURNITURE).values_list(
-        "item_id", flat=True
-    ):
+    for item_id in bought:
         owned[item_id] = owned.get(item_id, 0) + 1
     return owned
 
@@ -474,6 +563,9 @@ def room_state(user, profile, now=None, with_catalog=True):
         "catalog_version": CATALOG_VERSION,
         # 'weekly' for older clients: the shop no longer turns over weekly.
         "weekly": shop_lineup(user, now, profile),
+        # No furniture yet: an empty room, the shop locked, a pack to choose.
+        "starter_required": not owned,
+        "starter_packs": [] if owned else starter_packs_state(),
         "grid": {"w": ROOM_W, "h": ROOM_H, "wall_rows": WALL_ROWS},
     }
     if with_catalog:

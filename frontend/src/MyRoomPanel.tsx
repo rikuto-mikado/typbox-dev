@@ -294,6 +294,24 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
     );
   }
 
+  // Nothing owned at all: nothing to arrange yet, only where to get it.
+  if (room.starter_required) {
+    return (
+      <div className="room-empty relative w-full aspect-[4/3] max-h-[60vh] border border-zinc-700 flex flex-col items-center justify-center gap-3 p-4 text-center font-mono">
+        <div className="text-sm font-bold tracking-[0.3em] text-zinc-200">{t.roomEmptyTitle}</div>
+        <p className="m-0 max-w-xs text-[11px] font-sans leading-snug text-zinc-400">{t.roomEmptyLine}</p>
+        <button
+          type="button"
+          onClick={onOpenShop}
+          className="px-3 py-2 bg-amber-400 text-zinc-950 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer hover:brightness-110"
+        >
+          <ShoppingBag className="w-3.5 h-3.5" />
+          {t.roomEmptyCta}
+        </button>
+      </div>
+    );
+  }
+
   // ---------------------------------------------------------------- history
   const commit = (next: RoomLayout) => {
     setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), layout]);

@@ -1042,6 +1042,40 @@ canvas {
   animation: fx-spin 6s linear infinite;
   opacity: 0.35;
 }
+/* A room with nothing in it: a dark box, a dotted line where the floor will be. */
+.room-empty {
+  background:
+    linear-gradient(to right, rgba(148, 163, 184, 0.35) 50%, transparent 50%) 0 41.6% / 12px 1px repeat-x,
+    #0c0c0f;
+}
+.pack-pulse {
+  animation: pack-pulse 1400ms ease-out;
+}
+@keyframes pack-pulse {
+  0%, 60% { box-shadow: 0 0 0 2px #fbbf24, 0 0 22px rgba(251, 191, 36, 0.55); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.pack-splash-frame {
+  animation: pack-splash-frame 260ms ease-out;
+}
+@keyframes pack-splash-frame {
+  0% { filter: brightness(1.6); }
+  100% { filter: brightness(1); }
+}
+/* The finished room: one sweep of light across it. */
+.pack-splash-done::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgba(251, 191, 36, 0.4) 50%, transparent 65%);
+  background-size: 250% 100%;
+  animation: pack-splash-sweep 900ms ease-out both;
+}
+@keyframes pack-splash-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -40% 0; opacity: 0; }
+}
 .crate-shake {
   animation: crate-shake 1000ms steps(10, jump-none);
 }
@@ -1079,6 +1113,9 @@ canvas {
   .buff-card:hover .buff-icon,
   .buff-card:focus-within .buff-icon,
   .buff-live-ring,
+  .pack-splash-frame,
+  .pack-splash-done::after,
+  .pack-pulse,
   .buff-splash-icon,
   .buff-splash-rays,
   .bits-badge-buff,

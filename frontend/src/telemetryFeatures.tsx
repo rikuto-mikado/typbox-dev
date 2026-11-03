@@ -2213,6 +2213,11 @@ export const StatusCardModal: React.FC<StatusCardModalProps> = ({
       .get()
       .then((state) => {
         if (cancelled) return;
+        // An empty room has nothing to show on a card.
+        if (state.starter_required) {
+          setCardRoom(null);
+          return;
+        }
         const catalog: Record<string, FurnitureSpec> = {};
         state.catalog.forEach((spec) => {
           catalog[spec.id] = spec;

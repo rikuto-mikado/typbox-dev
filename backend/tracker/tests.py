@@ -1,7 +1,9 @@
 import json
 import re
+import tempfile
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from importlib import import_module
+from io import StringIO
 from pathlib import Path
 from unittest import mock, skipUnless
 from zoneinfo import ZoneInfo
@@ -9,6 +11,8 @@ from zoneinfo import ZoneInfo
 from django.apps import apps as django_apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -24,6 +28,7 @@ from .furniture import (
     shop_week,
 )
 from .economy import BUFFS
+from .furniture import STARTER_PACK_VALUE, STARTER_PACKS, pack_piece_ids, validate_layout
 from .festival_pass import cursor_id as festival_cursor_id
 from .festivals import FESTIVALS as FESTIVAL_LIST
 from .challenges import (
@@ -38,6 +43,11 @@ from .models import BitPurchase
 from .serializers import MAX_USER_STATUSES, USER_STATUS_IDS
 
 User = get_user_model()
+
+
+def open_the_shop(user):
+    """Past the starter pack: furniture on the account, without any piece a test might buy."""
+    BitPurchase.objects.create(user=user, item_id="wall_plain", price=0)
 
 # The status catalog lives in the frontend; the backend keeps a copy of its ids.
 FRONTEND_USER_STATUS_TS = (
@@ -1405,6 +1415,7 @@ class RoomTests(APITestCase):
             password="s3cure-pass-123",
         )
         self.client.force_authenticate(user=self.user)
+        open_the_shop(self.user)
         StudyLog.objects.create(
             user=self.user, duration_minutes=60 * 1000
         )  # 100,000 BITS
@@ -2471,6 +2482,192 @@ class NewBuffTests(APITestCase):
 
 
 @without_festival_pass
+class StarterPackTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="operator", email="operator@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        StudyLog.objects.create(user=self.user, duration_minutes=60 * 200)  # 20,000 BITS
+
+    def _room(self):
+        return self.client.get("/api/room/").data
+
+    def _buy(self, item_id="pack_study"):
+        return self.client.post("/api/bits/buy/", {"item_id": item_id}, format="json")
+
+    def _balance(self):
+        return self.client.get("/api/bits/").data["bits"]["balance"]
+
+    def test_every_pack_stays_in_balance(self):
+        low, high = STARTER_PACK_VALUE
+        for pack_id, pack in STARTER_PACKS.items():
+            ids = pack_piece_ids(pack)
+            tiers = [FURNITURE[i]["tier"] for i in ids]
+            value = sum(FURNITURE[i]["price"] for i in ids)
+            self.assertTrue(low <= value <= high, (pack_id, value))
+            self.assertIn(tiers.count(2), (1, 2), pack_id)  # what changes the room's look
+            self.assertEqual(set(tiers), {1, 2}, pack_id)  # no large pieces, nothing limited
+            self.assertGreaterEqual(len(ids), 5, pack_id)  # enough to fill a room
+            self.assertLess(value, min(s["price"] for s in FURNITURE.values() if s["tier"] == 3))
+
+    def test_every_pack_can_be_set_up_as_pictured(self):
+        owned = {item_id: 1 for item_id in FURNITURE}
+        for pack in STARTER_PACKS.values():
+            self.assertEqual(validate_layout(pack["layout"], owned), pack["layout"])
+
+    def test_everyone_starts_with_nothing_and_a_choice(self):
+        room = self._room()
+        self.assertTrue(room["starter_required"])
+        self.assertEqual(room["inventory"], {})
+        self.assertEqual(room["layout"]["items"], [])
+        self.assertEqual(len(room["starter_packs"]), len(STARTER_PACKS))
+        for offer in room["starter_packs"]:
+            self.assertEqual(offer["price"], 2500)
+
+    def test_a_pack_costs_2500_gives_each_piece_and_sets_up_the_room(self):
+        before = self._balance()
+        self.assertEqual(self._buy().status_code, 201)
+        self.assertEqual(self._balance(), before - 2500)
+        room = self._room()
+        for item_id in pack_piece_ids(STARTER_PACKS["pack_study"]):
+            self.assertEqual(room["inventory"][item_id], 1)
+        self.assertEqual(room["inventory"]["starter_desk"], 1)  # the free basics are in now
+        self.assertEqual(room["layout"], STARTER_PACKS["pack_study"]["layout"])
+        self.assertFalse(room["starter_required"])
+
+    def test_buying_one_takes_all_of_them_away(self):
+        self._buy()
+        self.assertEqual(self._room()["starter_packs"], [])
+        before = self._balance()
+        self.assertEqual(self._buy("pack_cozy").status_code, 400)
+        self.assertEqual(self._balance(), before)
+
+    def test_the_shop_is_locked_until_then(self):
+        piece = self._room()["weekly"]["items"][0]
+        res = self._buy(piece)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("starter pack", res.data["detail"])
+        self.assertEqual(BitPurchase.objects.filter(user=self.user).count(), 0)
+        reserve = self.client.post("/api/room/reserve/", {"item_id": piece}, format="json")
+        self.assertEqual(reserve.status_code, 400)
+        self._buy()
+        fresh = next(
+            i
+            for i in self._room()["weekly"]["items"]
+            if i not in pack_piece_ids(STARTER_PACKS["pack_study"]) and FURNITURE[i]["price"] <= self._balance()
+        )
+        self.assertEqual(self._buy(fresh).status_code, 201)
+
+    def test_a_wish_cannot_get_round_the_lock(self):
+        limited = next(i for i, s in FURNITURE.items() if s["tier"] == 5)
+        event = FURNITURE[limited]["event"]
+        festival = next(f for f in FESTIVAL_LIST if f["id"] == event)
+        moment = datetime(2026, *festival["start"], 12, tzinfo=dt_timezone.utc)
+        with mock.patch("django.utils.timezone.now", return_value=moment):
+            StudyLog.objects.create(user=self.user, duration_minutes=60, date=moment.date())
+            res = self.client.post("/api/bits/starlight/", {"use": "festival", "item_id": limited}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(BitPurchase.objects.filter(user=self.user, item_id=limited).exists())
+
+    def test_an_old_room_of_free_pieces_empties_then_the_pack_takes_over(self):
+        old = {**DEFAULT_LAYOUT, "items": [{"id": "starter_desk", "x": 6, "y": 7}]}
+        slot = {"name": "SPARE", "layout": old, "saved": old, "saved_at": None}
+        UserProfile.objects.update_or_create(
+            user=self.user, defaults={"room_layout": old, "room_slots": [{"name": "ROOM 1", "layout": {}, "saved": None, "saved_at": None}, slot]}
+        )
+        room = self._room()
+        self.assertEqual(room["layout"]["items"], [])
+        self.assertEqual(room["rooms"][1]["layout"]["items"], [])
+        self._buy()
+        room = self._room()
+        self.assertEqual(room["layout"], STARTER_PACKS["pack_study"]["layout"])
+        self.assertEqual(room["rooms"][1]["layout"]["items"], old["items"])  # the free desk is back
+
+    def test_an_unknown_pack_is_refused(self):
+        self.assertEqual(self._buy("pack_nope").status_code, 400)
+        self.assertEqual(BitPurchase.objects.filter(user=self.user).count(), 0)
+
+    def test_the_shares_add_up_to_the_price_for_every_pack(self):
+        for pack_id, pack in STARTER_PACKS.items():
+            BitPurchase.objects.filter(user=self.user).delete()
+            self.assertEqual(self._buy(pack_id).status_code, 201)
+            rows = BitPurchase.objects.filter(user=self.user)
+            self.assertEqual(sum(row.price for row in rows), 2500, pack_id)
+            self.assertTrue(all(row.price > 0 for row in rows), pack_id)
+            self.assertEqual(len(rows), len(pack_piece_ids(pack)))
+
+    def test_a_room_cannot_be_saved_with_nothing_owned(self):
+        res = self.client.put("/api/room/", {"layout": DEFAULT_LAYOUT}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_too_few_bits_buys_nothing(self):
+        StudyLog.objects.filter(user=self.user).update(duration_minutes=60)
+        self.assertEqual(self._buy().status_code, 400)
+        self.assertEqual(BitPurchase.objects.filter(user=self.user).count(), 0)
+        self.assertTrue(self._room()["starter_required"])
+
+    def test_someone_with_furniture_gets_no_offer_and_keeps_the_basics(self):
+        BitPurchase.objects.create(user=self.user, item_id="plant_pot", price=1500)
+        room = self._room()
+        self.assertFalse(room["starter_required"])
+        self.assertEqual(room["starter_packs"], [])
+        self.assertEqual(room["inventory"]["starter_desk"], 1)
+        self.assertEqual(self._buy().status_code, 400)
+
+    def test_a_reset_goes_back_to_the_empty_room(self):
+        self._buy()
+        self.assertEqual(self.client.post("/api/bits/reset/", {}, format="json").status_code, 200)
+        room = self._room()
+        self.assertTrue(room["starter_required"])
+        self.assertEqual(room["layout"]["items"], [])
+        self.assertEqual(self._balance(), 20000)
+
+    def test_a_backup_remembers_it(self):
+        self._buy()
+        balance = self._balance()
+        exported = self.client.get("/api/logs/export-economy/").data
+        BitPurchase.objects.filter(user=self.user).delete()
+        self.assertTrue(self._room()["starter_required"])
+        data = json.loads(json.dumps(exported, default=str))
+        res = self.client.post("/api/logs/import-backup/", {"logs": [], "economy": data}, format="json")
+        self.assertEqual(res.status_code, 201)
+        self.assertFalse(self._room()["starter_required"])
+        self.assertEqual(self._balance(), balance)
+
+    def test_a_pack_piece_gives_no_buff_cooldown(self):
+        self._buy()
+        self.assertEqual(self.client.get("/api/bits/").data["buff_cooldowns"], {})
+
+
+class DemoSnapshotTests(APITestCase):
+    def test_the_demo_is_a_lived_in_account_and_leaves_nothing_behind(self):
+        with tempfile.TemporaryDirectory() as folder, override_settings(DEBUG=True):
+            path = Path(folder) / "snapshot.json"
+            call_command("make_demo", out=str(path), stdout=StringIO())
+            data = json.loads(path.read_text(encoding="utf-8"))
+        self.assertFalse(User.objects.filter(username="aoi").exists())  # rolled back
+        self.assertEqual(set(data), {"/auth/me/", "/categories/", "/logs/", "/bits/", "/room/", "taken_on"})
+        self.assertGreater(len(data["/logs/"]), 100)
+        self.assertEqual(data["/logs/"][0]["date"], data["taken_on"])
+        shop, room = data["/bits/"], data["/room/"]
+        self.assertTrue(shop["active_buff"])
+        self.assertTrue(shop["active_challenge"])
+        self.assertIsNone(shop["festival"]["active"])
+        self.assertFalse(room["starter_required"])
+        self.assertGreater(len(room["layout"]["items"]), 8)
+
+    def test_it_is_a_dev_only_command(self):
+        with override_settings(DEBUG=False), self.assertRaises(CommandError):
+            call_command("make_demo", stdout=StringIO())
+
+    def test_the_committed_demo_needs_no_real_person(self):
+        path = Path(settings.BASE_DIR).parent / "frontend" / "public" / "demo" / "snapshot.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(data["/auth/me/"]["email"], "demo@typbox.invalid")
+        self.assertEqual(data["/auth/me/"]["username"], "aoi")
+
+
 class RoomSlotTests(APITestCase):
     """MY ROOM's five rooms: SAVE checkpoints, switching and renaming."""
 
@@ -2481,6 +2678,7 @@ class RoomSlotTests(APITestCase):
             password="s3cure-pass-123",
         )
         self.client.force_authenticate(user=self.user)
+        open_the_shop(self.user)
         StudyLog.objects.create(user=self.user, duration_minutes=60 * 1000)
 
     def _rooms(self, body):
@@ -2783,6 +2981,7 @@ class TuckTests(APITestCase):
             password="s3cure-pass-123",
         )
         self.client.force_authenticate(user=self.user)
+        open_the_shop(self.user)
 
     def _save(self, *items):
         layout = {
@@ -4154,6 +4353,7 @@ class SessionTimingAndEditTests(APITestCase):
             self.assertIn("ghost", self._offers())
 
     def test_limited_furniture_sells_only_during_its_festival(self):
+        open_the_shop(self.user)
         from .furniture import shop_lineup
 
         with self._at(2026, 12, 21, 12):
@@ -4173,6 +4373,7 @@ class SessionTimingAndEditTests(APITestCase):
                 self.assertNotIn("event", FURNITURE[base])
 
     def test_five_stars_wish_a_limited_piece_for_free(self):
+        open_the_shop(self.user)
         self._set_stars(5)
         with self._at(2026, 12, 21, 12):
             res = self.client.post(
@@ -4412,6 +4613,7 @@ class SessionTimingAndEditTests(APITestCase):
             self.assertEqual(self._starlight()["days"], ["2026-03-18"])
 
     def test_a_trophy_left_in_a_room_is_dropped_and_cannot_be_placed(self):
+        open_the_shop(self.user)
         from .furniture import inventory
 
         StudyLog.objects.filter(user=self.user).delete()

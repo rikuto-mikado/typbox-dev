@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BuffIcon } from './BuffIcon';
+import { isDemo } from './demo';
 import { tf, useI18n } from './i18n';
 import type { Starlight, StarWish } from './api';
 
@@ -397,7 +398,7 @@ export const StarWishes: React.FC<{
           const told = isOmen && now < turnsAt ? starlight.omen : null;
           const tooLate = isOmen && now < turnsAt && !told && Boolean(starlight.omen_too_late);
           const short = starlight.stars < cost;
-          const blocked = short || Boolean(told) || tooLate;
+          const blocked = isDemo() || short || Boolean(told) || tooLate;
           // Spending below the guard's price switches it off: say so before it happens.
           const stopsGuard = !blocked && starlight.guard_on && starlight.stars - cost < starlight.cost;
           const isArmed = armed === use;

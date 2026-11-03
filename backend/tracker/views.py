@@ -42,6 +42,7 @@ from .economy import (
     use_starlight,
 )
 from .furniture import (
+    owns_furniture,
     FURNITURE,
     CATALOG_VERSION,
     ROOM_NAME_MAX,
@@ -432,7 +433,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
 
         The BITS economy starts over with them: every purchase (buffs and
         furniture, so any running buff too) is dropped and MY ROOM goes back
-        to the starter room (all five rooms and their SAVEs). Earnings are
+        to an empty room (all five rooms and their SAVEs). Earnings are
         derived from logs, so a backup imported afterwards pays its hours out
         again; one with an `economy` section brings back the rest (backup.py).
         Without this, the old purchases would outlive the logs that paid for
@@ -891,6 +892,11 @@ class RoomReserveView(APIView):
             )
             if item_id in (None, ""):
                 profile.shop_reserve = ""
+            elif not owns_furniture(request.user):
+                return Response(
+                    {"detail": "Choose a starter pack first."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             else:
                 if (
                     not isinstance(item_id, str)

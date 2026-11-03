@@ -165,8 +165,19 @@ export const CYBER_STREET_ART: Record<string, Art> = {
       const off = row % 2 ? 4 : 0;
       for (let x = -off; x < w; x += 8) p.rect(x + 1, row * 4 + 1, 7, 3, hash(x, row) > 0.7 ? '#4a4452' : '#433d4a');
     }
-    for (let x = 6; x < w - 20; x += 40) {
-      for (let i = 0; i < 18; i++) p.rect(x + i, Math.round(h / 2 + Math.sin(i / 2) * 3), 2, 2, i % 6 < 3 ? S.a : S.b);
+    // Spray-painted: a word with a hard shadow and a run or two of paint, an
+    // arrow under it and a crown beside it.
+    for (let x = 4; x < w; x += 62) {
+      text(p, x + 1, 13, 'LOG ON', C.ink);
+      text(p, x, 12, 'LOG ON', S.b3);
+      p.rect(x + 2, 18, 1, 4, S.b3);
+      p.rect(x + 24, 18, 1, 3, S.b3);
+      p.rect(x, 25, 24, 2, S.a);
+      for (let i = 0; i < 5; i++) p.rect(x + 24 + i, 22 + i, 1, 8 - 2 * i, S.a);
+      const cx = x + 42;
+      p.rect(cx, 19, 12, 3, S.a3);
+      for (const tip of [0, 5, 10]) p.rect(cx + tip, 15, 2, 4, S.a3);
+      p.rect(cx + 1, 22, 10, 1, S.a2);
     }
   },
   cyber_holo_ad: (p, { on, night }) => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap } from 'lucide-react';
-import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState, type StarWish } from './api';
+import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap, Lock } from 'lucide-react';
+import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState, type StarterPack, type StarWish } from './api';
 import { Glint, StarlightSky, StarWishes } from './StarlightSky';
 import { BITS_PER_HOUR } from './bits';
 import { BitShard, StudyTime } from './BitsBadge';
@@ -9,6 +9,8 @@ import { BuffIcon } from './BuffIcon';
 import { tf, useI18n } from './i18n';
 import { thumbnail, TIER_LABEL, type FurnitureSpec } from './roomRender';
 import { ChallengesTab } from './ChallengePanel';
+import { PackSplash, StarterPacks } from './StarterPacks';
+import { isDemo } from './demo';
 import { CollectionTab } from './CollectionTab';
 import { CategoryChips } from './CategoryChips';
 import { SegmentIndicator } from './SegmentIndicator';
@@ -301,6 +303,10 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const [state, setState] = useState<BitsShopState | null>(null);
   const [wishArmed, setWishArmed] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomState | null>(null);
+  const [packSplash, setPackSplash] = useState<StarterPack | null>(null);
+  const [packPulse, setPackPulse] = useState(false);
+  const packSection = useRef<HTMLElement>(null);
+  const pulseTimer = useRef<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   // Each opening starts on the tab the caller asked for (derived during
   // render rather than in an effect).
@@ -506,6 +512,10 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
       const piece = furnitureById.get(itemId);
       if (itemId.startsWith('raid_') || itemId.startsWith('rival_')) {
         // A challenge shows up as the running card at the top of its tab.
+      } else if (itemId.startsWith('pack_')) {
+        const pack = room?.starter_packs?.find((p) => p.id === itemId);
+        setRoom(await api.room.get());
+        if (pack) setPackSplash(pack);
       } else if (piece) {
         setRoom(await api.room.get());
         showSplash({ kind: 'piece', spec: piece }, true);
@@ -625,7 +635,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const buyButton = (itemId: string, price: number, blockedLabel: string | null, accent = '#fbbf24') => {
     const short = balance < price;
     const isArmed = armed === itemId;
-    const disabled = Boolean(blockedLabel) || short || buying !== null;
+    const disabled = isDemo() || Boolean(blockedLabel) || short || buying !== null;
     return (
       <button
         type="button"
@@ -658,6 +668,15 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   };
 
   /** One furniture card: its sprite on a little stage, price, BUY and RESERVE. */
+  const locked = Boolean(room?.starter_required);
+  // A locked piece points back to what opens it.
+  const showPacks = () => {
+    packSection.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setPackPulse(false);
+    window.requestAnimationFrame(() => setPackPulse(true));
+    if (pulseTimer.current !== null) window.clearTimeout(pulseTimer.current);
+    pulseTimer.current = window.setTimeout(() => setPackPulse(false), 1400);
+  };
   const renderPiece = (id: string) => {
     const spec = furnitureById.get(id);
     if (!spec || !room) return null;
@@ -685,13 +704,18 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           <img
             src={thumbnail(spec)}
             alt=""
-            className={`relative mb-[7%] ${owned > 0 ? 'opacity-45' : ''}`}
+            className={`relative mb-[7%] ${owned > 0 ? 'opacity-45' : locked ? 'opacity-40 grayscale' : ''}`}
             style={{ imageRendering: 'pixelated', width: spec.w * 8 * zoom, height: spec.h * 8 * zoom }}
           />
           {owned > 0 && (
             <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500 text-zinc-950 text-[9px] font-bold -rotate-6">
               <Check className="w-3 h-3" />
               {t.bitsOwned}
+            </span>
+          )}
+          {locked && (
+            <span className="absolute top-1.5 right-1.5 p-1 bg-zinc-900 text-amber-400" aria-hidden>
+              <Lock className="w-3 h-3" />
             </span>
           )}
           {held && owned === 0 && (
@@ -715,8 +739,19 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           <StudyTime bits={spec.price} className={textMuted} />
         </div>
         {/* One of each piece: owned ones can't be bought again. */}
-        {buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)}
-        {spec.tier === 5 && owned === 0 && (state?.starlight?.stars ?? 0) >= (state?.starlight?.uses?.festival ?? 5) && (
+        {locked ? (
+          <button
+            type="button"
+            onClick={showPacks}
+            className="mt-auto py-1.5 px-1 border border-dashed border-amber-400/70 text-amber-400 text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer hover:bg-amber-400/10"
+          >
+            <Lock className="w-3 h-3 shrink-0" />
+            {t.bitsLockedButton}
+          </button>
+        ) : (
+          buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)
+        )}
+        {!locked && spec.tier === 5 && owned === 0 && (state?.starlight?.stars ?? 0) >= (state?.starlight?.uses?.festival ?? 5) && (
           <button
             type="button"
             onClick={() => handleWishPiece(id)}
@@ -729,7 +764,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           </button>
         )}
         {/* Older servers (one weekly lineup, no groups) have no reserve. */}
-        {owned === 0 && lineup?.groups && spec.tier !== 5 && reserveButton(id)}
+        {!locked && owned === 0 && lineup?.groups && spec.tier !== 5 && reserveButton(id)}
       </div>
     );
   };
@@ -821,6 +856,24 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
               {!room && !loadError && (
                 <div className={`p-6 flex justify-center ${textMuted}`}>
                   <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+              )}
+              {room && (room.starter_packs?.length ?? 0) > 0 && (
+                <StarterPacks
+                  ref={packSection}
+                  packs={room.starter_packs ?? []}
+                  catalog={room.catalog}
+                  balance={balance}
+                  pulse={packPulse}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                  buyButton={(id, price) => buyButton(id, price, null)}
+                />
+              )}
+              {locked && (
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-amber-400">
+                  <Lock className="w-3.5 h-3.5" />
+                  {t.bitsLockedHeading}
                 </div>
               )}
               {room && reserve && reserveGone && (
@@ -1069,6 +1122,16 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
 
         {/* Purchase splash: the buff "comes online" / the new piece is shown
             off. A crate rattles shut first, then bursts open on what it held. */}
+        {packSplash && room && (
+          <PackSplash
+            pack={packSplash}
+            catalog={room.catalog}
+            isDark={isDark}
+            textMuted={textMuted}
+            onClose={() => setPackSplash(null)}
+            onOpenRoom={onOpenRoom}
+          />
+        )}
         {splash && (() => {
           const shaking = splash.kind === 'buff' && splash.crate && !crateOpen;
           const label =

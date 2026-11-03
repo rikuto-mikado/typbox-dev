@@ -190,12 +190,13 @@ export const ARCHIVE_ART: Record<string, Art> = {
   },
   intel_damask_wall: (p, { w, h }) => {
     p.rect(0, 0, w, h, S.a2);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const ox = ((Math.floor(y / 10) % 2) * 6 + x) % 12;
-        const cx = ox - 5.5;
-        const cy = (y % 10) - 4.5;
-        if (Math.abs(cx) * 1.6 + Math.abs(cy) < 4.2 && Math.abs(cx) * 1.6 + Math.abs(cy) > 2.6) p.px(x, y, S.a);
+    // A fleur motif in a half-drop repeat, the way damask is woven.
+    const motif = ['...#...', '..###..', '.#.#.#.', '#..#..#', '##.#.##', '.#####.', '...#...', '..###..'];
+    for (let row = 0; row * 7 < h + 8; row++) {
+      for (let x = (row % 2) * 7 - 7; x < w; x += 14) {
+        motif.forEach((line, dy) => {
+          for (let dx = 0; dx < line.length; dx++) if (line[dx] === '#') p.px(x + dx, row * 7 - 4 + dy, S.a);
+        });
       }
     }
   },

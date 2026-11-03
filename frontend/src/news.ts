@@ -434,6 +434,83 @@ const SLOT_ROOMS: ShowcaseRoom[] = [
 
 export const NEWS_ARTICLES: NewsArticle[] = [
   {
+    id: 'starter-packs',
+    date: 'EARLY NOV 2026',
+    tag: 'NEW',
+    title: 'Starter packs: your first room',
+    lede: 'Every room now starts with nothing, not even walls. Your first purchase is one of five finished rooms for 2,500 BITS, about 25 hours of study, and it opens the rest of the furniture shop.',
+    blocks: [
+      {
+        type: 'rooms',
+        rooms: [
+          room('STUDY NOOK', 'A proper desk, ready for a long evening.', 'wall_navy', 'floor_wood', 'starter_desk@6,7 starter_chair@7,7 timetable@6,1 certificate@10,2 crate_shelf@2,7 floor_lamp@5,6 rug_round@6,9 plant_pot@10,8'),
+          room('COZY CORNER', 'Flowers on the wall, somewhere soft to sit.', 'wall_floral', 'floor_wood', 'starter_desk@6,7 starter_chair@7,7 poster_cat@6,1 sunset_lamp@10,7 beanbag@11,8 floor_cushion@3,9 succulents@5,8'),
+          room('CYBER DEN', 'A back alley that happens to have a desk.', 'cyber_graffiti_wall', 'floor_concrete', 'starter_desk@6,7 starter_chair@7,7 cyber_lantern_string@6,0 cyber_cable_mess@12,3 cyber_crates@10,7'),
+          room('WASHITSU', 'Tatami, a paper lantern and a wind chime.', 'wall_plain', 'floor_tatami', 'starter_desk@6,7 starter_chair@7,7 noren@2,1 chochin@12,0 furin@14,1 andon@3,7 zabuton@10,8'),
+          room('BASE CAMP', 'A log cabin with the fire already lit.', 'camp_log_wall', 'floor_wood', 'starter_desk@6,7 starter_chair@7,7 camp_axe_wall@2,2 camp_campfire@4,9 camp_folding_chair@3,7 camping_lantern@10,7'),
+        ],
+      },
+      {
+        type: 'list',
+        items: [
+          'Pick one: it sets up your whole room as pictured, and the free desk, chair, wall and floor come with it.',
+          'Until then the rest of the shop stays on show, locked. A BITS reset takes you back to this choice.',
+          'If you already own furniture, nothing changes for you: you keep it all, and the packs stay out of your shop.',
+          'Each pack would cost nearly 20,000 BITS piece by piece: one or two medium pieces that change the look of the room and a few small ones. No large pieces: those are still worth saving for.',
+          'Five wallpapers were redrawn so you can tell what they are: GRAFFITI BRICK, CIRCUIT, BLUEPRINT, CHEVRON and DAMASK, with all their colours.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'after-midnight',
+    date: 'EARLY NOV 2026',
+    tag: 'GUIDE',
+    title: 'Just after midnight: which day is it?',
+    lede: 'The day changes at 00:00 sharp in your time zone, but a few rules look back across it. For some buffs, buying just after midnight is a clever move. For one, it costs you a day.',
+    blocks: [
+      {
+        type: 'stats',
+        items: [
+          ['New day', '00:00'],
+          ['Late commit', 'Until 03:00'],
+          ['NIGHT SHIFT hours', '22:00–02:00'],
+          ['EARLY BIRD hours', '05:00–09:00'],
+        ],
+      },
+      { type: 'h', text: 'Buying at 00:20 on a Tuesday' },
+      {
+        type: 'list',
+        items: [
+          'HYPERDRIVE: a good moment. Tuesday is free, Wednesday and Thursday need 3 hours, and it ends at 00:20 on Saturday before Friday can be judged.',
+          'IRON CONTRACT: a poor one. Its three days are Wednesday to Friday, so Tuesday\'s study counts for nothing. Sign before midnight and Tuesday is day one.',
+          'NIGHT SHIFT: a good moment. A log now belongs to Monday night at +100, and tonight is already the second night at +150.',
+          'EARLY BIRD: Tuesday morning is the first morning, so it ends if no log touches it. Only buy it now if you will be up.',
+          'WEEKEND SURGE: it goes by the calendar. 00:20 on Saturday is Saturday, and 00:20 on Monday is too late.',
+          'The rest simply run for their hours from the moment you buy them, so the time of day makes no difference.',
+        ],
+      },
+      { type: 'h', text: 'Studying across midnight' },
+      {
+        type: 'p',
+        text: 'This decides the daily goals of HYPERDRIVE and IRON CONTRACT. A session that began before midnight and is committed by 03:00 counts for the day it began. Committed later, it counts for the day you committed it. A session that began after midnight never counts for yesterday, so you cannot make up a short day once it is over.',
+      },
+      {
+        type: 'list',
+        items: [
+          '23:00 to 00:20, committed at 00:20: the day before.',
+          '00:05 to 00:20, committed at 00:20: today.',
+          '23:00 to 03:30, committed at 03:30: today, because it is past 03:00.',
+        ],
+      },
+      { type: 'h', text: 'Buying after you have studied' },
+      {
+        type: 'p',
+        text: 'A bonus is settled when a log is committed, so you can study, buy a buff and then commit, and the log still earns it, up to 3 hours. NIGHT SHIFT and EARLY BIRD also need the session to touch their hours after you bought them. If it does, the whole log counts.',
+      },
+    ],
+  },
+  {
     id: 'buff-rests',
     date: 'EARLY NOV 2026',
     tag: 'GUIDE',
@@ -1297,7 +1374,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
         items: [
           'Every buff and furniture piece you bought is removed, and a running buff ends with no refund.',
           'BITS that buffs added to your logs come off; the logs themselves, with their dates, times and categories, are untouched.',
-          'MY ROOM goes back to the starter room.',
+          'MY ROOM goes back to an empty room.',
           'Your balance becomes the base rate for the hours already logged (100 BITS/h), ready to spend again.',
           'Type RESET to unlock it. Use it to start the economy over, or to put things right straight away if BITS ever look wrong.',
         ],

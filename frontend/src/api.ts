@@ -3,6 +3,7 @@
  * Handles JWT authentication, token refreshing, and REST API communication with Django backend.
  */
 
+import { blockedByDemo, demoAnswer, isDemo } from './demo';
 import type { BitsSummary } from './bits';
 import type { FurnitureSpec, RoomLayout } from './roomRender';
 
@@ -34,7 +35,7 @@ const API_BASE_URL = getApiBaseUrl();
 const TOKEN_KEY = 'typbox_access_token';
 const REFRESH_KEY = 'typbox_refresh_token';
 
-export const getAccessToken = (): string | null => localStorage.getItem(TOKEN_KEY);
+export const getAccessToken = (): string | null => (isDemo() ? 'demo' : localStorage.getItem(TOKEN_KEY));
 export const getRefreshToken = (): string | null => localStorage.getItem(REFRESH_KEY);
 
 export const setTokens = (access: string, refresh: string) => {
@@ -74,6 +75,13 @@ interface FetchOptions extends RequestInit {
 
 export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { requiresAuth = true, headers = {}, ...rest } = options;
+
+  if (isDemo()) {
+    const answer = demoAnswer(endpoint, rest.method ?? 'GET', rest.body);
+    if (answer !== undefined) return answer as T;
+    blockedByDemo();
+    throw new ApiError('This is a read-only demo: nothing can be saved.', 403);
+  }
   const token = getAccessToken();
 
   const reqHeaders: Record<string, string> = {
@@ -535,8 +543,22 @@ export interface RoomSlot {
   saved_at: string | null;
 }
 
+export interface StarterPack {
+  id: string;
+  name: string;
+  line: string;
+  price: number;
+  /** What its pieces cost one by one. */
+  value: number;
+  layout: RoomLayout;
+  pieces: string[];
+}
+
 export interface RoomState {
   layout: RoomLayout;
+  /** No furniture yet: an empty room, the shop locked, a pack to choose. */
+  starter_required?: boolean;
+  starter_packs?: StarterPack[];
   inventory: Record<string, number>;
   /** Older servers omit the rooms; the editor then shows a single room. */
   rooms?: RoomSlot[];

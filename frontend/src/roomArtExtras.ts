@@ -368,10 +368,24 @@ export const EXTRAS_ART: Record<string, Art> = {
     p.rect(0, 0, w, h, S.a2);
     for (let x = 0; x < w; x += 8) p.rect(x, 0, 1, h, S.a);
     for (let y = 0; y < h; y += 8) p.rect(0, y, w, 1, S.a);
-    for (let x = 12; x < w; x += 40) {
-      p.rect(x, 8, 14, 1, S.a3);
-      p.rect(x, 8, 1, 10, S.a3);
-      p.rect(x + 14, 8, 1, 10, S.a3);
+    // A floor plan: outer walls, a dividing wall, a door gap and a window.
+    for (let x = 6; x < w; x += 62) {
+      const lines = S.a3;
+      p.rect(x, 6, 48, 2, lines);
+      p.rect(x, 30, 48, 2, lines);
+      p.rect(x, 6, 2, 26, lines);
+      p.rect(x + 46, 6, 2, 26, lines);
+      p.rect(x + 28, 8, 2, 8, lines);
+      p.rect(x + 28, 24, 2, 6, lines);
+      // Door swing in the gap.
+      for (let i = 0; i < 6; i++) p.px(x + 30 + i, 16 + Math.round(Math.sqrt(36 - i * i)), lines);
+      // Window: a gap with a thin line through it.
+      p.rect(x + 10, 6, 10, 2, S.a2);
+      p.rect(x + 10, 7, 10, 1, lines);
+      // Dimension line with its end ticks.
+      p.rect(x, 35, 48, 1, lines);
+      p.rect(x, 34, 1, 3, lines);
+      p.rect(x + 47, 34, 1, 3, lines);
     }
   },
   wall_plaid: (p, { w, h }) => {
@@ -383,7 +397,10 @@ export const EXTRAS_ART: Record<string, Art> = {
   },
   wall_chevron: (p, { w, h }) => {
     p.rect(0, 0, w, h, S.a3);
-    for (let y = 0; y < h; y += 6) for (let x = 0; x < w; x++) p.rect(x, y + Math.abs((x % 8) - 4) / 2, 1, 2, S.a);
+    // Sharp zigzag bands: every point meets the one above it.
+    for (let y = -4; y < h; y += 10) {
+      for (let x = 0; x < w; x++) p.rect(x, y + Math.abs((x % 12) - 6), 1, 4, S.a);
+    }
   },
   wall_floral: (p, { w, h }) => {
     p.rect(0, 0, w, h, S.a3);
@@ -404,13 +421,27 @@ export const EXTRAS_ART: Record<string, Art> = {
   },
   wall_circuit: (p, { w, h }) => {
     p.rect(0, 0, w, h, S.a2);
-    for (let i = 0; i < Math.floor((w * h) / 120); i++) {
-      const x = Math.floor(hash(i, 1) * w);
-      const y = Math.floor(hash(i, 2) * h);
-      const len = 4 + Math.floor(hash(i, 3) * 10);
-      if (i % 2) p.rect(x, y, len, 1, S.a);
-      else p.rect(x, y, 1, Math.min(len, 6), S.a);
-      p.px(x, y, S.b3);
+    // Copper traces on a regular grid, ending in round pads.
+    for (let y = 3; y < h; y += 8) {
+      let x = (y * 3) % 8;
+      while (x < w) {
+        const len = 8 + Math.floor(hash(x, y) * 3) * 8;
+        p.rect(x, y, len, 1, S.a);
+        p.rect(x + len - 1, y - 1, 3, 3, S.b3);
+        p.px(x + len, y, S.a2);
+        if (hash(y, x) > 0.6) p.rect(x + len, y + 2, 1, 6, S.a);
+        x += len + 6;
+      }
+    }
+    // Chips sitting on the board, pins down both sides.
+    for (let x = 14; x < w; x += 38) {
+      const y = 6 + (x % 3) * 8;
+      p.rect(x, y, 14, 9, C.ink);
+      p.rect(x + 1, y + 1, 3, 1, C.ink3);
+      for (let pin = 1; pin < 14; pin += 3) {
+        p.rect(x + pin, y - 1, 1, 1, S.b3);
+        p.rect(x + pin, y + 9, 1, 1, S.b3);
+      }
     }
   },
   floor_marble: (p, { w, h }) => {

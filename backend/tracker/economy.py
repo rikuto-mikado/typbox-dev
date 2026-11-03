@@ -40,7 +40,17 @@ from django.utils import timezone
 
 from . import challenges, festival_pass, festivals
 from .collection import collection_state
-from .furniture import FURNITURE, event_pieces, shop_lineup
+from .furniture import (
+    FURNITURE,
+    STARTER_PACK_PRICE,
+    STARTER_PACKS,
+    event_pieces,
+    inventory,
+    owns_furniture,
+    pack_piece_ids,
+    shop_lineup,
+    validate_layout,
+)
 from .models import BitPurchase, Category, StudyLog, UserProfile
 from .timezones import get_user_zone
 
@@ -792,6 +802,8 @@ def use_starlight(user, use, now=None, item_id=None):
             festival = festivals.active_on(_local_now(user, now).date())
             if not festival or item_id not in event_pieces(festival["id"]):
                 raise StarlightError("That piece isn't part of a festival right now.")
+            if not owns_furniture(user):
+                raise StarlightError("Choose a starter pack first.")
             if user.bit_purchases.filter(item_id=item_id).exists():
                 raise StarlightError("You already own this piece.")
             BitPurchase.objects.create(user=user, item_id=item_id, price=0)
@@ -1378,7 +1390,7 @@ def reset_economy(user):
     """Starts the BITS economy over while keeping every study log and
     category: all purchases (buffs and furniture, so a running buff too) are
     dropped, buff bonuses are taken off the logs and MY ROOM goes back to
-    the starter room (all five rooms and their SAVEs, and the shop reserve).
+    an empty room (all five rooms and their SAVEs, and the shop reserve).
     What was spent of STARLIGHT is forgotten, and the bonuses going means every
     day with a log lights again. The balance falls back to the base rate for the hours
     already logged, plus what the logs still earn: the FESTIVAL PASS steps.
@@ -1434,6 +1446,8 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
     LOCK needs `category_id`: one of the user's own in-progress categories.
     HYDRA takes `category_ids` (challenges.start)."""
     now = now or timezone.now()
+    if item_id in STARTER_PACKS:
+        return _buy_starter_pack(user, item_id)
     if item_id in FURNITURE:
         return _buy_furniture(user, item_id, now)
     if challenges.is_challenge(item_id):
@@ -1489,10 +1503,40 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
         )
 
 
+def _buy_starter_pack(user, pack_id):
+    """The first furniture anyone gets: the pieces, and the room set up as pictured."""
+    pack = STARTER_PACKS[pack_id]
+    with transaction.atomic():
+        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
+        if owns_furniture(user):
+            raise PurchaseError("Starter packs are only for a room with nothing in it.")
+        if bits_summary(user)["balance"] < STARTER_PACK_PRICE:
+            raise PurchaseError("Not enough BITS.")
+        # The pack's price, shared out over its pieces by what each one costs.
+        ids = pack_piece_ids(pack)
+        total = sum(FURNITURE[item_id]["price"] for item_id in ids)
+        left = STARTER_PACK_PRICE
+        rows = []
+        for index, item_id in enumerate(ids):
+            share = (
+                left
+                if index == len(ids) - 1
+                else STARTER_PACK_PRICE * FURNITURE[item_id]["price"] // total
+            )
+            left -= share
+            rows.append(BitPurchase.objects.create(user=user, item_id=item_id, price=share))
+        profile.room_layout = validate_layout(pack["layout"], inventory(user))
+        profile.shop_reserve = ""
+        profile.save(update_fields=["room_layout", "shop_reserve"])
+        return rows[0]
+
+
 def _buy_furniture(user, item_id, now):
     spec = FURNITURE[item_id]
     with transaction.atomic():
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
+        if not owns_furniture(user):
+            raise PurchaseError("Choose a starter pack first.")
         # One of each piece: owning it already (bought earlier, or a
         # double tap racing this one) blocks a second purchase.
         if BitPurchase.objects.filter(user=user, item_id=item_id).exists():

@@ -61,6 +61,7 @@ import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
 import { BitsShopModal, type ShopTab } from './BitsShopModal';
 import { MyRoomPanel } from './MyRoomPanel';
+import { blockedByDemo, DEMO_BLOCKED_EVENT, enterDemo, isDemo } from './demo';
 import { Glint } from './StarlightSky';
 import { DashboardKpis } from './DashboardKpis';
 import { CategoryEditor } from './CategoryEditor';
@@ -1689,6 +1690,36 @@ export default function App() {
   }, [user, applyServerSurfaceTheme, flushSurfaceThemeSave, flushChronoThemeSave, flushUiPrefsSave]);
 
   // Initial Auth Check and Splash Loader on site access
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoNote, setDemoNote] = useState(false);
+  useEffect(() => {
+    let timer: number | undefined;
+    const show = () => {
+      setDemoNote(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setDemoNote(false), 2600);
+    };
+    window.addEventListener(DEMO_BLOCKED_EVENT, show);
+    return () => {
+      window.removeEventListener(DEMO_BLOCKED_EVENT, show);
+      window.clearTimeout(timer);
+    };
+  }, []);
+  const handleEnterDemo = async () => {
+    setDemoLoading(true);
+    try {
+      await enterDemo();
+      const me = await api.auth.getMe();
+      setUser(me);
+      applyServerSurfaceTheme(me);
+      await loadUserData();
+    } catch (err: unknown) {
+      setApiError((err as Error).message);
+    } finally {
+      setDemoLoading(false);
+    }
+  };
+
   useEffect(() => {
     const initAuth = async () => {
       const startTime = Date.now();
@@ -1992,6 +2023,7 @@ export default function App() {
   };
 
   const handleClearAllLogs = async () => {
+    if (blockedByDemo()) return;
     if (clearLogsConfirmText !== 'CLEAR') return;
     setClearingLogs(true);
     setClearReceipt(null);
@@ -2043,6 +2075,7 @@ export default function App() {
   };
 
   const handleResetBits = async () => {
+    if (blockedByDemo()) return;
     if (resetBitsConfirmText !== 'RESET') return;
     setResettingBits(true);
     setBitsReceipt(null);
@@ -2094,6 +2127,11 @@ export default function App() {
     flushSurfaceThemeSave(true);
     flushChronoThemeSave(true);
     flushUiPrefsSave(true);
+    // Leaving the demo is the same as reloading: everything in it is gone.
+    if (isDemo()) {
+      window.location.reload();
+      return;
+    }
     api.auth.logout();
     setUser(null);
     setCategories([]);
@@ -2142,6 +2180,7 @@ export default function App() {
 
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockedByDemo()) return;
     if (!user) {
       openAuthModal('login');
       return;
@@ -2270,6 +2309,7 @@ export default function App() {
 
   const handleUpdateLog = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockedByDemo()) return;
     if (!user || editingLogId === null) return;
     if (!editLogCatId || editLogDuration <= 0) return;
 
@@ -2314,6 +2354,7 @@ export default function App() {
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockedByDemo()) return;
     if (!user) {
       openAuthModal('login');
       return;
@@ -2535,6 +2576,7 @@ export default function App() {
   };
 
   const handleDeleteLog = async (id: string | number) => {
+    if (blockedByDemo()) return;
     if (!window.confirm(t.confirmDeleteLog)) return;
     try {
       await api.logs.delete(id);
@@ -3399,6 +3441,7 @@ export default function App() {
   };
 
   const handleExportJSON = async () => {
+    if (blockedByDemo()) return;
     if (logs.length === 0) {
       alert(t.errNoLogsExport);
       return;
@@ -3815,6 +3858,19 @@ export default function App() {
           </div>
         </div>
       </header>
+      {isDemo() && (
+        <div className="bg-emerald-500 text-zinc-950 font-mono text-[10px] font-bold uppercase tracking-wider px-3.5 py-1.5 flex items-center justify-center gap-3">
+          <span>{t.demoBadge}</span>
+          <button type="button" onClick={() => window.location.reload()} className="underline cursor-pointer">
+            {t.demoExit}
+          </button>
+        </div>
+      )}
+      {demoNote && (
+        <div role="status" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] px-3 py-2 bg-zinc-900 border border-emerald-500 text-emerald-400 font-mono text-[11px] whitespace-nowrap max-w-[90vw] truncate">
+          {t.demoBlocked}
+        </div>
+      )}
 
       {/* ==========================================
           MAIN CONTENT CONTAINER
@@ -3840,6 +3896,14 @@ export default function App() {
                 {t.guestBody}
               </p>
               <div className="pt-1 sm:pt-2 flex flex-wrap gap-2.5 sm:gap-3">
+                <button
+                  onClick={handleEnterDemo}
+                  disabled={demoLoading}
+                  className="px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider flex items-center gap-2 bg-emerald-500 text-zinc-950 hover:bg-emerald-400 cursor-pointer disabled:opacity-60"
+                >
+                  {demoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  <span>{t.guestDemo}</span>
+                </button>
                 <button
                   onClick={() => openAuthModal('login')}
                   className={`px-4 sm:px-5 py-2.5 font-mono text-xs font-semibold uppercase tracking-wider flex items-center space-x-2 cursor-pointer ${
@@ -4425,9 +4489,10 @@ export default function App() {
 
                 <button
                   type="submit"
-                  disabled={openCategories.length === 0 || commitState === 'submitting'}
+                  disabled={isDemo() || openCategories.length === 0 || commitState === 'submitting'}
                   aria-busy={commitState === 'submitting'}
-                  className={`w-full min-h-[46px] lg:min-h-0 py-3.5 lg:py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors duration-300 flex items-center justify-center space-x-2 ${
+                  title={isDemo() ? t.demoBlocked : undefined}
+                  className={`${isDemo() ? 'opacity-40 pointer-events-none' : ''} w-full min-h-[46px] lg:min-h-0 py-3.5 lg:py-2.5 px-4 font-mono text-xs uppercase tracking-widest font-semibold transition-colors duration-300 flex items-center justify-center space-x-2 ${
                     commitState === 'success'
                       ? 'bg-emerald-500 text-zinc-950 commit-success-flash cursor-default'
                       : commitState === 'submitting'
@@ -6359,7 +6424,7 @@ export default function App() {
                   ['account', t.tabAccount],
                   ['news', t.tabNews],
                 ] as Array<[SettingsTab, string]>
-              ).map(([tab, label]) => {
+              ).filter(([tab]) => !(isDemo() && tab === 'account')).map(([tab, label]) => {
                 const active = tab === 'themes' ? APPEARANCE_TABS.includes(settingsTab) : settingsTab === tab;
                 return (
                   <button
