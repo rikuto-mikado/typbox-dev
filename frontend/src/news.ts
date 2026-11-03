@@ -353,7 +353,7 @@ export const NEW_PACK_ROOMS: TourRoom[] = [
   tour(
     'CYBER STREET',
     'AFTER THE RAIN',
-    'Graffiti brick over wet asphalt: a noodle stall, hologram vending, an arcade cabinet and neon. Best seen with NIGHT on.',
+    'Dark brick over wet asphalt: a noodle stall, hologram vending, an arcade cabinet and neon. Best seen with NIGHT on.',
     'cyber_graffiti_wall',
     'cyber_wet_asphalt',
     `cyber_neon_sign@0,0 cyber_ac_unit@4,0 cyber_ac_unit__grey@4,2 cyber_cable_mess@6,0 cyber_lantern_string@6,2
@@ -457,7 +457,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
           'Until then the rest of the shop stays on show, locked. A BITS reset takes you back to this choice.',
           'If you already own furniture, nothing changes for you: you keep it all, and the packs stay out of your shop.',
           'Each pack would cost nearly 20,000 BITS piece by piece: one or two medium pieces that change the look of the room and a few small ones. No large pieces: those are still worth saving for.',
-          'Five wallpapers were redrawn so you can tell what they are: GRAFFITI BRICK, CIRCUIT, BLUEPRINT, CHEVRON and DAMASK, with all their colours.',
+          'Five wallpapers were redrawn so you can tell what they are: DARK BRICK, CIRCUIT, BLUEPRINT, CHEVRON and DAMASK, with all their colours.',
         ],
       },
     ],

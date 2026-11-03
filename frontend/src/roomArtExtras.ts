@@ -368,25 +368,6 @@ export const EXTRAS_ART: Record<string, Art> = {
     p.rect(0, 0, w, h, S.a2);
     for (let x = 0; x < w; x += 8) p.rect(x, 0, 1, h, S.a);
     for (let y = 0; y < h; y += 8) p.rect(0, y, w, 1, S.a);
-    // A floor plan: outer walls, a dividing wall, a door gap and a window.
-    for (let x = 6; x < w; x += 62) {
-      const lines = S.a3;
-      p.rect(x, 6, 48, 2, lines);
-      p.rect(x, 30, 48, 2, lines);
-      p.rect(x, 6, 2, 26, lines);
-      p.rect(x + 46, 6, 2, 26, lines);
-      p.rect(x + 28, 8, 2, 8, lines);
-      p.rect(x + 28, 24, 2, 6, lines);
-      // Door swing in the gap.
-      for (let i = 0; i < 6; i++) p.px(x + 30 + i, 16 + Math.round(Math.sqrt(36 - i * i)), lines);
-      // Window: a gap with a thin line through it.
-      p.rect(x + 10, 6, 10, 2, S.a2);
-      p.rect(x + 10, 7, 10, 1, lines);
-      // Dimension line with its end ticks.
-      p.rect(x, 35, 48, 1, lines);
-      p.rect(x, 34, 1, 3, lines);
-      p.rect(x + 47, 34, 1, 3, lines);
-    }
   },
   wall_plaid: (p, { w, h }) => {
     p.rect(0, 0, w, h, S.b);
@@ -421,26 +402,14 @@ export const EXTRAS_ART: Record<string, Art> = {
   },
   wall_circuit: (p, { w, h }) => {
     p.rect(0, 0, w, h, S.a2);
-    // Copper traces on a regular grid, ending in round pads.
+    // Traces on a regular grid, nothing else.
     for (let y = 3; y < h; y += 8) {
       let x = (y * 3) % 8;
       while (x < w) {
         const len = 8 + Math.floor(hash(x, y) * 3) * 8;
         p.rect(x, y, len, 1, S.a);
-        p.rect(x + len - 1, y - 1, 3, 3, S.b3);
-        p.px(x + len, y, S.a2);
-        if (hash(y, x) > 0.6) p.rect(x + len, y + 2, 1, 6, S.a);
+        if (hash(y, x) > 0.6) p.rect(x + len - 1, y, 1, 9, S.a);
         x += len + 6;
-      }
-    }
-    // Chips sitting on the board, pins down both sides.
-    for (let x = 14; x < w; x += 38) {
-      const y = 6 + (x % 3) * 8;
-      p.rect(x, y, 14, 9, C.ink);
-      p.rect(x + 1, y + 1, 3, 1, C.ink3);
-      for (let pin = 1; pin < 14; pin += 3) {
-        p.rect(x + pin, y - 1, 1, 1, S.b3);
-        p.rect(x + pin, y + 9, 1, 1, S.b3);
       }
     }
   },
