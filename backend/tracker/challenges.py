@@ -86,7 +86,7 @@ RAIDS = {
         "price": 800,
         "hp": 1200,
         "days": 5,
-        "loot": 1600,
+        "loot": 1800,
         "trait": "night",
         "trait_line": "Heals 1 hour at every midnight.",
     },
@@ -124,11 +124,11 @@ RAIDS = {
         "name": "TITAN",
         "title": "THE LONG WAR",
         "price": 1500,
-        "hp": 1800,
+        "hp": 2400,
         "days": 7,
-        "loot": 3400,
+        "loot": 3600,
         "trait": "none",
-        "trait_line": "30 hours of HP and a week to bring it down.",
+        "trait_line": "40 hours of HP and a week to bring it down.",
     },
     # Festival bosses (festivals.py): on sale only while their festival runs.
     "kagami": {

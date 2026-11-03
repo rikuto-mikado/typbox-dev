@@ -1444,9 +1444,9 @@ const COOLDOWNS: Array<[name: string, hours: number]> = [
   ['CATEGORY LOCK', 16],
   ['NIGHT SHIFT', 18],
   ['EARLY BIRD', 20],
-  ['DEEP DIVE', 24],
   ['IRON CONTRACT', 24],
   ['HYPERDRIVE', 36],
+  ['DEEP DIVE', 168],
 ];
 
 const CooldownsFigure: React.FC = () => (
@@ -1455,9 +1455,9 @@ const CooldownsFigure: React.FC = () => (
       <div key={name} className="flex items-center gap-2 text-[9px]">
         <span className="w-24 shrink-0 font-bold tracking-wider text-zinc-300 truncate">{name}</span>
         <span className="flex-1 h-2.5 bg-white/5">
-          <span className="block h-full bg-amber-400" style={{ width: `${(hours / 36) * 100}%` }} />
+          <span className="block h-full bg-amber-400" style={{ width: `${Math.min(1, hours / 36) * 100}%` }} />
         </span>
-        <span className="w-7 shrink-0 text-right tabular-nums text-amber-300">{hours}H</span>
+        <span className="w-7 shrink-0 text-right tabular-nums text-amber-300">{hours > 48 ? `${hours / 24}D` : `${hours}H`}</span>
       </div>
     ))}
   </div>

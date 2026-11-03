@@ -388,6 +388,15 @@ export interface BitsBuff {
   price: number;
   /** Hours before it can be bought again, once it ends. */
   cooldown_hours?: number;
+  /** What it takes for its bonus to cover its price. */
+  break_even?: string;
+  /** If bought right now: when it would start paying, and until when. */
+  timing?: {
+    state: 'now' | 'later' | 'waiting';
+    starts: string;
+    note: string;
+    ends_at: string | null;
+  };
   /** Older servers omit the fields below; cards then show the text alone. */
   window?: 'any' | 'night' | 'morning' | 'weekend' | 'weather';
   expires?: 'hours' | 'weekend' | 'contract' | 'mornings';

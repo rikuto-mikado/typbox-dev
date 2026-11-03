@@ -490,6 +490,10 @@ export const NEWS_ARTICLES: NewsArticle[] = [
           'The rest simply run for their hours from the moment you buy them, so the time of day makes no difference.',
         ],
       },
+      {
+        type: 'p',
+        text: 'You do not have to remember this: every buff card now has a STARTS line that says when it would begin if you bought it right now, and until when it runs.',
+      },
       { type: 'h', text: 'Studying across midnight' },
       {
         type: 'p',
@@ -531,10 +535,14 @@ export const NEWS_ARTICLES: NewsArticle[] = [
           ['CATEGORY LOCK', '16h'],
           ['NIGHT SHIFT', '18h'],
           ['EARLY BIRD', '20h'],
-          ['DEEP DIVE', '24h'],
           ['IRON CONTRACT', '24h'],
           ['HYPERDRIVE', '36h'],
+          ['DEEP DIVE', '7 days'],
         ],
+      },
+      {
+        type: 'p',
+        text: 'DEEP DIVE is the biggest single burst in the shop, so it waits a full week. Whoever would run it every weekend has a turn for WEEKEND SURGE, and long sittings rotate into HYPERDRIVE between dives.',
       },
       {
         type: 'p',
@@ -586,7 +594,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'figure', kind: 'cooldowns', caption: 'How long each buff rests after it ends. The others stay on sale meanwhile.' },
       {
         type: 'p',
-        text: 'With one cooldown for all, WARM-UP was hardly worth buying: gone in a few hours, then a whole day with no buff at all. Now only the buff you just used has to rest, and for as long as suits it: 6 hours for WARM-UP, 8 for STORM RUNNER, 36 for HYPERDRIVE. Run WARM-UP after WARM-UP, go straight from it into NIGHT SHIFT, or rotate through the shop. One buff still runs at a time. A MYSTERY CRATE rests for 14 hours, and so does whichever buff it opened into, for that buff\'s own time.',
+        text: 'With one cooldown for all, WARM-UP was hardly worth buying: gone in a few hours, then a whole day with no buff at all. Now only the buff you just used has to rest, and for as long as suits it: 6 hours for WARM-UP, 8 for STORM RUNNER, 36 for HYPERDRIVE, a full week for DEEP DIVE. Run WARM-UP after WARM-UP, go straight from it into NIGHT SHIFT, or rotate through the shop. One buff still runs at a time. A MYSTERY CRATE rests for 14 hours, and so does whichever buff it opened into, for that buff\'s own time.',
       },
       {
         type: 'stats',
@@ -904,7 +912,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'BUFF COOLDOWN' },
       {
         type: 'p',
-        text: 'After a buff ends, however it ended, that buff rests on its own timer, from 6 hours for WARM-UP to 36 for HYPERDRIVE. Other buffs stay on sale. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected.',
+        text: 'After a buff ends, however it ended, that buff rests on its own timer, from 6 hours for WARM-UP to a full week for DEEP DIVE. Other buffs stay on sale. A buff cancelled before it paid on any log leaves no cooldown. Challenges and furniture are not affected.',
       },
       { type: 'h', text: 'LOGS' },
       {
@@ -962,7 +970,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
           'HYDRA: one head per category, and a log only hits its own head.',
           'WARDEN: heals two hours after a full day without a log.',
           'PHANTOM: dodges one hit in four.',
-          'TITAN: 30 hours of HP, a week to bring it down, and loot to match.',
+          'TITAN: 40 hours of HP, a week to bring it down, and loot to match. It is meant to be too much for most weeks.',
         ],
       },
       { type: 'h', text: 'RIVAL' },
@@ -1003,7 +1011,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       { type: 'h', text: 'You study in long sittings' },
       {
         type: 'p',
-        text: 'DEEP DIVE (1,200) pays by the length of a single log: 2h +300, 3h +450, 4h +700, up to four logs (+2,800). Shorter logs neither pay nor use anything up, so there is nothing to lose by mixing them in. HYPERDRIVE (1,200) also suits long days, but it needs 3 hours on every full day it runs.',
+        text: 'DEEP DIVE (1,200) pays by the length of a single log: 2h +300, 3h +450, 4h +700, up to four logs (+2,800). Shorter logs neither pay nor use anything up, so there is nothing to lose by mixing them in. It then rests for a week, so plan a buff for the days between. HYPERDRIVE (1,200) also suits long days, but it needs 3 hours on every full day it runs.',
       },
       { type: 'h', text: 'You keep a fixed rhythm' },
       {
@@ -1048,7 +1056,7 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       {
         type: 'stats',
         items: [
-          ['Raids · net', '+700 – +1,900'],
+          ['Raids · net', '+700 – +2,100'],
           ['Duels · net', '+400 – +1,800'],
           ['INVERTED · net', '+1,000 – +3,400'],
           ['At once', '1 buff + 1 challenge'],
@@ -1073,10 +1081,11 @@ export const NEWS_ARTICLES: NewsArticle[] = [
       {
         type: 'list',
         items: [
+          'Every card now says what it takes to break even, so you can check a buff against your own week before you buy it.',
           'Hour-based buffs count at most 3 hours of any one log. A 5-hour log earns the bonus on 3 of them.',
           'Windows go by when a log is committed, not the date it is filed under: entering last night\'s session the next afternoon will not count for NIGHT SHIFT.',
           'A buff that fails its condition (EARLY BIRD, HYPERDRIVE, FOCUS CHIP, IRON CONTRACT) ends on the spot and whatever was left of it is lost, unless you hold 7 stars: STARLIGHT then keeps it running for 7 of them, once per buff (not on the last day of IRON CONTRACT). Cancelling instead refunds two thirds of the unused part (IRON CONTRACT excepted).',
-          'A buff rests after it ends, from 6 to 36 hours, but any other buff that is ready can start at once. The full list is in How long each buff rests.',
+          'A buff rests after it ends, from 6 hours to a week, but any other buff that is ready can start at once. The full list is in How long each buff rests.',
           'Deleting a log takes its bonus back and returns the hours or uses it drew to a buff that is still running, though LUCKY BYTE rolls stay spent. A deleted log takes its hit off a raid boss too.',
           'Challenges count at most 3 hours of one log against a boss; a duel counts every minute you commit inside its 72 hours.',
         ],

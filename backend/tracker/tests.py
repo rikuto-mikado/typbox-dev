@@ -2640,6 +2640,35 @@ class StarterPackTests(APITestCase):
         self.assertEqual(self.client.get("/api/bits/").data["buff_cooldowns"], {})
 
 
+class ResetDuringAFestivalTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="reveller", email="reveller@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_a_reset_during_a_festival_keeps_the_bar_and_pays_it_once(self):
+        moment = datetime(2026, 11, 4, 12, tzinfo=dt_timezone.utc)
+        with mock.patch("django.utils.timezone.now", return_value=moment):
+            category = Category.objects.create(user=self.user, code="M", name="M")
+            for _ in range(20):
+                self.client.post(
+                    "/api/logs/",
+                    {"category": category.id, "date": "2026-11-04", "duration_minutes": 180, "topic": ""},
+                    format="json",
+                )
+            before = self.client.get("/api/bits/").data
+            paid = before["bits"]["payouts"]
+            self.assertGreater(paid, 0)
+            self.client.post("/api/bits/buy/", {"item_id": "pack_study"}, format="json")
+            for _ in range(2):
+                self.assertEqual(self.client.post("/api/bits/reset/", {}, format="json").status_code, 200)
+                after = self.client.get("/api/bits/").data
+                self.assertEqual(after["bits"]["payouts"], paid)
+                self.assertEqual(after["bits"]["balance"], before["bits"]["balance"])
+                self.assertEqual(after["festival"]["unlocks"], before["festival"]["unlocks"])
+
+
 class DemoSnapshotTests(APITestCase):
     def test_the_demo_is_a_lived_in_account_and_leaves_nothing_behind(self):
         with tempfile.TemporaryDirectory() as folder, override_settings(DEBUG=True):
@@ -2668,6 +2697,7 @@ class DemoSnapshotTests(APITestCase):
         self.assertEqual(data["/auth/me/"]["username"], "aoi")
 
 
+@without_festival_pass
 class RoomSlotTests(APITestCase):
     """MY ROOM's five rooms: SAVE checkpoints, switching and renaming."""
 
@@ -3093,14 +3123,14 @@ class ChallengeTests(APITestCase):
             res = self._buy("raid_titan")
             self.assertEqual(res.status_code, 201)
             self.assertEqual(res.data["bits"]["balance"], 10000 - 1500)
-            self.assertEqual(res.data["active_challenge"]["hp"], 1800)
+            self.assertEqual(res.data["active_challenge"]["hp"], 2400)
             self.assertEqual(self._log(60)["challenge_hit"]["damage"], 60)
             hit = self._log(120)["challenge_hit"]
             self.assertEqual((hit["hit"], hit["damage"]), ("crit", 180))
             self.assertEqual(
                 self._log(400)["challenge_hit"]["damage"], 270
             )  # 180 min counted, ×1.5
-            self.assertEqual(self._state()["active_challenge"]["hp"], 1800 - 510)
+            self.assertEqual(self._state()["active_challenge"]["hp"], 2400 - 510)
 
     def test_golem_shrugs_off_short_logs(self):
         with self._at(2026, 11, 2, 12, 0):
@@ -3605,18 +3635,18 @@ class SessionTimingAndEditTests(APITestCase):
         with self._at(2026, 3, 2, 12):
             self._buy("raid_titan")
             log = self._log(120)
-            self.assertEqual(self._hp(), 1620)
+            self.assertEqual(self._hp(), 2220)
             self._edit(log, 12)
-            self.assertEqual(self._hp(), 1788)
+            self.assertEqual(self._hp(), 2388)
             self._edit(log, 120)
-            self.assertEqual(self._hp(), 1620)
+            self.assertEqual(self._hp(), 2220)
 
     def test_padding_a_log_adds_no_damage(self):
         with self._at(2026, 3, 2, 12):
             self._buy("raid_titan")
             log = self._log(60)
             self._edit(log, 180)
-            self.assertEqual(self._hp(), 1740)
+            self.assertEqual(self._hp(), 2340)
 
     def test_a_block_comes_back_only_as_far_as_the_commit(self):
         with self._at(2026, 3, 2, 12):
@@ -5429,6 +5459,154 @@ class TrophyTests(APITestCase):
 
 
 @without_festival_pass
+class BuffTimingTests(APITestCase):
+    """What each card says about when the buff starts, against what it really does."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="timer", email="timer@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        UserProfile.objects.update_or_create(user=self.user, defaults={"timezone": "Asia/Tokyo"})
+        StudyLog.objects.create(user=self.user, duration_minutes=60 * 200)
+
+    def _at(self, *parts):
+        moment = datetime(2026, *parts, tzinfo=ZoneInfo("Asia/Tokyo"))
+        return mock.patch("django.utils.timezone.now", return_value=moment)
+
+    def _timing(self, item_id):
+        offers = self.client.get("/api/bits/").data["buffs"]
+        return next(b["timing"] for b in offers if b["item_id"] == item_id)
+
+    def _says(self, item_id, state, starts):
+        timing = self._timing(item_id)
+        self.assertEqual((timing["state"], timing["starts"]), (state, starts), item_id)
+
+    def test_plain_buffs_start_now_and_end_when_they_would(self):  # Tuesday afternoon
+        with self._at(11, 3, 15):
+            for item_id in ("warm_up", "overclock", "deep_dive", "focus_chip", "lucky_byte", "lunar_tide"):
+                self._says(item_id, "now", "NOW")
+            ends = self._timing("warm_up")["ends_at"]
+            self.client.post("/api/bits/buy/", {"item_id": "warm_up"}, format="json")
+            self.assertEqual(ends, self.client.get("/api/bits/").data["active_buff"]["expires_at"])
+
+    def test_the_contract_always_starts_tomorrow_even_just_after_midnight(self):
+        for parts in ((11, 3, 0, 20), (11, 3, 23, 50)):
+            with self._at(*parts):
+                self._says("iron_contract", "later", "TOMORROW 00:00")
+
+    def test_early_bird_follows_the_morning(self):
+        for hour, state, starts in ((3, "later", "TODAY 05:00"), (7, "now", "NOW"), (9, "later", "TOMORROW 05:00")):
+            with self._at(11, 3, hour):
+                self._says("early_bird", state, starts)
+
+    def test_night_shift_follows_the_night(self):
+        for hour, state, starts in ((0, "now", "NOW"), (1, "now", "NOW"), (2, "later", "TONIGHT 22:00"), (21, "later", "TONIGHT 22:00"), (22, "now", "NOW")):
+            with self._at(11, 3, hour):
+                self._says("night_shift", state, starts)
+
+    def test_weekend_surge_goes_by_the_calendar(self):
+        with self._at(11, 6, 23):  # Friday
+            self._says("weekend_surge", "later", "SATURDAY 00:00")
+        with self._at(11, 7, 0, 5):  # Saturday
+            self._says("weekend_surge", "now", "NOW")
+        with self._at(11, 8, 23):  # Sunday
+            self._says("weekend_surge", "now", "NOW")
+        with self._at(11, 9, 0, 5):  # Monday
+            self._says("weekend_surge", "later", "SATURDAY 00:00")
+
+    def test_the_rest(self):
+        with self._at(11, 3, 15):
+            self._says("hyperdrive", "now", "NOW")
+            self.assertIn("From tomorrow", self._timing("hyperdrive")["note"])
+            self._says("storm_runner", "waiting", "ROUGH WEATHER")
+            crate = self._timing("mystery_crate")
+            self.assertEqual(crate["state"], "waiting")
+            self.assertIsNone(crate["ends_at"])
+
+    def test_every_buff_has_a_timing(self):
+        with self._at(11, 3, 15):
+            for offer in self.client.get("/api/bits/").data["buffs"]:
+                self.assertTrue(offer["timing"]["starts"], offer["item_id"])
+                self.assertTrue(offer["timing"]["note"], offer["item_id"])
+
+
+class BreakEvenTests(APITestCase):
+    """What each card says it takes to get the price back, against what really pays."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="even", email="even@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        UserProfile.objects.update_or_create(user=self.user, defaults={"timezone": "Asia/Tokyo"})
+        StudyLog.objects.create(user=self.user, duration_minutes=60 * 200)
+
+    def _at(self, *parts):
+        moment = datetime(2026, *parts, tzinfo=ZoneInfo("Asia/Tokyo"))
+        return mock.patch("django.utils.timezone.now", return_value=moment)
+
+    def _pays(self, item_id, logs):
+        """Buys it, commits (when, minutes) logs, and returns the bonus they earned."""
+        total = 0
+        with self._at(*logs[0][0]):
+            self.assertEqual(
+                self.client.post("/api/bits/buy/", {"item_id": item_id}, format="json").status_code, 201
+            )
+        for parts, minutes in logs:
+            with self._at(*parts):
+                res = self.client.post("/api/logs/", {"duration_minutes": minutes, "topic": ""}, format="json")
+                self.assertEqual(res.status_code, 201, res.data)
+                total += res.data["bonus_bits"]
+        return total
+
+    def test_every_card_says(self):
+        expected = {
+            "warm_up": "4H",
+            "overclock": "6H",
+            "storm_runner": "6H",
+            "category_lock": "9H",
+            "hyperdrive": "12H",
+            "weekend_surge": "12H",
+            "lunar_tide": "5H AT FULL MOON",
+            "early_bird": "4H, OVER 2 MORNINGS",
+            "night_shift": "ON NIGHT 3, AT 3H A NIGHT",
+            "focus_chip": "8 LOGS OF 50M+",
+            "lucky_byte": "ABOUT 15H, ON AVERAGE",
+            "deep_dive": "2 LOGS OF 4H, OR 4 OF 2H",
+            "iron_contract": "ALL 3 DAYS DONE",
+            "mystery_crate": "DEPENDS ON THE DRAW",
+        }
+        offers = {b["item_id"]: b["break_even"] for b in self.client.get("/api/bits/").data["buffs"]}
+        self.assertEqual(offers, expected)
+
+    def test_hours_really_cover_the_price(self):
+        self.assertEqual(self._pays("warm_up", [((3, 2, 12), 180), ((3, 2, 18), 60)]), 400)
+
+    def test_a_day_of_overclock_really_covers_it(self):
+        self.assertEqual(self._pays("overclock", [((3, 2, 12), 180), ((3, 2, 18), 180)]), 600)
+
+    def test_two_mornings_really_cover_early_bird(self):
+        self.assertEqual(self._pays("early_bird", [((3, 2, 8), 120), ((3, 3, 8), 120)]), 800)
+
+    def test_the_third_night_really_covers_night_shift(self):
+        paid = self._pays(
+            "night_shift", [((3, 2, 23), 180), ((3, 3, 23), 180), ((3, 4, 23), 60)]
+        )
+        self.assertGreaterEqual(paid, 900)
+        self.assertLess(paid - 200, 900)
+
+    def test_logs_really_cover_focus_chip(self):
+        self.assertEqual(self._pays("focus_chip", [((3, 2, 8 + i), 50) for i in range(8)]), 800)
+
+    def test_deep_dive_either_way(self):
+        self.assertGreaterEqual(self._pays("deep_dive", [((3, 2, 12), 240), ((3, 2, 18), 240)]), 1200)
+
+    def test_deep_dive_the_long_way_round(self):
+        logs = [((3, 2, 8 + 3 * i), 120) for i in range(4)]
+        self.assertEqual(self._pays("deep_dive", logs), 1200)
+
+
 class BuffCooldownTests(APITestCase):
     """Each buff has its own timer after it ends (economy.buff_cooldowns)."""
 
@@ -5506,6 +5684,25 @@ class BuffCooldownTests(APITestCase):
             cooling = self.client.get("/api/bits/").data["buff_cooldowns"]
             self.assertEqual(cooling["warm_up"], datetime(2026, 3, 2, 21, tzinfo=dt_timezone.utc))
             self.assertEqual(cooling["overclock"], datetime(2026, 3, 3, 5, tzinfo=dt_timezone.utc))
+
+    def test_deep_dive_waits_a_week_and_leaves_the_others_free(self):
+        with self._at(2026, 3, 7, 10):
+            self.assertEqual(self._buy("deep_dive").status_code, 201)
+            self.assertEqual(self.client.post("/api/bits/cancel/", {}, format="json").status_code, 200)
+        # Cancelled unused, so no rest: use it for real instead.
+        with self._at(2026, 3, 7, 11):
+            self.assertEqual(self._buy("deep_dive").status_code, 201)
+        for hour in (14, 18, 22):
+            with self._at(2026, 3, 7, hour):
+                self.client.post("/api/logs/", {"duration_minutes": 240, "topic": ""}, format="json")
+        with self._at(2026, 3, 8, 4):
+            self.client.post("/api/logs/", {"duration_minutes": 240, "topic": ""}, format="json")
+            self.assertEqual(self._buy("deep_dive").status_code, 400)
+            self.assertEqual(self._buy("weekend_surge").status_code, 201)
+        with self._at(2026, 3, 14, 12):
+            self.assertIn("deep_dive", self.client.get("/api/bits/").data["buff_cooldowns"])
+        with self._at(2026, 3, 15, 5):
+            self.assertNotIn("deep_dive", self.client.get("/api/bits/").data["buff_cooldowns"])
 
     def test_a_crate_and_what_it_opened_both_rest(self):
         with self._at(2026, 3, 2, 10), mock.patch("tracker.economy.roll_crate", return_value="warm_up"):

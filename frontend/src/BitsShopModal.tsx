@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap, Lock } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap, Lock, Play, Clock, Hourglass } from 'lucide-react';
 import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState, type StarterPack, type StarWish } from './api';
 import { Glint, StarlightSky, StarWishes } from './StarlightSky';
 import { BITS_PER_HOUR } from './bits';
@@ -252,6 +252,46 @@ const ActiveBuffCard: React.FC<{
           </button>
         </div>
       )}
+    </div>
+  );
+};
+
+/** A rest of days reads as days: 7 DAYS, not 168H. */
+const restLength = (hours: number) => (hours > 48 ? `${hours / 24} DAYS` : `${hours}H`);
+
+/** When this buff would start paying if bought right now. */
+const BuffStart: React.FC<{ timing: NonNullable<BitsBuff['timing']>; borderCol: string; textMuted: string }> = ({
+  timing,
+  borderCol,
+  textMuted,
+}) => {
+  const { t } = useI18n();
+  const look = {
+    now: { Icon: Play, ink: 'text-emerald-500' },
+    later: { Icon: Clock, ink: 'text-amber-500' },
+    waiting: { Icon: Hourglass, ink: 'text-sky-500' },
+  }[timing.state];
+  const until = timing.ends_at
+    ? new Date(timing.ends_at)
+        .toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .replace(',', '')
+        .replace(' 24:', ' 00:')
+    : null;
+  return (
+    <div className={`px-1.5 py-1 border ${borderCol} space-y-0.5`}>
+      <div className="flex items-baseline justify-between gap-x-2 text-[10px] font-bold uppercase tracking-wider">
+        <span className={`min-w-0 flex items-center gap-1 ${look.ink}`}>
+          <look.Icon className="w-3 h-3 shrink-0 self-center" aria-hidden />
+          <span className={`font-normal text-[8px] ${textMuted}`}>{t.bitsStartsLabel}</span>
+          {timing.starts}
+        </span>
+        {until && (
+          <span className={`shrink-0 whitespace-nowrap text-[8px] font-normal tabular-nums ${textMuted}`}>
+            {tf(t.bitsUntil, { t: until })}
+          </span>
+        )}
+      </div>
+      <p className={`m-0 text-[9px] font-sans leading-snug ${textMuted}`}>{timing.note}</p>
     </div>
   );
 };
@@ -1026,6 +1066,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                             </div>
                           </div>
                           <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{buff.detail}</p>
+                          {buff.timing && <BuffStart timing={buff.timing} borderCol={borderCol} textMuted={textMuted} />}
                           {stats.length > 0 && (
                             <div className={`grid grid-cols-3 border-l border-t ${borderCol}`}>
                               {stats.map(([label, value]) => (
@@ -1037,11 +1078,16 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                             </div>
                           )}
                           {buff.cooldown_hours != null && (
-                            <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.bitsCooldownAfter, { n: buff.cooldown_hours })}</div>
+                            <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.bitsCooldownAfter, { t: restLength(buff.cooldown_hours) })}</div>
                           )}
                           {buff.odds && omenBuff?.cooldown_hours != null && (
                             <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>
-                              {tf(t.bitsOmenRests, { name: omenBuff.name, n: omenBuff.cooldown_hours })}
+                              {tf(t.bitsOmenRests, { name: omenBuff.name, t: restLength(omenBuff.cooldown_hours) })}
+                            </div>
+                          )}
+                          {buff.break_even && (
+                            <div className="text-[9px] font-bold uppercase tracking-wider tabular-nums">
+                              {tf(t.bitsBreakEven, { x: buff.break_even })}
                             </div>
                           )}
                           {buff.max_bonus ? (

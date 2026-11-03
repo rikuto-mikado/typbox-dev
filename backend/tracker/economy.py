@@ -89,9 +89,11 @@ BUFF_COOLDOWN_HOURS = {
     "category_lock": 16,
     "night_shift": 18,  # ends in the small hours: free again for the next night
     "early_bird": 20,  # ends at 09:00: free again before the next dawn
-    "deep_dive": 24,
     "iron_contract": 24,  # with a signing day on top: a contract every few days
-    "hyperdrive": 36,  # the biggest stretch gets the longest rest
+    "hyperdrive": 36,  # the biggest stretch of the daily buffs
+    # The biggest single burst: once a week, so whoever would use it every
+    # weekend has a turn for WEEKEND SURGE, and long sitters rotate buffs.
+    "deep_dive": 168,
 }
 
 STARLIGHT_MAX = 14
@@ -1295,6 +1297,69 @@ def crate_odds(spec):
     ]
 
 
+def break_even(spec):
+    """How much a buff must pay on before its bonus has covered its price, in the
+    fewest words a card can say it. Worked out from its numbers, so it follows them."""
+    price = spec["price"]
+    if "crate" in spec:
+        return "DEPENDS ON THE DRAW"
+    if "contract" in spec:
+        return f"ALL {spec['contract']['days']} DAYS DONE"
+    if "tiers" in spec:
+        top, bottom = spec["tiers"][0], spec["tiers"][-1]
+        return (
+            f"{math.ceil(price / top[1])} LOGS OF {top[0] // 60}H, "
+            f"OR {math.ceil(price / bottom[1])} OF {bottom[0] // 60}H"
+        )
+    if "levels" in spec:
+        night, paid = 0, 0
+        while paid < price:
+            paid += spec["levels"][min(night, len(spec["levels"]) - 1)] * spec["nightly_cap"] // 60
+            night += 1
+        return f"ON NIGHT {night}, AT 3H A NIGHT"
+    if "per_use" in spec:
+        return f"{math.ceil(price / spec['per_use'])} LOGS OF {spec['min_minutes']}M+"
+    if "chance" in spec:
+        per_hour = 100 * spec["chance"] * (spec["multiplier"] - 1)
+        return f"ABOUT {math.ceil(price / per_hour)}H, ON AVERAGE"
+    hours = math.ceil(price / spec["per_hour"])
+    if "daily_cap" in spec:
+        return f"{hours}H, OVER {math.ceil(hours * 60 / spec['daily_cap'])} MORNINGS"
+    return f"{hours}H AT FULL MOON" if spec.get("lunar") else f"{hours}H"
+
+
+def buff_timing(user, spec, now):
+    """When a buff bought right now would start paying, for its card: `state` is
+    'now', 'later' (a set time) or 'waiting' (it depends on the sky or the crate)."""
+    local = _local_now(user, now)
+    ends_at = None if "crate" in spec else _expiry(user, spec, now)
+    state, starts, note = "now", "NOW", "Your next commit counts, even for study you did before buying."
+    if "crate" in spec:
+        state, starts, note = "waiting", "WHEN IT OPENS", "It opens right away, then follows the rules of whatever is inside."
+    elif "contract" in spec:
+        state, starts, note = "later", "TOMORROW 00:00", "Today's study doesn't count. The first of its days is tomorrow."
+    elif "daily_min" in spec:
+        note = f"Today is free. From tomorrow it needs {spec['daily_min'] // 60} hours of logs every full day."
+    elif spec["window"] == "morning":
+        note = "Log during 05:00\u201309:00 every morning, or it ends."
+        if local.hour >= 9:
+            state, starts = "later", "TOMORROW 05:00"
+        elif local.hour < 5:
+            state, starts = "later", "TODAY 05:00"
+    elif spec["window"] == "night":
+        note = "Pays on sessions that touch 22:00\u201302:00. After midnight still counts as the night before."
+        if 2 <= local.hour < 22:
+            state, starts = "later", "TONIGHT 22:00"
+    elif spec["window"] == "weekend":
+        note = "Pays on Saturday and Sunday only, by the time you commit."
+        if local.weekday() < 5:
+            state, starts = "later", "SATURDAY 00:00"
+    elif spec["window"] == "weather":
+        state, starts = "waiting", "ROUGH WEATHER"
+        note = "Pays only if it is raining, snowing, stormy or below 0\u00b0C when you commit."
+    return {"state": state, "starts": starts, "note": note, "ends_at": ends_at}
+
+
 def serialize_buff_offer(item_id, spec):
     return {
         "item_id": item_id,
@@ -1307,6 +1372,7 @@ def serialize_buff_offer(item_id, spec):
         "minutes": spec.get("minutes"),
         "uses": spec.get("uses"),
         "max_bonus": max_bonus(spec),
+        "break_even": break_even(spec),
         "needs_category": bool(spec.get("category")),
         "cooldown_hours": BUFF_COOLDOWN_HOURS.get(item_id),
         "odds": crate_odds(spec) if "crate" in spec else None,
@@ -1328,7 +1394,8 @@ def shop_state(user, now=None):
         "starlight": serialize_starlight(user),
         "festival": festival_state(user, now),
         "buffs": [
-            serialize_buff_offer(item_id, spec) for item_id, spec in BUFFS.items()
+            {**serialize_buff_offer(item_id, spec), "timing": buff_timing(user, spec, now)}
+            for item_id, spec in BUFFS.items()
         ],
         "active_challenge": challenges.serialize_challenge(challenge, now),
         "challenges": challenges.offers(user, now),
