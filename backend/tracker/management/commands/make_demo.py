@@ -32,7 +32,7 @@ ZONE = ZoneInfo("Asia/Tokyo")
 NOW = datetime(2026, 10, 14, 8, 0, tzinfo=ZONE)
 DAYS = 92
 OUT = Path(settings.BASE_DIR).parent / "frontend" / "public" / "demo" / "snapshot.json"
-ENDPOINTS = ["/auth/me/", "/categories/", "/logs/", "/bits/", "/room/"]
+ENDPOINTS = ["/auth/me/", "/categories/", "/logs/", "/bits/", "/bits/trade/", "/room/"]
 
 SUBJECTS = {
     "MATH": ("Mathematics", "#38bdf8", 40, ["Linear algebra", "Calculus problems", "Probability", "Past exam"]),
@@ -95,6 +95,7 @@ class Command(BaseCommand):
             self._morning_shopping(day, offset)
             self._study(day, offset)
 
+        self._invest()
         with self._at(NOW.replace(hour=7, minute=30)):
             self._log(NOW.date(), 45, NOW.replace(hour=7, minute=30))
         with self._at(NOW):
@@ -205,6 +206,20 @@ class Command(BaseCommand):
                 continue
             self.client.put("/api/room/", {"layout": trial}, format="json")
             return
+
+    def _invest(self):
+        """A few small positions, after the shopping so they don't change it."""
+        for days_ago, asset, amount in (
+            (21, "global_index", 800),
+            (12, "tech_titans", 2000),
+            (5, "bio_venture", 200),
+        ):
+            with self._at(NOW - timedelta(days=days_ago)):
+                self.client.post(
+                    "/api/bits/trade/",
+                    {"asset": asset, "side": "buy", "amount": amount},
+                    format="json",
+                )
 
     def _keep_something_running(self):
         """The demo shows a buff at work and a fight under way."""

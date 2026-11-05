@@ -902,13 +902,14 @@ export default function App() {
 
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   // Earned BITS follow the loaded logs so the header moves the instant a log
-  // commits; spending and challenge payouts come from the server (bits.ts
+  // commits; spending, challenge payouts and TRADE come from the server (bits.ts
   // mirrors economy.py).
   const bitsBalance = useMemo(
     () =>
       bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)) +
       logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) +
-      (user?.bits?.payouts ?? 0) -
+      (user?.bits?.payouts ?? 0) +
+      (user?.bits?.trade ?? 0) -
       (user?.bits?.spent ?? 0),
     [logs, user]
   );
@@ -1100,7 +1101,13 @@ export default function App() {
     setUser((prev) => {
       if (!prev || prev.id !== userId) return prev;
       const cur = prev.bits;
-      if (cur && cur.spent === state.bits.spent && (cur.payouts ?? 0) === (state.bits.payouts ?? 0)) return prev;
+      if (
+        cur &&
+        cur.spent === state.bits.spent &&
+        (cur.payouts ?? 0) === (state.bits.payouts ?? 0) &&
+        (cur.trade ?? 0) === (state.bits.trade ?? 0)
+      )
+        return prev;
       return { ...prev, bits: state.bits };
     });
   }, []);
@@ -2035,7 +2042,7 @@ export default function App() {
       setClearLogsConfirmText('');
       // The server dropped every purchase with the logs: BITS start from zero.
       setUser((prev) =>
-        prev ? { ...prev, bits: { ...(prev.bits ?? { per_hour: BITS_PER_HOUR }), balance: 0, earned: 0, spent: 0, payouts: 0 } } : prev
+        prev ? { ...prev, bits: { ...(prev.bits ?? { per_hour: BITS_PER_HOUR }), balance: 0, earned: 0, spent: 0, payouts: 0, trade: 0 } } : prev
       );
       if (user) setBuffState({ userId: user.id, buff: null, challenge: null });
       const n = (v: number) => v.toLocaleString('en-US');
@@ -7186,7 +7193,7 @@ export default function App() {
                         clearLogsConfirmText !== 'CLEAR' ||
                         clearingLogs ||
                         resetDone === 'logs' ||
-                        (logs.length === 0 && categories.length === 0 && !(user?.bits?.spent ?? 0))
+                        (logs.length === 0 && categories.length === 0 && !(user?.bits?.spent ?? 0) && !(user?.bits?.trade ?? 0))
                       }
                       aria-busy={clearingLogs}
                       onClick={handleClearAllLogs}

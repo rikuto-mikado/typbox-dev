@@ -11,6 +11,8 @@ export interface BitsSummary {
   spent: number;
   /** CHALLENGE payouts (part of earned); older servers omit it. */
   payouts?: number;
+  /** TRADE's net flow, negative while more is invested than came back; older servers omit it. */
+  trade?: number;
   per_hour: number;
 }
 

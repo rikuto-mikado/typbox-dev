@@ -14,6 +14,7 @@ import { isDemo } from './demo';
 import { CollectionTab } from './CollectionTab';
 import { CategoryChips } from './CategoryChips';
 import { SegmentIndicator } from './SegmentIndicator';
+import { TradeTab } from './TradeTab';
 
 // BITS // EXCHANGE, opened from the header balance (or MY ROOM): buffs and
 // the furniture lineup. Catalogs, prices, the running buff and the
@@ -27,7 +28,7 @@ const SPLASH_MS = 1700;
 const CRATE_SHAKE_MS = 1000;
 const BAR_CELLS = 20;
 
-export type ShopTab = 'buffs' | 'furniture' | 'collection' | 'challenges';
+export type ShopTab = 'buffs' | 'furniture' | 'collection' | 'challenges' | 'trade';
 
 interface BitsShopModalProps {
   isOpen: boolean;
@@ -850,7 +851,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             <div className={`text-[10px] ${textMuted}`}>{tf(t.bitsRate, { n: BITS_PER_HOUR })}</div>
           </div>
 
-          <div className={`relative grid grid-cols-4 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
+          <div className={`relative grid grid-cols-5 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
             <SegmentIndicator activeKey={tab} colorClass="bg-amber-500/10" />
             {(
               [
@@ -858,6 +859,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 ['challenges', t.chTab],
                 ['furniture', t.bitsTabFurniture],
                 ['collection', t.bitsTabCollection],
+                ['trade', t.tradeTab],
               ] as Array<[ShopTab, string]>
             ).map(([id, label]) => (
               <button
@@ -877,7 +879,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto mt-4 space-y-4 pr-1">
+        <div data-shop-scroll className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] mt-4 space-y-4 pr-1">
           {tab === 'furniture' && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -949,6 +951,19 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
               {buyError && <div className="p-2 border border-rose-500/40 text-rose-400 text-[10px]">{buyError}</div>}
               <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsWeeklyHint}</p>
             </div>
+          )}
+
+          {tab === 'trade' && (
+            <TradeTab
+              balance={balance}
+              isDark={isDark}
+              onShop={(next) => {
+                setState(next);
+                onPurchased(next);
+              }}
+              borderCol={borderCol}
+              textMuted={textMuted}
+            />
           )}
 
           {tab === 'collection' && <CollectionTab state={state} loadError={loadError} borderCol={borderCol} textMuted={textMuted} />}

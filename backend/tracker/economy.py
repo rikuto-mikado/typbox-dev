@@ -51,7 +51,7 @@ from .furniture import (
     shop_lineup,
     validate_layout,
 )
-from .models import BitPurchase, Category, StudyLog, UserProfile
+from .models import BitPurchase, Category, StudyLog, TradeOrder, UserProfile
 from .timezones import get_user_zone
 
 BITS_PER_HOUR = 100
@@ -1192,14 +1192,19 @@ def bits_summary(user):
     )
     spent = purchases["total"] or 0
     payouts = purchases["payouts"] or 0
+    # TRADE (trade.py): what buys took out and sales put back.
+    traded = user.trade_orders.aggregate(total=Sum("bits"))["total"] or 0
     earned = bits_for_minutes(logs["minutes"] or 0) + (logs["bonus"] or 0) + payouts
     return {
-        "balance": earned - spent,
+        "balance": earned - spent + traded,
         "earned": earned,
         "spent": spent,
         # Challenge payouts (part of earned): the client adds them to the
         # balance it derives from the logs.
         "payouts": payouts,
+        # TRADE's net flow (negative while more is invested than came back);
+        # the client adds it as well.
+        "trade": traded,
         "per_hour": BITS_PER_HOUR,
     }
 
@@ -1468,6 +1473,8 @@ def reset_economy(user):
         # the far side of the reset.
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
         deleted, _ = BitPurchase.objects.filter(user=user).delete()
+        # TRADE goes too: positions and sales.
+        TradeOrder.objects.filter(user=user).delete()
         profile.star_spends = []
         profile.last_guard = {}
         profile.crate_omen = ""

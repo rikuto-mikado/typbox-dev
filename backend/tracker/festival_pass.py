@@ -2,6 +2,8 @@
 The FESTIVAL PASS: what you study during a festival fills a bar, and steps along
 it pay BITS and a cursor, with the biggest BITS at the very end. The goal follows the festival's length
 (FESTIVAL_GOAL_PER_DAY for each of its days), so a short festival asks for less.
+The festivals come back every year: once an earlier year has opened a festival's
+cursor, its step pays BITS like the steps around it, so a repeat pays a little more.
 
 Everything is worked out from the logs: a reward is a BitPurchase row (price 0;
 BITS in `payout`, which the ledger counts as earned) that only records the step
@@ -59,15 +61,17 @@ def _year_of(festival, day):
     return day.year - 1 if wraps and (day.month, day.day) <= festival["end"] else day.year
 
 
-def steps(festival, year):
-    """The bar's steps: [{'at' minutes, 'kind', ...what it gives}]."""
+def steps(festival, year, has_cursor=False):
+    """The bar's steps: [{'at' minutes, 'kind', ...what it gives}]. With
+    `has_cursor`, the cursor's step pays BITS instead."""
     first, last = _span(festival, year)
     goal = ((last - first).days + 1) * FESTIVAL_GOAL_PER_DAY
     bits = round(goal / 60 * BITS_PER_GOAL_HOUR, -1)
     out = []
     for i, kind in enumerate(STEP_KINDS):
         step = {"at": goal * (i + 1) // len(STEP_KINDS), "kind": kind}
-        if kind == "bits":
+        if kind == "bits" or has_cursor:
+            step["kind"] = "bits"
             step["bits"] = int(bits) * (FINAL_STEP_MULTIPLIER if i == len(STEP_KINDS) - 1 else 1)
         else:
             step["cursor"] = cursor_id(festival["id"])
@@ -92,13 +96,27 @@ def _item(festival, year, index):
     return f"{PREFIX}{festival['id']}_{year}_{index}"
 
 
+def _has_cursor_before(user, festival, year):
+    """Whether a year before `year` opened this festival's cursor. Read off the
+    reward rows, which sweep rebuilds oldest year first, so a reset lands on the
+    same answer."""
+    prefix = f"{PREFIX}{festival['id']}_"
+    for item_id in BitPurchase.objects.filter(
+        user=user, item_id__startswith=prefix, payout=0
+    ).values_list("item_id", flat=True):
+        earned_in, index = item_id[len(prefix):].split("_")
+        if int(earned_in) < year and STEP_KINDS[int(index)] == "cursor":
+            return True
+    return False
+
+
 def _sync(user, festival, year, live, now):
     """Makes the reward rows match the logs. Past festivals only gain: what was
     earned stays earned once it is over."""
     if _span(festival, year)[0] < FIRST_BAR_DAY:
         return 0
     minutes = _minutes(user, festival, year)
-    plan = steps(festival, year)
+    plan = steps(festival, year, _has_cursor_before(user, festival, year))
     reached = {i for i, step in enumerate(plan) if minutes >= step["at"]}
     held = set(
         BitPurchase.objects.filter(
@@ -175,8 +193,9 @@ def sweep(user, now=None):
 def unlocks(user):
     """What the passes have opened, for good: {'cursors': [...]}."""
     cursors = set()
+    # A step that paid BITS instead (payout) opened nothing.
     for item_id in BitPurchase.objects.filter(
-        user=user, item_id__startswith=PREFIX
+        user=user, item_id__startswith=PREFIX, payout=0
     ).values_list("item_id", flat=True):
         festival_id, _, index = item_id[len(PREFIX):].split("_")
         if STEP_KINDS[int(index)] == "cursor":
@@ -187,7 +206,7 @@ def unlocks(user):
 def pass_state(user, festival, day):
     """The bar for the running festival."""
     year = _year_of(festival, day)
-    plan = steps(festival, year)
+    plan = steps(festival, year, _has_cursor_before(user, festival, year))
     minutes = _minutes(user, festival, year)
     return {
         "minutes": minutes,

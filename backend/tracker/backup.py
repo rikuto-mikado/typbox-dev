@@ -1,6 +1,6 @@
 """
 The BITS side of a backup: purchases (with what they paid, cost and how they
-ended), the room, what was spent of STARLIGHT and the account's preferences.
+ended), TRADE orders, the room, what was spent of STARLIGHT and the account's preferences.
 An export carries it as `economy`, and importing the same file puts the balance,
 the furniture, the COLLECTION and the room back where they were.
 
@@ -19,7 +19,7 @@ from datetime import timezone as dt_timezone
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from . import challenges
+from . import challenges, trade
 from .economy import BUFFS, LEGACY_BUFFS, RUNNABLE_BUFFS, crate_turns_at, active_buff, refund_amount
 from .furniture import (
     FURNITURE,
@@ -28,10 +28,12 @@ from .furniture import (
     inventory,
     sanitize_layout,
 )
-from .models import BitPurchase, UserProfile
+from .models import BitPurchase, TradeOrder, UserProfile
 
 MAX_IMPORTED_PURCHASES = 20000
+MAX_IMPORTED_TRADES = 20000
 MAX_AMOUNT = 10_000_000
+MAX_TRADE_UNITS = 10**15
 MAX_LOG_BONUS = 100_000
 OUTCOMES = ("down", "escaped", "won", "lost", "tie", "forfeit")
 # What the ledger and the cooldown still read off an ended buff.
@@ -81,9 +83,24 @@ def export_economy(user):
         }
         for p in BitPurchase.objects.filter(user=user).select_related("category")
     ]
+    trades = [
+        {
+            "asset": o.asset,
+            "kind": o.kind,
+            "units": o.units,
+            "price": o.price,
+            "bits": o.bits,
+            "basis": o.basis,
+            "fee": o.fee,
+            "tax": o.tax,
+            "created_at": o.created_at.isoformat(),
+        }
+        for o in TradeOrder.objects.filter(user=user).order_by("created_at", "id")
+    ]
     return {
         "version": 1,
         "purchases": purchases,
+        "trades": trades,
         "room": {
             "layout": profile.room_layout,
             "slots": profile.room_slots,
@@ -229,6 +246,85 @@ def _restore_purchases(user, rows, categories, now):
     return len(objs)
 
 
+def _trade_from(row, user, now):
+    """(order, moment) for a backup row, with the signs its kind must have, or None."""
+    if not isinstance(row, dict):
+        return None
+    asset, kind = row.get("asset"), row.get("kind")
+    created = _moment(row.get("created_at"))
+    if not isinstance(asset, str) or asset not in trade.ASSETS or created is None or created > now:
+        return None
+    price = row.get("price")
+    if isinstance(price, bool) or not isinstance(price, (int, float)) or not 0 < price < 1e10:
+        return None
+    units = _amount(abs(row["units"]) if isinstance(row.get("units"), int) else 0, MAX_TRADE_UNITS)
+    bits = _amount(abs(row["bits"]) if isinstance(row.get("bits"), int) else 0)
+    basis = _amount(abs(row["basis"]) if isinstance(row.get("basis"), int) else 0)
+    fee, tax = _amount(row.get("fee")), _amount(row.get("tax"))
+    if kind == TradeOrder.BUY:
+        if not units or not bits:
+            return None
+        bits, basis = -bits, bits
+    elif kind == TradeOrder.SELL:
+        if not units:
+            return None
+        units, basis = -units, -basis
+    else:
+        return None
+    order = TradeOrder(
+        user=user, asset=asset, kind=kind, units=units, price=float(price),
+        bits=bits, basis=basis, fee=fee, tax=tax,
+    )
+    return order, created.astimezone(dt_timezone.utc)
+
+
+def _restore_trades(user, rows, now):
+    """Adds what the account doesn't have yet, oldest first. Walking the merged
+    history keeps every position at or above zero: a sale with nothing left to
+    sell stays out."""
+    existing = list(
+        TradeOrder.objects.filter(user=user).values_list(
+            "asset", "kind", "units", "basis", "created_at"
+        )
+    )
+    held = {(a, k, c.astimezone(dt_timezone.utc)) for a, k, _, _, c in existing}
+    incoming = []
+    for row in rows:
+        parsed = _trade_from(row, user, now)
+        if parsed is None:
+            continue
+        order, created = parsed
+        if (order.asset, order.kind, created) in held:
+            continue
+        held.add((order.asset, order.kind, created))
+        incoming.append((created, order))
+    # Same-moment rows: what is already there first, buys before sales.
+    timeline = [(c.astimezone(dt_timezone.utc), 0, u, b, a, None) for a, _, u, b, c in existing]
+    timeline += [
+        (created, 1 if o.units >= 0 else 2, o.units, o.basis, o.asset, o) for created, o in incoming
+    ]
+    timeline.sort(key=lambda e: (e[0], e[1]))
+    units, basis = Counter(), Counter()
+    objs, stamps = [], []
+    for created, _, u, b, asset, order in timeline:
+        if order is not None and units[asset] + u < 0:
+            continue
+        if order is not None and order.kind == TradeOrder.SELL:
+            b = order.basis = max(b, -basis[asset])
+        units[asset] += u
+        basis[asset] += b
+        if order is not None:
+            objs.append(order)
+            stamps.append(created)
+    if objs:
+        created_rows = TradeOrder.objects.bulk_create(objs)
+        # created_at is auto_now_add (overwritten on insert).
+        for obj, stamp in zip(created_rows, stamps):
+            obj.created_at = stamp
+        TradeOrder.objects.bulk_update(created_rows, ["created_at"], batch_size=1000)
+    return len(objs)
+
+
 def _clean_slots(raw, owned):
     slots = []
     for entry in (raw if isinstance(raw, list) else [])[:ROOM_SLOTS]:
@@ -334,6 +430,8 @@ def restore_economy(user, raw, categories):
     rows = raw.get("purchases")
     rows = rows if isinstance(rows, list) else []
     restored = _restore_purchases(user, rows, categories, now)
+    trades = raw.get("trades")
+    _restore_trades(user, trades if isinstance(trades, list) else [], now)
     profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
     if isinstance(raw.get("room"), dict):
         _restore_room(profile, raw["room"], user)

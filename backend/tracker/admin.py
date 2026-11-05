@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, StudyLog, UserProfile
+from .models import Category, StudyLog, TradeOrder, UserProfile
 
 
 @admin.register(UserProfile)
@@ -23,3 +23,10 @@ class StudyLogAdmin(admin.ModelAdmin):
     search_fields = ('topic', 'user__username', 'category__name')
     date_hierarchy = 'date'
 
+
+@admin.register(TradeOrder)
+class TradeOrderAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'user', 'asset', 'kind', 'units', 'price', 'bits', 'basis', 'fee', 'tax')
+    list_filter = ('asset', 'kind')
+    search_fields = ('user__username',)
+    date_hierarchy = 'created_at'

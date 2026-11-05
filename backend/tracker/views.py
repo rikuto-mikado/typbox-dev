@@ -24,8 +24,14 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import challenges, festival_pass
-from .backup import MAX_IMPORTED_PURCHASES, export_economy, log_bonus, restore_economy
+from . import challenges, festival_pass, trade
+from .backup import (
+    MAX_IMPORTED_PURCHASES,
+    MAX_IMPORTED_TRADES,
+    export_economy,
+    log_bonus,
+    restore_economy,
+)
 from .economy import (
     BUFFS,
     PurchaseError,
@@ -57,7 +63,7 @@ from .furniture import (
     stored_layout,
     validate_layout,
 )
-from .models import BitPurchase, Category, StudyLog, UserProfile
+from .models import BitPurchase, Category, StudyLog, TradeOrder, UserProfile
 from .serializers import (
     CategorySerializer,
     ChangePasswordSerializer,
@@ -432,7 +438,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         own (same code -> its targets/status are skipped).
 
         The BITS economy starts over with them: every purchase (buffs and
-        furniture, so any running buff too) is dropped and MY ROOM goes back
+        furniture, so any running buff too) and TRADE order is dropped and MY ROOM goes back
         to an empty room (all five rooms and their SAVEs). Earnings are
         derived from logs, so a backup imported afterwards pays its hours out
         again; one with an `economy` section brings back the rest (backup.py).
@@ -450,6 +456,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
             deleted_purchases, _ = BitPurchase.objects.filter(
                 user=request.user
             ).delete()
+            TradeOrder.objects.filter(user=request.user).delete()
             profile.star_spends = []
             profile.last_guard = {}
             profile.crate_omen = ""
@@ -528,6 +535,13 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         if isinstance(purchases, list) and len(purchases) > MAX_IMPORTED_PURCHASES:
             return Response(
                 {"detail": f"This backup is too large: at most {MAX_IMPORTED_PURCHASES} purchases."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        trades = economy.get("trades") if economy else None
+        if isinstance(trades, list) and len(trades) > MAX_IMPORTED_TRADES:
+            return Response(
+                {"detail": f"This backup is too large: at most {MAX_IMPORTED_TRADES} trade orders."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -796,6 +810,41 @@ class BitsStarlightView(APIView):
         except StarlightError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user))
+
+
+class BitsTradeView(APIView):
+    """
+    GET  /api/bits/trade/ - The market, the account's positions and its orders.
+    POST /api/bits/trade/ - {"asset", "side": "buy", "amount": BITS} or
+                            {"asset", "side": "sell", "units": n | "all"}: fills at
+                            the current tick. The answer also carries `shop`, the
+                            /bits/ state, so the header balance follows at once.
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        try:
+            return Response(trade.trade_state(request.user))
+        except trade.TradeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        asset, side = data.get("asset"), data.get("side")
+        if not isinstance(asset, str) or not isinstance(side, str):
+            return Response({"detail": "Choose a package and a side."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            order = trade.place_order(
+                request.user, asset, side, amount=data.get("amount"), units=data.get("units")
+            )
+            state = trade.trade_state(request.user)
+        except trade.TradeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {**state, "order": trade.serialize_order(order), "shop": shop_state(request.user)},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class BitsChallengeForfeitView(APIView):

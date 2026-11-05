@@ -39,7 +39,9 @@ from .challenges import (
     RIVALS,
     rival_day,
 )
-from .models import BitPurchase
+from .backup import restore_economy
+from .models import BitPurchase, MarketDay, TradeOrder
+from . import trade
 from .serializers import MAX_USER_STATUSES, USER_STATUS_IDS
 
 User = get_user_model()
@@ -380,7 +382,7 @@ class ResetAndImportTests(APITestCase):
         state = self.client.get("/api/bits/").data
         self.assertEqual(
             state["bits"],
-            {"balance": 0, "earned": 0, "spent": 0, "payouts": 0, "per_hour": 100},
+            {"balance": 0, "earned": 0, "spent": 0, "payouts": 0, "trade": 0, "per_hour": 100},
         )
         self.assertIsNone(state["active_buff"])
         room = self.client.get("/api/room/").data
@@ -425,6 +427,7 @@ class ResetAndImportTests(APITestCase):
                 "earned": 10200,
                 "spent": 0,
                 "payouts": 0,
+                "trade": 0,
                 "per_hour": 100,
             },
         )
@@ -975,7 +978,7 @@ class BitsTests(APITestCase):
     def test_new_account_has_no_bits(self):
         self.assertEqual(
             self._bits(),
-            {"balance": 0, "earned": 0, "spent": 0, "payouts": 0, "per_hour": 100},
+            {"balance": 0, "earned": 0, "spent": 0, "payouts": 0, "trade": 0, "per_hour": 100},
         )
 
     def test_existing_logs_are_paid_without_a_backfill(self):
@@ -2676,7 +2679,7 @@ class DemoSnapshotTests(APITestCase):
             call_command("make_demo", out=str(path), stdout=StringIO())
             data = json.loads(path.read_text(encoding="utf-8"))
         self.assertFalse(User.objects.filter(username="aoi").exists())  # rolled back
-        self.assertEqual(set(data), {"/auth/me/", "/categories/", "/logs/", "/bits/", "/room/", "taken_on"})
+        self.assertEqual(set(data), {"/auth/me/", "/categories/", "/logs/", "/bits/", "/bits/trade/", "/room/", "taken_on"})
         self.assertGreater(len(data["/logs/"]), 100)
         self.assertEqual(data["/logs/"][0]["date"], data["taken_on"])
         shop, room = data["/bits/"], data["/room/"]
@@ -5293,6 +5296,83 @@ class FestivalPassTests(APITestCase):
             self.assertEqual(shop["bits"]["payouts"], base * 6)  # the last step pays three times over
             self.assertTrue(all(s["reached"] for s in shop["festival"]["pass"]["steps"]))
 
+    def _pass(self):
+        return self._shop()["festival"]["pass"]
+
+    def _kinds(self):
+        return [step["kind"] for step in self._pass()["steps"]]
+
+    def test_a_year_after_the_cursor_its_step_pays_bits(self):
+        with self._at(2026, 11, 2, 12):
+            self._reach(15)  # the bits step and the cursor
+            self.assertEqual(self._kinds(), ["bits", "cursor", "bits", "bits", "bits"])
+            self.assertEqual(self._shop()["bits"]["payouts"], 280)
+        with self._at(2027, 11, 2, 12):
+            self.assertEqual(self._kinds(), ["bits"] * 5)
+            self.assertEqual(self._pass()["steps"][1]["bits"], 280)
+            self.assertEqual(self._pass()["goal"], 7 * 300)  # the same bar
+            self._reach(35)
+            shop = self._shop()
+            self.assertEqual(shop["bits"]["payouts"], 280 + 280 * 4 + 840)
+            self.assertEqual(shop["festival"]["unlocks"]["cursors"], ["fest-culture"])
+        with self._at(2028, 11, 2, 12):
+            self.assertEqual(self._kinds(), ["bits"] * 5)
+            self._reach(15)
+            self.assertEqual(self._shop()["bits"]["payouts"], 280 + 1960 + 560)
+            self.assertEqual(self._shop()["festival"]["unlocks"]["cursors"], ["fest-culture"])
+
+    def test_missing_the_cursor_leaves_it_on_the_bar_next_year(self):
+        with self._at(2026, 11, 2, 12):
+            self._reach(10)  # short of the cursor's step at 14 hours
+            self._shop()
+        with self._at(2027, 11, 2, 12):
+            self.assertEqual(self._kinds(), ["bits", "cursor", "bits", "bits", "bits"])
+            self._reach(15)
+            shop = self._shop()
+            self.assertEqual(shop["bits"]["payouts"], 280 + 280)
+            self.assertEqual(shop["festival"]["unlocks"]["cursors"], ["fest-culture"])
+        with self._at(2028, 11, 2, 12):
+            self.assertEqual(self._kinds(), ["bits"] * 5)
+
+    def test_the_bits_step_comes_and_goes_with_the_logs_but_the_cursor_stays(self):
+        with self._at(2026, 11, 2, 12):
+            self._reach(15)
+            self._shop()
+        with self._at(2027, 11, 2, 12):
+            logs = [self._log(300) for _ in range(3)]
+            self.assertEqual(self._shop()["bits"]["payouts"], 280 + 560)
+            for log in logs:
+                self.client.delete(f"/api/logs/{log['id']}/")
+            shop = self._shop()
+            self.assertEqual(shop["bits"]["payouts"], 280)
+            self.assertEqual(shop["festival"]["unlocks"]["cursors"], ["fest-culture"])
+            self.assertEqual(self._kinds(), ["bits"] * 5)
+
+    def test_a_reset_lands_on_the_same_repeat(self):
+        with self._at(2026, 11, 2, 12):
+            self._reach(15)
+            self._shop()
+        with self._at(2027, 11, 2, 12):
+            self._reach(35)
+            before = self._shop()
+            for _ in range(2):
+                res = self.client.post("/api/bits/reset/", {}, format="json")
+                self.assertEqual(res.data["bits"]["payouts"], before["bits"]["payouts"])
+                self.assertEqual(res.data["festival"]["unlocks"], before["festival"]["unlocks"])
+            self.assertEqual(self._kinds(), ["bits"] * 5)
+            self.assertEqual(
+                BitPurchase.objects.get(item_id="fest_culture_2026_1").payout, 0
+            )
+            self.assertEqual(
+                BitPurchase.objects.get(item_id="fest_culture_2027_1").payout, 280
+            )
+
+    def test_one_festivals_cursor_changes_nothing_on_another_festivals_bar(self):
+        with self._at(2026, 11, 2, 12):
+            self._reach(15)
+        with self._at(2027, 2, 2, 12):
+            self.assertEqual(self._kinds(), ["bits", "cursor", "bits", "bits", "bits"])
+
     def test_reading_twice_pays_once(self):
         with self._at(2026, 11, 2, 12):
             self._reach(35)
@@ -5757,3 +5837,247 @@ class BuffCooldownTests(APITestCase):
             self.client.delete("/api/logs/clear-all/")
             self.assertEqual(self.client.post("/api/logs/import-backup/", {"logs": logs, "economy": economy}, format="json").status_code, 201)
         self.assertEqual(self._left(datetime(2026, 3, 2, 12, 30, tzinfo=dt_timezone.utc)), 35)
+
+
+class TradeTests(APITestCase):
+    """The TRADE tab (trade.py): prices, orders, the ledger and backups."""
+
+    NOW = datetime(2026, 11, 4, 12, 3, tzinfo=dt_timezone.utc)
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="trader", email="trader@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        self.cat = Category.objects.create(user=self.user, code="AA", name="A")
+
+    def _at(self, moment=None):
+        return mock.patch("django.utils.timezone.now", return_value=moment or self.NOW)
+
+    def _study(self, minutes=6000, day=date(2026, 10, 1)):
+        return StudyLog.objects.create(
+            user=self.user, category=self.cat, duration_minutes=minutes, date=day
+        )
+
+    def _order(self, **body):
+        return self.client.post("/api/bits/trade/", body, format="json")
+
+    def _balance(self):
+        return self.client.get("/api/bits/").data["bits"]["balance"]
+
+    def test_the_future_never_leaves_the_server(self):
+        with self._at():
+            ensure = trade.market(self.NOW)
+            data = self.client.get("/api/bits/trade/").data
+        today = self.NOW.date()
+        tick = (12 * 3600 + 3 * 60) // trade.TICK_SECONDS
+        for asset in data["assets"]:
+            self.assertEqual(len(asset["ticks"]), trade.TICKS_PER_DAY + 1)
+            self.assertEqual(asset["ticks"][-1], asset["price"])
+            self.assertEqual(asset["ticks"][0], asset["day_ago"])
+            # Today's later ticks stay on the server.
+            row = MarketDay.objects.get(asset=asset["id"], day=today)
+            prev = MarketDay.objects.get(asset=asset["id"], day=today - timedelta(days=1))
+            path = [float(f"{p:.6g}") for p in trade.day_path(asset["id"], today, prev.close, row)]
+            self.assertEqual(asset["ticks"][-(tick + 1):], path[: tick + 1])
+            self.assertTrue(all(day < today.isoformat() for day, _ in asset["closes"]))
+            close = MarketDay.objects.get(asset=asset["id"], day=today).close
+            self.assertNotEqual(asset["price"], float(f"{close:.6g}"))
+            self.assertNotIn("state", asset)
+            self.assertNotIn("regime", asset)
+        self.assertEqual(set(ensure), set(trade.ASSETS))
+
+    def test_the_demo_snapshot_shows_the_packages_on_sale(self):
+        path = Path(settings.BASE_DIR).parent / "frontend" / "public" / "demo" / "snapshot.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        state = data["/bits/trade/"]
+        self.assertEqual([a["id"] for a in state["assets"]], list(trade.ASSETS))
+        self.assertTrue(all(o["asset"] in trade.ASSETS for o in state["orders"]))
+        self.assertEqual(data["/bits/"]["bits"]["trade"], sum(o["bits"] for o in state["orders"]))
+        self.assertEqual(state["totals"]["invested"], sum(a["position"]["basis"] for a in state["assets"]))
+
+    def test_the_day_chart_is_a_rolling_24_hours_at_any_hour(self):
+        just_after_the_change = datetime(2026, 11, 5, 0, 2, tzinfo=dt_timezone.utc)
+        just_before = datetime(2026, 11, 4, 23, 58, tzinfo=dt_timezone.utc)
+        earlier = trade.market(just_before)
+        later = trade.market(just_after_the_change)
+        for asset in trade.ASSETS:
+            self.assertEqual(len(earlier[asset]["ticks"]), trade.TICKS_PER_DAY + 1)
+            self.assertEqual(len(later[asset]["ticks"]), trade.TICKS_PER_DAY + 1)
+            # One tick on, across the market day's change: the window just slides.
+            self.assertEqual(later[asset]["ticks"][:-1], earlier[asset]["ticks"][1:])
+            # The new day opens on the close before it.
+            close = MarketDay.objects.get(asset=asset, day=date(2026, 11, 4)).close
+            self.assertAlmostEqual(later[asset]["ticks"][-1], close)
+
+    def test_news_waits_for_its_tick(self):
+        with self._at():
+            trade.ensure_market(self.NOW.date())
+        row = MarketDay.objects.get(asset="bio_venture", day=self.NOW.date())
+        row.state = {**row.state, "event": {"tick": 100, "jump": 0.2, "headline": "LATER TODAY"}}
+        row.save()
+        trade._path.cache_clear()
+        early = datetime(2026, 11, 4, 1, 0, tzinfo=dt_timezone.utc)
+        headlines = [n["headline"] for n in trade.market(early)["bio_venture"]["news"]]
+        self.assertNotIn("LATER TODAY", headlines)
+        headlines = [n["headline"] for n in trade.market(self.NOW)["bio_venture"]["news"]]
+        self.assertIn("LATER TODAY", headlines)
+
+    def test_the_table_regenerates_the_same_prices(self):
+        trade.ensure_market(self.NOW.date())
+        before = list(MarketDay.objects.order_by("asset", "day").values_list("asset", "day", "close"))
+        MarketDay.objects.all().delete()
+        trade.ensure_market(self.NOW.date())
+        after = list(MarketDay.objects.order_by("asset", "day").values_list("asset", "day", "close"))
+        self.assertEqual(before, after)
+
+    def test_buying_waits_for_the_unlock(self):
+        self._study(trade.UNLOCK_MINUTES - 1)
+        with self._at():
+            res = self._order(asset="global_index", side="buy", amount=100)
+            self.assertEqual(res.status_code, 400)
+            self.assertFalse(self.client.get("/api/bits/trade/").data["unlocked"])
+
+    def test_a_position_can_still_be_sold_after_logs_are_deleted(self):
+        log = self._study()
+        with self._at():
+            self.assertEqual(self._order(asset="global_index", side="buy", amount=100).status_code, 201)
+            log.delete()
+            res = self._order(asset="global_index", side="sell", units="all")
+        self.assertEqual(res.status_code, 201, res.data)
+
+    def test_a_buy_takes_the_whole_amount_and_records_its_fee(self):
+        self._study()
+        with self._at():
+            before = self._balance()
+            res = self._order(asset="tech_titans", side="buy", amount=1000)
+            self.assertEqual(res.status_code, 201, res.data)
+            self.assertEqual(self._balance(), before - 1000)
+            self.assertEqual(res.data["shop"]["bits"]["balance"], before - 1000)
+        order = TradeOrder.objects.get(user=self.user)
+        self.assertEqual((order.bits, order.basis, order.fee), (-1000, 1000, 5))
+        expected = (1000 - 5) * trade.UNIT / order.price
+        self.assertEqual(order.units, int(expected))
+
+    def test_selling_at_a_gain_pays_fee_and_tax_and_at_a_loss_no_tax(self):
+        self._study()
+        with self._at():
+            self._order(asset="global_index", side="buy", amount=1000)
+        units = TradeOrder.objects.get(user=self.user).units
+        for factor, taxed in ((2.0, True), (0.5, False)):
+            with self.subTest(factor=factor), self._at(), mock.patch(
+                "tracker.trade.price_now", return_value=factor * 1000 * trade.UNIT / units
+            ):
+                TradeOrder.objects.filter(kind="sell").delete()
+                res = self._order(asset="global_index", side="sell", units="all")
+                self.assertEqual(res.status_code, 201, res.data)
+                sale = TradeOrder.objects.get(kind="sell")
+                gross = trade.value_of(units, sale.price)
+                self.assertEqual(sale.fee, trade.fee_for(gross, 20))
+                self.assertEqual(sale.basis, -1000)
+                gain = gross - sale.fee - 1000
+                self.assertEqual(sale.tax, max(0, gain) // 5)
+                self.assertEqual(sale.tax > 0, taxed)
+                self.assertEqual(sale.bits, gross - sale.fee - sale.tax)
+
+    def test_partial_sale_moves_its_share_of_the_principal(self):
+        self._study()
+        with self._at():
+            self._order(asset="global_index", side="buy", amount=1000)
+            units = TradeOrder.objects.get(user=self.user).units
+            self._order(asset="global_index", side="sell", units=units // 2)
+            self.assertEqual(trade.positions(self.user)["global_index"][1], 500)
+            # More than is held just sells what is held.
+            self._order(asset="global_index", side="sell", units=units * 10)
+            self.assertNotIn("global_index", trade.positions(self.user))
+
+    def test_the_cap_counts_principal_only(self):
+        self._study(60000)
+        spec = trade.ASSETS["quantum_coin"]
+        with self._at():
+            self.assertEqual(self._order(asset="quantum_coin", side="buy", amount=spec["cap"]).status_code, 201)
+            res = self._order(asset="quantum_coin", side="buy", amount=10)
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("0 left", res.data["detail"])
+            self._order(asset="quantum_coin", side="sell", units="all")
+            self.assertEqual(self._order(asset="quantum_coin", side="buy", amount=10).status_code, 201)
+
+    def test_bad_orders_are_refused(self):
+        self._study()
+        before = TradeOrder.objects.count()
+        with self._at():
+            for body in (
+                {"asset": "nope", "side": "buy", "amount": 100},
+                {"asset": "global_index", "side": "hold", "amount": 100},
+                {"asset": "global_index", "side": "buy", "amount": 5},
+                {"asset": "global_index", "side": "buy", "amount": 10.5},
+                {"asset": "global_index", "side": "buy", "amount": True},
+                {"asset": "global_index", "side": "buy", "amount": 99999999},
+                {"asset": "global_index", "side": "buy", "amount": 1000000},
+                {"asset": "global_index", "side": "sell", "units": "all"},
+                {"asset": ["global_index"], "side": "buy", "amount": 100},
+            ):
+                with self.subTest(body=body):
+                    self.assertEqual(self._order(**body).status_code, 400)
+        self.assertEqual(TradeOrder.objects.count(), before)
+
+    def test_summary_and_reset(self):
+        self._study()
+        with self._at():
+            base = self._balance()
+            self._order(asset="global_index", side="buy", amount=300)
+            summary = self.client.get("/api/bits/").data["bits"]
+            self.assertEqual(summary["trade"], -300)
+            self.assertEqual(summary["balance"], base - 300)
+            self.client.post("/api/bits/reset/", {}, format="json")
+            self.assertEqual(self._balance(), base)
+        self.assertFalse(TradeOrder.objects.filter(user=self.user).exists())
+
+    def test_clearing_the_logs_clears_the_positions(self):
+        self._study()
+        with self._at():
+            self._order(asset="global_index", side="buy", amount=300)
+            self.assertEqual(self.client.delete("/api/logs/clear-all/").status_code, 200)
+            self.assertEqual(self._balance(), 0)
+        self.assertFalse(TradeOrder.objects.filter(user=self.user).exists())
+
+    def test_a_backup_brings_the_trades_back_once(self):
+        self._study()
+        day_one = datetime(2026, 11, 1, 10, 0, tzinfo=dt_timezone.utc)
+        with self._at(day_one):
+            self._order(asset="tech_titans", side="buy", amount=2000)
+        with self._at():
+            self._order(asset="global_index", side="buy", amount=500)
+            self._order(asset="global_index", side="sell", units="all")
+            economy = json.loads(json.dumps(self.client.get("/api/logs/export-economy/").data))
+            before = self._balance()
+            rows = sorted(
+                TradeOrder.objects.values_list("asset", "kind", "units", "bits", "basis", "created_at")
+            )
+            self.assertEqual(len(rows), 3)
+            TradeOrder.objects.all().delete()
+            restore_economy(self.user, economy, {})
+            self.assertEqual(sorted(TradeOrder.objects.values_list("asset", "kind", "units", "bits", "basis", "created_at")), rows)
+            self.assertEqual(self._balance(), before)
+            restore_economy(self.user, economy, {})
+            self.assertEqual(TradeOrder.objects.count(), 3)
+
+    def test_a_backup_cannot_oversell_or_flip_signs(self):
+        stamp = "2026-10-01T00:00:00+00:00"
+        later = "2026-10-02T00:00:00+00:00"
+        restore_economy(
+            self.user,
+            {
+                "trades": [
+                    {"asset": "global_index", "kind": "buy", "units": 5, "price": 1000.0, "bits": 100, "basis": 100, "created_at": stamp},
+                    {"asset": "global_index", "kind": "sell", "units": 500, "price": 1000.0, "bits": 99, "basis": 100, "created_at": later},
+                    {"asset": "nope", "kind": "buy", "units": 5, "price": 1.0, "bits": 100, "created_at": stamp},
+                    {"asset": "tech_titans", "kind": "dividend", "bits": 5, "created_at": stamp},
+                    {"asset": "tech_titans", "kind": "mint", "bits": 5, "created_at": stamp},
+                    "junk",
+                ]
+            },
+            {},
+        )
+        order = TradeOrder.objects.get()
+        self.assertEqual((order.kind, order.units, order.bits, order.basis), ("buy", 5, -100, 100))

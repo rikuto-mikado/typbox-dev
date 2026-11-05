@@ -520,6 +520,69 @@ export interface BitsShopState {
   collection?: CollectionState;
 }
 
+/** One package on the TRADE tab (backend tracker/trade.py). */
+export interface TradeAsset {
+  id: string;
+  ticker: string;
+  name: string;
+  kind: string;
+  tagline: string;
+  detail: string;
+  fee_bp: number;
+  trust_bp: number;
+  /** Most principal it can hold; null for no limit. */
+  cap: number | null;
+  price: number;
+  /** The price 24 hours ago: what the day's change is measured against. */
+  day_ago: number;
+  /** The last 24 hours, one price per tick, oldest first. */
+  ticks: number[];
+  /** Past closes, oldest first: [date, close]. */
+  closes: Array<[string, number]>;
+  news: Array<{ at: string; headline: string; up: boolean }>;
+  /** Today's volatility boost while the moon is full. */
+  moon: number | null;
+  position: { units: number; basis: number; value: number };
+}
+
+export interface TradeOrderFill {
+  id: number;
+  asset: string;
+  kind: 'buy' | 'sell';
+  units: number;
+  price: number;
+  bits: number;
+  fee: number;
+  tax: number;
+  at: string;
+}
+
+export interface TradeState {
+  unlocked: boolean;
+  unlock_minutes: number;
+  studied_minutes: number;
+  market_day: string;
+  closes_at: string;
+  next_tick_at: string;
+  tick_seconds: number;
+  ticks_per_day: number;
+  /** Positions are counted in `1 / unit` of a unit. */
+  unit: number;
+  tax_pct: number;
+  min_order: number;
+  assets: TradeAsset[];
+  totals: {
+    invested: number;
+    value: number;
+    unrealized: number;
+    realized: number;
+    fees: number;
+    taxes: number;
+  };
+  orders: TradeOrderFill[];
+  bits: BitsSummary;
+}
+
 /** One tier of the shop lineup (furniture.SHOP_ROTATION). */
 export interface ShopGroup {
   tier: number;
@@ -660,6 +723,14 @@ export const api = {
       apiFetch<BitsShopState>('/bits/challenge/forfeit/', {
         method: 'POST',
         body: JSON.stringify({}),
+      }),
+    /** The TRADE market, the account's positions and its orders. */
+    trade: async () => apiFetch<TradeState>('/bits/trade/'),
+    /** Fills at the current tick; `shop` keeps the balance everywhere in step. */
+    placeOrder: async (body: { asset: string; side: 'buy' | 'sell'; amount?: number; units?: number | 'all' }) =>
+      apiFetch<TradeState & { order: TradeOrderFill; shop: BitsShopState }>('/bits/trade/', {
+        method: 'POST',
+        body: JSON.stringify(body),
       }),
     /** Starts BITS and MY ROOM over; study logs and categories stay. */
     reset: async () =>

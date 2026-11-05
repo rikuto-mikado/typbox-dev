@@ -235,3 +235,67 @@ class BitPurchase(models.Model):
 
     def __str__(self):
         return f"{self.user} {self.item_id} -{self.price}"
+
+
+class MarketDay(models.Model):
+    """
+    One TRADE package's close for one market day (UTC date), see trade.py.
+    Closes are generated ahead of time from a secret seed and the previous
+    day's row, so the table is a cache that regenerates identically; only
+    prices up to the current moment are ever sent to a client.
+    """
+
+    asset = models.CharField(max_length=16)
+    day = models.DateField()
+    close = models.FloatField()
+    # What the generator carries over (TECH TITANS' regime) and the day's
+    # event (headline, jump and the tick it lands on).
+    state = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Market Day"
+        verbose_name_plural = "Market Days"
+        ordering = ["asset", "day"]
+        constraints = [
+            models.UniqueConstraint(fields=["asset", "day"], name="unique_market_day")
+        ]
+
+    def __str__(self):
+        return f"{self.asset} {self.day} {self.close:.2f}"
+
+
+class TradeOrder(models.Model):
+    """
+    One TRADE fill. The BITS ledger adds sum(bits) to the balance
+    (economy.bits_summary): negative for a buy (the whole amount, fee
+    included), positive for a sale (after fee and tax).
+    A position is the sum of its orders: `units` (millionths of a unit) and
+    `basis`, the principal still invested (fees included), which the
+    holding caps count.
+    """
+
+    BUY = "buy"
+    SELL = "sell"
+    KIND_CHOICES = [(BUY, "Buy"), (SELL, "Sell")]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="trade_orders"
+    )
+    asset = models.CharField(max_length=16)
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES)
+    units = models.BigIntegerField(default=0)
+    price = models.FloatField(default=0)
+    bits = models.IntegerField(default=0)
+    basis = models.BigIntegerField(default=0)
+    fee = models.PositiveIntegerField(default=0)
+    tax = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Trade Order"
+        verbose_name_plural = "Trade Orders"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["user", "asset"])]
+
+    def __str__(self):
+        return f"{self.user} {self.kind} {self.asset} {self.bits:+d}"

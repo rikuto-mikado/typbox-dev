@@ -98,3 +98,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+# Design reference images (generated concepts, not part of the app)
+design/sidebar-layout-concept.jpeg
