@@ -774,6 +774,9 @@ interface AmbientSoundControlProps {
   textMuted: string;
   userClearanceLevel: number;
   userTotalHours: number;
+  /** 'nav': a row of the side navigation (an icon on the rail, a labelled row
+   *  in the phone drawer), its panel opening beside the rail. */
+  variant?: 'bar' | 'nav';
 }
 
 // Soundscape Mixer: up to this many procedural layers can play at once, each
@@ -862,6 +865,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   textMuted,
   userClearanceLevel,
   userTotalHours,
+  variant = 'bar',
 }) => {
   const { t, formatTime } = useI18n();
   const [layers, setLayers] = useState<MixLayer[]>([]);
@@ -1432,8 +1436,45 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
   const isPlaying = layers.length > 0;
   const sleepRemainingMs = sleepEndsAt !== null ? Math.max(0, sleepEndsAt - sleepNow) : 0;
 
+  const navLabel = isPlaying
+    ? isPaused
+      ? t.paused
+      : layers.length === 1
+      ? NOISE_PROFILES.find((p) => p.id === layers[0].id)?.code ?? 'NOISE'
+      : `MIX ×${layers.length}`
+    : 'NOISE';
+
   return (
     <div className="relative" ref={popoverRef}>
+      {variant === 'nav' ? (
+        <button
+          type="button"
+          onClick={() => setShowPopover((prev) => !prev)}
+          aria-label={t.mixerTitle}
+          aria-expanded={showPopover}
+          className={`relative w-full h-11 lg:h-10 flex items-center gap-3 px-4 lg:px-0 lg:justify-center font-mono text-[11px] uppercase tracking-wider transition-colors cursor-pointer ${
+            isPlaying || showPopover ? 'text-emerald-400 bg-emerald-500/10' : `${textMuted} hover:text-emerald-400 hover:bg-emerald-500/5`
+          }`}
+        >
+          <span className="w-5 h-5 flex items-center justify-center shrink-0" aria-hidden>
+            {!isPlaying ? (
+              <VolumeX className="w-4 h-4" />
+            ) : isPaused ? (
+              <Pause className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4 animate-pulse" />
+            )}
+          </span>
+          <span className="lg:sr-only truncate">{navLabel}</span>
+          {sleepEndsAt !== null && (
+            <span className="lg:hidden ml-auto flex items-center gap-0.5 text-[10px] tabular-nums text-sky-400">
+              <Timer className="w-3 h-3" />
+              {formatSleepRemaining(sleepRemainingMs)}
+            </span>
+          )}
+          {isPlaying && !isPaused && <span className="hidden lg:block absolute top-1.5 right-3 w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden />}
+        </button>
+      ) : (
       <button
         type="button"
         onClick={() => setShowPopover((prev) => !prev)}
@@ -1483,10 +1524,15 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
           </>
         )}
       </button>
+      )}
 
       {showPopover && (
         <div
-          className={`fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] overflow-y-auto overscroll-contain sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] sm:max-h-[80vh] border ${borderCol} ${bgCard} shadow-2xl z-50 p-3 sm:p-4 font-mono text-xs space-y-3`}
+          className={`${
+            variant === 'nav'
+              ? 'fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] sm:left-auto sm:right-3 sm:w-[420px] lg:top-auto lg:right-auto lg:left-[4.5rem] lg:bottom-3 lg:max-h-[calc(100dvh-1.5rem)]'
+              : 'fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] sm:max-h-[80vh]'
+          } overflow-y-auto overscroll-contain border ${borderCol} ${bgCard} shadow-2xl z-50 p-3 sm:p-4 font-mono text-xs space-y-3`}
         >
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-2.5 border-zinc-800/60">
             <div className="flex items-center gap-2 min-w-0">

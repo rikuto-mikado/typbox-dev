@@ -46,16 +46,17 @@ import {
   CheckCheck,
   Undo2,
   ArrowUpRight,
+  Menu,
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight } from './api';
 import { ChallengeTicker, FestivalStrip } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
+import { SideNav, type MainView } from './SideNav';
 import { resolveSurfaceThemeId } from './surfaceThemes';
 import { setFestivalUnlocks } from './festivalUnlocks';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
 import { StatusRankList } from './StatusRankList';
-import { ThemeToggleIcon } from './ThemeToggleIcon';
 import { BitsBadge, BitShard } from './BitsBadge';
 import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
@@ -1030,7 +1031,6 @@ export default function App() {
   const currentWeekStartStr = useMemo(() => startOfWeekStr(todayStr, weekStart), [todayStr, weekStart]);
 
   // User Dropdown, Account Settings Modal & Account Deletion State
-  const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
   const [profileUsername, setProfileUsername] = useState<string>('');
@@ -1154,7 +1154,6 @@ export default function App() {
   const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState<string>('');
   const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
-  const userMenuRef = React.useRef<HTMLDivElement>(null);
   const avatarFileInputRef = React.useRef<HTMLInputElement>(null);
   const backupFileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -1195,20 +1194,35 @@ export default function App() {
       setResetBitsConfirmText('');
       setClearLogsConfirmText('');
       setSettingsTab(tab);
-      setShowUserMenu(false);
       setShowSettingsModal(true);
     },
     [user]
   );
 
+  // The side navigation: the page it shows, and (below lg) whether its
+  // drawer is out. Esc puts the drawer away; the page behind stays put.
+  const [mainView, setMainView] = useState<MainView>('home');
+  const [showNavDrawer, setShowNavDrawer] = useState(false);
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false);
-      }
+    if (!showNavDrawer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowNavDrawer(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [showNavDrawer]);
+  const goHome = useCallback(() => {
+    setMainView('home');
+    window.scrollTo({ top: 0 });
+  }, []);
+  const goData = useCallback(() => {
+    setMainView('data');
+    window.scrollTo({ top: 0 });
   }, []);
 
   // Log Form State
@@ -2144,7 +2158,6 @@ export default function App() {
     setCategories([]);
     setLogs([]);
     setSelectedCatId('');
-    setShowUserMenu(false);
     setShowSettingsModal(false);
   };
 
@@ -2159,7 +2172,6 @@ export default function App() {
       setSelectedCatId('');
       setShowDeleteModal(false);
       setShowSettingsModal(false);
-      setShowUserMenu(false);
       setDeleteConfirmUsername('');
       alert(t.msgAccountDeleted);
     } catch (err: unknown) {
@@ -3545,7 +3557,7 @@ export default function App() {
   return (
     <I18nContext.Provider value={i18n}>
     <div
-      className={`isolate min-h-screen font-sans antialiased transition-colors duration-200 ${bgMain}`}
+      className={`isolate min-h-screen lg:pl-15 font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
     >
 
@@ -3597,54 +3609,22 @@ export default function App() {
         }}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-13 sm:h-16 flex items-center justify-between gap-2">
-          {/* Brand Logo */}
-          <div className="flex items-center space-x-2 min-w-0">
-            <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
-            <span className="font-mono text-base sm:text-lg font-bold tracking-tighter whitespace-nowrap">TYPBOX</span>
-            <span className={`hidden min-[360px]:inline font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
-              .me
-            </span>
-          </div>
+          {/* Phones and tablets: the menu that opens the side navigation */}
+          <button
+            type="button"
+            onClick={() => setShowNavDrawer(true)}
+            className={`lg:hidden h-9 w-9 shrink-0 border ${borderCol} flex items-center justify-center cursor-pointer hover:opacity-80`}
+            aria-label={t.navOpen}
+            aria-expanded={showNavDrawer}
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+          {/* Desktop: the brand sits on the rail; the bar names where you are */}
+          <span className={`hidden lg:inline font-mono text-[11px] font-bold uppercase tracking-[0.2em] ${textMuted}`}>
+            {mainView === 'data' ? t.navData : t.navHome}
+          </span>
 
-          {/* Right Controls (Streamlined on Mobile/iPad to prevent top bar crowding) */}
-          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
-            {/* Command Palette Button (Shown from md+ in header; always in User Menu on mobile) */}
-            <button
-              type="button"
-              onClick={() => setShowCommandPalette(true)}
-              className={`hidden md:flex h-9 lg:h-auto px-2.5 py-1.5 lg:py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
-              aria-label={t.openCmdPalette}
-              title={t.openCmdPalette}
-            >
-              <Terminal className="w-4 h-4 text-emerald-400" />
-              <span className="hidden lg:inline font-semibold">CMD</span>
-              <span className={`text-[10px] px-1 py-0.2 border ${borderCol} ${textMuted}`}>
-                ⌘K
-              </span>
-            </button>
-
-            {/* Status Card Snapshot / Share Button (Shown from sm+ in header; also in Clearance bar & User Menu) */}
-            <button
-              type="button"
-              onClick={() => setShowStatusCardModal(true)}
-              className={`hidden sm:flex h-9 lg:h-auto px-2.5 py-1.5 lg:py-2 border ${borderCol} hover:border-emerald-500/60 transition-colors items-center space-x-1.5 font-mono text-[11px] cursor-pointer`}
-              aria-label={t.genStatusCard}
-              title={t.genStatusCard}
-            >
-              <Share2 className="w-4 h-4 text-emerald-400" />
-              <span className="hidden md:inline font-semibold">{t.cardShort}</span>
-            </button>
-
-            {/* Ambient Focus Sound / White Noise Generator */}
-            <AmbientSoundControl
-              isDark={isDark}
-              borderCol={borderCol}
-              bgCard={bgCard}
-              textMuted={textMuted}
-              userClearanceLevel={clearanceStatus.rewardUnlockLevel}
-              userTotalHours={clearanceStatus.totalHours}
-            />
-
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             {/* BITS balance (signed-in only) */}
             {user && (
               <BitsBadge
@@ -3657,211 +3637,39 @@ export default function App() {
               />
             )}
 
-            {/* Theme Polarity Toggle (Dark ⇄ Light of active Surface Theme Pair) */}
-            <button
-              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-              className={`h-9 w-9 lg:h-auto lg:w-auto lg:p-2 border ${borderCol} hover:opacity-80 flex items-center justify-center cursor-pointer`}
-              aria-label={t.togglePolarity}
-              title={
-                isDark
-                  ? tf(t.switchToLight, { label: activeSurfacePair.light.label })
-                  : tf(t.switchToDark, { label: activeSurfacePair.dark.label })
-              }
-            >
-              <ThemeToggleIcon showSun={isDark} className="w-4 h-4" />
-            </button>
-
-            {/* Auth Action Button */}
             {authLoading ? (
               <div className={`h-9 w-9 flex items-center justify-center border ${borderCol}`}>
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
               </div>
-            ) : user ? (
-              <div className="relative" ref={userMenuRef}>
-                {/* User Avatar Button */}
-                <button
-                  type="button"
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className={`h-9 lg:h-auto flex items-center space-x-1.5 sm:space-x-2 px-2 sm:px-3 py-1 sm:py-1.5 border ${borderCol} ${bgCard} hover:border-zinc-400 transition-colors cursor-pointer select-none`}
-                  aria-label={t.userMenu}
-                >
-                  <AvatarBadge
-                    username={user.username}
-                    color={user.avatar_color}
-                    preset={user.avatar_preset}
-                    image={user.avatar_image}
-                    size="sm"
-                  />
-                  <span className="hidden sm:inline font-mono text-xs font-semibold max-w-[110px] truncate">
-                    {user.username}
-                  </span>
-                  <span
-                    className="hidden lg:inline-block px-1.5 py-0.2 font-mono text-[10px] font-bold text-zinc-950"
-                    style={{ backgroundColor: clearanceStatus.current.color }}
-                  >
-                    LV.{String(clearanceStatus.current.level).padStart(4, '0')}
-                  </span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 opacity-60 transition-transform duration-200 ${
-                      showUserMenu ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* Dropdown Menu (Centered cleanly on mobile, right-aligned on sm+) */}
-                {showUserMenu && (
-                  <div
-                    className={`fixed left-3 right-3 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 border ${borderCol} ${bgCard} shadow-2xl z-50 py-1 font-mono text-xs divide-y ${
-                      isDark ? 'divide-zinc-800/80' : 'divide-zinc-200'
-                    }`}
-                  >
-                    {/* User Info Header */}
-                    <div className="px-4 py-3 space-y-2">
-                      <div className="flex items-center space-x-3">
-                        <AvatarBadge
-                          username={user.username}
-                          color={user.avatar_color}
-                          preset={user.avatar_preset}
-                          image={user.avatar_image}
-                          size="md"
-                        />
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold flex items-center space-x-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>{t.activeAccount}</span>
-                          </div>
-                          <div className="font-bold text-sm truncate">{user.username}</div>
-                          <div className={`text-[11px] truncate ${textMuted}`}>
-                            {user.email || t.noEmail}
-                          </div>
-                        </div>
-                      </div>
-                      {/* Clearance Badge inside Dropdown */}
-                      <div className={`pt-2 border-t ${borderCol} flex items-center justify-between text-[10px]`}>
-                        <span
-                          className="px-1.5 py-0.5 font-bold text-zinc-950 shrink-0"
-                          style={{ backgroundColor: clearanceStatus.current.color }}
-                        >
-                          LV.{String(clearanceStatus.current.level).padStart(4, '0')}
-                        </span>
-                        <AscensionChip totalAscensions={clearanceStatus.totalAscensions} className="ml-1.5" />
-                        <span className="font-bold truncate ml-2 flex-1">
-                          {clearanceStatus.current.title}
-                        </span>
-                        <span className={textMuted}>{clearanceStatus.progressPct}%</span>
-                      </div>
-                      {clearanceStatus.ascensionAvailable && (
-                        <button
-                          type="button"
-                          onClick={claimAscension}
-                          className="mt-1.5 w-full py-1.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-zinc-950 hover:bg-amber-400 cursor-pointer animate-pulse"
-                        >
-                          {tf(t.ascendToCycle, { n: String(clearanceStatus.cycleNumber + 1).padStart(2, '0') })}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Quick Actions */}
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => openSettingsModal('themes')}
-                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
-                      >
-                        <span className="flex items-center space-x-2.5">
-                          <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{tf(t.menuSurfaceThemes, { n: SURFACE_THEME_PAIRS.length })}</span>
-                        </span>
-                        <span className={`text-[10px] ${textMuted}`}>{activeSurfacePair.code}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => openSettingsModal('clearance')}
-                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
-                      >
-                        <span className="flex items-center space-x-2.5">
-                          <Award className="w-3.5 h-3.5 text-amber-400" />
-                          <span>{tf(t.menuClearanceRanks, { n: clearanceStatus.totalRanks.toLocaleString() })}</span>
-                        </span>
-                        <span className={`text-[10px] ${textMuted}`}>
-                          LV.{String(clearanceStatus.current.level).padStart(4, '0')}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          setShowStatusCardModal(true);
-                        }}
-                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
-                      >
-                        <span className="flex items-center space-x-2.5">
-                          <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{t.menuShareCard}</span>
-                        </span>
-                        <span className={`text-[10px] ${textMuted}`}>PNG</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          setShowCommandPalette(true);
-                        }}
-                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
-                      >
-                        <span className="flex items-center space-x-2.5">
-                          <Terminal className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{t.menuCmdPalette}</span>
-                        </span>
-                        <span className={`text-[10px] ${textMuted}`}>⌘K</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => openSettingsModal('profile')}
-                        className="w-full px-4 py-2.5 lg:py-2 text-left flex items-center justify-between hover:bg-zinc-500/10 transition-colors cursor-pointer"
-                      >
-                        <span className="flex items-center space-x-2.5">
-                          <Settings className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{t.menuAccountSettings}</span>
-                        </span>
-                        <span className={`text-[10px] ${textMuted}`}>CFG</span>
-                      </button>
-                    </div>
-
-                    {/* Sign Out */}
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          handleSignOut();
-                        }}
-                        className="w-full px-4 py-2.5 text-left flex items-center space-x-2.5 hover:bg-zinc-500/10 transition-colors cursor-pointer"
-                      >
-                        <LogOut className="w-3.5 h-3.5 text-zinc-400" />
-                        <span>{t.signOut}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
             ) : (
-              <button
-                onClick={() => openAuthModal('login')}
-                className={`h-9 lg:h-auto flex items-center space-x-1.5 sm:space-x-2 px-3 py-1.5 text-xs font-mono font-semibold border transition-colors cursor-pointer ${
-                  isDark
-                    ? 'bg-zinc-100 text-zinc-950 border-zinc-100 hover:bg-zinc-300'
-                    : 'bg-zinc-900 text-white border-zinc-900 hover:bg-zinc-800'
-                }`}
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>{t.signIn}</span>
-              </button>
+              !user && (
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className={`h-9 lg:h-auto flex items-center space-x-1.5 sm:space-x-2 px-3 py-1.5 text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-zinc-100 text-zinc-950 border-zinc-100 hover:bg-zinc-300'
+                      : 'bg-zinc-900 text-white border-zinc-900 hover:bg-zinc-800'
+                  }`}
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{t.signIn}</span>
+                </button>
+              )
             )}
+
+            {/* Phones and tablets: the brand, at the right */}
+            <button
+              type="button"
+              onClick={goHome}
+              className="lg:hidden flex items-center space-x-2 min-w-0 cursor-pointer"
+              aria-label={t.navHome}
+            >
+              <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
+              <span className="font-mono text-base sm:text-lg font-bold tracking-tighter whitespace-nowrap">TYPBOX</span>
+              <span className={`hidden min-[360px]:inline font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
+                .me
+              </span>
+            </button>
           </div>
         </div>
       </header>
@@ -3882,7 +3690,19 @@ export default function App() {
       {/* ==========================================
           MAIN CONTENT CONTAINER
       ========================================== */}
-      <main className="max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8">
+      {/* DATA: a place for deeper looks at the history, still to come. HOME
+          stays mounted underneath (hidden) so its stopwatch and forms keep
+          their state. */}
+      {mainView === 'data' && (
+        <section className="max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8" aria-label={t.navData}>
+          <div className={`min-h-[50vh] border border-dashed ${borderCol} flex flex-col items-center justify-center gap-3 p-8 text-center font-mono`}>
+            <BarChart3 className={`w-6 h-6 ${textMuted}`} />
+            <div className="text-xs font-bold uppercase tracking-[0.2em]">{t.navData}</div>
+            <p className={`text-[11px] max-w-sm ${textMuted}`}>{t.dataComingSoon}</p>
+          </div>
+        </section>
+      )}
+      <main className={`${mainView === 'data' ? 'hidden' : ''} max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8`}>
         {/* GUEST BANNER (Rendered only when not authenticated) */}
         {user && buffState?.userId === user.id && buffState.festival?.active && buffState.festival.pass && (
           <FestivalStrip festival={buffState.festival.active} pass={buffState.festival.pass} onOpen={() => openBitsShop('challenges')} />
@@ -4002,8 +3822,8 @@ export default function App() {
             {/* Progress Bar & Sub-Phases */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between lg:justify-end gap-2.5 sm:gap-4 flex-1 max-w-2xl">
               <div className="flex-1 min-w-[180px] space-y-1">
-                <div className="flex items-center justify-between text-[10px]">
-                  <div className="flex items-center space-x-1">
+                <div className="flex items-center justify-between gap-2 text-[10px]">
+                  <div className="flex items-center space-x-1 shrink-0">
                     {[1, 2, 3, 4, 5].map((pip) => (
                       <span
                         key={pip}
@@ -4015,7 +3835,7 @@ export default function App() {
                         title={tf(t.subPhaseN, { n: pip })}
                       />
                     ))}
-                    <span className="ml-1 text-emerald-400 font-bold">
+                    <span className="ml-1 text-emerald-400 font-bold whitespace-nowrap">
                       {tf(t.phaseN, { n: clearanceStatus.subPhase })}
                     </span>
                   </div>
@@ -4028,7 +3848,7 @@ export default function App() {
                       {t.ascensionClaim}
                     </button>
                   ) : (
-                    <span className={textMuted}>
+                    <span className={`text-right ${textMuted}`}>
                       {clearanceStatus.next
                         ? tf(t.nextLevel, {
                             lv: String(clearanceStatus.next.level).padStart(4, '0'),
@@ -6944,6 +6764,22 @@ export default function App() {
             {/* TAB 5: ACCOUNT, part 1 of 2: PASSWORD & SECURITY */}
             {settingsTab === 'account' && (
               <div className="space-y-5 font-mono text-xs">
+                {user && (
+                  <div className={`flex items-center justify-between gap-3 p-3 border ${borderCol}`}>
+                    <div className="min-w-0">
+                      <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>{t.accountSession}</div>
+                      <div className="font-bold truncate">{tf(t.accountSignedInAs, { name: user.username })}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className={`shrink-0 px-3 py-1.5 border ${borderCol} flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider hover:border-rose-500/60 hover:text-rose-400 transition-colors cursor-pointer`}
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      {t.signOut}
+                    </button>
+                  </div>
+                )}
                 <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountSecurity}</h4>
                 {passwordStatus && (
                   <div
@@ -7458,6 +7294,55 @@ export default function App() {
       />
 
       <ToastStack toasts={toasts} isDark={isDark} onDismiss={dismissToast} />
+
+      {/* Side navigation: a rail from lg up, a drawer below. Last in the page
+          so the panels it opens draw over the header. */}
+      <SideNav
+        open={showNavDrawer}
+        onClose={() => setShowNavDrawer(false)}
+        view={mainView}
+        bitsOpen={showBitsShop}
+        settingsOpen={showSettingsModal}
+        onHome={goHome}
+        onBits={() => (user ? openBitsShop('buffs') : openAuthModal('login'))}
+        onData={goData}
+        onSettings={() => openSettingsModal('profile')}
+        onCommand={() => setShowCommandPalette(true)}
+        onCard={() => setShowStatusCardModal(true)}
+        onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+        isDark={isDark}
+        isRunning={isRunning}
+        sound={
+          <AmbientSoundControl
+            variant="nav"
+            isDark={isDark}
+            borderCol={borderCol}
+            bgCard={bgCard}
+            textMuted={textMuted}
+            userClearanceLevel={clearanceStatus.rewardUnlockLevel}
+            userTotalHours={clearanceStatus.totalHours}
+          />
+        }
+        user={
+          user
+            ? {
+                name: user.username,
+                avatar: (
+                  <AvatarBadge
+                    username={user.username}
+                    color={user.avatar_color}
+                    preset={user.avatar_preset}
+                    image={user.avatar_image}
+                    size="sm"
+                  />
+                ),
+              }
+            : null
+        }
+        background={isDark ? activeSurfacePair.dark.bgMain : activeSurfacePair.light.bgMain}
+        borderCol={borderCol}
+        textMuted={textMuted}
+      />
     </div>
     </I18nContext.Provider>
   );
