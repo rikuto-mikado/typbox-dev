@@ -1,11 +1,12 @@
 """
-TRADE: four investment packages bought and sold with BITS (the BITS // EXCHANGE's
-TRADE tab).
+TRADE: fifteen investment packages in five sectors, bought and sold with BITS
+(the BITS // EXCHANGE's TRADE tab).
 
-Prices are made up, not fetched: each package follows its own random walk
-(geometric Brownian motion, with a regime switch, mean reversion, leverage or
-news jumps depending on its character). One game day is meant to feel like
-about a week of a real market.
+Prices are made up, not fetched: each package grows over the long run and has
+its own way of getting there (see "The market" below: steps, booms and
+pullbacks, swells, breakthroughs, moving against the market...), while money
+rotates between sectors out of sight. One game day is meant to feel like about
+a week of a real market.
 
 How a price is made
 - Every package has one close per market day (a UTC date) in MarketDay. A
@@ -63,111 +64,184 @@ MAX_ORDER = 10_000_000
 UNLOCK_MINUTES = 600
 ORDERS_SHOWN = 25
 
-# Days of a full moon (lit fraction above this) shake BIO VENTURE harder.
-FULL_MOON_FROM = 0.85
-FULL_MOON_BOOST = 0.8
+# ------------------------------------------------------------------
+# The market: fifteen packages in five sectors
+# ------------------------------------------------------------------
+# Every package grows over the long run (a positive drift), and each has a
+# way of getting there (`model`):
+#   steady    climbs at an even slope with little noise
+#   step      sags a little for days, then a contract lifts it a notch
+#   momentum  booms and busts that last days; a long run tends to end in a
+#             sharp pullback (more likely the longer it runs, never certain)
+#   cycle     swells and dips whose length and depth change every time, at a
+#             pace that wobbles day to day, under noise as large as the swing:
+#             no clock to trade by
+#   catalyst  drifts lower while it waits, then a breakthrough spikes it; over
+#             the next days it may give some back or keep climbing (drawn each
+#             time, roughly even on average)
+#   defensive moves against the market: firm when the rest is weak
+#   noisy     a lot of day-to-day noise around a steady climb
+#   wild      three times leveraged: halves or doubles, and decays if held
+#   index     the market itself
+# On top of that, money rotates between sectors (_sector_heat): for a few
+# days at a time one runs hot while another cools, and the market as a whole
+# (_market_heat) leans with them. None of that is shown; it can only be read
+# from the prices. One game day is meant to feel like about a week.
+
+SECTORS = {
+    "defense": "DEFENSE & AEROSPACE",
+    "energy": "ENERGY & INFRASTRUCTURE",
+    "semis": "CHIPS, AI & CYBER",
+    "bio": "BIO & MEDTECH",
+    "market": "RESOURCES, SHIPPING & INDEX",
+}
+
+_A = lambda yearly: math.log(1 + yearly) / 365  # noqa: E731  a yearly drift as a daily one
 
 ASSETS = {
-    "global_index": {
-        "ticker": "GLBL",
-        "name": "GLOBAL INDEX",
-        "kind": "fund",
-        "tagline": "The whole world in one fund — slow and steady",
-        "detail": "Thousands of companies in one package. It wobbles a little from day to day, but held for a month or more it climbs steadily. No cap: the calm place for savings.",
-        "start": 1000.0,
-        "fee_bp": 20,
-        "trust_bp": 50,
-        "cap": None,
-        "model": "drift",
-        "sigma": 0.006,
-        "drift": math.log(1.30) / 365,
+    # ---- DEFENSE & AEROSPACE: firm floors, rises a step at a time
+    "aero_dynamics": {
+        "ticker": "AERO", "name": "AERO DYNAMICS", "sector": "defense", "kind": "stock",
+        "tagline": "Fighter jets and big contracts — quiet for days, then a step up",
+        "detail": "A defence prime that barely moves between contracts. When one lands the price jumps a notch, and the new level tends to hold.",
+        "start": 400.0, "fee_bp": 40, "trust_bp": 0, "cap": 10_000,
+        "model": "step", "sigma": 0.004, "drift": _A(-0.4), "beta": 0.6,
+        "steps": 0.05, "step_size": (0.03, 0.07), "slips": 0.01, "slip_size": (0.02, 0.04),
     },
+    "aegis_systems": {
+        "ticker": "AEGS", "name": "AEGIS SYSTEMS", "sector": "defense", "kind": "stock",
+        "tagline": "Air defence and armour — strongest when everything else is weak",
+        "detail": "Where money hides when the rest of the market sells off. It edges up on bad days for everyone else, and lags when the market is euphoric.",
+        "start": 250.0, "fee_bp": 40, "trust_bp": 0, "cap": 10_000,
+        "model": "defensive", "sigma": 0.008, "drift": _A(0.18), "beta": 0.3, "market_beta": -0.8,
+    },
+    "orbital_launch": {
+        "ticker": "ORBT", "name": "ORBITAL LAUNCH", "sector": "defense", "kind": "stock",
+        "tagline": "Private rockets — long silences, then a launch",
+        "detail": "A launch company waiting on its next flight. It sags while it waits; a successful launch sends it soaring before it settles back about halfway.",
+        "start": 120.0, "fee_bp": 100, "trust_bp": 0, "cap": 5_000,
+        "model": "catalyst", "sigma": 0.02, "drift": _A(-0.12), "beta": 0.8,
+        "spikes": 0.01, "spike_size": (0.22, 0.38), "giveback": (-0.45, 0.65), "flops": 0.008, "flop_size": (0.12, 0.2),
+    },
+    # ---- ENERGY & INFRASTRUCTURE: the economy's backbone, hard to knock down
+    "volt_grid": {
+        "ticker": "VOLT", "name": "VOLT GRID", "sector": "energy", "kind": "stock",
+        "tagline": "Transformers and power lines — a slow, straight climb",
+        "detail": "Every data centre needs power. It climbs at a gentle, almost straight angle; the calmest growth on the board.",
+        "start": 300.0, "fee_bp": 30, "trust_bp": 0, "cap": 10_000,
+        "model": "steady", "sigma": 0.005, "drift": _A(0.2), "beta": 0.4,
+    },
+    "atom_core": {
+        "ticker": "ATOM", "name": "ATOM CORE", "sector": "energy", "kind": "stock",
+        "tagline": "Reactors and uranium — big swells that keep rising",
+        "detail": "Energy demand comes in waves, and this rides them: swells and dips of uneven length, each low a little higher than the last.",
+        "start": 180.0, "fee_bp": 50, "trust_bp": 0, "cap": 8_000,
+        "model": "cycle", "sigma": 0.022, "drift": _A(0.22), "beta": 0.7,
+        "period": (3, 8), "swing": (0.012, 0.026),
+    },
+    "terra_nexus": {
+        "ticker": "TERA", "name": "TERRA NEXUS", "sector": "energy", "kind": "stock",
+        "tagline": "Wind, solar and batteries — jittery, but growing",
+        "detail": "Plenty of day-to-day noise, but averaged over a couple of weeks it grows steadily. Medium risk.",
+        "start": 90.0, "fee_bp": 50, "trust_bp": 0, "cap": 8_000,
+        "model": "noisy", "sigma": 0.026, "drift": _A(0.3), "beta": 0.8,
+    },
+    # ---- CHIPS, AI & CYBER: the fastest growers, with the deepest pullbacks
     "tech_titans": {
-        "ticker": "TITN",
-        "name": "TECH TITANS",
-        "kind": "fund",
-        "tagline": "Chips and platforms — booms and busts that last days",
-        "detail": "The giants of tech and semiconductors. The market swings between booms and busts that run for several days at a time; ride a boom, step aside in a bust. Medium risk, medium return.",
-        "start": 500.0,
-        "fee_bp": 50,
-        "trust_bp": 100,
-        "cap": 30_000,
-        "model": "regime",
-        "sigma": 0.02,
-        "bull": 0.0055,
-        "bear": -0.0035,
-        "switch": 0.18,
+        "ticker": "SFND", "name": "SILICON FOUNDRY", "sector": "semis", "kind": "stock",
+        "tagline": "AI chips — runs for days, then a sharp pullback",
+        "detail": "The market's favourite. Once it starts climbing it can run for days, and the longer it runs the more likely a sharp pullback becomes. Timing is the game.",
+        "start": 500.0, "fee_bp": 50, "trust_bp": 0, "cap": 10_000,
+        "model": "momentum", "sigma": 0.017, "drift": _A(0.35), "beta": 1.2,
+        "bull": 0.006, "bear": -0.004, "switch": 0.16, "pullback": (0.05, 0.1),
     },
-    "bio_venture": {
-        "ticker": "BIOV",
-        "name": "BIO VENTURE",
-        "kind": "stock",
-        "tagline": "A biotech start-up — news and the moon move it",
-        "detail": "A young lab living from one trial result to the next. Headlines send it soaring or sinking within the day, and it gets wilder around the full moon. Made for quick trades.",
-        "start": 200.0,
-        "fee_bp": 100,
-        "trust_bp": 0,
-        "cap": 10_000,
-        "model": "revert",
-        "sigma": 0.05,
-        "anchor": 200.0,
-        "kappa": 0.02,
-        "moon": True,
-        "events": 0.12,
-        "jump": (0.10, 0.30),
+    "sentinel_eye": {
+        "ticker": "SNTL", "name": "SENTINEL EYE", "sector": "semis", "kind": "stock",
+        "tagline": "Security and intelligence AI — wild swings, steep growth",
+        "detail": "Big moves inside the day and a steep climb over weeks. For trades of a few days to a few weeks.",
+        "start": 160.0, "fee_bp": 60, "trust_bp": 0, "cap": 6_000,
+        "model": "noisy", "sigma": 0.034, "drift": _A(0.45), "beta": 1.3,
     },
     "quantum_coin": {
-        "ticker": "QBIT",
-        "name": "QUANTUM COIN",
-        "kind": "crypto",
-        "tagline": "Leveraged crypto — double or half in a day",
-        "detail": "A coin traded at three times leverage. It can double or halve in a single day, and leverage slowly eats into anyone who just sits on it. Only play with BITS you can lose.",
-        "start": 1000.0,
-        "fee_bp": 200,
-        "trust_bp": 0,
-        "cap": 5_000,
-        "model": "leveraged",
-        "sigma": 0.065,
-        "leverage": 3,
-        "anchor": 2000.0,
-        "kappa": 0.03,
-        "events": 0.06,
-        "jump": (0.42, 0.69),
+        "ticker": "QMTX", "name": "QUANTUM MATRIX", "sector": "semis", "kind": "venture",
+        "tagline": "Quantum computing venture — double or half in a day",
+        "detail": "The roughest ride on the board: it can lose half its value and still be the best performer over a month. Traded at three times leverage, which slowly eats into anyone who just sits on it.",
+        "start": 1000.0, "fee_bp": 200, "trust_bp": 0, "cap": 4_000,
+        "model": "wild", "sigma": 0.055, "leverage": 3, "anchor": 2000.0, "kappa": 0.03, "beta": 1.5,
+        "events": 0.05, "jump": (0.35, 0.6),
+    },
+    # ---- BIO & MEDTECH: long waits and sudden breakthroughs
+    "bio_venture": {
+        "ticker": "GNOM", "name": "GENOME LABS", "sector": "bio", "kind": "stock",
+        "tagline": "Next-generation drugs — quiet, then an approval",
+        "detail": "Dull for long stretches, drifting lower while trials run. An approval sends it straight up, and about half of that comes back over the next days.",
+        "start": 200.0, "fee_bp": 100, "trust_bp": 0, "cap": 5_000,
+        "model": "catalyst", "sigma": 0.022, "drift": _A(-0.1), "beta": 0.7,
+        "spikes": 0.01, "spike_size": (0.25, 0.42), "giveback": (-0.45, 0.65), "flops": 0.009, "flop_size": (0.12, 0.22),
+    },
+    "bionic_med": {
+        "ticker": "BION", "name": "BIONIC MED", "sector": "bio", "kind": "stock",
+        "tagline": "Surgical robots — steady growth with bursts",
+        "detail": "Hospitals keep buying. A steady climb, with runs of a few days when the market notices it.",
+        "start": 350.0, "fee_bp": 40, "trust_bp": 0, "cap": 10_000,
+        "model": "momentum", "sigma": 0.009, "drift": _A(0.24), "beta": 0.6,
+        "bull": 0.003, "bear": -0.0015, "switch": 0.2, "pullback": (0.02, 0.05),
+    },
+    "agri_harvest": {
+        "ticker": "AGRI", "name": "AGRI HARVEST", "sector": "bio", "kind": "stock",
+        "tagline": "Autonomous farming — its own seasons, out of step with the rest",
+        "detail": "Moves with the harvest, not with the market: swells and dips of its own that rarely line up with anything else on the board.",
+        "start": 140.0, "fee_bp": 50, "trust_bp": 0, "cap": 8_000,
+        "model": "cycle", "sigma": 0.02, "drift": _A(0.16), "beta": 0.0,
+        "period": (4, 9), "swing": (0.01, 0.022),
+    },
+    # ---- RESOURCES, SHIPPING & INDEX: the economy's tides, and the benchmark
+    "ocean_freight": {
+        "ticker": "OCNF", "name": "OCEAN FREIGHT", "sector": "market", "kind": "stock",
+        "tagline": "Global shipping — clear tides of boom and lull",
+        "detail": "Freight rates come and go in tides you can see on the chart, though no two are the same length or height. Each low tends to sit above the last.",
+        "start": 220.0, "fee_bp": 50, "trust_bp": 0, "cap": 8_000,
+        "model": "cycle", "sigma": 0.02, "drift": _A(0.15), "beta": 0.5,
+        "period": (3, 7), "swing": (0.01, 0.02),
+    },
+    "rare_earth": {
+        "ticker": "RARE", "name": "RARE EARTH", "sector": "market", "kind": "commodity",
+        "tagline": "Gold, copper and lithium — up when tech is down",
+        "detail": "Hard assets that keep their value. It tends to rise when chips and AI are being sold, which makes it a natural partner for them.",
+        "start": 600.0, "fee_bp": 30, "trust_bp": 0, "cap": 10_000,
+        "model": "defensive", "sigma": 0.009, "drift": _A(0.16), "beta": 0.2, "market_beta": -0.6,
+        "against": "semis",
+    },
+    "global_index": {
+        "ticker": "G500", "name": "GLOBAL 500", "sector": "market", "kind": "fund",
+        "tagline": "The whole market in one fund — if in doubt, this",
+        "detail": "Moves with the board as a whole: it never runs the hottest, never falls the hardest, and over a month or more it climbs. No cap: the calm place for savings.",
+        "start": 1000.0, "fee_bp": 20, "trust_bp": 50, "cap": None,
+        "model": "index", "sigma": 0.005, "drift": _A(0.2), "beta": 0.0, "market_beta": 0.5,
     },
 }
 
 HEADLINES = {
-    "bio_venture": {
-        "up": [
-            "PHASE III TRIAL MEETS ITS ENDPOINT",
-            "REGULATOR FAST-TRACKS LEAD CANDIDATE",
-            "BIG PHARMA BUYOUT RUMOURS",
-            "LAB REPORTS A BREAKTHROUGH",
-            "LICENSING DEAL SIGNED",
-        ],
-        "down": [
-            "TRIAL HALTED ON A SAFETY SIGNAL",
-            "REGULATOR ASKS FOR MORE DATA",
-            "LEAD SCIENTIST WALKS OUT",
-            "PATENT CHALLENGE FILED",
-            "CASH RUNWAY WARNING",
-        ],
+    "step": {
+        "up": ["WINS A MULTI-YEAR CONTRACT", "BUDGET APPROVED FOR NEW ORDERS", "EXPORT DEAL SIGNED", "PRODUCTION RAMP AHEAD OF PLAN"],
+        "down": ["PROGRAM DELAYED", "AUDIT FLAGS COST OVERRUNS"],
     },
-    "quantum_coin": {
-        "up": [
-            "WHALE WALLET BUYS IN",
-            "LISTED ON A MAJOR EXCHANGE",
-            "CELEBRITY POST SENDS IT FLYING",
-            "STAKING UPGRADE GOES LIVE",
-        ],
-        "down": [
-            "EXCHANGE HACK DRAINS RESERVES",
-            "REGULATORS CRACK DOWN",
-            "DEVS ABANDON THE ROADMAP",
-            "WHALE DUMPS ITS BAG",
-        ],
+    "catalyst": {
+        "up": ["BREAKTHROUGH CONFIRMED", "REGULATOR GIVES THE GREEN LIGHT", "FLAWLESS RESULT", "BIG PARTNER SIGNS ON"],
+        "down": ["SETBACK IN THE FINAL STAGE", "RESULTS DISAPPOINT", "SAFETY REVIEW OPENED"],
+    },
+    "momentum": {"down": ["PROFIT-TAKING HITS THE LEADERS", "VALUATION WORRIES SPREAD", "A BIG FUND TRIMS ITS STAKE"]},
+    "wild": {
+        "up": ["QUBIT RECORD SHATTERED", "TECH GIANT ANNOUNCES PARTNERSHIP", "RETAIL FRENZY", "ERROR-CORRECTION MILESTONE"],
+        "down": ["KEY RESULT FAILS TO REPLICATE", "FUNDING ROUND COLLAPSES", "SHORT SELLER REPORT", "LEAD ENGINEERS LEAVE"],
     },
 }
+
+# Sector heat: for a few days at a time each sector runs hot, warm, cool or
+# cold. Relative to each other mostly (money moves between them), with a
+# little of it left over for the market as a whole.
+HEAT = [(0.0055, 0.2), (0.002, 0.3), (-0.0015, 0.3), (-0.0045, 0.2)]
+HEAT_SPELL = (3, 6)
 
 
 class TradeError(Exception):
@@ -188,12 +262,56 @@ def _rng(asset, day, purpose):
     return random.Random(int.from_bytes(digest[:16], "big"))
 
 
-def _moon_boost(day):
-    """BIO VENTURE's volatility multiplier for a day (1 away from the full moon)."""
-    from .economy import moon_light  # economy imports this module
+# Sector heat, worked out spell by spell from the market's first day and kept
+# per seed: {(seed, sector): [(first offset, last offset + 1, heat), ...]}.
+_SPELLS = {}
 
-    light = moon_light(datetime.combine(day, time(12), tzinfo=dt_timezone.utc))
-    return 1 + FULL_MOON_BOOST * max(0.0, (light - FULL_MOON_FROM) / (1 - FULL_MOON_FROM))
+
+def _raw_heat(sector, day):
+    offset = (day - MARKET_EPOCH).days
+    if offset < 0:
+        return 0.0
+    spells = _SPELLS.setdefault((_seed(), sector), [])
+    while not spells or spells[-1][1] <= offset:
+        start = spells[-1][1] if spells else 0
+        rng = _rng(f"heat-{sector}", MARKET_EPOCH, f"spell-{len(spells)}")
+        length = rng.randint(*HEAT_SPELL)
+        roll, heat = rng.random(), HEAT[-1][0]
+        for value, weight in HEAT:
+            if roll < weight:
+                heat = value
+                break
+            roll -= weight
+        spells.append((start, start + length, heat))
+    for first, end, heat in reversed(spells):
+        if first <= offset < end:
+            return heat
+    return 0.0
+
+
+_ROTATING = ("defense", "energy", "semis", "bio")
+
+
+def _market_heat(day):
+    """The market as a whole: what the sectors' heat shares, plus a little noise."""
+    shared = sum(_raw_heat(sector, day) for sector in _ROTATING) / len(_ROTATING)
+    return 0.6 * shared + 0.003 * _rng("market", day, "mood").gauss(0, 1)
+
+
+def _sector_heat(sector, day):
+    """A sector's heat relative to the others: money moving between them."""
+    if sector not in _ROTATING:
+        return _market_heat(day)
+    shared = sum(_raw_heat(other, day) for other in _ROTATING) / len(_ROTATING)
+    return _raw_heat(sector, day) - 0.7 * shared
+
+
+def _event(rng, pool, sign, size):
+    return {
+        "tick": rng.randrange(12, TICKS_PER_DAY - 12),
+        "jump": sign * rng.uniform(*size),
+        "headline": rng.choice(HEADLINES[pool]["up" if sign > 0 else "down"]),
+    }
 
 
 def next_close(asset, day, prev_close, prev_state):
@@ -203,37 +321,77 @@ def next_close(asset, day, prev_close, prev_state):
     x = math.log(prev_close)
     z = rng.gauss(0, 1)
     sigma = spec["sigma"]
-    trust = spec["trust_bp"] / 10000 / 365
-    state = {}
     model = spec["model"]
-    if model == "drift":
-        r = spec["drift"] - trust + sigma * z
-    elif model == "regime":
+    state = {}
+    event = None
+    # What every package shares: its sector's heat, the market's, its drift.
+    lean = spec.get("beta", 0.0) * _sector_heat(spec["sector"], day)
+    lean += spec.get("market_beta", 0.0) * _market_heat(day)
+    if spec.get("against"):
+        lean -= 0.6 * _sector_heat(spec["against"], day)
+    r = spec.get("drift", 0.0) - spec["trust_bp"] / 10000 / 365 + lean + sigma * z
+
+    if model == "step":
+        roll = rng.random()
+        if roll < spec["steps"]:
+            event = _event(rng, "step", 1, spec["step_size"])
+        elif roll < spec["steps"] + spec["slips"]:
+            event = _event(rng, "step", -1, spec["slip_size"])
+    elif model == "momentum":
         regime = prev_state.get("regime", "bull")
+        run = prev_state.get("run", 0)
         if rng.random() < spec["switch"]:
             regime = "bear" if regime == "bull" else "bull"
+        r += spec[regime]
+        # The longer it has run, the likelier a sharp pullback (never certain).
+        if run >= 3 and rng.random() < min(0.4, 0.06 * (run - 2)):
+            event = {
+                "tick": rng.randrange(12, TICKS_PER_DAY - 12),
+                "jump": -rng.uniform(*spec["pullback"]),
+                "headline": rng.choice(HEADLINES["momentum"]["down"]),
+            }
         state["regime"] = regime
-        r = spec[regime] - trust + sigma * z
-    elif model == "revert":
-        if spec.get("moon"):
-            boost = _moon_boost(day)
-            if boost > 1:
-                state["moon"] = round(boost, 2)
-            sigma *= boost
-        r = spec["kappa"] * (math.log(spec["anchor"]) - x) + sigma * z
-    else:  # leveraged
+        state["run"] = run + 1 if r > 0 and event is None else 0
+    elif model == "cycle":
+        phase, period, swing = prev_state.get("phase"), prev_state.get("period"), prev_state.get("swing")
+        if phase is None or not period or swing is None:
+            phase, period, swing = rng.random(), rng.randint(*spec["period"]), rng.uniform(*spec["swing"])
+        # The pace wobbles from day to day, so a swell's turn can't be counted out.
+        ahead = phase + rng.uniform(0.55, 1.45) / period
+        r += swing * (math.sin(2 * math.pi * ahead) - math.sin(2 * math.pi * phase))
+        if ahead >= 1:
+            # Every swell is drawn afresh: its length and its height.
+            ahead -= 1
+            period, swing = rng.randint(*spec["period"]), rng.uniform(*spec["swing"])
+        state.update(phase=round(ahead, 6), period=period, swing=round(swing, 6))
+    elif model == "catalyst":
+        owed, left = prev_state.get("owed", 0.0), prev_state.get("left", 0)
+        if left > 0:
+            part = owed / left  # negative while it keeps climbing
+            r -= part
+            owed, left = owed - part, left - 1
+        roll = rng.random()
+        if roll < spec["spikes"]:
+            event = _event(rng, "catalyst", 1, spec["spike_size"])
+            # Whether it gives some back or keeps going (a negative share), and
+            # how quickly, is anyone's guess: on average it roughly holds.
+            owed += event["jump"] * rng.uniform(*spec["giveback"])
+            left = max(left, rng.randint(3, 10))
+        elif roll < spec["spikes"] + spec["flops"]:
+            event = _event(rng, "catalyst", -1, spec["flop_size"])
+        if left > 0:
+            state.update(owed=round(owed, 6), left=left)
+    elif model == "wild":
         r = math.log(max(0.05, 1 + spec["leverage"] * sigma * z))
-        r += spec["kappa"] * (math.log(spec["anchor"]) - x)
+        r += spec["kappa"] * (math.log(spec["anchor"]) - x) + lean
         sigma *= spec["leverage"]
-    if spec.get("events") and rng.random() < spec["events"]:
-        up = rng.random() < 0.5
-        jump = rng.uniform(*spec["jump"]) * (1 if up else -1)
-        state["event"] = {
-            "tick": rng.randrange(12, TICKS_PER_DAY - 12),
-            "jump": jump,
-            "headline": rng.choice(HEADLINES[asset]["up" if up else "down"]),
-        }
-        r += jump
+        if rng.random() < spec["events"]:
+            event = _event(rng, "wild", 1 if rng.random() < 0.5 else -1, spec["jump"])
+    # steady, defensive, noisy and index need nothing more than the above.
+
+    if event is not None:
+        state["event"] = event
+        r += event["jump"]
     state["vol"] = sigma
     close = min(1e9, max(1e-6, math.exp(x + r)))
     return close, state
@@ -532,6 +690,7 @@ def trade_state(user, now=None):
                 "kind": spec["kind"],
                 "tagline": spec["tagline"],
                 "detail": spec["detail"],
+                "sector": spec["sector"],
                 "fee_bp": spec["fee_bp"],
                 "trust_bp": spec["trust_bp"],
                 "cap": spec["cap"],
@@ -574,6 +733,7 @@ def trade_state(user, now=None):
         "unit": UNIT,
         "tax_pct": TAX_PCT,
         "min_order": MIN_ORDER,
+        "sectors": [{"id": key, "name": name} for key, name in SECTORS.items()],
         "assets": assets,
         "totals": totals,
         "orders": [

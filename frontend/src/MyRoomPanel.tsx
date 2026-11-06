@@ -35,6 +35,8 @@ import {
   type FurnitureSpec,
   type Ghost,
   type RoomLayout,
+  LIGHT_LEVELS,
+  type LightLevel,
 } from './roomRender';
 
 // 04 / MY ROOM: arrange owned furniture in a 16 x 12 pixel room.
@@ -94,13 +96,13 @@ const clockScene = (timeZone: string): Scene => {
   const h = localHour(timeZone);
   return h >= 19 || h < 6 ? 'night' : 'day';
 };
-const readPrefs = (timeZone: string): { scene: Scene; lamps: boolean; grid: boolean } => {
-  const fallback = { scene: clockScene(timeZone), lamps: false, grid: false };
+const readPrefs = (timeZone: string): { scene: Scene; lights: LightLevel; grid: boolean } => {
+  const fallback = { scene: clockScene(timeZone), lights: 2 as LightLevel, grid: false };
   try {
     const raw = JSON.parse(window.localStorage.getItem(PREF_KEY) ?? '{}');
     return {
       scene: raw.scene === 'day' || raw.scene === 'night' ? raw.scene : fallback.scene,
-      lamps: raw.lamps === true,
+      lights: LIGHT_LEVELS.includes(raw.lights) ? raw.lights : fallback.lights,
       grid: raw.grid === true,
     };
   } catch {
@@ -269,19 +271,20 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
   }, [roomsOpen, room, layout, catalog, activeRoom]);
 
   const night = prefs.scene === 'night';
-  const lit = isRunning || prefs.lamps;
+  const lights = prefs.lights;
   const showGrid = prefs.grid || Boolean(armed) || Boolean(drag?.moved);
 
   useEffect(() => {
     if (!canvasRef.current || !layout || !room) return;
     renderRoom(canvasRef.current, layout, catalog, {
-      env: { on: lit, night, weather },
+      env: { on: isRunning, night, weather },
+      lights,
       selected,
       lifted: drag?.moved ? drag.index : -1,
       ghost,
       grid: showGrid,
     });
-  }, [layout, room, catalog, lit, night, weather, selected, drag, ghost, showGrid]);
+  }, [layout, room, catalog, isRunning, lights, night, weather, selected, drag, ghost, showGrid]);
 
   if (loadError) {
     return <div className="p-3 border border-rose-500/40 text-rose-400 font-mono text-[11px]">{loadError}</div>;
@@ -462,7 +465,7 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
   };
 
   const saveSnapshot = () => {
-    const url = snapshotRoom(layout, catalog, { on: lit, night });
+    const url = snapshotRoom(layout, catalog, { on: isRunning, night }, 6, lights);
     if (!url) return;
     const a = document.createElement('a');
     a.href = url;
@@ -798,8 +801,8 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
-        {/* Stage: the room in a dark frame, its tools docked underneath */}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] @4xl:grid-cols-[minmax(0,1fr)_280px] @6xl:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Stage: the room in a dark frame, its tools docked underneath. */}
         <div className="space-y-2 min-w-0">
           <div className={`border ${borderCol} bg-zinc-950`}>
           <div className="relative p-1.5">
@@ -819,7 +822,7 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
             />
             {/* Caption plate, like a diorama label. */}
             <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 px-1.5 py-0.5 bg-zinc-950/75 text-[9px] uppercase tracking-widest text-zinc-300 max-w-[70%]">
-              <span className={`w-1.5 h-1.5 shrink-0 ${lit ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} aria-hidden />
+              <span className={`w-1.5 h-1.5 shrink-0 ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} aria-hidden />
               {openSlot && <span className="truncate font-bold text-emerald-300">{openSlot.name}</span>}
               {openSlot && <span className="text-zinc-500">·</span>}
               <span className="shrink-0">{tf(t.roomPiecesPlaced, { a: layout.items.length, b: MAX_PLACED })}</span>
@@ -833,7 +836,24 @@ export const MyRoomPanel: React.FC<MyRoomPanelProps> = ({ isRunning, timeZone, b
             {dockBtn(() => setPrefs((p) => ({ ...p, grid: !p.grid })), Grid3x3, t.roomGridTitle, { on: prefs.grid })}
             {dockBtn(() => setPrefs((p) => ({ ...p, scene: 'day' })), Sun, t.roomSceneDay, { on: prefs.scene === 'day' })}
             {dockBtn(() => setPrefs((p) => ({ ...p, scene: 'night' })), Moon, t.roomSceneNight, { on: prefs.scene === 'night' })}
-            {dockBtn(() => setPrefs((p) => ({ ...p, lamps: !p.lamps })), Lightbulb, t.roomLampsTitle, { on: lit })}
+            {/* The LIGHTS dimmer: each tap a step brighter, then off again. */}
+            <button
+              type="button"
+              onClick={() => setPrefs((p) => ({ ...p, lights: ((p.lights + 1) % LIGHT_LEVELS.length) as LightLevel }))}
+              aria-label={tf(t.roomLightsTitle, { level: [t.roomLightsOff, t.roomLightsLow, t.roomLightsMid, t.roomLightsFull][lights] })}
+              title={tf(t.roomLightsTitle, { level: [t.roomLightsOff, t.roomLightsLow, t.roomLightsMid, t.roomLightsFull][lights] })}
+              className={`relative w-9 flex items-center justify-center transition-colors cursor-pointer ${
+                lights > 0 ? 'text-amber-300 hover:bg-amber-400/10' : 'hover:text-emerald-400 hover:bg-white/5'
+              }`}
+              style={lights > 0 ? { background: `rgba(251, 191, 36, ${0.04 + lights * 0.05})` } : undefined}
+            >
+              <Lightbulb className="w-3.5 h-3.5" />
+              <span className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5" aria-hidden>
+                {[1, 2, 3].map((n) => (
+                  <span key={n} className={`w-1 h-0.5 ${n <= lights ? 'bg-amber-300' : 'bg-current opacity-25'}`} />
+                ))}
+              </span>
+            </button>
             <span className="w-px bg-zinc-800" aria-hidden />
             {dockBtn(saveSnapshot, Camera, t.roomSnapshotTitle)}
             {dockBtn(clearRoom, Trash2, t.roomClearAllTitle, { disabled: layout.items.length === 0, danger: true })}

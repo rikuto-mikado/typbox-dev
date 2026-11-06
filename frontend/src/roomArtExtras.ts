@@ -96,25 +96,6 @@ export const EXTRAS_ART: Record<string, Art> = {
     p.rect(1, 12, 6, 4, S.w);
     p.rect(1, 12, 6, 1, S.w3);
   },
-  dino_skeleton: (p) => {
-    const bone = '#efe6d2';
-    const shade = '#cdbf9f';
-    // skull, neck, spine, ribs, tail and legs on a plinth
-    p.rect(24, 2, 6, 4, bone);
-    p.rect(28, 5, 3, 1, bone);
-    p.px(26, 3, C.ink);
-    for (let i = 0; i < 6; i++) p.px(23 - i, 6 + Math.round(i * 0.5), bone);
-    for (let x = 4; x < 18; x++) p.px(x, 9 + Math.round(Math.sin((x - 4) / 4)), bone);
-    for (let x = 0; x < 6; x++) p.px(x, 10 + Math.round(x * 0.2), shade);
-    for (let x = 8; x < 18; x += 2) p.rect(x, 10, 1, 5, shade);
-    p.rect(9, 15, 2, 6, bone);
-    p.rect(16, 15, 2, 6, bone);
-    p.rect(8, 20, 3, 1, bone);
-    p.rect(15, 20, 3, 1, bone);
-    p.rect(20, 10, 1, 4, shade);
-    p.rect(0, 21, 32, 3, S.m);
-    p.rect(0, 21, 32, 1, S.m3);
-  },
   ship_bottle: (p) => {
     p.rect(0, 3, 7, 4, '#cfe8f3');
     p.rect(7, 4, 1, 2, S.w);
@@ -158,54 +139,6 @@ export const EXTRAS_ART: Record<string, Art> = {
     disc(p, 3.5, 3, 1.6, '#ddd6fe');
     p.px(2, 2, C.white);
     p.rect(1, 6, 6, 2, S.w);
-  },
-  astronaut_suit: (p) => {
-    disc(p, 8, 5, 4.6, C.white);
-    disc(p, 8, 5.5, 3, C.amber2);
-    p.px(7, 4, C.glow);
-    p.rect(3, 10, 10, 11, C.white);
-    p.rect(5, 12, 6, 3, C.paper2);
-    p.px(6, 13, C.red);
-    p.px(8, 13, C.blue);
-    p.rect(0, 11, 3, 9, C.paper);
-    p.rect(13, 11, 3, 9, C.paper);
-    p.rect(4, 21, 3, 7, C.paper);
-    p.rect(9, 21, 3, 7, C.paper);
-    p.rect(3, 26, 4, 2, C.metal3);
-    p.rect(9, 26, 4, 2, C.metal3);
-    p.rect(2, 28, 12, 4, S.m);
-    p.rect(2, 28, 12, 1, S.m3);
-  },
-  knight_armor: (p) => {
-    // plume and helm
-    p.rect(3, 0, 3, 1, S.b);
-    p.rect(4, 1, 3, 1, S.b3);
-    p.rect(2, 2, 4, 5, S.m);
-    p.rect(2, 2, 1, 5, S.m3);
-    p.rect(2, 4, 4, 1, C.ink);
-    p.px(3, 6, C.ink);
-    p.px(5, 6, C.ink);
-    // pauldrons and breastplate
-    p.rect(0, 8, 8, 2, S.m3);
-    p.rect(1, 10, 6, 6, S.m);
-    p.rect(2, 10, 1, 6, S.m3);
-    p.rect(4, 10, 1, 6, S.m2);
-    p.rect(1, 16, 6, 1, S.b);
-    // arms and sword held point-down
-    p.rect(0, 10, 1, 7, S.m2);
-    p.rect(7, 10, 1, 7, S.m2);
-    // tassets and legs
-    p.rect(1, 17, 6, 2, S.m2);
-    p.rect(1, 19, 2, 8, S.m);
-    p.rect(5, 19, 2, 8, S.m);
-    p.rect(1, 22, 2, 1, S.m3);
-    p.rect(5, 22, 2, 1, S.m3);
-    p.rect(1, 27, 3, 1, S.m2);
-    p.rect(5, 27, 3, 1, S.m2);
-    // plinth
-    p.rect(0, 28, 8, 4, C.wood2);
-    p.rect(0, 28, 8, 1, C.wood3);
-    p.rect(2, 30, 4, 1, C.amber2);
   },
   mannequin: (p) => {
     // neck knob
@@ -300,17 +233,6 @@ export const EXTRAS_ART: Record<string, Art> = {
     p.rect(17, 0, 1, 3, S.w2);
     p.rect(8, 4, 4, 2, C.amber);
     p.rect(20, 6, 3, 2, S.b);
-  },
-  fountain: (p, { on }) => {
-    p.rect(7, 0, 2, 1, on ? '#bae6fd' : C.paper2);
-    p.rect(6, 1, 1, 3, on ? '#bae6fd' : C.paper2);
-    p.rect(9, 1, 1, 3, on ? '#bae6fd' : C.paper2);
-    p.rect(5, 4, 6, 2, S.m3);
-    p.rect(7, 6, 2, 4, S.m3);
-    p.rect(1, 10, 14, 2, C.sky);
-    p.rect(0, 10, 16, 1, S.m3);
-    p.rect(1, 12, 14, 4, S.m);
-    p.rect(1, 12, 14, 1, S.m3);
   },
 
   // -------------------------------------------------------------- surfaces
@@ -444,18 +366,6 @@ export const EXTRAS_ART: Record<string, Art> = {
         if (r > 0.94) p.px(x, y, S.b);
         else if (r > 0.9) p.px(x, y, S.a);
         else if (r > 0.87) p.px(x, y, C.metal3);
-      }
-    }
-  },
-  floor_grass: (p, { w, h }) => {
-    p.rect(0, 0, w, h, C.leaf2);
-    for (let y = 0; y < h; y++) for (let x = (y % 2) * 2; x < w; x += 3) if (hash(x, y) > 0.5) p.px(x, y, hash(y, x) > 0.7 ? C.leaf3 : C.leaf);
-  },
-  floor_cobble: (p, { w, h }) => {
-    p.rect(0, 0, w, h, S.m2);
-    for (let row = 0; row * 4 < h; row++) {
-      for (let x = row % 2 ? -3 : 0; x < w; x += 6) {
-        p.rect(x + 1, row * 4 + 1, 4, 3, hash(x, row) > 0.5 ? S.m : S.m3);
       }
     }
   },

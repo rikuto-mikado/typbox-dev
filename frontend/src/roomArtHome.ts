@@ -172,19 +172,6 @@ export const HOME_ART: Record<string, Art> = {
     p.rect(1, 12, 10, 3, S.m);
     p.rect(1, 15, 14, 1, S.m2);
   },
-  throne: (p) => {
-    p.rect(2, 0, 12, 1, C.amber);
-    for (const x of [2, 7, 13]) p.rect(x, 0, 1, 3, C.amber);
-    p.rect(2, 2, 12, 12, C.amber2);
-    p.rect(4, 3, 8, 11, S.a);
-    p.rect(4, 3, 8, 1, S.a3);
-    disc(p, 8, 6, 1.2, C.red);
-    p.rect(0, 12, 16, 4, C.amber2);
-    p.rect(2, 13, 12, 3, S.a);
-    p.rect(1, 16, 14, 2, C.amber);
-    p.rect(1, 18, 2, 6, C.amber2);
-    p.rect(13, 18, 2, 6, C.amber2);
-  },
 
   // --------------------------------------------------------------- storage
   crate_shelf: (p) => {

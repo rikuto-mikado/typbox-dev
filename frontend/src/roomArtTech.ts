@@ -160,23 +160,6 @@ export const TECH_ART: Record<string, Art> = {
     p.rect(0, 23, 3, 1, C.ink);
     p.rect(13, 23, 3, 1, C.ink);
   },
-  claw_machine: (p, { on, night }) => {
-    const lit = on || night;
-    box(p, 0, 0, 16, 5, S.b, S.b2);
-    text(p, 2, 0, 'TOYS', lit ? C.white : S.b3);
-    box(p, 0, 5, 16, 15, lit ? '#e0f2fe' : C.sky, C.ink3);
-    p.rect(7, 6, 1, 4, C.metal3);
-    p.rect(5, 10, 5, 1, C.metal);
-    p.px(5, 11, C.metal);
-    p.px(9, 11, C.metal);
-    const toys = [C.pink, C.amber, C.leaf3, C.white, C.purple, C.orange];
-    toys.forEach((c, i) => disc(p, 3 + (i % 3) * 4.5, 16 + Math.floor(i / 3) * 2, 1.6, c));
-    p.rect(0, 20, 16, 12, S.b);
-    p.rect(2, 21, 5, 3, C.ink2);
-    p.px(4, 22, C.red);
-    p.rect(10, 22, 4, 3, C.ink);
-    p.rect(0, 30, 16, 2, S.b2);
-  },
   streaming_setup: (p, { on }) => {
     // ring light, screen with chat, mic arm, chair-height desk
     disc(p, 4, 5, 4.5, on ? C.white : C.metal);
@@ -210,20 +193,6 @@ export const TECH_ART: Record<string, Art> = {
     p.px(6, 21, C.ink2);
     p.px(7, 22, C.ink2);
     p.rect(3, 22, 3, 1, C.ink2);
-  },
-  holo_globe: (p, { on }) => {
-    if (on) {
-      disc(p, 8, 6, 5.5, '#164e63');
-      for (let y = 2; y < 11; y += 3) p.rect(4, y, 9, 1, C.sky);
-      for (let x = 5; x < 12; x += 3) p.rect(x, 1, 1, 10, C.sky2);
-      disc(p, 7, 5, 1.5, C.leaf3);
-    } else {
-      disc(p, 8, 6, 5, C.ink3);
-      disc(p, 8, 6, 3.6, C.ink2);
-    }
-    p.rect(6, 12, 4, 1, C.metal3);
-    box(p, 3, 13, 10, 3, S.m, S.m2);
-    p.rect(5, 14, 6, 1, on ? C.sky : C.ink3);
   },
   drone_dock: (p, { on }) => {
     p.rect(0, 1, 3, 1, C.ink3);

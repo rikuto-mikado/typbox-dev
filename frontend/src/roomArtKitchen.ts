@@ -190,24 +190,6 @@ export const KITCHEN_ART: Record<string, Art> = {
     disc(p, 2, 14.5, 1.5, C.ink);
     disc(p, 14, 14.5, 1.5, C.ink);
   },
-  vending_machine: (p, { on }) => {
-    p.rect(0, 0, 16, 32, S.a2);
-    p.rect(1, 1, 14, 3, S.a);
-    text(p, 2, 1, 'COLA', on ? C.white : S.a3);
-    box(p, 1, 5, 10, 19, on ? C.sky : C.night, C.ink);
-    const cans = [C.red, C.amber2, C.leaf, C.blue, C.pink];
-    for (let r = 0; r < 4; r++) {
-      for (let c = 0; c < 4; c++) p.rect(2 + c * 2, 7 + r * 4, 1, 3, cans[(r + c) % cans.length]);
-      p.rect(2, 10 + r * 4, 8, 1, C.metal3);
-    }
-    p.rect(12, 6, 2, 3, C.ink);
-    p.px(12, 10, C.red);
-    p.px(13, 10, C.leaf2);
-    p.rect(12, 12, 2, 1, C.metal);
-    p.rect(2, 26, 8, 3, C.ink);
-    p.rect(1, 31, 2, 1, C.ink);
-    p.rect(13, 31, 2, 1, C.ink);
-  },
   gumball_machine: (p) => {
     disc(p, 4, 4, 3.5, C.sky);
     const balls = [C.red, C.amber, C.leaf, C.blue, C.pink, C.white, C.orange];

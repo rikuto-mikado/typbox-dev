@@ -6,6 +6,7 @@ from .views import (
     BitsBuyView,
     BitsCancelView,
     BitsStarlightView,
+    BitsBlessingView,
     BitsTradeView,
     BitsChallengeForfeitView,
     BitsResetView,
@@ -42,6 +43,7 @@ urlpatterns = [
     path("bits/cancel/", BitsCancelView.as_view(), name="bits_cancel"),
     path("bits/starlight/", BitsStarlightView.as_view(), name="bits_starlight"),
     path("bits/trade/", BitsTradeView.as_view(), name="bits_trade"),
+    path("bits/blessing/", BitsBlessingView.as_view(), name="bits_blessing"),
     path(
         "bits/challenge/forfeit/",
         BitsChallengeForfeitView.as_view(),

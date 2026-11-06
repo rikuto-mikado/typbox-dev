@@ -378,7 +378,12 @@ export const StarWishes: React.FC<{
   /** "3h 12m": how the shop writes time left. */
   formatLeft: (ms: number) => string;
   onWish: (use: StarWish) => Promise<void>;
-}> = ({ starlight, now, formatLeft, onWish }) => {
+  /** After a FALLING STAR: set (to when it was granted) while its card offers
+   *  the way to FURNITURE; the shop clears it after `grantMs`. */
+  granted?: number | null;
+  grantMs?: number;
+  onGo?: () => void;
+}> = ({ starlight, now, formatLeft, onWish, granted = null, grantMs = 10_000, onGo }) => {
   const { t } = useI18n();
   const [armed, setArmed] = useState<StarWish | null>(null);
   useEffect(() => {
@@ -397,8 +402,10 @@ export const StarWishes: React.FC<{
           // Until the shop has fetched the next crate, the clock already knows this one is gone.
           const told = isOmen && now < turnsAt ? starlight.omen : null;
           const tooLate = isOmen && now < turnsAt && !told && Boolean(starlight.omen_too_late);
+          // A FALLING STAR just granted: the card becomes the way to the new lineup.
+          const dealt = use === 'reroll' && granted !== null;
           const short = starlight.stars < cost;
-          const blocked = isDemo() || short || Boolean(told) || tooLate;
+          const blocked = !dealt && (isDemo() || short || Boolean(told) || tooLate);
           // Spending below the guard's price switches it off: say so before it happens.
           const stopsGuard = !blocked && starlight.guard_on && starlight.stars - cost < starlight.cost;
           const isArmed = armed === use;
@@ -408,6 +415,10 @@ export const StarWishes: React.FC<{
               type="button"
               disabled={blocked}
               onClick={() => {
+                if (dealt) {
+                  onGo?.();
+                  return;
+                }
                 if (!isArmed) {
                   setArmed(use);
                   return;
@@ -417,8 +428,16 @@ export const StarWishes: React.FC<{
               }}
               className={`star-wish relative min-w-0 min-h-[116px] px-1.5 pt-2 pb-1.5 flex flex-col items-center gap-1 text-center border overflow-hidden ${
                 blocked ? 'cursor-not-allowed' : 'cursor-pointer'
-              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !told ? 'star-wish-off' : ''} ${told ? 'star-wish-told' : ''}`}
+              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !told ? 'star-wish-off' : ''} ${told || dealt ? 'star-wish-told' : ''}`}
             >
+              {dealt && (
+                <span
+                  key={granted}
+                  className="wish-countdown absolute left-0 bottom-0 h-0.5 w-full bg-amber-300"
+                  style={{ animationDuration: `${grantMs}ms` }}
+                  aria-hidden
+                />
+              )}
               {told && starlight.omen_id ? (
                 <BuffIcon itemId={starlight.omen_id} className="star-omen-reveal w-8 h-8 shrink-0" />
               ) : (
@@ -426,7 +445,12 @@ export const StarWishes: React.FC<{
                   {WISH_ICONS[use]}
                 </svg>
               )}
-              {told ? (
+              {dealt ? (
+                <>
+                  <span className="text-[8px] tracking-wider uppercase leading-tight opacity-80">{t.wishGrantedTitle}</span>
+                  <span className="text-[11px] font-bold tracking-wider uppercase leading-tight">{t.wishGrantedGo}</span>
+                </>
+              ) : told ? (
                 <>
                   <span className="text-[8px] tracking-wider uppercase leading-tight opacity-80">{t.starWishOmenNext}</span>
                   <span className="text-[11px] font-bold tracking-wider uppercase leading-tight">{told}</span>
@@ -444,7 +468,9 @@ export const StarWishes: React.FC<{
               )}
               {stopsGuard && <span className="text-[9px] font-bold leading-tight text-amber-300">{t.starWishStopsGuard}</span>}
               <span className="mt-auto flex items-center justify-center gap-0.5 min-h-3">
-                {isArmed ? (
+                {dealt ? (
+                  <span className="text-[9px] font-bold tracking-wider">{t.wishGrantedTap}</span>
+                ) : isArmed ? (
                   <span className="text-[9px] font-bold tracking-wider">{t.starWishConfirm}</span>
                 ) : (
                   Array.from({ length: cost }, (_, i) => <Glint key={i} className="w-2 h-2" />)

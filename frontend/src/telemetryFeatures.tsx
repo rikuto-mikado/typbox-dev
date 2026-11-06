@@ -1452,7 +1452,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
           onClick={() => setShowPopover((prev) => !prev)}
           aria-label={t.mixerTitle}
           aria-expanded={showPopover}
-          className={`relative w-full h-11 lg:h-10 flex items-center gap-3 px-4 lg:px-0 lg:justify-center font-mono text-[11px] uppercase tracking-wider transition-colors cursor-pointer ${
+          className={`relative w-full h-11 lg:h-10 flex items-center gap-3 px-5 max-lg:w-9 max-lg:h-9 max-lg:px-0 max-lg:justify-center max-lg:border max-lg:border-[var(--tb-border)] font-mono text-[11px] uppercase tracking-wider transition-colors cursor-pointer ${
             isPlaying || showPopover ? 'text-emerald-400 bg-emerald-500/10' : `${textMuted} hover:text-emerald-400 hover:bg-emerald-500/5`
           }`}
         >
@@ -1465,14 +1465,14 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
               <Volume2 className="w-4 h-4 animate-pulse" />
             )}
           </span>
-          <span className="lg:sr-only truncate">{navLabel}</span>
+          <span className="nav-label truncate whitespace-nowrap max-lg:hidden">{navLabel}</span>
           {sleepEndsAt !== null && (
-            <span className="lg:hidden ml-auto flex items-center gap-0.5 text-[10px] tabular-nums text-sky-400">
+            <span className="nav-label max-lg:hidden ml-auto flex items-center gap-0.5 text-[10px] tabular-nums text-sky-400">
               <Timer className="w-3 h-3" />
               {formatSleepRemaining(sleepRemainingMs)}
             </span>
           )}
-          {isPlaying && !isPaused && <span className="hidden lg:block absolute top-1.5 right-3 w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden />}
+          {isPlaying && !isPaused && <span className="nav-rail-only absolute top-1.5 right-3 w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden />}
         </button>
       ) : (
       <button
@@ -1530,9 +1530,9 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
         <div
           className={`${
             variant === 'nav'
-              ? 'fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] sm:left-auto sm:right-3 sm:w-[420px] lg:top-auto lg:right-auto lg:left-[4.5rem] lg:bottom-3 lg:max-h-[calc(100dvh-1.5rem)]'
+              ? 'fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] sm:left-auto sm:right-3 sm:w-[420px] lg:top-auto lg:right-auto lg:bottom-3 lg:max-h-[calc(100dvh-1.5rem)]'
               : 'fixed left-3 right-3 top-14 max-h-[calc(100dvh-4.5rem)] sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] sm:max-h-[80vh]'
-          } overflow-y-auto overscroll-contain border ${borderCol} ${bgCard} shadow-2xl z-50 p-3 sm:p-4 font-mono text-xs space-y-3`}
+          } ${variant === 'nav' ? 'nav-popover' : ''} overflow-y-auto overscroll-contain border ${borderCol} ${bgCard} shadow-2xl z-50 p-3 sm:p-4 font-mono text-xs space-y-3`}
         >
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-2.5 border-zinc-800/60">
             <div className="flex items-center gap-2 min-w-0">
@@ -1906,6 +1906,34 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
     });
   }, [selectedDiv, filterMode, searchQuery, clearance.totalHours]);
 
+  // The list grows with the page like the other settings tabs, so it is
+  // drawn a page at a time around the current rank (a few cleared ranks
+  // above it), with more either side on request. A new filter starts over.
+  const PAGE = 120;
+  const filterKey = `${selectedDiv}|${filterMode}|${searchQuery}`;
+  const [more, setMore] = useState({ key: filterKey, before: 0, after: 0 });
+  const pages = more.key === filterKey ? more : { key: filterKey, before: 0, after: 0 };
+  const currentIndex = filteredLevels.findIndex((lvl) => lvl.level === clearance.current.level);
+  const anchor = Math.max(0, currentIndex - 10);
+  const shownStart = Math.max(0, anchor - pages.before * PAGE);
+  const shownEnd = Math.min(filteredLevels.length, anchor + PAGE + pages.after * PAGE);
+  const shownLevels = filteredLevels.slice(shownStart, shownEnd);
+  const hiddenBefore = shownStart;
+  const hiddenAfter = filteredLevels.length - shownEnd;
+  const moreButton = (n: number, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`py-2 border font-bold text-[10px] uppercase tracking-wider transition-colors cursor-pointer ${
+        isDark
+          ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
+          : 'text-emerald-700 border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100'
+      }`}
+    >
+      {tf(t.showMore, { n })}
+    </button>
+  );
+
   return (
     <div className="space-y-3.5 font-mono text-xs flex flex-col">
       {/* Current Clearance Summary Card */}
@@ -2005,10 +2033,9 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
         </div>
       </div>
 
-      {/* Search/filter chrome + ranks list form one block exactly as tall as the
-          settings viewport (100cqh): scrolling the outer body down past the summary
-          card leaves the filters pinned above a list that fills the rest. */}
-      <div className="flex flex-col gap-3.5 h-[100cqh] shrink-0">
+      {/* Search/filter chrome + the ranks list, as tall as it needs: the page
+          scrolls, like the APPEARANCE tabs. */}
+      <div className="flex flex-col gap-3.5">
         {/* Search & Mode Filter */}
         <div className="space-y-2 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2093,20 +2120,22 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
           </div>
         </div>
 
-        {/* Scrollable 3,000 Ranks List */}
+        {/* The ranks list (3,000 in all, drawn a page at a time) */}
+        {hiddenBefore > 0 &&
+          moreButton(Math.min(PAGE, hiddenBefore), () => setMore({ ...pages, before: pages.before + 1 }))}
         <div
-          className={`flex-1 min-h-40 overflow-y-auto border ${borderCol} divide-y ${
+          className={`border ${borderCol} divide-y ${
             isDark ? 'divide-zinc-800/70' : 'divide-zinc-200'
           }`}
         >
-          {filteredLevels.map((lvl) => {
+          {shownLevels.map((lvl) => {
             const unlocked = clearance.totalHours >= lvl.requiredHours;
             const isCurrent = clearance.current.level === lvl.level;
             const rewardTheme = THEME_REWARD_BY_LEVEL[lvl.level];
             return (
               <div
                 key={lvl.level}
-                className={`px-3.5 py-2.5 flex items-center justify-between gap-3 transition-colors ${
+                className={`px-3.5 py-2.5 flex items-center justify-between gap-3 transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_52px] ${
                   isCurrent
                     ? 'bg-emerald-500/15'
                     : lvl.isMajorMilestone || rewardTheme
@@ -2190,6 +2219,8 @@ export const ClearanceBrowserPanel: React.FC<ClearanceBrowserProps> = ({
             );
           })}
         </div>
+        {hiddenAfter > 0 &&
+          moreButton(Math.min(PAGE, hiddenAfter), () => setMore({ ...pages, after: pages.after + 1 }))}
       </div>
     </div>
   );
@@ -3665,9 +3696,9 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
         )}
       </div>
 
-      {/* Search/filter chrome + theme grid form one settings-viewport-tall block
-          (see ClearanceBrowserPanel). */}
-      <div className="flex flex-col gap-3.5 h-[100cqh] shrink-0">
+      {/* Search/filter chrome + the theme grid, as tall as it needs: the page
+          scrolls, like the TYPE, AMBIENT and CURSOR tabs beside it. */}
+      <div className="flex flex-col gap-3.5">
         {/* Filter & Search Bar */}
         <div className="space-y-2 shrink-0">
           <div className="flex flex-col sm:flex-row gap-2">
@@ -3747,8 +3778,8 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
           </div>
         </div>
 
-        {/* Scrollable Theme Pairs Grid */}
-        <div className="flex-1 min-h-40 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
+        {/* Theme Pairs Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
           {filteredThemes.map((item) => {
             const isSelected = item.id === activeThemeId;
             const isUnlocked = checkUnlocked(item);
@@ -3775,7 +3806,7 @@ export const SurfaceThemeSelectorPanel: React.FC<SurfaceThemeSelectorPanelProps>
                     );
                   }
                 }}
-                className={`p-3 border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_168px] ${
+                className={`p-3 border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_124px] ${
                   isSelected
                     ? 'border-emerald-500 ring-1 ring-emerald-500/50 bg-emerald-500/5'
                     : isUnlocked

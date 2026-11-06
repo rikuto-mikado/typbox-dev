@@ -120,37 +120,6 @@ export const LIVING_ART: Record<string, Art> = {
     p.rect(13, 2, 1, 11, C.ink3);
     p.px(13, 13, S.m3);
   },
-  // ------------------------------------------------------------- bathroom
-  bathtub: (p) => {
-    p.rect(4, 0, 2, 3, C.metal);
-    p.rect(4, 0, 6, 1, C.metal);
-    p.rect(9, 1, 1, 1, C.sky);
-    p.rect(1, 5, 30, 2, C.white);
-    p.rect(2, 7, 28, 7, C.white);
-    p.rect(3, 6, 26, 1, C.sky2);
-    p.rect(2, 12, 28, 2, C.paper2);
-    p.rect(3, 7, 2, 5, C.paper);
-    for (const [x, y] of [[8, 4], [12, 3], [16, 4], [21, 3], [25, 4]]) disc(p, x, y, 1.6, C.white);
-    p.rect(3, 14, 3, 2, C.amber2);
-    p.rect(26, 14, 3, 2, C.amber2);
-  },
-  vanity_sink: (p) => {
-    // round mirror
-    disc(p, 8, 5, 5, C.metal);
-    disc(p, 8, 5, 4, C.sky);
-    p.rect(6, 3, 1, 3, C.white);
-    // basin and tap
-    p.rect(7, 10, 2, 2, C.metal);
-    p.rect(1, 12, 14, 2, C.white);
-    p.rect(3, 12, 10, 1, C.paper2);
-    // cabinet
-    p.rect(1, 14, 14, 9, S.w);
-    p.rect(1, 14, 14, 1, S.w3);
-    p.rect(8, 15, 1, 8, S.w2);
-    p.px(6, 18, C.amber2);
-    p.px(10, 18, C.amber2);
-    p.rect(1, 23, 14, 1, S.w2);
-  },
   washing_machine: (p, env) => {
     p.rect(0, 0, 16, 15, C.fridge);
     p.rect(0, 0, 16, 1, C.white);
@@ -163,30 +132,6 @@ export const LIVING_ART: Record<string, Art> = {
     p.rect(6, 8, 2, 1, C.white);
     p.rect(1, 15, 3, 1, C.ink3);
     p.rect(12, 15, 3, 1, C.ink3);
-  },
-  shower_booth: (p) => {
-    p.rect(0, 0, 16, 2, C.metal2);
-    p.rect(11, 2, 1, 5, C.metal);
-    p.rect(6, 5, 6, 1, C.metal);
-    p.rect(5, 6, 4, 1, C.metal2);
-    for (const [x, y] of [[5, 8], [7, 10], [6, 13], [8, 16], [5, 19], [7, 22]]) p.rect(x, y, 1, 2, C.sky);
-    p.rect(0, 2, 1, 26, C.metal);
-    p.rect(15, 2, 1, 26, C.metal);
-    p.rect(1, 3, 2, 24, 'rgba(186,230,253,0.35)');
-    p.rect(12, 18, 2, 3, C.leaf3);
-    p.rect(0, 28, 16, 4, C.white);
-    p.rect(0, 28, 16, 1, C.paper2);
-    p.rect(6, 30, 3, 1, C.metal);
-  },
-  towel_rail: (p) => {
-    p.rect(0, 2, 16, 1, C.metal);
-    p.rect(0, 1, 1, 3, C.metal2);
-    p.rect(15, 1, 1, 3, C.metal2);
-    p.rect(2, 3, 5, 5, S.a);
-    p.rect(2, 3, 5, 1, S.a3);
-    p.rect(2, 6, 5, 1, C.white);
-    p.rect(9, 3, 4, 4, C.white);
-    p.rect(9, 6, 4, 1, C.paper2);
   },
   // -------------------------------------------------------------- bedroom
   bed_platform: (p) => {

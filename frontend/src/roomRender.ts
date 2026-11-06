@@ -11,6 +11,32 @@ export const WALL_ROWS = 5;
 
 export type FurnitureLayer = 'wall' | 'floor' | 'wall_paint' | 'floor_paint';
 
+/** What a piece's light is (backend furniture.LIGHTS): only these glow. */
+export type LightKind = 'lamp' | 'neon' | 'flame' | 'screen' | 'appliance' | 'led' | 'window';
+export interface PieceLight {
+  kind: LightKind;
+  /** 1 a glint · 2 an accent · 3 a working light · 4 the room's main light. */
+  power: 1 | 2 | 3 | 4;
+  color: string;
+  /** The glow's centre within the piece (0..1 from the top left; past 1
+   *  for a light that shines down from the ceiling). */
+  x: number;
+  y: number;
+}
+
+/** The room's LIGHTS dimmer: 0 off · 1 low · 2 medium · 3 full. */
+export type LightLevel = 0 | 1 | 2 | 3;
+export const LIGHT_LEVELS: LightLevel[] = [0, 1, 2, 3];
+/** How bright the room's lights burn at each dimmer step. */
+const DIMMER = [0, 0.45, 0.75, 1];
+/** How far each power reaches (sprite pixels) and how strong its glow is. */
+const REACH = [0, 12, 22, 36, 76];
+const STRENGTH = [0, 0.22, 0.36, 0.44, 0.5];
+
+/** What turns a kind of light on. */
+export const lightSwitch = (kind: LightKind): 'dimmer' | 'study' | 'always' =>
+  kind === 'lamp' || kind === 'neon' || kind === 'flame' ? 'dimmer' : kind === 'screen' || kind === 'appliance' ? 'study' : 'always';
+
 export interface FurnitureSpec {
   id: string;
   name: string;
@@ -26,7 +52,33 @@ export interface FurnitureSpec {
   /** Tucking (furniture.fit_of): a 'chair' may overlap a 'desk' standing
    *  on the same floor row, and is drawn in front of it. */
   fit?: 'chair' | 'desk';
+  /** Its light, if it gives off any (older servers omit it). */
+  light?: PieceLight;
 }
+
+/**
+ * The scene one piece is drawn in. `env.on` is the stopwatch (screens and
+ * appliances run while you study); a lamp, neon or flame is lit by the
+ * dimmer instead, and drawn as by day when it is off (an unlit lamp looks
+ * the same at any hour; the night falls over it with the rest of the room).
+ */
+const envFor = (spec: FurnitureSpec, env: Omit<ArtEnv, 'w' | 'h'>, lights: LightLevel): Omit<ArtEnv, 'w' | 'h'> => {
+  if (!spec.light || lightSwitch(spec.light.kind) !== 'dimmer') return env;
+  return lights > 0 ? { ...env, on: true } : { ...env, on: false, night: false };
+};
+
+/** How strongly a piece glows now (0 when it is dark). */
+const glowOf = (light: PieceLight, running: boolean, lights: LightLevel): number => {
+  const sw = lightSwitch(light.kind);
+  if (sw === 'dimmer') return DIMMER[lights];
+  if (sw === 'study') return running ? 1 : 0;
+  return 1;
+};
+
+const rgba = (hex: string, a: number) => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
 
 export interface PlacedPiece {
   id: string;
@@ -208,7 +260,10 @@ export const pieceAt = (items: PlacedPiece[], catalog: Record<string, FurnitureS
 };
 
 interface RenderOptions {
+  /** `on` is the stopwatch: it runs the screens and appliances. */
   env: Omit<ArtEnv, 'w' | 'h'>;
+  /** The room's lights (lamps, neon, flames); medium when not given. */
+  lights?: LightLevel;
   selected?: number;
   /** Index of the piece being dragged (drawn as the ghost instead). */
   lifted?: number;
@@ -221,7 +276,7 @@ export const renderRoom = (
   canvas: HTMLCanvasElement,
   layout: RoomLayout,
   catalog: Record<string, FurnitureSpec>,
-  { env, selected = -1, lifted = -1, ghost = null, grid = false }: RenderOptions
+  { env, lights = 2, selected = -1, lifted = -1, ghost = null, grid = false }: RenderOptions
 ) => {
   const W = ROOM_W * TILE;
   const H = ROOM_H * TILE;
@@ -260,21 +315,28 @@ export const renderRoom = (
 
   // Wall pieces behind floor pieces; floor pieces nearer the front (lower) drawn last.
   const order = drawOrder(layout.items, catalog).filter((e) => e.i !== lifted);
-  for (const { it, spec } of order) drawPiece(ctx, spec, it.x, it.y, env);
+  for (const { it, spec } of order) drawPiece(ctx, spec, it.x, it.y, envFor(spec, env, lights));
 
-  // Night falls over the room, and only its lights push back.
+  // Night falls over the room, and only its lights push back: each glows by
+  // its own power and colour, and working lights and the main light also
+  // lift the dark a little across the whole room.
   if (env.night) {
-    ctx.fillStyle = 'rgba(8, 10, 34, 0.5)';
+    const glows = order
+      .map(({ it, spec }) => ({ it, spec, light: spec.light, k: spec.light ? glowOf(spec.light, env.on, lights) : 0 }))
+      .filter((g) => g.light && g.k > 0);
+    const fill = glows.reduce((sum, g) => sum + (g.light!.power >= 3 ? (g.light!.power - 2) * 0.07 * g.k : 0), 0);
+    ctx.fillStyle = `rgba(8, 10, 34, ${0.55 - Math.min(0.2, fill)})`;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
-    for (const { it, spec } of order) {
-      if (spec.category !== 'lighting') continue;
-      const cx = (it.x + spec.w / 2) * TILE;
-      const cy = (it.y + Math.min(spec.h, 1) / 2) * TILE;
-      const r = 26 + spec.w * 6;
+    for (const { it, spec, light, k } of glows) {
+      const cx = (it.x + spec.w * light!.x) * TILE;
+      const cy = (it.y + spec.h * light!.y) * TILE;
+      const r = REACH[light!.power];
+      const a = STRENGTH[light!.power] * k;
       const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      glow.addColorStop(0, env.on ? 'rgba(255, 214, 140, 0.42)' : 'rgba(255, 214, 140, 0.28)');
-      glow.addColorStop(1, 'rgba(255, 214, 140, 0)');
+      glow.addColorStop(0, rgba(light!.color, a));
+      glow.addColorStop(0.45, rgba(light!.color, a * 0.45));
+      glow.addColorStop(1, rgba(light!.color, 0));
       ctx.fillStyle = glow;
       ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     }
@@ -298,7 +360,7 @@ export const renderRoom = (
   if (ghost && catalog[ghost.id]) {
     const s = catalog[ghost.id];
     ctx.globalAlpha = 0.75;
-    drawPiece(ctx, s, ghost.x, ghost.y, env);
+    drawPiece(ctx, s, ghost.x, ghost.y, envFor(s, env, lights));
     ctx.globalAlpha = 0.28;
     ctx.fillStyle = ghost.valid ? C.emerald : C.red;
     ctx.fillRect(ghost.x * TILE, ghost.y * TILE, s.w * TILE, s.h * TILE);
@@ -342,10 +404,11 @@ export const snapshotRoom = (
   layout: RoomLayout,
   catalog: Record<string, FurnitureSpec>,
   env: Omit<ArtEnv, 'w' | 'h'>,
-  scale = 6
+  scale = 6,
+  lights: LightLevel = 2
 ): string => {
   const src = document.createElement('canvas');
-  renderRoom(src, layout, catalog, { env });
+  renderRoom(src, layout, catalog, { env, lights });
   const out = document.createElement('canvas');
   out.width = src.width * scale;
   out.height = src.height * scale;

@@ -28,7 +28,7 @@ from .furniture import (
     shop_week,
 )
 from .economy import BUFFS
-from .furniture import STARTER_PACK_VALUE, STARTER_PACKS, pack_piece_ids, validate_layout
+from .furniture import STARTER_PACK_PRICE, STARTER_PACK_VALUE, STARTER_PACKS, pack_piece_ids, validate_layout
 from .festival_pass import cursor_id as festival_cursor_id
 from .festivals import FESTIVALS as FESTIVAL_LIST
 from .challenges import (
@@ -41,7 +41,7 @@ from .challenges import (
 )
 from .backup import restore_economy
 from .models import BitPurchase, MarketDay, TradeOrder
-from . import trade
+from . import blessings, trade
 from .serializers import MAX_USER_STATUSES, USER_STATUS_IDS
 
 User = get_user_model()
@@ -1760,6 +1760,67 @@ class RoomTests(APITestCase):
         self.assertEqual(self._save(layout).status_code, 200)
 
     @skipUnless(FRONTEND_ROOM_ART_TS.exists(), "frontend source not present")
+    def test_only_the_listed_pieces_give_off_light_each_by_kind_and_power(self):
+        from .furniture import LIGHT_KINDS, LIGHTS, catalog
+
+        for base, (kind, power, color, x, y) in LIGHTS.items():
+            with self.subTest(piece=base):
+                self.assertIn(base, FURNITURE)
+                self.assertNotIn("base", FURNITURE[base])
+                self.assertIn(kind, LIGHT_KINDS)
+                self.assertIn(power, (1, 2, 3, 4))
+                self.assertRegex(color, r"^#[0-9a-f]{6}$")
+                self.assertTrue(0 <= x <= 1 and 0 <= y <= 3)
+        rows = {row["id"]: row for row in catalog()}
+        lit = {item_id for item_id, row in rows.items() if "light" in row}
+        self.assertEqual(lit, {i for i, spec in FURNITURE.items() if spec.get("base", i) in LIGHTS})
+        # A recoloured neon glows in its own colour.
+        self.assertEqual(rows["neon_sign__emerald"]["light"]["color"], "#34d399")
+        # The room's main light is the strongest; a window only a glint.
+        self.assertEqual(rows["ceiling_light"]["light"]["power"], 4)
+        self.assertEqual(rows["window"]["light"]["kind"], "window")
+        self.assertNotIn("light", rows["bookshelf"])
+        # Everything sold as a light really is one.
+        for item_id, spec in FURNITURE.items():
+            if spec["category"] == "lighting":
+                self.assertIn(spec.get("base", item_id), LIGHTS, item_id)
+
+    def test_the_second_wave_fills_out_a_lived_in_room(self):
+        from .furniture import CHAIR_BASES, DESK_BASES, fit_of
+
+        designs = {spec.get("base", item_id) for item_id, spec in FURNITURE.items()}
+        self.assertGreaterEqual(len(designs), 880)
+        for piece in ("bed_single", "sink_counter", "sofa_cord", "closet_open", "door_wood", "window_tall", "floor_jute"):
+            self.assertIn(piece, designs)
+        # New chairs tuck into new desks.
+        self.assertIn("chair_mesh", CHAIR_BASES)
+        self.assertIn("desk_simple", DESK_BASES)
+        self.assertEqual(fit_of("chair_mesh__navy"), "chair")
+        self.assertEqual(fit_of("cafe_table"), "desk")
+        self.assertTrue((CHAIR_BASES | DESK_BASES) <= designs)
+
+    def test_pieces_that_dont_belong_in_a_room_are_gone_and_refunded(self):
+        import importlib
+
+        cull = importlib.import_module("tracker.migrations.0036_furniture_cull")
+        for gone in ("camp_campfire", "camp_tent", "cyber_food_stall", "orb_airlock_door", "dc_vault_door", "throne"):
+            self.assertNotIn(gone, FURNITURE)
+            self.assertIn(gone, cull.REMOVED)
+        self.assertFalse(set(cull.REMOVED) & set(FURNITURE))
+        # What people keep in a room stays, the ones that came with a set too.
+        for kept in ("camp_backpack", "cyber_cable_mess", "hw_workbench", "intel_banker_lamp", "orb_rover_model"):
+            self.assertIn(kept, FURNITURE)
+        BitPurchase.objects.create(user=self.user, item_id="camp_campfire", price=4000)
+        BitPurchase.objects.create(user=self.user, item_id="floor_lamp", price=3500)
+        UserProfile.objects.update_or_create(user=self.user, defaults={"shop_reserve": "camp_tent"})
+        from django.apps import apps as live_apps
+
+        cull.forwards(live_apps, None)
+        held = set(BitPurchase.objects.filter(user=self.user).values_list("item_id", flat=True))
+        self.assertIn("floor_lamp", held)
+        self.assertNotIn("camp_campfire", held)
+        self.assertEqual(UserProfile.objects.get(user=self.user).shop_reserve, "")
+
     def test_every_piece_has_pixel_art(self):
         art_ids = []
         for path in sorted(FRONTEND_ROOM_ART_TS.parent.glob("roomArt*.ts")):
@@ -2509,10 +2570,11 @@ class StarterPackTests(APITestCase):
             tiers = [FURNITURE[i]["tier"] for i in ids]
             value = sum(FURNITURE[i]["price"] for i in ids)
             self.assertTrue(low <= value <= high, (pack_id, value))
-            self.assertIn(tiers.count(2), (1, 2), pack_id)  # what changes the room's look
             self.assertEqual(set(tiers), {1, 2}, pack_id)  # no large pieces, nothing limited
-            self.assertGreaterEqual(len(ids), 5, pack_id)  # enough to fill a room
-            self.assertLess(value, min(s["price"] for s in FURNITURE.values() if s["tier"] == 3))
+            self.assertLessEqual(tiers.count(2), 6, pack_id)  # mostly the small things a room fills up with
+            self.assertGreaterEqual(len(ids), 30, pack_id)  # a lived-in room, not a desk on a bare floor
+        self.assertEqual(len(STARTER_PACKS), 3)
+        self.assertEqual(STARTER_PACK_PRICE, 4000)
 
     def test_every_pack_can_be_set_up_as_pictured(self):
         owned = {item_id: 1 for item_id in FURNITURE}
@@ -2526,12 +2588,12 @@ class StarterPackTests(APITestCase):
         self.assertEqual(room["layout"]["items"], [])
         self.assertEqual(len(room["starter_packs"]), len(STARTER_PACKS))
         for offer in room["starter_packs"]:
-            self.assertEqual(offer["price"], 2500)
+            self.assertEqual(offer["price"], STARTER_PACK_PRICE)
 
-    def test_a_pack_costs_2500_gives_each_piece_and_sets_up_the_room(self):
+    def test_a_pack_costs_its_price_gives_each_piece_and_sets_up_the_room(self):
         before = self._balance()
         self.assertEqual(self._buy().status_code, 201)
-        self.assertEqual(self._balance(), before - 2500)
+        self.assertEqual(self._balance(), before - STARTER_PACK_PRICE)
         room = self._room()
         for item_id in pack_piece_ids(STARTER_PACKS["pack_study"]):
             self.assertEqual(room["inventory"][item_id], 1)
@@ -2596,7 +2658,7 @@ class StarterPackTests(APITestCase):
             BitPurchase.objects.filter(user=self.user).delete()
             self.assertEqual(self._buy(pack_id).status_code, 201)
             rows = BitPurchase.objects.filter(user=self.user)
-            self.assertEqual(sum(row.price for row in rows), 2500, pack_id)
+            self.assertEqual(sum(row.price for row in rows), STARTER_PACK_PRICE, pack_id)
             self.assertTrue(all(row.price > 0 for row in rows), pack_id)
             self.assertEqual(len(rows), len(pack_piece_ids(pack)))
 
@@ -4423,19 +4485,6 @@ class SessionTimingAndEditTests(APITestCase):
 
     # What study earns
 
-    def test_trophies_arrive_with_the_hours_and_go_with_the_logs(self):
-        def earned():
-            shop = self.client.get("/api/bits/").data["collection"]
-            return {m["id"] for m in shop["trophies"] if m["earned"]}
-
-        StudyLog.objects.filter(user=self.user).delete()
-        self.assertNotIn("hours_100", earned())
-        StudyLog.objects.create(user=self.user, duration_minutes=6000)
-        self.assertIn("hours_100", earned())
-        self.assertNotIn("hours_250", earned())
-        StudyLog.objects.filter(user=self.user).delete()
-        self.assertNotIn("hours_100", earned())
-
     def test_a_trophy_cannot_be_bought(self):
         StudyLog.objects.filter(user=self.user).delete()
         StudyLog.objects.create(user=self.user, duration_minutes=60000)
@@ -5013,6 +5062,28 @@ class InvertedAndAttackTests(APITestCase):
         self.assertFalse(records["titan"]["inverted"]["unlocked"])
         self.assertNotIn("ghost", records)  # festival ones only once beaten
 
+    def test_the_record_counts_fights_and_the_first_win(self):
+        self._beat("raid_golem", times=2)
+        for outcome in ("escaped", "forfeit"):
+            BitPurchase.objects.create(
+                user=self.user, item_id="raid_golem", price=0, expires_at=timezone.now(),
+                remaining_uses=0, state={"outcome": outcome},
+            )
+        # Still running: not part of the record yet.
+        BitPurchase.objects.create(user=self.user, item_id="rival_orion", price=0, remaining_uses=1, state={})
+        self._beat("raid_golem_inverted", times=1)
+        records = {r["key"]: r for r in self._shop()["collection"]["records"]}
+        golem = records["golem"]
+        self.assertEqual((golem["fights"], golem["wins"]), (4, 2))
+        self.assertEqual(datetime.fromisoformat(golem["first_win"]), datetime(2026, 1, 2, tzinfo=self.tokyo))
+        self.assertEqual(golem["title"], "THE STONE WALL")
+        self.assertEqual((golem["inverted"]["fights"], golem["inverted"]["wins"]), (1, 1))
+        self.assertFalse(golem["inverted"]["unlocked"])  # two wins, not three
+        orion = records["orion"]
+        self.assertEqual((orion["fights"], orion["wins"], orion["first_win"]), (0, 0, None))
+        self.assertEqual(orion["title"], "EARLY RISER")
+        self.assertNotIn("trophies", self._shop()["collection"])
+
 
 @without_festival_pass
 class FullBackupTests(APITestCase):
@@ -5493,52 +5564,6 @@ class FestivalPassTests(APITestCase):
 
 
 @without_festival_pass
-class TrophyTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            username="cabinet", email="cabinet@example.com", password="s3cure-pass-123"
-        )
-        self.client.force_authenticate(user=self.user)
-
-    def _earned(self):
-        return {t["id"] for t in self.client.get("/api/bits/").data["collection"]["trophies"] if t["earned"]}
-
-    def test_streaks_and_study_days_come_from_the_dates(self):
-        today = date(2026, 3, 10)
-        for i in range(7):
-            StudyLog.objects.create(user=self.user, duration_minutes=10, date=today - timedelta(days=i))
-        StudyLog.objects.create(user=self.user, duration_minutes=10, date=today - timedelta(days=30))
-        earned = self._earned()
-        self.assertIn("streak_7", earned)
-        self.assertNotIn("streak_14", earned)
-
-    def test_challengers_count_and_the_other_side_counts_once_each(self):
-        for _ in range(2):
-            BitPurchase.objects.create(
-                user=self.user, item_id="raid_golem_inverted", price=0,
-                expires_at=timezone.now(), remaining_uses=0, state={"outcome": "down"},
-            )
-        earned = self._earned()
-        self.assertIn("beaten_1", earned)
-        self.assertIn("inverted_1", earned)
-        self.assertNotIn("inverted_3", earned)
-
-    def test_a_finished_festival_bar_counts(self):
-        BitPurchase.objects.create(user=self.user, item_id="fest_culture_2026_4", price=0)
-        BitPurchase.objects.create(user=self.user, item_id="fest_culture_2026_3", price=0)
-        earned = self._earned()
-        self.assertIn("festival_1", earned)
-        self.assertNotIn("festival_3", earned)
-
-    def test_ids_are_unique(self):
-        from .collection import TROPHIES
-
-        ids = [row[0] for row in TROPHIES]
-        self.assertEqual(len(ids), len(set(ids)))
-        self.assertGreaterEqual(len(ids), 40)
-
-
-@without_festival_pass
 class BuffTimingTests(APITestCase):
     """What each card says about when the buff starts, against what it really does."""
 
@@ -5896,6 +5921,34 @@ class TradeTests(APITestCase):
         self.assertEqual(data["/bits/"]["bits"]["trade"], sum(o["bits"] for o in state["orders"]))
         self.assertEqual(state["totals"]["invested"], sum(a["position"]["basis"] for a in state["assets"]))
 
+    def test_fifteen_packages_in_five_sectors_each_with_its_way_of_moving(self):
+        self.assertEqual(len(trade.ASSETS), 15)
+        sectors = {spec["sector"] for spec in trade.ASSETS.values()}
+        self.assertEqual(sectors, set(trade.SECTORS))
+        # The packages people may already hold keep their ids.
+        for kept in ("global_index", "tech_titans", "bio_venture", "quantum_coin"):
+            self.assertIn(kept, trade.ASSETS)
+        trade.ensure_market(self.NOW.date())
+        for asset, spec in trade.ASSETS.items():
+            with self.subTest(asset=asset):
+                rows = list(MarketDay.objects.filter(asset=asset).order_by("day"))
+                self.assertGreater(len(rows), 90)
+                self.assertTrue(all(0 < row.close < 1e9 for row in rows))
+                if spec["model"] == "cycle":
+                    self.assertTrue(all({"phase", "period", "swing"} <= set(row.state) for row in rows))
+                if spec["model"] == "momentum":
+                    self.assertTrue(all(row.state["regime"] in ("bull", "bear") for row in rows))
+
+    def test_sector_heat_moves_money_between_sectors_and_is_the_same_every_time(self):
+        day = self.NOW.date()
+        first = [trade._sector_heat(sector, day) for sector in trade._ROTATING]
+        trade._SPELLS.clear()
+        self.assertEqual(first, [trade._sector_heat(sector, day) for sector in trade._ROTATING])
+        # Mostly relative: what one sector gains another gives up.
+        raw = sum(trade._raw_heat(sector, day) for sector in trade._ROTATING)
+        self.assertLess(abs(sum(first)), abs(raw) + 1e-12)
+        self.assertEqual(trade._raw_heat("semis", trade.MARKET_EPOCH - timedelta(days=1)), 0.0)
+
     def test_the_day_chart_is_a_rolling_24_hours_at_any_hour(self):
         just_after_the_change = datetime(2026, 11, 5, 0, 2, tzinfo=dt_timezone.utc)
         just_before = datetime(2026, 11, 4, 23, 58, tzinfo=dt_timezone.utc)
@@ -6081,3 +6134,248 @@ class TradeTests(APITestCase):
         )
         order = TradeOrder.objects.get()
         self.assertEqual((order.kind, order.units, order.bits, order.basis), ("buy", 5, -100, 100))
+
+
+@without_festival_pass
+class BlessingTests(APITestCase):
+    """BLESSINGS (blessings.py): opened by hours, bought with BITS, one worn, attuning, a bonus per log."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="blessed", email="blessed@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        UserProfile.objects.update_or_create(user=self.user, defaults={"timezone": "UTC"})
+        self.cat = Category.objects.create(user=self.user, code="AA", name="A")
+        self.other = Category.objects.create(user=self.user, code="BB", name="B")
+
+    def _at(self, *args):
+        return mock.patch("django.utils.timezone.now", return_value=datetime(*args, tzinfo=dt_timezone.utc))
+
+    def _hours(self, hours, day=date(2026, 1, 1), category=None):
+        StudyLog.objects.create(user=self.user, category=category or self.cat, duration_minutes=hours * 60, date=day)
+
+    def _wear(self, blessing_id):
+        return self.client.post("/api/bits/blessing/", {"id": blessing_id}, format="json")
+
+    def _buy(self, blessing_id):
+        return self.client.post("/api/bits/blessing/", {"buy": blessing_id}, format="json")
+
+    def _own(self, *ids):
+        for blessing_id in ids:
+            BitPurchase.objects.create(user=self.user, item_id=blessings.PREFIX + blessing_id, price=0)
+
+    def _attuned(self, blessing_id):
+        """Worn at full strength (put on long ago)."""
+        UserProfile.objects.filter(user=self.user).update(
+            blessing=blessing_id, blessing_since=datetime(2020, 1, 1, tzinfo=dt_timezone.utc)
+        )
+
+    def _commit(self, minutes, day="2026-03-04", category=None):
+        res = self.client.post(
+            "/api/logs/",
+            {"category": (category or self.cat).id, "duration_minutes": minutes, "date": day, "topic": ""},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        return StudyLog.objects.get(pk=res.data["id"])
+
+    def test_the_hours_break_the_seal_and_bits_buy_it(self):
+        self._hours(9)
+        with self._at(2026, 3, 4, 12):
+            state = self.client.get("/api/bits/").data["blessings"]
+            self.assertEqual(state["hours"], 9)
+            self.assertFalse(any(b["unlocked"] or b["owned"] for b in state["items"]))
+            self.assertEqual(self._buy("steady").status_code, 400)
+            self._hours(11)  # 20 hours: 2,000 BITS
+            self.assertEqual(self._wear("steady").status_code, 400)  # open, not bought
+            before = self.client.get("/api/bits/").data["bits"]["balance"]
+            res = self._buy("steady")
+            self.assertEqual(res.status_code, 200, res.data)
+            self.assertEqual(res.data["bits"]["balance"], before - 1_500)
+            self.assertTrue(next(b for b in res.data["blessings"]["items"] if b["id"] == "steady")["owned"])
+            self.assertEqual(self._buy("steady").status_code, 400)  # once
+            self.assertEqual(self._buy("grace").status_code, 400)  # sealed until 50 h
+            self.assertEqual(self._wear("steady").status_code, 200)
+            self.assertEqual(self.client.get("/api/bits/").data["blessings"]["worn"], "steady")
+
+    def test_not_enough_bits(self):
+        self._hours(100)  # 10,000 BITS
+        with self._at(2026, 3, 4, 12):
+            self.assertEqual(self._buy("first_light").status_code, 200)  # 4,000
+            self.assertEqual(self._buy("grace").status_code, 200)  # 2,500
+            BitPurchase.objects.create(user=self.user, item_id="test-spend", price=2_100)
+            res = self._buy("steady")  # 1,500 > 1,400 left
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("Not enough", res.data["detail"])
+
+    def test_a_worn_blessing_pays_on_each_new_log_and_counts_in_the_balance(self):
+        self._hours(20)
+        self._own("steady")
+        with self._at(2026, 3, 4, 12):
+            self._attuned("steady")
+            before = self.client.get("/api/bits/").data["bits"]["balance"]
+            log = self._commit(100)
+            self.assertEqual((log.blessing, log.blessing_bits, log.blessing_pct), ("steady", 5, 100))
+            self.assertEqual(self.client.get("/api/bits/").data["bits"]["balance"], before + 166 + 5)
+            self.assertEqual(self.client.get(f"/api/logs/{log.id}/").data["blessing_bits"], 5)
+
+    def test_attunement_starts_at_40_and_grows_10_a_day(self):
+        self._hours(20)
+        self._own("steady")
+        with self._at(2026, 3, 4, 12):
+            self.assertEqual(self._wear("steady").status_code, 200)
+            state = self.client.get("/api/bits/").data["blessings"]
+            self.assertEqual(state["attunement"], 40)
+            self.assertTrue(state["attuned_at"].startswith("2026-03-10T12:00"))
+            self.assertEqual(self._commit(600).blessing_bits, 12)  # 3% of 1,000 at 40%
+        with self._at(2026, 3, 6, 13):
+            self.assertEqual(self.client.get("/api/bits/").data["blessings"]["attunement"], 60)
+            self.assertEqual(self._wear("steady").status_code, 200)  # the same one again: no restart
+            self.assertEqual(self.client.get("/api/bits/").data["blessings"]["attunement"], 60)
+        with self._at(2026, 3, 20, 12):
+            state = self.client.get("/api/bits/").data["blessings"]
+            self.assertEqual((state["attunement"], state["attuned_at"]), (100, None))
+
+    def test_changing_starts_the_new_one_over(self):
+        self._hours(60)
+        self._own("steady", "grace")
+        with self._at(2026, 3, 4, 12):
+            self._attuned("steady")
+            self.assertEqual(self._wear("grace").status_code, 200)
+            self.assertEqual(self.client.get("/api/bits/").data["blessings"]["attunement"], 40)
+            self.assertEqual(self._wear("").status_code, 200)
+            self.assertIsNone(self.client.get("/api/bits/").data["blessings"]["worn"])
+
+    def test_grace_rounds_the_minutes_up(self):
+        self._hours(60)
+        self._own("grace")
+        with self._at(2026, 3, 4, 12):
+            self._attuned("grace")
+            self.assertEqual(self._commit(52).blessing_bits, 91 - 86)
+            self.assertEqual(self._commit(55).blessing_bits, 0)
+            self.assertEqual(self._commit(8).blessing_bits, 0)  # under 10 minutes
+
+    def test_first_light_only_on_the_days_first_log_of_45_minutes(self):
+        self._hours(100)
+        self._own("first_light")
+        with self._at(2026, 3, 4, 12):
+            self._attuned("first_light")
+            self.assertEqual(self._commit(45).blessing_bits, 15)
+            self.assertEqual(self._commit(45).blessing_bits, 0)
+            self.assertEqual(self._commit(40, day="2026-03-03").blessing_bits, 0)  # too short
+            self.assertEqual(self._commit(60, day="2026-03-03").blessing_bits, 0)  # not the first
+
+    def test_conditions(self):
+        self._hours(5000, day=date(2026, 1, 1))
+        self._own(*blessings.BLESSINGS)
+        cases = [
+            ("marathon", 60, "2026-03-04", 0),
+            ("marathon", 120, "2026-03-04", 16),
+            ("marathon", 180, "2026-03-04", 42),
+            ("sprinter", 30, "2026-03-04", 6),
+            ("sprinter", 45, "2026-03-04", 0),
+            ("sprinter", 5, "2026-03-04", 0),
+            ("sabbath", 60, "2026-03-07", 12),  # a Saturday
+            ("sabbath", 60, "2026-03-04", 0),
+        ]
+        for i, (blessing_id, minutes, day, expected) in enumerate(cases):
+            with self.subTest(blessing=blessing_id, minutes=minutes), self._at(2026, 3, 10 + i, 12):
+                self._attuned(blessing_id)
+                self.assertEqual(self._commit(minutes, day=day).blessing_bits, expected)
+
+    def test_sprinter_pays_on_the_first_five_short_logs_a_day(self):
+        self._hours(250)
+        self._own("sprinter")
+        with self._at(2026, 3, 4, 12):
+            self._attuned("sprinter")
+            paid = [self._commit(30).blessing_bits for _ in range(6)]
+            self.assertEqual(paid, [6, 6, 6, 6, 6, 0])
+
+    def test_hearth_grows_with_the_streak_before_the_day(self):
+        self._hours(750, day=date(2025, 1, 1))
+        self._own("hearth")
+        with self._at(2026, 3, 30, 12):
+            self._attuned("hearth")
+            self.assertEqual(self._commit(60, day="2026-03-04").blessing_bits, 0)  # nothing on the 3rd
+            self.assertEqual(self._commit(60, day="2026-03-05").blessing_bits, 1)  # the 4th
+            self.assertEqual(self._commit(60, day="2026-03-06").blessing_bits, 2)
+            for d in range(7, 16):
+                self._hours(1, day=date(2026, 3, d))
+            self.assertEqual(self._commit(100, day="2026-03-16").blessing_bits, 10)  # 12 days: capped at 6%
+
+    def test_homecoming_and_tenacity_read_the_other_logs(self):
+        self._hours(5000, day=date(2026, 1, 1), category=self.other)
+        self._own("homecoming", "tenacity")
+        with self._at(2026, 3, 20, 12):
+            self._attuned("homecoming")
+            # BB was last logged on Jan 1: more than three days back.
+            self.assertEqual(self._commit(60, day="2026-03-06", category=self.other).blessing_bits, 16)
+            self.assertEqual(self._commit(60, day="2026-03-07", category=self.other).blessing_bits, 0)
+            self.assertEqual(self._commit(60, day="2026-03-08").blessing_bits, 0)  # AA: never before
+            self._attuned("tenacity")
+            got = [self._commit(m, day="2026-03-09").blessing_bits for m in (60, 10, 60, 60, 60, 60)]
+            self.assertEqual(got, [0, 0, 0, 6, 10, 15])  # the 10-minute one doesn't count
+
+    def test_ascendants_tide_is_secret_per_day_and_the_same_for_the_day(self):
+        self._hours(5000)
+        self._own("ascendant")
+        tides = {blessings.tide(self.user.id, date(2026, 3, d), 12) for d in range(1, 29)}
+        self.assertTrue(tides <= set(range(13)) and len(tides) > 4)
+        with self._at(2026, 3, 20, 12):
+            self._attuned("ascendant")
+            first, second = self._commit(600, day="2026-03-05"), self._commit(600, day="2026-03-05")
+            expected = blessings.tide(self.user.id, date(2026, 3, 5), 12) * 10
+            self.assertEqual(first.blessing_bits, min(120, expected))
+            self.assertEqual(first.blessing_bits, second.blessing_bits)
+
+    def test_editing_the_minutes_works_the_bonus_out_again_as_committed(self):
+        self._hours(5000)
+        self._own("marathon", "steady")
+        with self._at(2026, 3, 4, 12):
+            self.assertEqual(self._wear("marathon").status_code, 200)  # 40%
+            log = self._commit(60)
+            self.assertEqual((log.blessing_bits, log.blessing_pct), (0, 40))
+            self._attuned("steady")
+            res = self.client.patch(f"/api/logs/{log.id}/", {"duration_minutes": 180}, format="json")
+            self.assertEqual(res.status_code, 200, res.data)
+            log.refresh_from_db()
+            self.assertEqual((log.blessing, log.blessing_bits), ("marathon", 17))  # 42 at 40%
+
+    def test_a_bits_reset_takes_the_blessings_and_their_bonuses(self):
+        self._hours(20)
+        with self._at(2026, 3, 4, 12):
+            self._buy("steady")
+            self._wear("steady")
+            self._commit(600)
+            res = self.client.post("/api/bits/reset/", {}, format="json")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(StudyLog.objects.filter(user=self.user, blessing_bits__gt=0).count(), 0)
+            self.assertIsNone(res.data["blessings"]["worn"])
+            self.assertFalse(any(b["owned"] for b in res.data["blessings"]["items"]))
+            self.assertEqual(res.data["blessings"]["earned"], 0)
+
+    def test_a_backup_brings_the_bonus_and_the_purchase_back(self):
+        self._hours(20)
+        with self._at(2026, 3, 4, 12):
+            self._buy("steady")
+            self._wear("steady")
+            log = self._commit(60)
+            entry = {
+                "date": "2026-03-04",
+                "durationMinutes": 60,
+                "categoryCode": "AA",
+                "createdAt": log.created_at.isoformat(),
+                "blessing": "steady",
+                "blessingBits": 2,
+            }
+            StudyLog.objects.filter(pk=log.pk).delete()
+            economy = self.client.get("/api/logs/export-economy/").data
+            payload = json.loads(json.dumps({"logs": [entry], "economy": economy}, default=str))
+            res = self.client.post("/api/logs/import-backup/", payload, format="json")
+            self.assertEqual(res.status_code, 201, res.data)
+            restored = StudyLog.objects.get(user=self.user, duration_minutes=60)
+            self.assertEqual((restored.blessing, restored.blessing_bits), ("steady", 2))
+            BitPurchase.objects.filter(user=self.user).delete()
+            res = self.client.post("/api/logs/import-backup/", payload, format="json")
+            self.assertTrue(BitPurchase.objects.filter(user=self.user, item_id="blessing:steady").exists())

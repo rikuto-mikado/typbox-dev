@@ -24,11 +24,12 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import challenges, festival_pass, trade
+from . import blessings, challenges, festival_pass, trade
 from .backup import (
     MAX_IMPORTED_PURCHASES,
     MAX_IMPORTED_TRADES,
     export_economy,
+    log_blessing,
     log_bonus,
     restore_economy,
 )
@@ -390,6 +391,8 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         apply_buff_to_new_log(
             log, weather=data.get("weather") if hasattr(data, "get") else None
         )
+        # BLESSINGS: the worn one's bonus, beside the buff's.
+        blessings.apply_to_new_log(log)
         self._star_lit = star_lit_by(log)
         # BOSS RAID / RIVAL: what the log did, sent back with it.
         self._challenge_hit = challenges.apply_to_new_log(log)
@@ -416,6 +419,7 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         log = serializer.save()
         if log.duration_minutes != old_minutes:
             challenges.on_log_edited(log)
+            blessings.on_log_edited(log)
         if log.duration_minutes > old_minutes:
             seal_contract_on_edit(log)
 
@@ -703,6 +707,8 @@ class StudyLogViewSet(viewsets.ModelViewSet):
                         is_public_to_hub=True,
                         bonus_item=bonus_item,
                         bonus_bits=log_bonus(entry) if economy is not None else 0,
+                        blessing=log_blessing(entry)[0] if economy is not None else "",
+                        blessing_bits=log_blessing(entry)[1] if economy is not None else 0,
                     )
                 )
 
@@ -808,6 +814,28 @@ class BitsStarlightView(APIView):
         try:
             use_starlight(request.user, use, item_id=item_id)
         except StarlightError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(shop_state(request.user))
+
+
+class BitsBlessingView(APIView):
+    """POST /api/bits/blessing/ - {"id": "<blessing>" | null}: wear one (null takes it off);
+    {"buy": "<blessing>"}: buy one whose seal is broken."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        buying = "buy" in data
+        blessing_id = (data.get("buy") if buying else data.get("id")) or ""
+        if not isinstance(blessing_id, str) or (buying and not blessing_id):
+            return Response({"detail": "Unknown blessing."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            if buying:
+                blessings.buy(request.user, blessing_id)
+            else:
+                blessings.wear(request.user, blessing_id)
+        except blessings.BlessingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user))
 

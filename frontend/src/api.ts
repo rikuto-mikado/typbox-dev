@@ -202,6 +202,9 @@ interface LogWriteResponse {
   id: number | string;
   bonus_bits?: number;
   bonus_item?: string;
+  /** BLESSINGS: what the worn blessing added, and which; older servers omit them. */
+  blessing_bits?: number;
+  blessing?: string;
   /** When the server stops accepting edits and deletes of this log. */
   editable_until?: string;
   /** The stars on the gauge, when this log lit today's star (new logs only). */
@@ -350,15 +353,19 @@ export interface RivalOffer {
 /** What study and the challenges have earned (backend collection.py). */
 export interface CollectionState {
   invert_at: number;
-  groups: Array<{ id: string; name: string; progress: number }>;
-  trophies: Array<{ id: string; group: string; need: number; grade: number; earned: boolean }>;
   records: Array<{
     kind: 'raid' | 'rival';
     key: string;
     name: string;
+    /** The boss's title or the rival's tag; older servers omit it. */
+    title?: string;
     event: string | null;
+    /** Settled fights; older servers omit it. */
+    fights?: number;
     wins: number;
-    inverted: { key: string; name: string; unlocked: boolean; wins: number } | null;
+    /** When it first went down; older servers omit it. */
+    first_win?: string | null;
+    inverted: { key: string; name: string; unlocked: boolean; fights?: number; wins: number } | null;
   }>;
 }
 
@@ -518,6 +525,33 @@ export interface BitsShopState {
   challenges?: { raids: RaidOffer[]; rivals: RivalOffer[] };
   last_challenge?: ChallengeResult | null;
   collection?: CollectionState;
+  /** Older servers omit it. */
+  blessings?: BlessingState;
+}
+
+/** BLESSINGS (backend tracker/blessings.py). */
+export interface BlessingState {
+  hours: number;
+  worn: string | null;
+  /** How far the worn one has attuned (percent of its effect); older servers omit it. */
+  attunement?: number;
+  /** When it reaches full strength (null once it has). */
+  attuned_at?: string | null;
+  /** BITS the blessings have added to the logs so far. */
+  earned: number;
+  items: Array<{
+    id: string;
+    name: string;
+    /** The effect in a line. */
+    effect: string;
+    detail?: string;
+    /** Hours logged that break its seal. */
+    hours: number;
+    price: number;
+    unlocked: boolean;
+    /** Bought (older servers omit it: there, open meant usable). */
+    owned?: boolean;
+  }>;
 }
 
 /** One package on the TRADE tab (backend tracker/trade.py). */
@@ -525,6 +559,8 @@ export interface TradeAsset {
   id: string;
   ticker: string;
   name: string;
+  /** Its sector's id (TradeState.sectors); older servers omit it. */
+  sector?: string;
   kind: string;
   tagline: string;
   detail: string;
@@ -566,6 +602,8 @@ export interface TradeState {
   next_tick_at: string;
   tick_seconds: number;
   ticks_per_day: number;
+  /** The sectors, in the order the market lists them; older servers omit it. */
+  sectors?: Array<{ id: string; name: string }>;
   /** Positions are counted in `1 / unit` of a unit. */
   unit: number;
   tax_pct: number;
@@ -719,6 +757,18 @@ export const api = {
         body: JSON.stringify({}),
       }),
     /** Gives up the running BOSS RAID / RIVAL duel (nothing comes back). */
+    /** Wears a bought blessing (null takes it off); a new one starts attuning. */
+    wearBlessing: async (id: string | null) =>
+      apiFetch<BitsShopState>('/bits/blessing/', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      }),
+    /** Buys a blessing whose seal the hours have broken. */
+    buyBlessing: async (id: string) =>
+      apiFetch<BitsShopState>('/bits/blessing/', {
+        method: 'POST',
+        body: JSON.stringify({ buy: id }),
+      }),
     forfeitChallenge: async () =>
       apiFetch<BitsShopState>('/bits/challenge/forfeit/', {
         method: 'POST',
@@ -900,6 +950,8 @@ export const api = {
         created_at: string;
         bonus_bits?: number;
         bonus_item?: string;
+        blessing_bits?: number;
+        blessing?: string;
         editable_until?: string;
       }>>(`/logs/${query}`);
     },

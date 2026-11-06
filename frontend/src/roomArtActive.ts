@@ -283,20 +283,6 @@ export const ACTIVE_ART: Record<string, Art> = {
     p.rect(2, 7, 1, 1, '#d6b98c');
     p.rect(5, 7, 1, 1, '#d6b98c');
   },
-  owl_perch: (p) => {
-    p.rect(1, 1, 6, 6, '#8b6b4a');
-    p.px(1, 0, '#8b6b4a');
-    p.px(6, 0, '#8b6b4a');
-    disc(p, 2.5, 3, 1.3, C.white);
-    disc(p, 5.5, 3, 1.3, C.white);
-    p.px(2, 3, C.ink);
-    p.px(5, 3, C.ink);
-    p.px(4, 4, C.amber);
-    p.rect(2, 5, 4, 2, '#c9a77c');
-    p.rect(0, 7, 8, 1, C.walnut);
-    p.rect(3, 8, 2, 6, C.walnut);
-    p.rect(1, 14, 6, 2, C.walnut);
-  },
   ant_farm: (p) => {
     box(p, 0, 0, 8, 7, '#d6b98c', S.w2);
     for (const [x, y, w] of [[1, 2, 4], [4, 4, 3], [2, 5, 2]] as const) p.rect(x, y, w, 1, '#8b6b4a');

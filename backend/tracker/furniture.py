@@ -65,6 +65,14 @@ CHAIR_BASES = frozenset(
         "hw_lab_stool",
         "camp_folding_chair",
         "cyber_stall_stool",
+        "chair_mesh",
+        "chair_wood",
+        "chair_ball",
+        "chair_zaisu",
+        "chair_kneeling",
+        "cafe_chair",
+        "racing_chair",
+        "vanity_stool",
     ]
 )
 DESK_BASES = frozenset(
@@ -84,17 +92,275 @@ DESK_BASES = frozenset(
         "kotatsu",
         "chabudai",
         "chess_table",
-        "dc_control_desk",
         "hw_oscilloscope_bench",
         "hw_drone_bench",
         "hw_workbench",
-        "orb_holo_table",
-        "orb_control_console",
         "intel_desk",
         "camp_folding_table",
-        "cyber_food_stall",
+        "desk_simple",
+        "desk_drawers",
+        "desk_trestle",
+        "desk_rgb",
+        "desk_bureau",
+        "desk_low",
+        "desk_triple",
+        "podcast_desk",
+        "dtm_desk",
+        "craft_table",
+        "jigsaw_table",
+        "game_table",
+        "mahjong_table",
+        "kitchen_island",
+        "cafe_table",
+        "high_table",
+        "coffee_table_round",
+        "coffee_table_glass",
     ]
 )
+
+
+# ==========================================
+# Light: what glows, how strongly, and what turns it on
+# ==========================================
+# Only the pieces listed here give off light; everything else is lit by
+# them. Each entry is (kind, power, colour, x, y): x and y place the glow's
+# centre within the piece (0..1 of its width and height, from the top left;
+# a light hung from the ceiling shines from below itself, so y can pass 1).
+#
+# kind decides what switches it:
+#   lamp, neon, flame   the room's lights (the LIGHTS dimmer in MY ROOM)
+#   screen, appliance   running while you study (the stopwatch)
+#   led, window         always: small indicator lights, and the night
+#                       outside coming in through a window
+# power is how far it reaches:
+#   1  a glint: an indicator, a candle stub, a window at night
+#   2  an accent: a small lamp, a neon sign, a monitor
+#   3  a working light: a desk or floor lamp, a television, a stove
+#   4  the room's main light: a pendant, a chandelier, an open fire
+# Colour variants share their base's light; a variant that recolours the
+# light's colour glows in its own colour (catalog()).
+LIGHT_KINDS = ("lamp", "neon", "flame", "screen", "appliance", "led", "window")
+LIGHTS = {
+    # ---- lamps
+    "floor_lamp": ("lamp", 3, "#fde68a", 0.44, 0.10),
+    "tripod_lamp": ("lamp", 3, "#fde68a", 0.44, 0.10),
+    "arc_lamp": ("lamp", 3, "#fde68a", 0.75, 0.52),
+    "desk_lamp": ("lamp", 3, "#fde68a", 0.63, 0.25),
+    "ring_light": ("lamp", 3, "#f4f4f5", 0.44, 0.15),
+    "hw_magnifier_lamp": ("lamp", 3, "#fde68a", 0.63, 0.19),
+    "intel_banker_lamp": ("lamp", 3, "#fde68a", 0.44, 0.38),
+    "ceiling_light": ("lamp", 4, "#fef9e7", 0.50, 2.50),
+    "pendant_lights": ("lamp", 4, "#fde68a", 0.46, 1.80),
+    "chandelier": ("lamp", 4, "#fef3c7", 0.49, 1.20),
+    "side_table": ("lamp", 2, "#fde68a", 0.44, 0.10),
+    "wall_sconce": ("lamp", 2, "#fde68a", 0.19, 0.19),
+    "string_lights": ("lamp", 2, "#fde68a", 0.47, 0.76),
+    "cyber_lantern_string": ("lamp", 2, "#f9a8d4", 0.47, 0.54),
+    "hex_lights": ("lamp", 2, "#a5b4fc", 0.50, 0.38),
+    "chochin": ("lamp", 2, "#fca5a5", 0.44, 0.47),
+    "andon": ("lamp", 2, "#fde68a", 0.42, 0.38),
+    "moon_lamp": ("lamp", 2, "#fef3c7", 0.44, 0.38),
+    "salt_lamp": ("lamp", 2, "#fb923c", 0.44, 0.38),
+    "sunset_lamp": ("lamp", 2, "#f86a4c", 0.44, 0.19),
+    "camping_lantern": ("lamp", 2, "#fde68a", 0.44, 0.50),
+    "disco_ball": ("lamp", 2, "#c4b5fd", 0.44, 0.28),
+    "study_carrel": ("lamp", 2, "#fde68a", 0.73, 0.25),
+    "intel_desk": ("lamp", 2, "#fde68a", 0.69, 0.19),
+    "hw_workbench": ("lamp", 2, "#fde68a", 0.81, 0.13),
+    "aquarium": ("lamp", 2, "#7dd3fc", 0.46, 0.27),
+    "xmas_tree": ("lamp", 2, "#fca5a5", 0.47, 0.50),
+    "xmas_grand_tree": ("lamp", 2, "#fca5a5", 0.52, 0.51),
+    "hn_lantern": ("lamp", 2, "#fcd34d", 0.48, 0.50),
+    "bk_stall": ("lamp", 2, "#fde68a", 0.48, 0.19),
+    "mushroom_lamp": ("lamp", 1, "#fda4af", 0.44, 0.34),
+    "fairy_jar": ("lamp", 1, "#fde68a", 0.42, 0.55),
+    "lava_lamp": ("lamp", 1, "#f472b6", 0.46, 0.15),
+    "lava_tall": ("lamp", 1, "#c084fc", 0.44, 0.38),
+    "tb_bamboo": ("lamp", 1, "#fde68a", 0.47, 0.57),
+    # ---- neon
+    "neon_sign": ("neon", 2, "#f472b6", 0.44, 0.36),
+    "neon_moon": ("neon", 2, "#fde047", 0.43, 0.48),
+    "neon_heart": ("neon", 2, "#f472b6", 0.50, 0.47),
+    "neon_code": ("neon", 2, "#4ade80", 0.46, 0.38),
+    "neon_focus": ("neon", 2, "#7dd3fc", 0.49, 0.37),
+    "neon_open": ("neon", 2, "#ef4444", 0.47, 0.36),
+    "neon_cat": ("neon", 2, "#c4b5fd", 0.47, 0.46),
+    "hw_ghost": ("neon", 1, "#e0e7ff", 0.39, 0.45),
+    # ---- flame
+    "fireplace": ("flame", 4, "#fb923c", 0.48, 0.70),
+    "xmas_mantle": ("flame", 3, "#fb923c", 0.48, 0.77),
+    "candles": ("flame", 2, "#fdba74", 0.45, 0.20),
+    "hw_cauldron": ("flame", 2, "#fb923c", 0.47, 0.88),
+    "jack_o_lantern": ("flame", 1, "#fdba74", 0.43, 0.70),
+    # ---- screens (while you study)
+    "wall_tv": ("screen", 3, "#7dd3fc", 0.42, 0.41),
+    "tv_stand": ("screen", 3, "#a7f3d0", 0.43, 0.24),
+    "projector_screen": ("screen", 3, "#7dd3fc", 0.49, 0.40),
+    "battlestation": ("screen", 3, "#5eead4", 0.49, 0.32),
+    "streaming_setup": ("screen", 3, "#a78bfa", 0.36, 0.21),
+    "jukebox": ("screen", 3, "#fdba74", 0.47, 0.37),
+    "crt_tv": ("screen", 2, "#93c5fd", 0.38, 0.42),
+    "corner_desk": ("screen", 2, "#a7f3d0", 0.58, 0.17),
+    "standing_desk": ("screen", 2, "#86efac", 0.46, 0.17),
+    "arcade_cabinet": ("screen", 2, "#a7f3d0", 0.47, 0.37),
+    "pinball": ("screen", 2, "#fb923c", 0.47, 0.18),
+    "dj_deck": ("screen", 2, "#818cf8", 0.48, 0.58),
+    "pc_tower": ("screen", 2, "#a5b4fc", 0.34, 0.47),
+    "writing_desk": ("screen", 1, "#86efac", 0.37, 0.15),
+    "retro_computer": ("screen", 1, "#86efac", 0.39, 0.18),
+    "oscilloscope": ("screen", 1, "#4ade80", 0.31, 0.30),
+    "hw_oscilloscope_bench": ("screen", 1, "#4ade80", 0.37, 0.28),
+    "robot": ("screen", 1, "#5eead4", 0.46, 0.54),
+    # ---- appliances (while you study)
+    "stove": ("appliance", 3, "#f97316", 0.48, 0.64),
+    "kotatsu": ("appliance", 2, "#f97316", 0.48, 0.88),
+    "printer_3d": ("appliance", 1, "#fdba74", 0.59, 0.26),
+    "hw_solder_station": ("appliance", 1, "#fb923c", 0.38, 0.60),
+    # ---- indicator lights (always)
+    "digital_clock": ("led", 1, "#f43f5e", 0.46, 0.38),
+    "nightstand": ("led", 1, "#ef4444", 0.44, 0.22),
+    "ac_unit": ("led", 1, "#7dd3fc", 0.51, 0.78),
+    "wifi_router": ("led", 1, "#4ade80", 0.50, 0.63),
+    "smart_speaker": ("led", 1, "#7dd3fc", 0.44, 0.25),
+    "server_rack": ("led", 1, "#86efac", 0.21, 0.42),
+    "dc_patch_panel": ("led", 1, "#4ade80", 0.47, 0.38),
+    "microwave_cart": ("led", 1, "#fde047", 0.47, 0.11),
+    "espresso_machine": ("led", 1, "#86efac", 0.50, 0.19),
+    "washing_machine": ("led", 1, "#7dd3fc", 0.49, 0.30),
+    "intel_cipher_machine": ("led", 1, "#fde68a", 0.63, 0.25),
+    # ---- the night through a window (always)
+    "window": ("window", 1, "#bfdbfe", 0.50, 0.40),
+    "win_arched": ("window", 1, "#bfdbfe", 0.50, 0.40),
+    "win_forest": ("window", 1, "#bfdbfe", 0.50, 0.40),
+    "win_sea": ("window", 1, "#e0f2fe", 0.50, 0.40),
+    "win_peak": ("window", 1, "#bfdbfe", 0.50, 0.40),
+    "win_city": ("window", 2, "#fcd34d", 0.50, 0.50),
+    "tk_moon_window": ("window", 2, "#fef3c7", 0.50, 0.40),
+    # ---- added with the second wave of furniture
+    # lamps
+    "bedside_lamp": ("lamp", 2, "#fde68a", 0.50, 0.18),
+    "nightlight": ("lamp", 1, "#76a3da", 0.50, 0.35),
+    "reading_sconce": ("lamp", 2, "#fde68a", 0.60, 0.75),
+    "task_floor_lamp": ("lamp", 3, "#fde68a", 0.40, 0.20),
+    "range_hood": ("lamp", 2, "#fde68a", 0.50, 1.10),
+    "figure_case": ("lamp", 1, "#f1f5f9", 0.50, 0.40),
+    "softbox_light": ("lamp", 3, "#f8fafc", 0.50, 0.18),
+    "lamp_paper_floor": ("lamp", 3, "#fef3c7", 0.50, 0.22),
+    "lamp_torchiere": ("lamp", 3, "#fffbeb", 0.50, 0.05),
+    "lamp_tree": ("lamp", 3, "#fde68a", 0.50, 0.18),
+    "lamp_globe_floor": ("lamp", 3, "#fffbeb", 0.50, 0.17),
+    "lamp_mushroom_floor": ("lamp", 3, "#fde68a", 0.50, 0.25),
+    "lamp_shelf_floor": ("lamp", 3, "#fef3c7", 0.50, 0.14),
+    "lamp_rattan_floor": ("lamp", 3, "#fde68a", 0.50, 0.30),
+    "lamp_arc_marble": ("lamp", 3, "#fde68a", 0.75, 0.35),
+    "lamp_bubble": ("lamp", 2, "#7dd3fc", 0.50, 0.45),
+    "lamp_star_projector": ("lamp", 2, "#c7d2fe", 0.50, 0.40),
+    "lamp_dome": ("lamp", 2, "#fde68a", 0.50, 0.50),
+    "lamp_tiffany": ("lamp", 2, "#fbbf24", 0.50, 0.20),
+    "lamp_paper_cube": ("lamp", 2, "#fef3c7", 0.50, 0.50),
+    "lamp_edison": ("lamp", 2, "#fde68a", 0.50, 0.35),
+    "lamp_cloud": ("lamp", 1, "#f8fafc", 0.50, 0.45),
+    "lamp_planet": ("lamp", 1, "#fde68a", 0.50, 0.45),
+    "lamp_led_candles": ("lamp", 1, "#fdba74", 0.50, 0.30),
+    "sconce_swing": ("lamp", 2, "#fde68a", 0.69, 0.60),
+    "sconce_pair": ("lamp", 2, "#fde68a", 0.50, 0.25),
+    "marquee_letters": ("lamp", 2, "#fde68a", 0.50, 0.50),
+    "fairy_curtain": ("lamp", 2, "#fde68a", 0.50, 0.40),
+    "paper_lanterns": ("lamp", 2, "#fca5a5", 0.50, 0.60),
+    "pendant_single": ("lamp", 3, "#fffbeb", 0.50, 1.00),
+    "pendant_rattan": ("lamp", 3, "#fde68a", 0.50, 1.00),
+    "pendant_globe": ("lamp", 3, "#fef9c3", 0.50, 0.80),
+    "track_lights": ("lamp", 3, "#fde68a", 0.50, 1.30),
+    "paper_pendant": ("lamp", 3, "#fef3c7", 0.50, 0.70),
+    "ceiling_fan": ("lamp", 4, "#fef9e7", 0.50, 2.20),
+    # neon
+    "lamp_neon_tube": ("neon", 2, "#76a3da", 0.50, 0.45),
+    "light_bar_wall": ("neon", 2, "#76a3da", 0.50, 0.50),
+    "neon_wave": ("neon", 2, "#38bdf8", 0.50, 0.50),
+    "neon_star": ("neon", 2, "#fde047", 0.50, 0.50),
+    "neon_bolt": ("neon", 2, "#facc15", 0.50, 0.50),
+    "neon_plant": ("neon", 2, "#4ade80", 0.50, 0.50),
+    "neon_smile": ("neon", 2, "#fde047", 0.50, 0.50),
+    "neon_study": ("neon", 2, "#f472b6", 0.50, 0.50),
+    # flame
+    "lamp_oil": ("flame", 1, "#fb923c", 0.50, 0.35),
+    # screens (while you study)
+    "tv_wide": ("screen", 3, "#7dd3fc", 0.50, 0.30),
+    "racing_rig": ("screen", 3, "#7dd3fc", 0.78, 0.20),
+    "desk_triple": ("screen", 3, "#a7f3d0", 0.50, 0.25),
+    "desk_trestle": ("screen", 2, "#a7f3d0", 0.52, 0.22),
+    "desk_rgb": ("screen", 2, "#a5b4fc", 0.50, 0.30),
+    "wall_monitor": ("screen", 2, "#a7f3d0", 0.62, 0.45),
+    "console_setup": ("screen", 2, "#93c5fd", 0.50, 0.28),
+    "projector_mini": ("screen", 2, "#e0f2fe", 0.30, 0.60),
+    "projector_mount": ("screen", 2, "#e0f2fe", 0.25, 0.65),
+    "gaming_pc_glass": ("screen", 2, "#c084fc", 0.45, 0.40),
+    "hifi_stack": ("screen", 2, "#fbbf24", 0.50, 0.18),
+    "arcade_mini": ("screen", 2, "#f472b6", 0.50, 0.25),
+    "crt_stack": ("screen", 2, "#93c5fd", 0.50, 0.55),
+    "fitness_mirror": ("screen", 2, "#e0f2fe", 0.50, 0.45),
+    "karaoke_machine": ("screen", 2, "#f0abfc", 0.50, 0.40),
+    "dtm_desk": ("screen", 2, "#a7f3d0", 0.50, 0.20),
+    "desk_simple": ("screen", 1, "#86efac", 0.50, 0.25),
+    "laptop_stand_floor": ("screen", 1, "#a7f3d0", 0.50, 0.12),
+    "podcast_desk": ("screen", 1, "#ef4444", 0.52, 0.10),
+    "vcr_shelf": ("screen", 1, "#22d3ee", 0.80, 0.28),
+    "ham_radio": ("screen", 1, "#fbbf24", 0.25, 0.40),
+    # appliances (while you study)
+    "drinks_fridge": ("appliance", 2, "#e0f2fe", 0.50, 0.45),
+    "popcorn_cart": ("appliance", 2, "#fef3c7", 0.50, 0.30),
+    "kerosene_heater": ("appliance", 2, "#f97316", 0.50, 0.45),
+    "oil_heater": ("appliance", 1, "#fb923c", 0.50, 0.40),
+    "toaster": ("appliance", 1, "#fb923c", 0.50, 0.30),
+    "microwave_box": ("appliance", 1, "#fbbf24", 0.38, 0.55),
+    "kitchen_rack": ("appliance", 1, "#fbbf24", 0.30, 0.20),
+    "coffee_station": ("appliance", 1, "#86efac", 0.25, 0.20),
+    "bread_maker": ("appliance", 1, "#fbbf24", 0.38, 0.30),
+    "air_fryer": ("appliance", 1, "#fb923c", 0.45, 0.15),
+    # indicator lights (always)
+    "humidifier": ("led", 1, "#7dd3fc", 0.50, 0.60),
+    "air_purifier": ("led", 1, "#7dd3fc", 0.50, 0.15),
+    "dehumidifier": ("led", 1, "#38bdf8", 0.50, 0.60),
+    "nas_box": ("led", 1, "#4ade80", 0.60, 0.50),
+    "rice_cooker": ("led", 1, "#fb923c", 0.65, 0.75),
+    "aroma_diffuser": ("led", 1, "#c4b5fd", 0.50, 0.85),
+    "handheld_dock": ("led", 1, "#86efac", 0.50, 0.45),
+    "home_server": ("led", 1, "#4ade80", 0.70, 0.50),
+    "smart_display": ("led", 1, "#fde68a", 0.50, 0.40),
+    "clock_radio": ("led", 1, "#f43f5e", 0.50, 0.55),
+    "camera_tripod": ("led", 1, "#ef4444", 0.75, 0.10),
+    "robot_dog": ("led", 1, "#7dd3fc", 0.88, 0.30),
+    "charging_station": ("led", 1, "#4ade80", 0.75, 0.80),
+    "ups_battery": ("led", 1, "#4ade80", 0.60, 0.60),
+    "wall_dashboard": ("led", 1, "#93c5fd", 0.50, 0.50),
+    "weather_station": ("led", 1, "#7dd3fc", 0.50, 0.50),
+    "digital_frame": ("led", 1, "#fde68a", 0.50, 0.45),
+    "external_drives": ("led", 1, "#60a5fa", 0.65, 0.50),
+    "air_hockey": ("led", 1, "#ef4444", 0.50, 0.05),
+    "pedalboard": ("led", 1, "#ef4444", 0.50, 0.30),
+    "herb_garden_led": ("led", 1, "#e9d5ff", 0.50, 0.20),
+    "gecko_tank": ("led", 1, "#fb923c", 0.25, 0.10),
+    "shrimp_tank": ("led", 1, "#7dd3fc", 0.50, 0.40),
+    "glow_stars": ("led", 1, "#bef264", 0.50, 0.50),
+    "intercom": ("led", 1, "#4ade80", 0.65, 0.65),
+    # the night through a window (always)
+    "window_small": ("window", 1, "#bfdbfe", 0.50, 0.45),
+    "window_round": ("window", 1, "#bfdbfe", 0.50, 0.50),
+    "window_shoji": ("window", 1, "#fef3c7", 0.50, 0.50),
+    "door_glass": ("window", 1, "#bfdbfe", 0.50, 0.50),
+    "window_tall": ("window", 2, "#bfdbfe", 0.50, 0.45),
+}
+
+
+def light_of(item_id):
+    """The piece's light for the client, or None: {kind, power, color, x, y}."""
+    spec = FURNITURE[item_id]
+    entry = LIGHTS.get(spec.get("base", item_id))
+    if entry is None:
+        return None
+    kind, power, color, x, y = entry
+    recolor = {k.lower(): v for k, v in (spec.get("recolor") or {}).items()}
+    return {"kind": kind, "power": power, "color": recolor.get(color.lower(), color), "x": x, "y": y}
 
 
 def fit_of(item_id):
@@ -124,15 +390,18 @@ DEFAULT_LAYOUT = {
 # stays locked until then (a BITS reset goes back to this). Once a user owns any
 # furniture the free basics are theirs too, and the packs are gone.
 #
-# Balance: 2,500 BITS is about 25 hours of study, once per economy. A pack is a
-# room's worth of pieces, small ones with one or two that change its whole look,
-# worth just under the cheapest large piece (20,000). Large and featured pieces
-# stay out of it: those are what the weeks of saving are for.
+# Three of them, each a whole lived-in room: thirty-odd pieces crowded in
+# the way a room is once someone lives there (a desk under the shelves, the
+# laundry drying, a kettle by the low table), so the first thing anyone sees
+# is a room worth coming back to, not a desk on an empty floor.
+#
+# Balance: 4,000 BITS is about 40 hours of study, once per economy. Small and
+# medium pieces only (tiers 1 and 2): large and featured pieces stay out,
+# since those are what the weeks of saving are for. Each pack is worth about
+# the same, so the choice is only about the room you want.
 # tests.StarterPackTests holds every pack to this.
-STARTER_PACK_PRICE = 2500
-STARTER_PACK_VALUE = (17000, 19999)
-# The chair tucked into the desk, as the editor lets you.
-_DESK = [("starter_desk", 6, 7), ("starter_chair", 7, 7)]
+STARTER_PACK_PRICE = 4000
+STARTER_PACK_VALUE = (85000, 100000)
 
 
 def _pack(name, line, wall, floor, items):
@@ -146,34 +415,54 @@ def _pack(name, line, wall, floor, items):
 
 STARTER_PACKS = {
     "pack_study": _pack(
-        "STUDY NOOK", "A proper desk, ready for a long evening", "wall_navy", "floor_wood",
-        _DESK + [
-            ("timetable", 6, 1), ("certificate", 10, 2), ("crate_shelf", 2, 7), ("floor_lamp", 5, 6),
-            ("rug_round", 6, 9), ("plant_pot", 10, 8),
+        "STUDY ROOM",
+        "A desk under the shelves, a bed by the window, homework everywhere",
+        "wall_two_tone__navy",
+        "floor_light_oak",
+        [
+            ("window_small", 0, 1), ("wall_books", 3, 1), ("study_plan", 3, 2), ("reading_sconce", 5, 2),
+            ("desk_simple", 3, 4), ("chair_mesh", 4, 4), ("book_tower", 2, 3), ("manga_shelf", 6, 3),
+            ("clock_big", 8, 0), ("vocab_cards", 8, 2), ("poster_rocket", 11, 1), ("hat_hooks", 14, 1),
+            ("plastic_drawers", 8, 4), ("zz_plant", 9, 4), ("bed_single", 12, 4), ("rolling_cart", 0, 4),
+            ("paper_bin", 1, 5), ("bookcase_low", 0, 7), ("rug_stripe", 5, 8), ("bean_lounger", 6, 9),
+            ("alarm_clock", 12, 6), ("laundry_basket", 13, 7), ("hamper", 15, 6), ("task_floor_lamp", 10, 3),
+            ("nightlight", 11, 5), ("file_boxes", 3, 7), ("cat_bed_round", 3, 8), ("chair_ball", 9, 8),
+            ("storage_bins", 13, 9), ("sneakers", 8, 11), ("textbook_pile", 0, 10), ("school_bag", 1, 11),
+            ("paper_stack", 3, 11), ("clothes_pile", 10, 11), ("slippers", 13, 11), ("pilea", 15, 11),
         ],
     ),
     "pack_cozy": _pack(
-        "COZY CORNER", "Flowers on the wall, somewhere soft to sit", "wall_floral", "floor_wood",
-        _DESK + [
-            ("poster_cat", 6, 1), ("sunset_lamp", 10, 7), ("beanbag", 11, 8), ("floor_cushion", 3, 9),
-            ("succulents", 5, 8),
+        "ONE-ROOM FLAT",
+        "A sofa, a kitchen corner and the laundry still drying",
+        "wall_limewash__blush",
+        "floor_herringbone",
+        [
+            ("window_small", 1, 1), ("photo_ledge", 4, 1), ("pendant_globe", 8, 0), ("poster_coffee", 12, 0),
+            ("jar_shelf", 12, 2), ("utensil_rail", 14, 2), ("teapot_clock", 15, 0), ("calathea", 0, 4),
+            ("throw_basket", 1, 5), ("lamp_torchiere", 2, 3), ("sofa_bed", 3, 4), ("side_table_c", 7, 5),
+            ("fan_tower", 8, 3), ("high_table", 9, 4), ("cafe_chair", 10, 4), ("trash_sorter", 11, 4),
+            ("microwave_cart", 12, 4), ("sink_counter", 13, 4), ("coffee_table_round", 4, 7),
+            ("pouf_knit", 7, 7), ("rug_berber", 3, 8), ("kitchen_mat", 12, 7), ("laundry_rack", 14, 8),
+            ("cat_bed_round", 9, 9), ("peace_lily", 8, 10), ("floor_pillows", 1, 8),
+            ("lamp_paper_cube", 0, 7), ("nesting_tables", 9, 7), ("tray_table", 10, 9),
+            ("laundry_basket", 15, 11), ("board_games", 0, 11), ("tote_bag", 2, 11), ("blanket_pile", 5, 11),
+            ("sneakers", 11, 11), ("door_mat", 12, 11),
         ],
-    ),
-    "pack_cyber": _pack(
-        "CYBER DEN", "A back alley that happens to have a desk", "cyber_graffiti_wall", "floor_concrete",
-        _DESK + [("cyber_lantern_string", 6, 0), ("cyber_cable_mess", 12, 3), ("cyber_crates", 10, 7)],
     ),
     "pack_washitsu": _pack(
-        "WASHITSU", "Tatami, a paper lantern and a wind chime", "wall_plain", "floor_tatami",
-        _DESK + [
-            ("noren", 2, 1), ("chochin", 12, 0), ("furin", 14, 1), ("andon", 3, 7), ("zabuton", 10, 8),
-        ],
-    ),
-    "pack_camp": _pack(
-        "BASE CAMP", "A log cabin with the fire already lit", "camp_log_wall", "floor_wood",
-        _DESK + [
-            ("camp_axe_wall", 2, 2), ("camp_campfire", 4, 9), ("camp_folding_chair", 3, 7),
-            ("camping_lantern", 10, 7),
+        "TATAMI ROOM",
+        "Shoji light, a low desk and the futon laid out",
+        "wall_washi",
+        "floor_tatami",
+        [
+            ("window_shoji", 0, 1), ("furin", 3, 0), ("chochin", 4, 0), ("paper_fan", 6, 1),
+            ("kakejiku", 9, 1), ("tear_calendar", 11, 1), ("noren", 13, 0), ("desk_low", 0, 5),
+            ("chair_zaisu", 1, 5), ("andon", 3, 4), ("tansu", 5, 4), ("bonsai", 8, 5), ("daruma", 9, 5),
+            ("ikebana", 10, 4), ("futon_folded", 11, 4), ("kerosene_heater", 13, 4),
+            ("umbrella_stand", 14, 4), ("futon", 0, 8), ("zabuton", 5, 8), ("chabudai", 6, 8),
+            ("electric_kettle", 11, 8), ("kitten_box", 13, 8), ("tea_shelf", 11, 3), ("go_board", 9, 9),
+            ("lamp_paper_cube", 8, 9), ("yarn_basket", 14, 7), ("lucky_bamboo", 0, 11),
+            ("pickle_crock", 2, 11), ("book_crate", 4, 10), ("maneki_neko", 12, 11), ("rice_bag", 15, 11),
         ],
     ),
 }
@@ -540,11 +829,14 @@ def catalog():
         fit = fit_of(item_id)
         if fit:
             row["fit"] = fit
+        light = light_of(item_id)
+        if light:
+            row["light"] = light
         out.append(row)
     return out
 
 
-# Changes whenever the catalog sent to clients does (pieces or their `fit`).
+# Changes whenever the catalog sent to clients does (pieces, their `fit` or `light`).
 CATALOG_VERSION = hashlib.sha1(
     json.dumps(catalog(), sort_keys=True).encode()
 ).hexdigest()[:12]

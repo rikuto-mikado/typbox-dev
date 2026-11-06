@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useTransition } from 'react';
 import {
   Clock,
   Plus,
@@ -46,20 +46,24 @@ import {
   CheckCheck,
   Undo2,
   ArrowUpRight,
-  Menu,
+  Armchair,
 } from 'lucide-react';
 import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight } from './api';
 import { ChallengeTicker, FestivalStrip } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
 import { SideNav, type MainView } from './SideNav';
+import { NavProgress } from './NavProgress';
+import { navProgress } from './pageSwitch';
+import { DataPage } from './DataPage';
 import { resolveSurfaceThemeId } from './surfaceThemes';
 import { setFestivalUnlocks } from './festivalUnlocks';
 import { CategoryTrendTable } from './CategoryTrendTable';
 import { CategorySelect } from './CategorySelect';
 import { StatusRankList } from './StatusRankList';
-import { BitsBadge, BitShard } from './BitsBadge';
+import { BitShard } from './BitsBadge';
 import { lookOf } from './buffArt';
 import { BuffIcon } from './BuffIcon';
+import { HeaderLoadout, type LoadoutSlot } from './HeaderLoadout';
 import { BitsShopModal, type ShopTab } from './BitsShopModal';
 import { MyRoomPanel } from './MyRoomPanel';
 import { blockedByDemo, DEMO_BLOCKED_EVENT, enterDemo, isDemo } from './demo';
@@ -69,7 +73,6 @@ import { CategoryEditor } from './CategoryEditor';
 import { ColorSwatchGrid } from './ColorSwatchGrid';
 import { StudyRhythm } from './StudyRhythm';
 import { ResetReceipt, type ResetReceiptData } from './ResetReceipt';
-import { NewsPanel } from './NewsPanel';
 import { BITS_PER_HOUR, bitsForMinutes, type BitsSummary } from './bits';
 import { SaveButton, useSaveState } from './SaveButton';
 import { inactiveHatch, segmentStyle, swatchStyle } from './categoryStyle';
@@ -214,6 +217,9 @@ export interface StudyLog {
   bonusBits?: number;
   /** The buff that paid it (economy.BUFFS id). */
   bonusItem?: string;
+  /** What the worn blessing added, and which (blessings.py). */
+  blessingBits?: number;
+  blessing?: string;
   /** Past this the server refuses edits and deletes (the row shows a seal). */
   editableUntil?: string;
 }
@@ -261,7 +267,7 @@ type PeriodView = 'weekly' | 'weekly_agg' | 'monthly_agg' | 'monthly';
 type AuthModalMode = 'login' | 'register' | 'forgot' | 'reset_confirm';
 // Sign-ups are closed unless the build opts in (mirrors the backend's ALLOW_REGISTRATION).
 const REGISTRATION_OPEN = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
-type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'cursor' | 'clearance' | 'room' | 'account' | 'news';
+type SettingsTab = 'profile' | 'themes' | 'fonts' | 'ambient' | 'cursor' | 'clearance' | 'account';
 // Surface themes, UI fonts, ambient overlays and cursors share the single 02 / APPEARANCE tab.
 const APPEARANCE_TABS: SettingsTab[] = ['themes', 'fonts', 'ambient', 'cursor'];
 const CATEGORY_PREVIEW_COUNT = 4;
@@ -413,7 +419,7 @@ const ToastStack: React.FC<{
   const { t } = useI18n();
   return (
   <div
-    className="fixed z-[70] bottom-4 inset-x-3 sm:inset-x-auto sm:right-4 sm:w-[360px] flex flex-col gap-2 pointer-events-none"
+    className="fixed z-[70] bottom-4 max-lg:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] inset-x-3 sm:inset-x-auto sm:right-4 sm:w-[360px] flex flex-col gap-2 pointer-events-none"
     role="status"
     aria-live="polite"
   >
@@ -908,7 +914,7 @@ export default function App() {
   const bitsBalance = useMemo(
     () =>
       bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)) +
-      logs.reduce((sum, l) => sum + (l.bonusBits ?? 0), 0) +
+      logs.reduce((sum, l) => sum + (l.bonusBits ?? 0) + (l.blessingBits ?? 0), 0) +
       (user?.bits?.payouts ?? 0) +
       (user?.bits?.trade ?? 0) -
       (user?.bits?.spent ?? 0),
@@ -969,19 +975,30 @@ export default function App() {
   useEffect(() => {
     const el = matrixGridContainerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const w = entry.contentRect.width;
-        if (w > 100) {
-          // Each column is 13px wide + 4px gap = 17px
-          const cols = Math.max(12, Math.min(52, Math.floor((w + 4) / 17)));
-          setBaseFitWeeks(cols);
-        }
+    // Settles once the width stops moving: re-fitting re-renders the whole
+    // page, which on every frame of the side rail gliding open (or a window
+    // being dragged) would stall the motion.
+    let settle: number | undefined;
+    let width = 0;
+    const fit = () => {
+      if (width > 100) {
+        // Each column is 13px wide + 4px gap = 17px
+        setBaseFitWeeks(Math.max(12, Math.min(52, Math.floor((width + 4) / 17))));
       }
       measureMatrixViewport();
+    };
+    const observer = new ResizeObserver((entries) => {
+      const first = width === 0;
+      for (const entry of entries) width = entry.contentRect.width;
+      window.clearTimeout(settle);
+      if (first) fit();
+      else settle = window.setTimeout(fit, 180);
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      window.clearTimeout(settle);
+      observer.disconnect();
+    };
   }, [measureMatrixViewport]);
 
   // System Chronometer (Real-Time Digital Clock) State
@@ -1030,8 +1047,27 @@ export default function App() {
   }, [currentTime, timeZone]);
   const currentWeekStartStr = useMemo(() => startOfWeekStr(todayStr, weekStart), [todayStr, weekStart]);
 
-  // User Dropdown, Account Settings Modal & Account Deletion State
-  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  // The page the side navigation shows. BITS // EXCHANGE and the settings
+  // are pages too: opening one replaces HOME, and HOME comes back after.
+  const [mainView, setPage] = useState<MainView>('home');
+  // Switching pages: the rail and the progress bar answer at once
+  // (navProgress), the page itself is drawn as a transition behind them.
+  const [, startPageTransition] = useTransition();
+  const pageRef = React.useRef(mainView);
+  const setMainView = useCallback((next: MainView | ((v: MainView) => MainView)) => {
+    // Already there (e.g. the header balance while BITS is open): nothing to wait for.
+    if (typeof next === 'string' && next !== pageRef.current) navProgress.start(next);
+    startPageTransition(() => setPage(next));
+  }, []);
+  useEffect(() => {
+    pageRef.current = mainView;
+    navProgress.settle(mainView);
+  }, [mainView]);
+  const showSettingsModal = mainView === 'settings';
+  const showBitsShop = mainView === 'bits';
+  /** Leaves a page if it is the one showing (signing out, deleting the account). */
+  const leavePage = useCallback((page: MainView) => setMainView((v) => (v === page ? 'home' : v)), [setMainView]);
+  // Account Settings & Account Deletion State
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
   const [profileUsername, setProfileUsername] = useState<string>('');
   const [profileEmail, setProfileEmail] = useState<string>('');
@@ -1068,7 +1104,6 @@ export default function App() {
 
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [showStatusCardModal, setShowStatusCardModal] = useState<boolean>(false);
-  const [showBitsShop, setShowBitsShop] = useState<boolean>(false);
   // The running buff and challenge for the header, tagged with their account
   // so a previous sign-in's never shows. Refetched when logs change (a
   // commit can use a buff up, hit a boss, a reset removes both) and when
@@ -1079,11 +1114,18 @@ export default function App() {
     challenge: ActiveChallenge | null;
     starlight?: Starlight;
     festival?: BitsShopState['festival'];
+    blessings?: BitsShopState['blessings'];
   } | null>(null);
   const activeBuff = user && buffState?.userId === user.id ? buffState.buff : null;
   const activeChallenge = user && buffState?.userId === user.id ? buffState.challenge : null;
   const starlight = user && buffState?.userId === user.id ? buffState.starlight : undefined;
   const festivalState = user && buffState?.userId === user.id ? buffState.festival : undefined;
+  // The worn blessing, for the header's loadout.
+  const blessingState = user && buffState?.userId === user.id ? buffState.blessings : undefined;
+  const wornBlessing = useMemo(() => {
+    const item = blessingState?.items.find((b) => b.id === blessingState.worn);
+    return item ? { id: item.id, name: item.name, effect: item.effect, attunement: blessingState?.attunement ?? 100 } : null;
+  }, [blessingState]);
   /** Adopts a fresh /bits/ answer: the running buff and challenge, and the
    *  server's spent / payouts (a settled challenge changes the balance). */
   // Bumped when the FESTIVAL PASS opens something, for what reads its rewards.
@@ -1097,6 +1139,7 @@ export default function App() {
       challenge: state.active_challenge ?? null,
       starlight: state.starlight,
       festival: state.festival,
+      blessings: state.blessings,
     });
     setUser((prev) => {
       if (!prev || prev.id !== userId) return prev;
@@ -1144,13 +1187,20 @@ export default function App() {
     return () => window.clearTimeout(id);
   }, [activeChallenge, refreshActiveBuff]);
   const [bitsShopTab, setBitsShopTab] = useState<ShopTab>('buffs');
-  const closeBitsShop = useCallback(() => setShowBitsShop(false), []);
+  // Bumped on every opening, so asking for a tab while the page is already
+  // up still switches to it.
+  const [bitsOpenSeq, setBitsOpenSeq] = useState(0);
   // CATEGORY LOCK can target any category still in progress (not DONE).
   const lockableCategories = useMemo(() => categories.filter((c) => c.completedAt === null), [categories]);
-  const openBitsShop = useCallback((tab: ShopTab) => {
+  // Which BOOSTS view the page opens on (the header loadout's sockets).
+  const [bitsBoostsView, setBitsBoostsView] = useState<LoadoutSlot>('shop');
+  const openBitsShop = useCallback((tab: ShopTab, view: LoadoutSlot = 'shop') => {
     setBitsShopTab(tab);
-    setShowBitsShop(true);
-  }, []);
+    setBitsBoostsView(view);
+    setBitsOpenSeq((n) => n + 1);
+    setMainView('bits');
+    window.scrollTo({ top: 0 });
+  }, [setMainView]);
   const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState<string>('');
   const [deletingAccount, setDeletingAccount] = useState<boolean>(false);
@@ -1194,36 +1244,24 @@ export default function App() {
       setResetBitsConfirmText('');
       setClearLogsConfirmText('');
       setSettingsTab(tab);
-      setShowSettingsModal(true);
+      setMainView('settings');
+      window.scrollTo({ top: 0 });
     },
-    [user]
+    [user, setMainView]
   );
 
-  // The side navigation: the page it shows, and (below lg) whether its
-  // drawer is out. Esc puts the drawer away; the page behind stays put.
-  const [mainView, setMainView] = useState<MainView>('home');
-  const [showNavDrawer, setShowNavDrawer] = useState(false);
-  useEffect(() => {
-    if (!showNavDrawer) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowNavDrawer(false);
-    };
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [showNavDrawer]);
   const goHome = useCallback(() => {
     setMainView('home');
     window.scrollTo({ top: 0 });
-  }, []);
+  }, [setMainView]);
+  const openRoom = useCallback(() => {
+    setMainView('room');
+    window.scrollTo({ top: 0 });
+  }, [setMainView]);
   const goData = useCallback(() => {
     setMainView('data');
     window.scrollTo({ top: 0 });
-  }, []);
+  }, [setMainView]);
 
   // Log Form State
   const [inputMode, setInputMode] = useState<'manual' | 'timer'>('manual');
@@ -1254,14 +1292,9 @@ export default function App() {
     [dismissToast]
   );
 
-  // Bumped with every committed log: the header badge floats "+N" only for
-  // a balance rise that comes with a new value (see BitsBadge).
-  const [bitsGainSeq, setBitsGainSeq] = useState(0);
-
   // Shared success feedback for every path that commits a new log.
   const announceLogCommitted = useCallback(
     (logId: string | number, catCode: string | undefined, minutes: number, date: string) => {
-      setBitsGainSeq((n) => n + 1);
       pushToast(
         'success',
         t.toastLogCommitted,
@@ -1502,6 +1535,8 @@ export default function App() {
         createdAt: l.created_at,
         bonusBits: l.bonus_bits ?? 0,
         bonusItem: l.bonus_item ?? '',
+        blessingBits: l.blessing_bits ?? 0,
+        blessing: l.blessing ?? '',
         editableUntil: l.editable_until,
       }));
 
@@ -2103,9 +2138,15 @@ export default function App() {
     try {
       const res = await api.bits.reset();
       // Logs and categories stay; only the buff bonuses come off them.
-      setLogs((prev) => prev.map((l) => (l.bonusBits || l.bonusItem ? { ...l, bonusBits: 0, bonusItem: '' } : l)));
+      setLogs((prev) =>
+        prev.map((l) =>
+          l.bonusBits || l.bonusItem || l.blessingBits || l.blessing
+            ? { ...l, bonusBits: 0, bonusItem: '', blessingBits: 0, blessing: '' }
+            : l
+        )
+      );
       setUser((prev) => (prev ? { ...prev, bits: res.bits } : prev));
-      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null, starlight: res.starlight, festival: res.festival });
+      if (user) setBuffState({ userId: user.id, buff: res.active_buff, challenge: res.active_challenge ?? null, starlight: res.starlight, festival: res.festival, blessings: res.blessings });
       setResetBitsConfirmText('');
       const n = (v: number) => v.toLocaleString('en-US');
       setBitsReceipt({
@@ -2158,7 +2199,7 @@ export default function App() {
     setCategories([]);
     setLogs([]);
     setSelectedCatId('');
-    setShowSettingsModal(false);
+    leavePage('settings');
   };
 
   const handleDeleteAccount = async () => {
@@ -2171,7 +2212,7 @@ export default function App() {
       setLogs([]);
       setSelectedCatId('');
       setShowDeleteModal(false);
-      setShowSettingsModal(false);
+      leavePage('settings');
       setDeleteConfirmUsername('');
       alert(t.msgAccountDeleted);
     } catch (err: unknown) {
@@ -2250,6 +2291,8 @@ export default function App() {
         createdAt: new Date().toISOString(),
         bonusBits: created.bonus_bits ?? 0,
         bonusItem: created.bonus_item ?? '',
+        blessingBits: created.blessing_bits ?? 0,
+        blessing: created.blessing ?? '',
         editableUntil: created.editable_until,
       };
 
@@ -2298,6 +2341,8 @@ export default function App() {
           createdAt: new Date().toISOString(),
           bonusBits: created.bonus_bits ?? 0,
           bonusItem: created.bonus_item ?? '',
+          blessingBits: created.blessing_bits ?? 0,
+          blessing: created.blessing ?? '',
           editableUntil: created.editable_until,
         };
 
@@ -2358,6 +2403,7 @@ export default function App() {
                 topic: '',
                 bonusBits: updated.bonus_bits ?? l.bonusBits,
                 bonusItem: updated.bonus_item ?? l.bonusItem,
+                blessingBits: updated.blessing_bits ?? l.blessingBits,
               }
             : l
         )
@@ -3552,12 +3598,15 @@ export default function App() {
   const textMuted = 'text-[var(--tb-text-muted)]';
   const inputBg =
     'bg-[var(--tb-bg-input)] border-[var(--tb-border)] text-[var(--tb-text-main)] focus:border-emerald-500';
+  // Every page is at least a window tall, so the footer never shows while a
+  // page is still loading its content.
+  const PAGE_WRAP = 'max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 min-h-[calc(100dvh-3.25rem)] sm:min-h-[calc(100dvh-4rem)]';
   const surfaceBgStyle = useMemo(() => getSurfaceBackgroundStyle(activeSurfacePair, isDark), [activeSurfacePair, isDark]);
 
   return (
     <I18nContext.Provider value={i18n}>
     <div
-      className={`isolate min-h-screen lg:pl-15 font-sans antialiased transition-colors duration-200 ${bgMain}`}
+      className={`isolate min-h-screen nav-offset font-sans antialiased transition-colors duration-200 ${bgMain}`}
       style={surfaceBgStyle}
     >
 
@@ -3609,34 +3658,30 @@ export default function App() {
         }}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-13 sm:h-16 flex items-center justify-between gap-2">
-          {/* Phones and tablets: the menu that opens the side navigation */}
+          {/* The brand lockup at the left, as the header always had it */}
           <button
             type="button"
-            onClick={() => setShowNavDrawer(true)}
-            className={`lg:hidden h-9 w-9 shrink-0 border ${borderCol} flex items-center justify-center cursor-pointer hover:opacity-80`}
-            aria-label={t.navOpen}
-            aria-expanded={showNavDrawer}
+            onClick={goHome}
+            className="flex items-center space-x-2 min-w-0 cursor-pointer"
+            aria-label={t.navHome}
           >
-            <Menu className="w-4 h-4" />
+            <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
+            <span className="font-mono text-base sm:text-lg font-bold tracking-tighter whitespace-nowrap">TYPBOX</span>
+            <span className={`max-[359px]:hidden font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>.me</span>
           </button>
-          {/* Desktop: the brand sits on the rail; the bar names where you are */}
-          <span className={`hidden lg:inline font-mono text-[11px] font-bold uppercase tracking-[0.2em] ${textMuted}`}>
-            {mainView === 'data' ? t.navData : t.navHome}
-          </span>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-            {/* BITS balance (signed-in only) */}
-            {user && (
-              <BitsBadge
-                balance={bitsBalance}
-                ready={!dataLoading}
-                gainSeq={bitsGainSeq}
+          {/* Below lg the side navigation puts SHARE CARD, NOISE and the theme
+              in this corner, so the header keeps clear of them. */}
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-lg:mr-[7.5rem]">
+            {user && !authLoading && (
+              <HeaderLoadout
+                buff={activeBuff}
+                blessing={wornBlessing}
+                starlight={starlight}
+                onOpen={(slot) => openBitsShop('buffs', slot)}
                 borderCol={borderCol}
-                onOpen={() => openBitsShop('buffs')}
-                activeBuff={activeBuff}
               />
             )}
-
             {authLoading ? (
               <div className={`h-9 w-9 flex items-center justify-center border ${borderCol}`}>
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
@@ -3657,19 +3702,6 @@ export default function App() {
               )
             )}
 
-            {/* Phones and tablets: the brand, at the right */}
-            <button
-              type="button"
-              onClick={goHome}
-              className="lg:hidden flex items-center space-x-2 min-w-0 cursor-pointer"
-              aria-label={t.navHome}
-            >
-              <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
-              <span className="font-mono text-base sm:text-lg font-bold tracking-tighter whitespace-nowrap">TYPBOX</span>
-              <span className={`hidden min-[360px]:inline font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>
-                .me
-              </span>
-            </button>
           </div>
         </div>
       </header>
@@ -3682,7 +3714,7 @@ export default function App() {
         </div>
       )}
       {demoNote && (
-        <div role="status" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] px-3 py-2 bg-zinc-900 border border-emerald-500 text-emerald-400 font-mono text-[11px] whitespace-nowrap max-w-[90vw] truncate">
+        <div role="status" className="fixed bottom-4 max-lg:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[200] px-3 py-2 bg-zinc-900 border border-emerald-500 text-emerald-400 font-mono text-[11px] whitespace-nowrap max-w-[90vw] truncate">
           {t.demoBlocked}
         </div>
       )}
@@ -3690,19 +3722,898 @@ export default function App() {
       {/* ==========================================
           MAIN CONTENT CONTAINER
       ========================================== */}
-      {/* DATA: a place for deeper looks at the history, still to come. HOME
-          stays mounted underneath (hidden) so its stopwatch and forms keep
-          their state. */}
-      {mainView === 'data' && (
-        <section className="max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8" aria-label={t.navData}>
-          <div className={`min-h-[50vh] border border-dashed ${borderCol} flex flex-col items-center justify-center gap-3 p-8 text-center font-mono`}>
-            <BarChart3 className={`w-6 h-6 ${textMuted}`} />
-            <div className="text-xs font-bold uppercase tracking-[0.2em]">{t.navData}</div>
-            <p className={`text-[11px] max-w-sm ${textMuted}`}>{t.dataComingSoon}</p>
+      {/* MY ROOM: the room, arranged with what the BITS shop sold. */}
+      {mainView === 'room' && user && (
+        <section className={`page-enter ${PAGE_WRAP}`} aria-label={t.navRoom}>
+          <div className={`@container border ${borderCol} ${bgCard} p-3.5 sm:p-6 space-y-4`}>
+            <div className={`flex flex-wrap items-baseline justify-between gap-2 border-b ${borderCol} pb-3.5 font-mono`}>
+              <h3 className="m-0 flex items-center gap-2.5 text-xs uppercase tracking-widest font-semibold">
+                <Armchair className="w-4 h-4 text-emerald-400" />
+                {t.navRoom}
+              </h3>
+              <span className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.roomPageHint}</span>
+            </div>
+            <MyRoomPanel
+              isRunning={isRunning}
+              timeZone={timeZone}
+              borderCol={borderCol}
+              textMuted={textMuted}
+              onOpenShop={() => openBitsShop('furniture')}
+              userId={user.id}
+              weather={roomWeather}
+            />
           </div>
         </section>
       )}
-      <main className={`${mainView === 'data' ? 'hidden' : ''} max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8`}>
+
+      {/* DATA: the challenger record (more views can join it). HOME stays
+          mounted underneath (hidden) so its stopwatch and forms keep their
+          state. */}
+      {mainView === 'data' && (
+        <section className={`page-enter ${PAGE_WRAP}`} aria-label={t.navData}>
+          <DataPage signedIn={Boolean(user)} onSignIn={() => openAuthModal('login')} borderCol={borderCol} bgCard={bgCard} textMuted={textMuted} />
+        </section>
+      )}
+      {/* BITS // EXCHANGE as a page: the shop, CHALLENGES, FURNITURE,
+          COLLECTION and TRADE, opened from the rail, the header balance and
+          everything else that points at the shop. */}
+      {showBitsShop && user && (
+        <section className={`page-enter ${PAGE_WRAP}`} aria-label={t.bitsShopTitle}>
+        <BitsShopModal
+          openSeq={bitsOpenSeq}
+          balance={bitsBalance}
+          onPurchased={(state) => {
+            setUser((prev) => (prev ? { ...prev, bits: state.bits } : prev));
+            if (user) applyShopState(user.id, state);
+          }}
+          initialTab={bitsShopTab}
+          initialBoostsView={bitsBoostsView}
+          onOpenRoom={openRoom}
+          isDark={isDark}
+          borderCol={borderCol}
+          bgCard={bgCard}
+          textMuted={textMuted}
+          categories={lockableCategories}
+        />
+        </section>
+      )}
+
+      {/* ==========================================
+          SETTINGS PAGE: ACCOUNT & ENVIRONMENT SETTINGS
+      ========================================== */}
+      {showSettingsModal && user && (
+        <section className={`page-enter ${PAGE_WRAP}`} aria-label={t.settingsTitle}>
+          <div
+            className={`@container w-full border ${borderCol} ${bgCard} p-3.5 sm:p-6`}
+          >
+            {/* Modal Header */}
+            <div className={`flex items-center justify-between border-b ${borderCol} pb-3.5 shrink-0`}>
+              <div className="flex items-center space-x-2.5">
+                <Settings className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
+                  {t.settingsTitle}
+                </h3>
+              </div>
+            </div>
+
+            {/* Settings Navigation Tabs */}
+            <div className={`grid grid-cols-3 sm:flex border-l border-t ${borderCol} text-[10px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
+              {(
+                [
+                  ['profile', t.tabProfile],
+                  ['themes', t.tabAppearance],
+                  ['clearance', t.tabClearance],
+                  ['account', t.tabAccount],
+                ] as Array<[SettingsTab, string]>
+              ).filter(([tab]) => !(isDemo() && tab === 'account')).map(([tab, label]) => {
+                const active = tab === 'themes' ? APPEARANCE_TABS.includes(settingsTab) : settingsTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => !active && setSettingsTab(tab)}
+                    className={`min-w-0 sm:grow sm:basis-0 px-1 sm:px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
+                      active
+                        ? isDark
+                          ? 'bg-zinc-100 text-zinc-950 font-bold'
+                          : 'bg-zinc-900 text-white font-bold'
+                        : textMuted
+                    }`}
+                  >
+                    <span className="hidden sm:inline">{label}</span>
+                    <span className="sm:hidden">{label.split(' / ').pop()}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* The tab's content, as tall as it needs: the page scrolls. */}
+            <div className="mt-2.5 sm:mt-5">
+              {/* TAB 2: APPEARANCE // SURFACE · TYPE · AMBIENT · CURSOR */}
+              {APPEARANCE_TABS.includes(settingsTab) && (
+                <div className="flex flex-col gap-3 sm:gap-4">
+                  <div
+                    className={`relative grid grid-cols-2 sm:grid-cols-4 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
+                    role="tablist"
+                    aria-label={t.tabAppearance}
+                  >
+                    <SegmentIndicator activeKey={settingsTab} colorClass="bg-emerald-500/10" />
+                    {(
+                      [
+                        ['themes', t.appearanceSurface, SURFACE_THEME_PAIRS.length],
+                        ['fonts', t.appearanceType, UI_FONTS.length],
+                        ['ambient', t.appearanceAmbient, AMBIENT_THEMES.length],
+                        ['cursor', t.appearanceCursor, CURSOR_THEMES.length],
+                      ] as Array<[SettingsTab, string, number]>
+                    ).map(([tab, label, count], idx) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={settingsTab === tab}
+                        data-seg-active={settingsTab === tab}
+                        onClick={() => setSettingsTab(tab)}
+                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 border-r border-b ${borderCol} seg-btn cursor-pointer ${
+                          settingsTab === tab
+                            ? 'text-emerald-400 font-bold'
+                            : `${textMuted} hover:text-emerald-400`
+                        }`}
+                      >
+                        <span className="truncate">
+                          <span className="hidden sm:inline opacity-60">02.{idx + 1} </span>
+                          {label}
+                        </span>
+                        <span className="tabular-nums opacity-70">{count}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div>
+                    {settingsTab === 'themes' && (
+                      <SurfaceThemeSelectorPanel
+                        activeThemeId={surfaceThemeId}
+                        onSelectThemeId={handleSelectSurfaceTheme}
+                        isDark={isDark}
+                        onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+                        userClearanceLevel={clearanceStatus.rewardUnlockLevel}
+                        userTotalAscensions={clearanceStatus.totalAscensions}
+                        userTotalHours={clearanceStatus.totalHours}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+
+                    {settingsTab === 'fonts' && (
+                      <UiFontPicker
+                        activeFontId={activeUiFont.id}
+                        onSelect={handleSelectUiFont}
+                        progress={chronoProgress}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+
+                    {settingsTab === 'ambient' && (
+                      <AmbientSettingsPanel
+                        activeThemeId={activeAmbientTheme.id}
+                        onSelect={handleSelectAmbientTheme}
+                        onPreview={setAmbientPreviewId}
+                        progress={chronoProgress}
+                        dim={ambientDim}
+                        onChangeDim={setAmbientDim}
+                        keepAwakeMode={keepAwakeMode}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+
+                    {settingsTab === 'cursor' && (
+                      <CursorPicker
+                        activeCursorId={activeCursorTheme.id}
+                        onSelect={handleSelectCursorTheme}
+                        size={cursorSize}
+                        onSelectSize={setCursorSize}
+                        progress={chronoProgress}
+                        borderCol={borderCol}
+                        textMuted={textMuted}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-1,000H PER CYCLE) */}
+              {settingsTab === 'clearance' && (
+                <ClearanceBrowserPanel
+                  clearance={clearanceStatus}
+                  isDark={isDark}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                  onClaimAscension={claimAscension}
+                />
+              )}
+
+              {/* TAB 1: PROFILE & AVATAR */}
+              {settingsTab === 'profile' && (
+                <div className="space-y-5 font-mono text-xs">
+                {/* Region: UI Language & Time Zone (account-synced, applied instantly) */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3.5`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
+                      <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{t.regionTitle}</span>
+                    </div>
+                    <span className={`text-[10px] ${textMuted}`}>{t.regionAutoSave}</span>
+                  </div>
+
+                  {regionStatus && (
+                    <div
+                      className={`p-2 border text-[11px] flex items-center space-x-2 ${
+                        regionStatus.type === 'success'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                          : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                      }`}
+                    >
+                      {regionStatus.type === 'success' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                      )}
+                      <span>{regionStatus.text}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="settings-timezone" className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
+                        {t.timezoneLabel}
+                      </label>
+                      <select
+                        id="settings-timezone"
+                        value={timeZone}
+                        onChange={(e) => handleUpdateRegion({ timezone: e.target.value })}
+                        className={`w-full min-h-[38px] px-2.5 py-2 text-base sm:text-xs border outline-none ${inputBg}`}
+                      >
+                        {timeZoneOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px]">
+                        <span className="text-emerald-400 tabular-nums">
+                          {tf(t.timezoneNow, { time: formatDateTime(currentTime) })}
+                        </span>
+                        {timeZone !== deviceTimeZone && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateRegion({ timezone: deviceTimeZone })}
+                            className={`${textMuted} hover:text-emerald-400 underline underline-offset-2 cursor-pointer`}
+                          >
+                            {tf(t.useDeviceTz, { tz: deviceTimeZone })}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>{t.weekStartLabel}</span>
+                      <div className={`relative grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.weekStartLabel}>
+                        <SegmentIndicator activeKey={weekStart} colorClass="bg-emerald-500" />
+                        {(['mon', 'sun'] as const).map((opt, idx) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            role="radio"
+                            aria-checked={weekStart === opt}
+                            data-seg-active={weekStart === opt}
+                            onClick={() => weekStart !== opt && handleUpdateRegion({ week_start: opt })}
+                            className={`min-h-[38px] px-3 py-2 seg-btn cursor-pointer ${
+                              idx > 0 ? `border-l ${borderCol}` : ''
+                            } ${
+                              weekStart === opt
+                                ? 'text-zinc-950 font-bold'
+                                : `${textMuted} hover:text-emerald-400`
+                            }`}
+                          >
+                            {opt === 'mon' ? t.weekStartMon : t.weekStartSun}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className={`self-end text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.weekStartHint}</p>
+                  </div>
+
+                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.timezoneHint}</p>
+                </div>
+
+                <form onSubmit={handleSaveProfile} className="space-y-5">
+                {profileStatus && (
+                  <div
+                    className={`p-3 border flex items-center space-x-2 ${
+                      profileStatus.type === 'success'
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                    }`}
+                  >
+                    {profileStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{profileStatus.text}</span>
+                  </div>
+                )}
+
+                {/* Avatar Preview & Upload Box */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-4`}>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3.5">
+                      <AvatarBadge
+                        username={profileUsername || user.username}
+                        color={profileAvatarColor}
+                        preset={profileAvatarPreset}
+                        image={profileAvatarImage}
+                        size="lg"
+                      />
+                      <div className="space-y-1">
+                        <div className="text-[11px] font-bold uppercase tracking-wider">
+                          {t.avatarTitle}
+                        </div>
+                        <p className={`text-[10px] ${textMuted} font-sans`}>
+                          {t.avatarBody}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <input
+                        ref={avatarFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFileChange}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarFileInputRef.current?.click()}
+                        className={`px-3 py-1.5 border ${borderCol} hover:border-emerald-500/60 flex items-center space-x-1.5 cursor-pointer`}
+                      >
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{t.uploadImage}</span>
+                      </button>
+                      {profileAvatarImage && (
+                        <button
+                          type="button"
+                          onClick={() => setProfileAvatarImage('')}
+                          className={`px-2.5 py-1.5 border ${borderCol} text-rose-400 hover:bg-rose-500/10 cursor-pointer`}
+                        >
+                          {t.usePreset}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Preset Icon Selector */}
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
+                      {t.presetIcon} {profileAvatarImage ? t.presetIconHint : ''}
+                    </label>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                      {AVATAR_PRESET_OPTIONS.map((opt) => {
+                        const isSelected = !profileAvatarImage && profileAvatarPreset === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              setProfileAvatarImage('');
+                              setProfileAvatarPreset(opt.id);
+                            }}
+                            className={`px-2 py-1.5 border text-[10px] flex items-center justify-center space-x-1 transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                                : `${borderCol} ${textMuted} hover:opacity-100`
+                            }`}
+                          >
+                            <span>{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 36 Accent Color Swatches for Avatar */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={`block text-[10px] uppercase ${textMuted}`}>
+                        {t.avatarColor}
+                      </label>
+                      <span className="text-[10px] text-zinc-400">{profileAvatarColor}</span>
+                    </div>
+                    <ColorSwatchGrid
+                      palette={ACCENT_PALETTE}
+                      value={profileAvatarColor}
+                      onChange={setProfileAvatarColor}
+                      isDark={isDark}
+                      label={t.avatarColor}
+                      className="max-w-md"
+                    />
+                  </div>
+                </div>
+
+                {/* Username & Email Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                      {t.accountUsername}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      minLength={2}
+                      maxLength={30}
+                      value={profileUsername}
+                      onChange={(e) => setProfileUsername(e.target.value)}
+                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                      {t.emailForRecovery}
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={profileEmail}
+                      onChange={(e) => setProfileEmail(e.target.value)}
+                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                    />
+                  </div>
+                </div>
+
+                {/* User Status / Learner Profile (multi-select, max MAX_USER_STATUSES) */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
+                      <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{t.statusTitle}</span>
+                    </div>
+                    <span className={`text-[10px] tabular-nums ${profileStatuses.length > 0 ? 'text-emerald-400' : textMuted}`}>
+                      {tf(t.statusCount, { n: profileStatuses.length, max: MAX_USER_STATUSES })}
+                    </span>
+                  </div>
+
+                  {/* Current selection, ranked: order is priority (#1 = headline) */}
+                  <div className="space-y-1.5 min-h-[26px]">
+                    {profileStatuses.length === 0 ? (
+                      <span className={`text-[10px] ${textMuted}`}>{t.statusNone}</span>
+                    ) : (
+                      <>
+                        <StatusRankList
+                          statuses={profileStatuses}
+                          onReorder={setProfileStatuses}
+                          onRemove={toggleProfileStatus}
+                          groupLabelOf={(id) => {
+                            const opt = getUserStatusOption(id);
+                            return opt ? t[STATUS_GROUP_LABEL_KEY[opt.group]] : undefined;
+                          }}
+                          borderCol={borderCol}
+                          textMuted={textMuted}
+                          bgCard={bgCard}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileStatuses([]);
+                            setStatusLimitHit(false);
+                          }}
+                          className={`block ml-auto px-1.5 py-0.5 text-[10px] ${textMuted} hover:text-rose-400 underline underline-offset-2 cursor-pointer`}
+                        >
+                          {t.statusClear}
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {statusLimitHit && (
+                    <div className="p-2 border border-amber-500/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center space-x-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{tf(t.statusMaxReached, { max: MAX_USER_STATUSES })}</span>
+                    </div>
+                  )}
+
+                  {/* The catalog is short, so every group is always shown in full. */}
+                  <div className={`border ${borderCol} divide-y divide-[var(--tb-border)]`}>
+                    {USER_STATUS_GROUPS.map((group) => {
+                      const options = USER_STATUS_OPTIONS.filter((o) => o.group === group);
+                      const picked = profileStatuses.filter((id) => getUserStatusOption(id)?.group === group).length;
+                      return (
+                        <div key={group} className="px-2.5 py-2 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] uppercase">
+                            <span className="font-semibold tracking-wider">{t[STATUS_GROUP_LABEL_KEY[group]]}</span>
+                            {picked > 0 && (
+                              <span className="text-emerald-400 normal-case">{tf(t.statusGroupPicked, { n: picked })}</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {options.map((opt) => {
+                              const selected = profileStatuses.includes(opt.id);
+                              const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() => toggleProfileStatus(opt.id)}
+                                  className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
+                                    selected
+                                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
+                                      : atLimit
+                                      ? `${borderCol} ${textMuted} opacity-45`
+                                      : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
+                                  }`}
+                                >
+                                  {selected ? '✓ ' : ''}
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.statusHint, { max: MAX_USER_STATUSES })}
+                  </p>
+                </div>
+
+                {profileSaveError && (
+                  <div className="p-3 border flex items-center space-x-2 border-rose-500/40 bg-rose-500/10 text-rose-300" role="alert">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{profileSaveError}</span>
+                  </div>
+                )}
+                <SaveButton
+                  state={profileSave.state}
+                  isDark={isDark}
+                  idleLabel={t.saveProfile}
+                  savingLabel={t.savingProfile}
+                  savedLabel={t.profileSaved}
+                  icon={<Save className="w-4 h-4" />}
+                />
+              </form>
+                </div>
+            )}
+
+            {/* TAB 4: ACCOUNT, part 1 of 2: PASSWORD & SECURITY */}
+            {settingsTab === 'account' && (
+              <div className="space-y-5 font-mono text-xs">
+                {user && (
+                  <div className={`flex items-center justify-between gap-3 p-3 border ${borderCol}`}>
+                    <div className="min-w-0">
+                      <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>{t.accountSession}</div>
+                      <div className="font-bold truncate">{tf(t.accountSignedInAs, { name: user.username })}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className={`shrink-0 px-3 py-1.5 border ${borderCol} flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider hover:border-rose-500/60 hover:text-rose-400 transition-colors cursor-pointer`}
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      {t.signOut}
+                    </button>
+                  </div>
+                )}
+                <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountSecurity}</h4>
+                {passwordStatus && (
+                  <div
+                    className={`p-3 border flex items-center space-x-2 ${
+                      passwordStatus.type === 'success'
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                    }`}
+                  >
+                    {passwordStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{passwordStatus.text}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePassword} className="space-y-3.5">
+                  <div>
+                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                      {t.currentPassword}
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      autoComplete="current-password"
+                      placeholder="••••••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                        {t.newPasswordMin}
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="••••••••••••"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
+                        {t.confirmNewPassword}
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="••••••••••••"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
+                      />
+                    </div>
+                  </div>
+
+                  <SaveButton
+                    state={passwordSave.state}
+                    isDark={isDark}
+                    idleLabel={t.updatePassword}
+                    savingLabel={t.updatingPassword}
+                    savedLabel={t.passwordUpdated}
+                    icon={<KeyRound className="w-4 h-4" />}
+                    disabled={passwordSaving}
+                  />
+                </form>
+
+                {/* Email Recovery Dispatch */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-2.5`}>
+                  <div className="flex items-center space-x-2 text-[11px] font-semibold">
+                    <Mail className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t.emailRecoveryTitle}</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.emailRecoveryBody, { email: user.email })}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={passwordSaving || passwordSave.state === 'saving'}
+                    onClick={handleSendResetEmailFromSettings}
+                    className={`px-3.5 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-semibold cursor-pointer`}
+                  >
+                    {t.sendResetEmail}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: ACCOUNT, part 2 of 2: DATA ARCHIVE & DANGER ZONE */}
+            {settingsTab === 'account' && (
+              <div className={`space-y-5 font-mono text-xs mt-8 pt-6 border-t ${borderCol}`}>
+                <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountData}</h4>
+                {dataStatus && (
+                  <div
+                    className={`p-3 border flex items-center space-x-2 ${
+                      dataStatus.type === 'success'
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+                    }`}
+                  >
+                    {dataStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{dataStatus.text}</span>
+                  </div>
+                )}
+
+                {/* Backup & Restore */}
+                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
+                  <div className="flex items-center space-x-2 font-semibold text-[11px]">
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t.backupTitle}</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    {t.backupBody}
+                  </p>
+                  <input
+                    ref={backupFileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={handleImportBackupFile}
+                    className="hidden"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={importingBackup}
+                      onClick={() => backupFileInputRef.current?.click()}
+                      className="px-3.5 py-2 bg-emerald-500 text-zinc-950 font-semibold flex items-center space-x-1.5 hover:bg-emerald-400 cursor-pointer disabled:opacity-50"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{importingBackup ? t.importing : t.importJson}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportJSON}
+                      disabled={logs.length === 0}
+                      className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{t.exportJson}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportCSV}
+                      disabled={logs.length === 0}
+                      className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{t.exportCsv}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reset BITS & MY ROOM only (keep logs and categories) */}
+                <div className="p-4 border border-sky-500/30 bg-sky-500/5 space-y-3">
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-sky-400 uppercase tracking-wider">
+                    <BitShard className="w-3 h-3 shrink-0" />
+                    <span>{t.resetBitsTitle}</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.resetBitsBody, { n: logs.length })}{' '}
+                    <span className="font-mono font-bold text-sky-400">RESET</span> {t.resetBitsBodyTail}
+                  </p>
+                  <p className="text-[11px] font-sans leading-relaxed text-sky-400/90">
+                    {tf(t.resetBitsAfter, {
+                      bits: bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)).toLocaleString('en-US'),
+                      rate: BITS_PER_HOUR,
+                    })}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder={t.typeReset}
+                      value={resetBitsConfirmText}
+                      onChange={(e) => setResetBitsConfirmText(e.target.value)}
+                      className={`flex-1 min-w-0 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
+                    />
+                    <button
+                      type="button"
+                      disabled={resetBitsConfirmText !== 'RESET' || resettingBits || resetDone === 'bits'}
+                      aria-busy={resettingBits}
+                      onClick={handleResetBits}
+                      className={`px-3.5 py-1.5 bg-sky-500 text-zinc-950 font-bold uppercase whitespace-nowrap flex items-center gap-1.5 ${
+                        resetDone === 'bits'
+                          ? 'reset-done-sky cursor-default'
+                          : resettingBits
+                          ? 'opacity-70 cursor-wait'
+                          : 'disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed'
+                      }`}
+                    >
+                      {resettingBits ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {t.resettingBits}
+                        </>
+                      ) : resetDone === 'bits' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 typbox-toast-pop" />
+                          {t.resetDone}
+                        </>
+                      ) : (
+                        t.resetBitsButton
+                      )}
+                    </button>
+                  </div>
+                  {bitsReceipt && <ResetReceipt key={bitsReceipt.at} receipt={bitsReceipt} tone="sky" textMuted={textMuted} />}
+                </div>
+
+                {/* Reset All Study Logs & Categories (Keep Account) */}
+                <div className="p-4 border border-amber-500/30 bg-amber-500/5 space-y-3">
+                  <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                    {t.resetLogsTitle}
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.resetLogsBody, { n: logs.length })}{' '}
+                    <span className="font-mono font-bold text-amber-400">CLEAR</span> {t.resetLogsBodyTail}
+                  </p>
+                  <p className="flex gap-2 text-[11px] font-sans leading-relaxed text-amber-400/90">
+                    <BitShard className="w-3 h-3 shrink-0 mt-0.5" />
+                    <span>{tf(t.resetLogsBits, { rate: BITS_PER_HOUR })}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder={t.typeClear}
+                      value={clearLogsConfirmText}
+                      onChange={(e) => setClearLogsConfirmText(e.target.value)}
+                      className={`flex-1 min-w-0 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
+                    />
+                    <button
+                      type="button"
+                      disabled={
+                        clearLogsConfirmText !== 'CLEAR' ||
+                        clearingLogs ||
+                        resetDone === 'logs' ||
+                        (logs.length === 0 && categories.length === 0 && !(user?.bits?.spent ?? 0) && !(user?.bits?.trade ?? 0))
+                      }
+                      aria-busy={clearingLogs}
+                      onClick={handleClearAllLogs}
+                      className={`px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase whitespace-nowrap flex items-center gap-1.5 ${
+                        resetDone === 'logs'
+                          ? 'reset-done-amber cursor-default'
+                          : clearingLogs
+                          ? 'opacity-70 cursor-wait'
+                          : 'disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed'
+                      }`}
+                    >
+                      {clearingLogs ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {t.clearing}
+                        </>
+                      ) : resetDone === 'logs' ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 typbox-toast-pop" />
+                          {t.resetDone}
+                        </>
+                      ) : (
+                        t.clearLogs
+                      )}
+                    </button>
+                  </div>
+                  {clearReceipt && <ResetReceipt key={clearReceipt.at} receipt={clearReceipt} tone="amber" textMuted={textMuted} />}
+                </div>
+
+                {/* Danger Zone: Permanent Account Deletion */}
+                <div className="p-4 border border-rose-500/40 bg-rose-500/5 space-y-3">
+                  <div className="flex items-center space-x-2 text-rose-400 font-bold text-[11px] uppercase tracking-wider">
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{t.dangerZone}</span>
+                  </div>
+                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
+                    {tf(t.dangerBody, { name: user.username })}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteConfirmUsername('');
+                      setShowDeleteModal(true);
+                    }}
+                    className="px-4 py-2 border border-rose-500/60 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors font-bold uppercase cursor-pointer"
+                  >
+                    {t.proceedDelete}
+                  </button>
+                </div>
+              </div>
+            )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <main className={`${mainView !== 'home' ? 'hidden' : 'page-enter'} max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-8 space-y-5 sm:space-y-8`}>
         {/* GUEST BANNER (Rendered only when not authenticated) */}
         {user && buffState?.userId === user.id && buffState.festival?.active && buffState.festival.pass && (
           <FestivalStrip festival={buffState.festival.active} pass={buffState.festival.pass} onOpen={() => openBitsShop('challenges')} />
@@ -5698,6 +6609,14 @@ export default function App() {
                                     <BuffIcon itemId={log.bonusItem ?? ''} className="w-3 h-3" />+{(log.bonusBits ?? 0).toLocaleString('en-US')}
                                   </span>
                                 )}
+                                {(log.blessingBits ?? 0) > 0 && (
+                                  <span
+                                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border border-amber-400/50 text-amber-400 font-bold tabular-nums"
+                                    title={tf(t.logBlessingTitle, { n: log.blessingBits ?? 0 })}
+                                  >
+                                    <Sparkles className="w-3 h-3" />+{(log.blessingBits ?? 0).toLocaleString('en-US')}
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -6212,881 +7131,6 @@ export default function App() {
       )}
 
       {/* ==========================================
-          MODAL 2: ACCOUNT & SECURITY SETTINGS
-      ========================================== */}
-      {showSettingsModal && user && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 transition-colors bg-black/80 backdrop-blur-sm"
-          onClick={() => setShowSettingsModal(false)}
-        >
-          <div
-            className={`w-full max-w-2xl border ${borderCol} ${bgCard} p-3.5 sm:p-6 shadow-2xl h-[88vh] sm:h-[670px] max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className={`flex items-center justify-between border-b ${borderCol} pb-3.5 shrink-0`}>
-              <div className="flex items-center space-x-2.5">
-                <Settings className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-mono text-xs uppercase tracking-widest font-semibold">
-                  {t.settingsTitle}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(false)}
-                className="font-mono text-xs hover:underline cursor-pointer whitespace-nowrap shrink-0"
-              >
-                {t.closeBracket}
-              </button>
-            </div>
-
-            {/* Settings Navigation Tabs */}
-            <div className={`grid grid-cols-3 sm:flex border-l border-t ${borderCol} text-[10px] font-mono mt-2.5 sm:mt-3.5 shrink-0`}>
-              {(
-                [
-                  ['profile', t.tabProfile],
-                  ['themes', t.tabAppearance],
-                  ['clearance', t.tabClearance],
-                  ['room', t.tabRoom],
-                  ['account', t.tabAccount],
-                  ['news', t.tabNews],
-                ] as Array<[SettingsTab, string]>
-              ).filter(([tab]) => !(isDemo() && tab === 'account')).map(([tab, label]) => {
-                const active = tab === 'themes' ? APPEARANCE_TABS.includes(settingsTab) : settingsTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => !active && setSettingsTab(tab)}
-                    className={`min-w-0 sm:grow sm:basis-0 px-1 sm:px-1.5 py-2 text-center border-r border-b ${borderCol} whitespace-nowrap transition-colors cursor-pointer ${
-                      active
-                        ? isDark
-                          ? 'bg-zinc-100 text-zinc-950 font-bold'
-                          : 'bg-zinc-900 text-white font-bold'
-                        : textMuted
-                    }`}
-                  >
-                    <span className="hidden sm:inline">{label}</span>
-                    <span className="sm:hidden">{label.split(' / ').pop()}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Fixed-Height Scrollable Tab Body (Prevents Modal Height Jumping).
-                Size container so inner lists can size themselves to its visible
-                height (100cqh). */}
-            <div className="flex-1 min-h-0 overflow-y-auto mt-2.5 sm:mt-5 pr-1 [container-type:size]">
-              {/* TAB 2: APPEARANCE // SURFACE · TYPE · AMBIENT · CURSOR */}
-              {APPEARANCE_TABS.includes(settingsTab) && (
-                <div className="flex flex-col gap-3 sm:gap-4">
-                  <div
-                    className={`relative grid grid-cols-2 sm:grid-cols-4 border-l border-t ${borderCol} text-[10px] font-mono uppercase tracking-wider shrink-0`}
-                    role="tablist"
-                    aria-label={t.tabAppearance}
-                  >
-                    <SegmentIndicator activeKey={settingsTab} colorClass="bg-emerald-500/10" />
-                    {(
-                      [
-                        ['themes', t.appearanceSurface, SURFACE_THEME_PAIRS.length],
-                        ['fonts', t.appearanceType, UI_FONTS.length],
-                        ['ambient', t.appearanceAmbient, AMBIENT_THEMES.length],
-                        ['cursor', t.appearanceCursor, CURSOR_THEMES.length],
-                      ] as Array<[SettingsTab, string, number]>
-                    ).map(([tab, label, count], idx) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        role="tab"
-                        aria-selected={settingsTab === tab}
-                        data-seg-active={settingsTab === tab}
-                        onClick={() => setSettingsTab(tab)}
-                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 border-r border-b ${borderCol} seg-btn cursor-pointer ${
-                          settingsTab === tab
-                            ? 'text-emerald-400 font-bold'
-                            : `${textMuted} hover:text-emerald-400`
-                        }`}
-                      >
-                        <span className="truncate">
-                          <span className="hidden sm:inline opacity-60">02.{idx + 1} </span>
-                          {label}
-                        </span>
-                        <span className="tabular-nums opacity-70">{count}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div>
-                    {settingsTab === 'themes' && (
-                      <SurfaceThemeSelectorPanel
-                        activeThemeId={surfaceThemeId}
-                        onSelectThemeId={handleSelectSurfaceTheme}
-                        isDark={isDark}
-                        onTogglePolarity={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-                        userClearanceLevel={clearanceStatus.rewardUnlockLevel}
-                        userTotalAscensions={clearanceStatus.totalAscensions}
-                        userTotalHours={clearanceStatus.totalHours}
-                        borderCol={borderCol}
-                        textMuted={textMuted}
-                      />
-                    )}
-
-                    {settingsTab === 'fonts' && (
-                      <UiFontPicker
-                        activeFontId={activeUiFont.id}
-                        onSelect={handleSelectUiFont}
-                        progress={chronoProgress}
-                        borderCol={borderCol}
-                        textMuted={textMuted}
-                      />
-                    )}
-
-                    {settingsTab === 'ambient' && (
-                      <AmbientSettingsPanel
-                        activeThemeId={activeAmbientTheme.id}
-                        onSelect={handleSelectAmbientTheme}
-                        onPreview={setAmbientPreviewId}
-                        progress={chronoProgress}
-                        dim={ambientDim}
-                        onChangeDim={setAmbientDim}
-                        keepAwakeMode={keepAwakeMode}
-                        borderCol={borderCol}
-                        textMuted={textMuted}
-                      />
-                    )}
-
-                    {settingsTab === 'cursor' && (
-                      <CursorPicker
-                        activeCursorId={activeCursorTheme.id}
-                        onSelect={handleSelectCursorTheme}
-                        size={cursorSize}
-                        onSelectSize={setCursorSize}
-                        progress={chronoProgress}
-                        borderCol={borderCol}
-                        textMuted={textMuted}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 6: NEWS (what's new in TYPBOX, news.ts) */}
-              {settingsTab === 'news' && (
-                <NewsPanel
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                  bgCard={bgCard}
-                  isDark={isDark}
-                  timeZone={timeZone}
-                  weekStart={weekStart}
-                />
-              )}
-
-              {/* TAB 4: MY ROOM (furniture bought with BITS in the weekly shop) */}
-              {settingsTab === 'room' && (
-                <MyRoomPanel
-                  isRunning={isRunning}
-                  timeZone={timeZone}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                  onOpenShop={() => openBitsShop('furniture')}
-                  userId={user?.id}
-                  weather={roomWeather}
-                />
-              )}
-
-              {/* TAB 3: TELEMETRY CLEARANCE LEVEL (3,000 RANKS // 0H-1,000H PER CYCLE) */}
-              {settingsTab === 'clearance' && (
-                <ClearanceBrowserPanel
-                  clearance={clearanceStatus}
-                  isDark={isDark}
-                  borderCol={borderCol}
-                  textMuted={textMuted}
-                  onClaimAscension={claimAscension}
-                />
-              )}
-
-              {/* TAB 1: PROFILE & AVATAR */}
-              {settingsTab === 'profile' && (
-                <div className="space-y-5 font-mono text-xs">
-                {/* Region: UI Language & Time Zone (account-synced, applied instantly) */}
-                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3.5`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
-                      <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{t.regionTitle}</span>
-                    </div>
-                    <span className={`text-[10px] ${textMuted}`}>{t.regionAutoSave}</span>
-                  </div>
-
-                  {regionStatus && (
-                    <div
-                      className={`p-2 border text-[11px] flex items-center space-x-2 ${
-                        regionStatus.type === 'success'
-                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                          : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                      }`}
-                    >
-                      {regionStatus.type === 'success' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                      ) : (
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-                      )}
-                      <span>{regionStatus.text}</span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="settings-timezone" className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
-                        {t.timezoneLabel}
-                      </label>
-                      <select
-                        id="settings-timezone"
-                        value={timeZone}
-                        onChange={(e) => handleUpdateRegion({ timezone: e.target.value })}
-                        className={`w-full min-h-[38px] px-2.5 py-2 text-base sm:text-xs border outline-none ${inputBg}`}
-                      >
-                        {timeZoneOptions.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px]">
-                        <span className="text-emerald-400 tabular-nums">
-                          {tf(t.timezoneNow, { time: formatDateTime(currentTime) })}
-                        </span>
-                        {timeZone !== deviceTimeZone && (
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateRegion({ timezone: deviceTimeZone })}
-                            className={`${textMuted} hover:text-emerald-400 underline underline-offset-2 cursor-pointer`}
-                          >
-                            {tf(t.useDeviceTz, { tz: deviceTimeZone })}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>{t.weekStartLabel}</span>
-                      <div className={`relative grid grid-cols-2 border ${borderCol}`} role="radiogroup" aria-label={t.weekStartLabel}>
-                        <SegmentIndicator activeKey={weekStart} colorClass="bg-emerald-500" />
-                        {(['mon', 'sun'] as const).map((opt, idx) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            role="radio"
-                            aria-checked={weekStart === opt}
-                            data-seg-active={weekStart === opt}
-                            onClick={() => weekStart !== opt && handleUpdateRegion({ week_start: opt })}
-                            className={`min-h-[38px] px-3 py-2 seg-btn cursor-pointer ${
-                              idx > 0 ? `border-l ${borderCol}` : ''
-                            } ${
-                              weekStart === opt
-                                ? 'text-zinc-950 font-bold'
-                                : `${textMuted} hover:text-emerald-400`
-                            }`}
-                          >
-                            {opt === 'mon' ? t.weekStartMon : t.weekStartSun}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <p className={`self-end text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.weekStartHint}</p>
-                  </div>
-
-                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{t.timezoneHint}</p>
-                </div>
-
-                <form onSubmit={handleSaveProfile} className="space-y-5">
-                {profileStatus && (
-                  <div
-                    className={`p-3 border flex items-center space-x-2 ${
-                      profileStatus.type === 'success'
-                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                    }`}
-                  >
-                    {profileStatus.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                    )}
-                    <span>{profileStatus.text}</span>
-                  </div>
-                )}
-
-                {/* Avatar Preview & Upload Box */}
-                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-4`}>
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center space-x-3.5">
-                      <AvatarBadge
-                        username={profileUsername || user.username}
-                        color={profileAvatarColor}
-                        preset={profileAvatarPreset}
-                        image={profileAvatarImage}
-                        size="lg"
-                      />
-                      <div className="space-y-1">
-                        <div className="text-[11px] font-bold uppercase tracking-wider">
-                          {t.avatarTitle}
-                        </div>
-                        <p className={`text-[10px] ${textMuted} font-sans`}>
-                          {t.avatarBody}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <input
-                        ref={avatarFileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleAvatarFileChange}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => avatarFileInputRef.current?.click()}
-                        className={`px-3 py-1.5 border ${borderCol} hover:border-emerald-500/60 flex items-center space-x-1.5 cursor-pointer`}
-                      >
-                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{t.uploadImage}</span>
-                      </button>
-                      {profileAvatarImage && (
-                        <button
-                          type="button"
-                          onClick={() => setProfileAvatarImage('')}
-                          className={`px-2.5 py-1.5 border ${borderCol} text-rose-400 hover:bg-rose-500/10 cursor-pointer`}
-                        >
-                          {t.usePreset}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Preset Icon Selector */}
-                  <div>
-                    <label className={`block text-[10px] uppercase mb-1.5 ${textMuted}`}>
-                      {t.presetIcon} {profileAvatarImage ? t.presetIconHint : ''}
-                    </label>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                      {AVATAR_PRESET_OPTIONS.map((opt) => {
-                        const isSelected = !profileAvatarImage && profileAvatarPreset === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => {
-                              setProfileAvatarImage('');
-                              setProfileAvatarPreset(opt.id);
-                            }}
-                            className={`px-2 py-1.5 border text-[10px] flex items-center justify-center space-x-1 transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                                : `${borderCol} ${textMuted} hover:opacity-100`
-                            }`}
-                          >
-                            <span>{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 36 Accent Color Swatches for Avatar */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className={`block text-[10px] uppercase ${textMuted}`}>
-                        {t.avatarColor}
-                      </label>
-                      <span className="text-[10px] text-zinc-400">{profileAvatarColor}</span>
-                    </div>
-                    <ColorSwatchGrid
-                      palette={ACCENT_PALETTE}
-                      value={profileAvatarColor}
-                      onChange={setProfileAvatarColor}
-                      isDark={isDark}
-                      label={t.avatarColor}
-                      className="max-w-md"
-                    />
-                  </div>
-                </div>
-
-                {/* Username & Email Inputs */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                      {t.accountUsername}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      minLength={2}
-                      maxLength={30}
-                      value={profileUsername}
-                      onChange={(e) => setProfileUsername(e.target.value)}
-                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                      {t.emailForRecovery}
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
-                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
-                    />
-                  </div>
-                </div>
-
-                {/* User Status / Learner Profile (multi-select, max MAX_USER_STATUSES) */}
-                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2 text-[11px] font-bold uppercase tracking-wider">
-                      <Briefcase className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{t.statusTitle}</span>
-                    </div>
-                    <span className={`text-[10px] tabular-nums ${profileStatuses.length > 0 ? 'text-emerald-400' : textMuted}`}>
-                      {tf(t.statusCount, { n: profileStatuses.length, max: MAX_USER_STATUSES })}
-                    </span>
-                  </div>
-
-                  {/* Current selection, ranked: order is priority (#1 = headline) */}
-                  <div className="space-y-1.5 min-h-[26px]">
-                    {profileStatuses.length === 0 ? (
-                      <span className={`text-[10px] ${textMuted}`}>{t.statusNone}</span>
-                    ) : (
-                      <>
-                        <StatusRankList
-                          statuses={profileStatuses}
-                          onReorder={setProfileStatuses}
-                          onRemove={toggleProfileStatus}
-                          groupLabelOf={(id) => {
-                            const opt = getUserStatusOption(id);
-                            return opt ? t[STATUS_GROUP_LABEL_KEY[opt.group]] : undefined;
-                          }}
-                          borderCol={borderCol}
-                          textMuted={textMuted}
-                          bgCard={bgCard}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileStatuses([]);
-                            setStatusLimitHit(false);
-                          }}
-                          className={`block ml-auto px-1.5 py-0.5 text-[10px] ${textMuted} hover:text-rose-400 underline underline-offset-2 cursor-pointer`}
-                        >
-                          {t.statusClear}
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {statusLimitHit && (
-                    <div className="p-2 border border-amber-500/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center space-x-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>{tf(t.statusMaxReached, { max: MAX_USER_STATUSES })}</span>
-                    </div>
-                  )}
-
-                  {/* The catalog is short, so every group is always shown in full. */}
-                  <div className={`border ${borderCol} divide-y divide-[var(--tb-border)]`}>
-                    {USER_STATUS_GROUPS.map((group) => {
-                      const options = USER_STATUS_OPTIONS.filter((o) => o.group === group);
-                      const picked = profileStatuses.filter((id) => getUserStatusOption(id)?.group === group).length;
-                      return (
-                        <div key={group} className="px-2.5 py-2 space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px] uppercase">
-                            <span className="font-semibold tracking-wider">{t[STATUS_GROUP_LABEL_KEY[group]]}</span>
-                            {picked > 0 && (
-                              <span className="text-emerald-400 normal-case">{tf(t.statusGroupPicked, { n: picked })}</span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {options.map((opt) => {
-                              const selected = profileStatuses.includes(opt.id);
-                              const atLimit = !selected && profileStatuses.length >= MAX_USER_STATUSES;
-                              return (
-                                <button
-                                  key={opt.id}
-                                  type="button"
-                                  aria-pressed={selected}
-                                  onClick={() => toggleProfileStatus(opt.id)}
-                                  className={`px-2 py-1 border text-[10px] transition-colors cursor-pointer ${
-                                    selected
-                                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold'
-                                      : atLimit
-                                      ? `${borderCol} ${textMuted} opacity-45`
-                                      : `${borderCol} ${textMuted} hover:text-emerald-400 hover:border-emerald-500/50`
-                                  }`}
-                                >
-                                  {selected ? '✓ ' : ''}
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>
-                    {tf(t.statusHint, { max: MAX_USER_STATUSES })}
-                  </p>
-                </div>
-
-                {profileSaveError && (
-                  <div className="p-3 border flex items-center space-x-2 border-rose-500/40 bg-rose-500/10 text-rose-300" role="alert">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                    <span>{profileSaveError}</span>
-                  </div>
-                )}
-                <SaveButton
-                  state={profileSave.state}
-                  isDark={isDark}
-                  idleLabel={t.saveProfile}
-                  savingLabel={t.savingProfile}
-                  savedLabel={t.profileSaved}
-                  icon={<Save className="w-4 h-4" />}
-                />
-              </form>
-                </div>
-            )}
-
-            {/* TAB 5: ACCOUNT, part 1 of 2: PASSWORD & SECURITY */}
-            {settingsTab === 'account' && (
-              <div className="space-y-5 font-mono text-xs">
-                {user && (
-                  <div className={`flex items-center justify-between gap-3 p-3 border ${borderCol}`}>
-                    <div className="min-w-0">
-                      <div className={`text-[10px] uppercase tracking-widest ${textMuted}`}>{t.accountSession}</div>
-                      <div className="font-bold truncate">{tf(t.accountSignedInAs, { name: user.username })}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleSignOut}
-                      className={`shrink-0 px-3 py-1.5 border ${borderCol} flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider hover:border-rose-500/60 hover:text-rose-400 transition-colors cursor-pointer`}
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      {t.signOut}
-                    </button>
-                  </div>
-                )}
-                <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountSecurity}</h4>
-                {passwordStatus && (
-                  <div
-                    className={`p-3 border flex items-center space-x-2 ${
-                      passwordStatus.type === 'success'
-                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                    }`}
-                  >
-                    {passwordStatus.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                    )}
-                    <span>{passwordStatus.text}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleChangePassword} className="space-y-3.5">
-                  <div>
-                    <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                      {t.currentPassword}
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      autoComplete="current-password"
-                      placeholder="••••••••••••"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                        {t.newPasswordMin}
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        minLength={8}
-                        autoComplete="new-password"
-                        placeholder="••••••••••••"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block text-[10px] uppercase mb-1 ${textMuted}`}>
-                        {t.confirmNewPassword}
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        minLength={8}
-                        autoComplete="new-password"
-                        placeholder="••••••••••••"
-                        value={confirmNewPassword}
-                        onChange={(e) => setConfirmNewPassword(e.target.value)}
-                        className={`w-full px-3 py-2 text-xs border outline-none ${inputBg}`}
-                      />
-                    </div>
-                  </div>
-
-                  <SaveButton
-                    state={passwordSave.state}
-                    isDark={isDark}
-                    idleLabel={t.updatePassword}
-                    savingLabel={t.updatingPassword}
-                    savedLabel={t.passwordUpdated}
-                    icon={<KeyRound className="w-4 h-4" />}
-                    disabled={passwordSaving}
-                  />
-                </form>
-
-                {/* Email Recovery Dispatch */}
-                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-2.5`}>
-                  <div className="flex items-center space-x-2 text-[11px] font-semibold">
-                    <Mail className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{t.emailRecoveryTitle}</span>
-                  </div>
-                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    {tf(t.emailRecoveryBody, { email: user.email })}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={passwordSaving || passwordSave.state === 'saving'}
-                    onClick={handleSendResetEmailFromSettings}
-                    className={`px-3.5 py-2 border ${borderCol} hover:border-emerald-500/60 text-xs font-semibold cursor-pointer`}
-                  >
-                    {t.sendResetEmail}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 5: ACCOUNT, part 2 of 2: DATA ARCHIVE & DANGER ZONE */}
-            {settingsTab === 'account' && (
-              <div className={`space-y-5 font-mono text-xs mt-8 pt-6 border-t ${borderCol}`}>
-                <h4 className="m-0 text-[11px] font-bold uppercase tracking-widest text-emerald-400">{t.accountData}</h4>
-                {dataStatus && (
-                  <div
-                    className={`p-3 border flex items-center space-x-2 ${
-                      dataStatus.type === 'success'
-                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                        : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                    }`}
-                  >
-                    {dataStatus.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                    )}
-                    <span>{dataStatus.text}</span>
-                  </div>
-                )}
-
-                {/* Backup & Restore */}
-                <div className={`p-4 border ${borderCol} ${isDark ? 'bg-zinc-900/30' : 'bg-zinc-50'} space-y-3`}>
-                  <div className="flex items-center space-x-2 font-semibold text-[11px]">
-                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{t.backupTitle}</span>
-                  </div>
-                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    {t.backupBody}
-                  </p>
-                  <input
-                    ref={backupFileInputRef}
-                    type="file"
-                    accept=".json,application/json"
-                    onChange={handleImportBackupFile}
-                    className="hidden"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={importingBackup}
-                      onClick={() => backupFileInputRef.current?.click()}
-                      className="px-3.5 py-2 bg-emerald-500 text-zinc-950 font-semibold flex items-center space-x-1.5 hover:bg-emerald-400 cursor-pointer disabled:opacity-50"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>{importingBackup ? t.importing : t.importJson}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleExportJSON}
-                      disabled={logs.length === 0}
-                      className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>{t.exportJson}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleExportCSV}
-                      disabled={logs.length === 0}
-                      className={`px-3 py-2 border ${borderCol} flex items-center space-x-1.5 cursor-pointer disabled:opacity-40`}
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>{t.exportCsv}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Reset BITS & MY ROOM only (keep logs and categories) */}
-                <div className="p-4 border border-sky-500/30 bg-sky-500/5 space-y-3">
-                  <div className="flex items-center gap-2 text-[11px] font-bold text-sky-400 uppercase tracking-wider">
-                    <BitShard className="w-3 h-3 shrink-0" />
-                    <span>{t.resetBitsTitle}</span>
-                  </div>
-                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    {tf(t.resetBitsBody, { n: logs.length })}{' '}
-                    <span className="font-mono font-bold text-sky-400">RESET</span> {t.resetBitsBodyTail}
-                  </p>
-                  <p className="text-[11px] font-sans leading-relaxed text-sky-400/90">
-                    {tf(t.resetBitsAfter, {
-                      bits: bitsForMinutes(logs.reduce((sum, l) => sum + l.durationMinutes, 0)).toLocaleString('en-US'),
-                      rate: BITS_PER_HOUR,
-                    })}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder={t.typeReset}
-                      value={resetBitsConfirmText}
-                      onChange={(e) => setResetBitsConfirmText(e.target.value)}
-                      className={`flex-1 min-w-0 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
-                    />
-                    <button
-                      type="button"
-                      disabled={resetBitsConfirmText !== 'RESET' || resettingBits || resetDone === 'bits'}
-                      aria-busy={resettingBits}
-                      onClick={handleResetBits}
-                      className={`px-3.5 py-1.5 bg-sky-500 text-zinc-950 font-bold uppercase whitespace-nowrap flex items-center gap-1.5 ${
-                        resetDone === 'bits'
-                          ? 'reset-done-sky cursor-default'
-                          : resettingBits
-                          ? 'opacity-70 cursor-wait'
-                          : 'disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed'
-                      }`}
-                    >
-                      {resettingBits ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {t.resettingBits}
-                        </>
-                      ) : resetDone === 'bits' ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 typbox-toast-pop" />
-                          {t.resetDone}
-                        </>
-                      ) : (
-                        t.resetBitsButton
-                      )}
-                    </button>
-                  </div>
-                  {bitsReceipt && <ResetReceipt key={bitsReceipt.at} receipt={bitsReceipt} tone="sky" textMuted={textMuted} />}
-                </div>
-
-                {/* Reset All Study Logs & Categories (Keep Account) */}
-                <div className="p-4 border border-amber-500/30 bg-amber-500/5 space-y-3">
-                  <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
-                    {t.resetLogsTitle}
-                  </div>
-                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    {tf(t.resetLogsBody, { n: logs.length })}{' '}
-                    <span className="font-mono font-bold text-amber-400">CLEAR</span> {t.resetLogsBodyTail}
-                  </p>
-                  <p className="flex gap-2 text-[11px] font-sans leading-relaxed text-amber-400/90">
-                    <BitShard className="w-3 h-3 shrink-0 mt-0.5" />
-                    <span>{tf(t.resetLogsBits, { rate: BITS_PER_HOUR })}</span>
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder={t.typeClear}
-                      value={clearLogsConfirmText}
-                      onChange={(e) => setClearLogsConfirmText(e.target.value)}
-                      className={`flex-1 min-w-0 px-3 py-1.5 text-xs border ${borderCol} outline-none ${inputBg}`}
-                    />
-                    <button
-                      type="button"
-                      disabled={
-                        clearLogsConfirmText !== 'CLEAR' ||
-                        clearingLogs ||
-                        resetDone === 'logs' ||
-                        (logs.length === 0 && categories.length === 0 && !(user?.bits?.spent ?? 0) && !(user?.bits?.trade ?? 0))
-                      }
-                      aria-busy={clearingLogs}
-                      onClick={handleClearAllLogs}
-                      className={`px-3.5 py-1.5 bg-amber-500 text-zinc-950 font-bold uppercase whitespace-nowrap flex items-center gap-1.5 ${
-                        resetDone === 'logs'
-                          ? 'reset-done-amber cursor-default'
-                          : clearingLogs
-                          ? 'opacity-70 cursor-wait'
-                          : 'disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed'
-                      }`}
-                    >
-                      {clearingLogs ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {t.clearing}
-                        </>
-                      ) : resetDone === 'logs' ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 typbox-toast-pop" />
-                          {t.resetDone}
-                        </>
-                      ) : (
-                        t.clearLogs
-                      )}
-                    </button>
-                  </div>
-                  {clearReceipt && <ResetReceipt key={clearReceipt.at} receipt={clearReceipt} tone="amber" textMuted={textMuted} />}
-                </div>
-
-                {/* Danger Zone: Permanent Account Deletion */}
-                <div className="p-4 border border-rose-500/40 bg-rose-500/5 space-y-3">
-                  <div className="flex items-center space-x-2 text-rose-400 font-bold text-[11px] uppercase tracking-wider">
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>{t.dangerZone}</span>
-                  </div>
-                  <p className={`text-[11px] font-sans leading-relaxed ${textMuted}`}>
-                    {tf(t.dangerBody, { name: user.username })}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleteConfirmUsername('');
-                      setShowDeleteModal(true);
-                    }}
-                    className="px-4 py-2 border border-rose-500/60 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors font-bold uppercase cursor-pointer"
-                  >
-                    {t.proceedDelete}
-                  </button>
-                </div>
-              </div>
-            )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==========================================
           MODAL 3: ACCOUNT DELETION CONFIRMATION
       ========================================== */}
       {showDeleteModal && user && (
@@ -7158,28 +7202,6 @@ export default function App() {
         </div>
       )}
 
-      {/* BITS // EXCHANGE (buff shop), opened from the header balance */}
-      {user && (
-        <BitsShopModal
-          isOpen={showBitsShop}
-          onClose={closeBitsShop}
-          balance={bitsBalance}
-          onPurchased={(state) => {
-            setUser((prev) => (prev ? { ...prev, bits: state.bits } : prev));
-            if (user) applyShopState(user.id, state);
-          }}
-          initialTab={bitsShopTab}
-          onOpenRoom={() => {
-            setShowBitsShop(false);
-            openSettingsModal('room');
-          }}
-          isDark={isDark}
-          borderCol={borderCol}
-          bgCard={bgCard}
-          textMuted={textMuted}
-          categories={lockableCategories}
-        />
-      )}
 
       {/* ==========================================
           MODAL 4: TELEMETRY STATUS CARD GENERATOR
@@ -7293,25 +7315,24 @@ export default function App() {
         terminal={terminalContext}
       />
 
+      <NavProgress />
       <ToastStack toasts={toasts} isDark={isDark} onDismiss={dismissToast} />
 
       {/* Side navigation: a rail from lg up, a drawer below. Last in the page
           so the panels it opens draw over the header. */}
       <SideNav
-        open={showNavDrawer}
-        onClose={() => setShowNavDrawer(false)}
+        onSignIn={() => openAuthModal('login')}
+        onSignOut={user ? handleSignOut : undefined}
         view={mainView}
-        bitsOpen={showBitsShop}
-        settingsOpen={showSettingsModal}
         onHome={goHome}
         onBits={() => (user ? openBitsShop('buffs') : openAuthModal('login'))}
         onData={goData}
-        onSettings={() => openSettingsModal('profile')}
+        onRoom={() => (user ? openRoom() : openAuthModal('login'))}
+        onSettings={() => (user ? openSettingsModal('profile') : openAuthModal('login'))}
         onCommand={() => setShowCommandPalette(true)}
         onCard={() => setShowStatusCardModal(true)}
         onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
         isDark={isDark}
-        isRunning={isRunning}
         sound={
           <AmbientSoundControl
             variant="nav"

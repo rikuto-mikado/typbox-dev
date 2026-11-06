@@ -11,10 +11,13 @@ import { thumbnail, TIER_LABEL, type FurnitureSpec } from './roomRender';
 import { ChallengesTab } from './ChallengePanel';
 import { PackSplash, StarterPacks } from './StarterPacks';
 import { isDemo } from './demo';
-import { CollectionTab } from './CollectionTab';
 import { CategoryChips } from './CategoryChips';
 import { SegmentIndicator } from './SegmentIndicator';
 import { TradeTab } from './TradeTab';
+import { BlessingsPanel } from './Blessings';
+import { AstraCharm, AstraIcon } from './AstraCharm';
+import { CHARM_ART } from './blessingArt';
+import { Pixel } from './ChallengePanel';
 
 // BITS // EXCHANGE, opened from the header balance (or MY ROOM): buffs and
 // the furniture lineup. Catalogs, prices, the running buff and the
@@ -28,16 +31,20 @@ const SPLASH_MS = 1700;
 const CRATE_SHAKE_MS = 1000;
 const BAR_CELLS = 20;
 
-export type ShopTab = 'buffs' | 'furniture' | 'collection' | 'challenges' | 'trade';
+export type ShopTab = 'buffs' | 'furniture' | 'challenges' | 'trade';
+/** The BUFFS tab's three views. */
+type BuffsView = 'shop' | 'blessings' | 'starlight';
 
 interface BitsShopModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  /** Bumped on every opening: the page switches to `initialTab` each time. */
+  openSeq: number;
   /** Live balance (follows the logs instantly, like the header badge). */
   balance: number;
   /** Server state after a purchase, so the caller can sync `spent`. */
   onPurchased: (state: BitsShopState) => void;
   initialTab: ShopTab;
+  /** The BOOSTS view to open on (the header loadout's sockets). */
+  initialBoostsView?: BuffsView;
   onOpenRoom: () => void;
   isDark: boolean;
   borderCol: string;
@@ -50,6 +57,35 @@ interface BitsShopModalProps {
 type Splash =
   | { kind: 'buff'; itemId: string; name: string; crate?: boolean }
   | { kind: 'piece'; spec: FurnitureSpec };
+
+// FALLING STAR's new pieces stay veiled in the FURNITURE tab until tapped:
+// { piece id: when its group's lineup turns over (ISO) }. A veil ends when it
+// is lifted, when that group's lineup changes on its own (daily, every 2 days,
+// weekly), or when the piece is no longer on show, so a turnover never leaves
+// a stray veil on the next lineup. Kept on this device.
+const VEIL_KEY = 'typbox_shop_veils';
+const GRANT_MS = 10_000;
+
+const readVeils = (): Record<string, string> => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(VEIL_KEY) ?? '{}');
+    if (!raw || typeof raw !== 'object') return {};
+    const now = Date.now();
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, until]) => typeof until === 'string' && Date.parse(until) > now)
+    ) as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+const writeVeils = (veils: Record<string, string>) => {
+  try {
+    localStorage.setItem(VEIL_KEY, JSON.stringify(veils));
+  } catch {
+    // Storage can be off: the veils still work for this visit.
+  }
+};
 
 const formatLeft = (ms: number): string => {
   const mins = Math.max(0, Math.round(ms / 60000));
@@ -327,11 +363,11 @@ const buffStats = (buff: BitsBuff, t: ReturnType<typeof useI18n>['t']): Array<[s
 };
 
 export const BitsShopModal: React.FC<BitsShopModalProps> = ({
-  isOpen,
-  onClose,
+  openSeq,
   balance,
   onPurchased,
   initialTab,
+  initialBoostsView = 'shop',
   onOpenRoom,
   isDark,
   borderCol,
@@ -341,6 +377,12 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
 }) => {
   const { t } = useI18n();
   const [tab, setTab] = useState<ShopTab>(initialTab);
+  const [buffsView, setBuffsView] = useState<BuffsView>(initialBoostsView);
+  // FALLING STAR: until when the "go to FURNITURE" card shows, and the pieces
+  // the wish dealt in, veiled until tapped (see VEIL_KEY).
+  const [granted, setGranted] = useState<number | null>(null);
+  const [veils, setVeils] = useState<Record<string, string>>(readVeils);
+  const [lifting, setLifting] = useState<string | null>(null);
   const [state, setState] = useState<BitsShopState | null>(null);
   const [wishArmed, setWishArmed] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomState | null>(null);
@@ -349,12 +391,13 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const packSection = useRef<HTMLElement>(null);
   const pulseTimer = useRef<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // Each opening starts on the tab the caller asked for (derived during
-  // render rather than in an effect).
-  const [wasOpen, setWasOpen] = useState(isOpen);
-  if (wasOpen !== isOpen) {
-    setWasOpen(isOpen);
-    if (isOpen) setTab(initialTab);
+  // Each opening starts on the tab the caller asked for, also when the page
+  // is already up (derived during render rather than in an effect).
+  const [seenSeq, setSeenSeq] = useState(openSeq);
+  if (seenSeq !== openSeq) {
+    setSeenSeq(openSeq);
+    setTab(initialTab);
+    setBuffsView(initialBoostsView);
   }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [buyError, setBuyError] = useState<string | null>(null);
@@ -375,7 +418,6 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const splashTimers = useRef<number[]>([]);
 
   useEffect(() => {
-    if (!isOpen) return;
     let cancelled = false;
     api.room
       .get()
@@ -396,15 +438,10 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
       .catch((err: Error) => {
         if (!cancelled) setLoadError(err.message || t.bitsLoadFailed);
       });
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
     return () => {
       cancelled = true;
-      window.removeEventListener('keydown', onKey);
     };
-  }, [isOpen, onClose, t.bitsLoadFailed]);
+  }, [t.bitsLoadFailed]);
 
   useEffect(
     () => () => {
@@ -427,7 +464,6 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   }, [crateHasTurned]);
 
   useEffect(() => {
-    if (!isOpen) return;
     const tick = window.setInterval(() => setNow(Date.now()), 30_000);
     let turnover: number | undefined;
     if (lineupResetsAt) {
@@ -446,9 +482,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
       window.clearInterval(tick);
       if (turnover !== undefined) window.clearTimeout(turnover);
     };
-  }, [isOpen, lineupResetsAt]);
-
-  if (!isOpen) return null;
+  }, [lineupResetsAt]);
 
   const busy = Boolean(state?.active_buff);
   const furnitureById = new Map((room?.catalog ?? []).map((f) => [f.id, f]));
@@ -508,14 +542,59 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   };
   const handleWish = async (use: StarWish) => {
     setBuyError(null);
+    const before = room?.weekly;
     try {
       const next = await api.bits.starlight(use);
       setState(next);
       onPurchased(next);
-      if (use === 'reroll') setRoom(await api.room.get());
+      if (use !== 'reroll') return;
+      const fresh = await api.room.get();
+      setRoom(fresh);
+      // Veil what the wish dealt in: each new piece until its group turns over.
+      const dealt: Record<string, string> = {};
+      for (const group of fresh.weekly.groups ?? []) {
+        if (group.every_days === 0) continue;
+        const was = new Set(before?.groups?.find((g) => g.tier === group.tier && g.every_days === group.every_days)?.items ?? []);
+        for (const id of group.items) if (!was.has(id)) dealt[id] = group.resets_at;
+      }
+      const onShow = new Set(fresh.weekly.items);
+      setVeils((prev) => {
+        const kept = Object.fromEntries(Object.entries(prev).filter(([id, until]) => onShow.has(id) && Date.parse(until) > Date.now()));
+        const merged = { ...kept, ...dealt };
+        writeVeils(merged);
+        return merged;
+      });
+      setGranted(Date.now() + GRANT_MS);
     } catch (err: unknown) {
       setBuyError((err as Error).message || t.starWishFailed);
     }
+  };
+
+  // The "go to FURNITURE" card shows for GRANT_MS after the wish.
+  useEffect(() => {
+    if (granted === null) return;
+    const id = window.setTimeout(() => setGranted(null), Math.max(0, granted - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [granted]);
+
+  const goToNewLineup = () => {
+    setGranted(null);
+    setTab('furniture');
+    window.scrollTo({ top: 0 });
+  };
+
+  /** Lifts a veil: a short reveal, then the piece is shown for good. */
+  const liftVeil = (id: string) => {
+    setLifting(id);
+    window.setTimeout(() => {
+      setVeils((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        writeVeils(next);
+        return next;
+      });
+      setLifting((cur) => (cur === id ? null : cur));
+    }, 420);
   };
 
   const handleForfeitChallenge = async () => {
@@ -726,6 +805,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
     const held = reserve === id;
     // Integer zoom keeps the sprite's pixels square.
     const zoom = Math.max(1, Math.min(4, Math.floor(72 / (Math.max(spec.w, spec.h) * 8))));
+    // Dealt in by a FALLING STAR and not looked at yet.
+    const veiled = Boolean(veils[id]) && Date.parse(veils[id]) > now && Boolean(room.weekly.items.includes(id));
     return (
       <div
         key={id}
@@ -733,6 +814,18 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           held ? 'border-sky-500/70' : featured ? 'border-amber-500/70 shop-featured' : borderCol
         }`}
       >
+        {veiled && (
+          <button
+            type="button"
+            onClick={() => liftVeil(id)}
+            className={`shop-veil absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 cursor-pointer ${lifting === id ? 'shop-veil-lift' : ''}`}
+            aria-label={t.veilReveal}
+          >
+            <span className="shop-veil-mark text-3xl font-bold leading-none">?</span>
+            <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-indigo-100">{t.veilNew}</span>
+            <span className="text-[9px] uppercase tracking-wider text-indigo-200/70">{t.veilTap}</span>
+          </button>
+        )}
         {/* A little stage: back wall, floor line, the piece standing on it. */}
         <div
           className={`relative h-24 flex items-end justify-center border ${borderCol} overflow-hidden`}
@@ -779,7 +872,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           </span>
           <StudyTime bits={spec.price} className={textMuted} />
         </div>
-        {/* One of each piece: owned ones can't be bought again. */}
+        {/* One of each piece: owned ones (a starter pack's too) read OWNED and can't be bought again. */}
         {locked ? (
           <button
             type="button"
@@ -790,7 +883,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             {t.bitsLockedButton}
           </button>
         ) : (
-          buyButton(id, spec.price, owned > 0 ? t.bitsSoldOut : null)
+          buyButton(id, spec.price, owned > 0 ? t.bitsOwned : null)
         )}
         {!locked && spec.tier === 5 && owned === 0 && (state?.starlight?.stars ?? 0) >= (state?.starlight?.uses?.festival ?? 5) && (
           <button
@@ -813,29 +906,19 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   const splashAccent = splash?.kind === 'buff' ? lookOf(splash.itemId).accent : '#10b981';
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm"
-      onClick={onClose}
-    >
+    <div>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t.bitsShopTitle}
-        className={`relative overflow-hidden w-full max-w-2xl border ${borderCol} ${bgCard} p-3.5 sm:p-6 shadow-2xl h-[88vh] sm:h-175 max-h-[94vh] sm:max-h-[90vh] flex flex-col font-mono text-xs`}
-        onClick={(e) => e.stopPropagation()}
+        className={`@container relative overflow-hidden w-full border ${borderCol} ${bgCard} p-3.5 sm:p-6 flex flex-col font-mono text-xs`}
       >
         <div className={`flex items-center justify-between border-b ${borderCol} pb-3.5 shrink-0`}>
           <h3 className="flex items-center gap-2.5 text-xs uppercase tracking-widest font-semibold">
             <BitShard className="w-3 h-3" />
             {t.bitsShopTitle}
           </h3>
-          <button type="button" onClick={onClose} className="text-xs hover:underline cursor-pointer whitespace-nowrap shrink-0">
-            {t.closeBracket}
-          </button>
         </div>
 
-        {/* Fixed height: the balance and tabs stay put and only the tab body
-            scrolls, so switching tabs never resizes the dialog. */}
+        {/* The balance and the tabs, then the tab's content as tall as it
+            needs: the page scrolls, like HOME. */}
         <div className="shrink-0 mt-3.5 space-y-4">
           {/* Balance */}
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -851,14 +934,13 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             <div className={`text-[10px] ${textMuted}`}>{tf(t.bitsRate, { n: BITS_PER_HOUR })}</div>
           </div>
 
-          <div className={`relative grid grid-cols-5 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
+          <div className={`relative grid grid-cols-4 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
             <SegmentIndicator activeKey={tab} colorClass="bg-amber-500/10" />
             {(
               [
                 ['buffs', t.bitsTabBuffs],
                 ['challenges', t.chTab],
                 ['furniture', t.bitsTabFurniture],
-                ['collection', t.bitsTabCollection],
                 ['trade', t.tradeTab],
               ] as Array<[ShopTab, string]>
             ).map(([id, label]) => (
@@ -879,7 +961,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
           </div>
         </div>
 
-        <div data-shop-scroll className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] mt-4 space-y-4 pr-1">
+        <div className="mt-4 space-y-4">
           {tab === 'furniture' && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -924,7 +1006,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                     <BookmarkCheck className="w-3.5 h-3.5" />
                     {t.bitsReserveHeading}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{renderPiece(reserve)}</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 @4xl:grid-cols-6 @6xl:grid-cols-8 gap-2">{renderPiece(reserve)}</div>
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsReserveGone}</p>
                 </div>
               )}
@@ -943,7 +1025,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                         </span>
                       </div>
                     )}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 @4xl:grid-cols-6 @6xl:grid-cols-8 gap-2">
                       {section.items.map((id) => renderPiece(id))}
                     </div>
                   </div>
@@ -966,8 +1048,6 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             />
           )}
 
-          {tab === 'collection' && <CollectionTab state={state} loadError={loadError} borderCol={borderCol} textMuted={textMuted} />}
-
           {tab === 'challenges' && (
             <>
               <ChallengesTab
@@ -987,14 +1067,111 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
 
           {tab === 'buffs' && (
             <>
-              {state?.starlight && (
+              {/* What is on now, one slot each, and each slot is the tab for its own
+                  view: the buff shop, the blessings, the starlight. */}
+              {state && (
+                <section className="space-y-1.5" aria-label={t.buffsNowOn}>
+                  <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.buffsNowOn}</div>
+                  <div className={`grid grid-cols-3 border-l border-t ${borderCol}`} role="tablist" aria-label={t.bitsTabBuffs}>
+                    {(() => {
+                      const worn = state.blessings?.items.find((b) => b.id === state.blessings?.worn);
+                      const buff = state.active_buff;
+                      const stars = state.starlight;
+                      const slots: Array<{ view: BuffsView; label: string; art: React.ReactNode; value: string; sub: string; lit: boolean }> = [
+                        {
+                          view: 'shop',
+                          label: t.nowBuff,
+                          art: buff ? <BuffIcon itemId={buff.item_id} className="w-7 h-7" /> : <span className={`w-7 h-7 border border-dashed ${borderCol}`} />,
+                          value: buff?.name ?? t.nowNone,
+                          sub: buff ? formatLeft(new Date(buff.expires_at).getTime() - now) : '',
+                          lit: Boolean(buff),
+                        },
+                        {
+                          view: 'blessings',
+                          label: t.nowBlessing,
+                          art: worn && CHARM_ART[worn.id] ? <Pixel art={CHARM_ART[worn.id]} className="w-7 h-7" /> : <span className={`w-7 h-7 border border-dashed ${borderCol}`} />,
+                          value: worn?.name ?? t.nowNone,
+                          sub: worn ? (state.blessings?.attunement ?? 100) < 100 ? tf(t.blessingAttuned, { n: state.blessings?.attunement ?? 100 }) : worn.effect : '',
+                          lit: Boolean(worn),
+                        },
+                        {
+                          view: 'starlight',
+                          label: t.nowStars,
+                          art: stars ? <AstraIcon starlight={stars} className="w-8 h-8" /> : <span className={`w-7 h-7 border border-dashed ${borderCol}`} />,
+                          value: stars ? tf(t.nowStarsLine, { a: stars.stars, b: stars.max }) : t.nowNone,
+                          sub: stars?.guard_on ? t.nowGuardOn : '',
+                          lit: Boolean(stars && stars.stars > 0),
+                        },
+                      ];
+                      return slots.map((slot) => (
+                        <button
+                          key={slot.view}
+                          type="button"
+                          onClick={() => setBuffsView(slot.view)}
+                          role="tab"
+                          aria-selected={buffsView === slot.view}
+                          className={`relative min-w-0 h-[4.5rem] p-2 border-r border-b ${borderCol} flex items-center gap-2 text-left cursor-pointer transition-colors ${
+                            buffsView === slot.view ? 'bg-amber-500/10' : 'hover:bg-amber-500/5'
+                          }`}
+                        >
+                          {buffsView === slot.view && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-amber-400" aria-hidden />}
+                          <span className="hidden sm:flex shrink-0 w-9 h-9 items-center justify-center bg-zinc-950" aria-hidden>
+                            {slot.art}
+                          </span>
+                          <span className="min-w-0">
+                            <span className={`block text-[9px] uppercase tracking-[0.14em] ${textMuted}`}>{slot.label}</span>
+                            <span className={`block text-[11px] font-bold truncate ${slot.lit ? 'text-amber-400' : textMuted}`}>{slot.value}</span>
+                            <span className={`block text-[9px] uppercase tracking-wider truncate h-3.5 ${textMuted}`}>{slot.sub}</span>
+                          </span>
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                </section>
+              )}
+
+              {buffsView === 'blessings' && state?.blessings && (
+                <BlessingsPanel
+                  blessings={state.blessings}
+                  balance={balance}
+                  demo={isDemo()}
+                  onWear={async (id) => {
+                    const next = await api.bits.wearBlessing(id);
+                    setState(next);
+                    onPurchased(next);
+                  }}
+                  onBuy={async (id) => {
+                    const next = await api.bits.buyBlessing(id);
+                    setState(next);
+                    onPurchased(next);
+                  }}
+                  borderCol={borderCol}
+                  textMuted={textMuted}
+                />
+              )}
+
+              {buffsView === 'starlight' && state?.starlight && (
                 <div className="space-y-1.5">
-                  <StarlightSky starlight={state.starlight} />
+                  {/* ASTRA, the charm the stars build, beside the sky they light. */}
+                  <div className="grid gap-2 sm:grid-cols-[11rem_minmax(0,1fr)] items-stretch">
+                    <AstraCharm starlight={state.starlight} borderCol={borderCol} textMuted={textMuted} />
+                    <StarlightSky starlight={state.starlight} />
+                  </div>
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.starlightHint}</p>
-                  <StarWishes starlight={state.starlight} now={now} formatLeft={formatLeft} onWish={handleWish} />
+                  <StarWishes
+                    starlight={state.starlight}
+                    now={now}
+                    formatLeft={formatLeft}
+                    onWish={handleWish}
+                    granted={granted}
+                    grantMs={GRANT_MS}
+                    onGo={goToNewLineup}
+                  />
                 </div>
               )}
 
+              {buffsView === 'shop' && (
+              <>
               {/* Running buff */}
               <div className="space-y-1.5">
                 <div className={`text-[10px] uppercase tracking-wider ${textMuted}`}>{t.bitsActiveBuff}</div>
@@ -1027,7 +1204,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                   </div>
                 )}
                 {state && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4 gap-2">
                     {state.buffs.map((buff) => {
                       const look = lookOf(buff.item_id);
                       const ink = isDark ? look.accent : look.ink;
@@ -1177,6 +1354,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 {buyError && <div className="p-2 border border-rose-500/40 text-rose-400 text-[10px]">{buyError}</div>}
                 <p className={`text-[10px] font-sans ${textMuted}`}>{t.bitsOneAtATime}</p>
               </div>
+              </>
+              )}
             </>
           )}
         </div>

@@ -139,7 +139,7 @@ export const StarterPacks = React.forwardRef<
       </div>
       <Strip borderCol={borderCol} textMuted={textMuted} label={t.bitsPacksTitle}>
         {packs.map((pack) => (
-          <article key={pack.id} className={`w-56 shrink-0 snap-start p-2 border ${borderCol} flex flex-col gap-1.5`}>
+          <article key={pack.id} className={`w-64 sm:w-[22rem] shrink-0 snap-start p-2 border ${borderCol} flex flex-col gap-1.5`}>
             {pictures[pack.id] && (
               <img
                 src={pictures[pack.id]}
@@ -150,7 +150,7 @@ export const StarterPacks = React.forwardRef<
             )}
             <div className="text-xs font-bold uppercase tracking-wider">{pack.name}</div>
             <p className={`m-0 text-[10px] font-sans leading-snug ${textMuted}`}>{pack.line}</p>
-            <ul className="m-0 p-0 list-none grid grid-cols-7 gap-0.5">
+            <ul className="m-0 p-0 list-none grid grid-cols-8 sm:grid-cols-10 gap-0.5">
               {pack.pieces.map((id) => {
                 const spec = byId[id];
                 return (

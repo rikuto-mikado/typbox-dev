@@ -37,15 +37,25 @@ const feeFor = (amount: number, feeBp: number): number =>
 const taxFor = (gain: number, taxPct: number): number => Math.floor((Math.max(0, gain) * taxPct) / 100);
 const valueOf = (units: number, price: number, unit: number): number => Math.floor((units * price) / unit);
 
-// Each package's colour, validated for colour-blind separation on both themes
-// (light, dark). It follows the package everywhere and only ever marks shapes.
-const ACCENTS: Record<string, [string, string]> = {
-  global_index: ['#2a78d6', '#3987e5'],
-  tech_titans: ['#eb6834', '#d95926'],
-  bio_venture: ['#1baf7a', '#199e70'],
-  quantum_coin: ['#eda100', '#c98500'],
+// Each sector's colour, in the market's order and validated for colour-blind
+// separation on both themes (light, dark). It follows the sector everywhere
+// (every package in it) and only ever marks shapes, never text.
+const SECTOR_ACCENTS: Record<string, [string, string]> = {
+  defense: ['#2a78d6', '#3987e5'],
+  energy: ['#eb6834', '#d95926'],
+  semis: ['#1baf7a', '#199e70'],
+  bio: ['#eda100', '#c98500'],
+  market: ['#e87ba4', '#d55181'],
 };
-const accentOf = (id: string, isDark: boolean) => ACCENTS[id]?.[isDark ? 1 : 0] ?? '#71717a';
+const SECTOR_SHORT: Record<string, string> = {
+  defense: 'DEFENSE',
+  energy: 'ENERGY',
+  semis: 'CHIPS & AI',
+  bio: 'BIO',
+  market: 'MARKETS',
+};
+const accentOf = (sector: string | undefined, isDark: boolean) =>
+  (sector && SECTOR_ACCENTS[sector]?.[isDark ? 1 : 0]) || '#71717a';
 
 const LINE = 'fill-none stroke-current';
 const EYEBROW = 'text-[9px] uppercase tracking-[0.14em]';
@@ -457,6 +467,8 @@ const AssetDetail: React.FC<{
   textMuted: string;
 }> = ({ asset, market, balance, isDark, onBack, onPick, onOrder, borderCol, textMuted }) => {
   const { t, formatTime, formatDateTime } = useI18n();
+  // The switcher holds the packages of this one's sector.
+  const siblings = market.assets.filter((a) => a.sector === asset.sector);
   const [range, setRange] = useState<Range>('1D');
 
   const nextTick = useMemo(() => new Date(market.next_tick_at).getTime(), [market.next_tick_at]);
@@ -506,11 +518,11 @@ const AssetDetail: React.FC<{
         </button>
         <div
           className={`flex-1 min-w-0 grid border-l border-t ${borderCol} text-[10px]`}
-          style={{ gridTemplateColumns: `repeat(${market.assets.length}, minmax(0, 1fr))` }}
+          style={{ gridTemplateColumns: `repeat(${siblings.length}, minmax(0, 1fr))` }}
           role="group"
           aria-label={t.tradeMarket}
         >
-          {market.assets.map((a) => (
+          {siblings.map((a) => (
             <button
               key={a.id}
               type="button"
@@ -521,7 +533,7 @@ const AssetDetail: React.FC<{
               }`}
             >
               {a.id === asset.id && (
-                <span className="absolute inset-x-0 bottom-0 h-0.5" style={{ background: accentOf(a.id, isDark) }} aria-hidden />
+                <span className="absolute inset-x-0 bottom-0 h-0.5" style={{ background: accentOf(a.sector, isDark) }} aria-hidden />
               )}
               {a.ticker}
             </button>
@@ -628,9 +640,17 @@ const Allocation: React.FC<{ market: TradeState; balance: number; isDark: boolea
 }) => {
   const { t } = useI18n();
   const cash = Math.max(0, balance);
-  const parts = market.assets
-    .filter((a) => a.position.value > 0)
-    .map((a) => ({ id: a.id, label: a.ticker, value: a.position.value, color: accentOf(a.id, isDark) }));
+  // One segment per sector held, in the market's order.
+  const bySector = new Map<string, number>();
+  for (const a of market.assets) {
+    if (a.position.value > 0) bySector.set(a.sector ?? '', (bySector.get(a.sector ?? '') ?? 0) + a.position.value);
+  }
+  const parts = [...bySector.entries()].map(([sector, value]) => ({
+    id: sector || 'other',
+    label: SECTOR_SHORT[sector] ?? '—',
+    value,
+    color: accentOf(sector, isDark),
+  }));
   const total = cash + parts.reduce((sum, p) => sum + p.value, 0);
   const cashColor = isDark ? '#52525b' : '#a1a1aa';
   const rows = parts.length ? [...parts, { id: 'cash', label: t.tradeCash, value: cash, color: cashColor }] : [];
@@ -648,7 +668,7 @@ const Allocation: React.FC<{ market: TradeState; balance: number; isDark: boolea
           />
         )}
       </div>
-      <div className={`h-4 overflow-hidden flex flex-wrap gap-x-3 text-[10px] leading-4 tabular-nums ${textMuted}`}>
+      <div className={`h-4 overflow-x-auto [scrollbar-width:none] flex gap-x-3 text-[10px] leading-4 tabular-nums ${textMuted}`}>
         {rows.length ? (
           rows.map((r) => (
             <span key={r.id} className="flex items-center gap-1 whitespace-nowrap">
@@ -664,7 +684,7 @@ const Allocation: React.FC<{ market: TradeState; balance: number; isDark: boolea
   );
 };
 
-const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem_0.875rem] sm:grid-cols-[minmax(0,1fr)_6.5rem_5.5rem_0.875rem] items-center gap-2 sm:gap-3';
+const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem_0.875rem] sm:grid-cols-[minmax(0,1fr)_6.5rem_5.5rem_0.875rem] @4xl:grid-cols-[minmax(0,1fr)_11rem_6.5rem_0.875rem] items-center gap-2 sm:gap-3';
 const HERO_HEIGHT = 'h-[7.5rem]';
 
 /** The overview's shape while the market loads, so nothing jumps when it lands. */
@@ -751,12 +771,13 @@ export const TradeTab: React.FC<TradeTabProps> = ({ balance, onShop, isDark, bor
   // A package opens at its top; going back returns to where the list was.
   const inDetail = open !== null;
   useLayoutEffect(() => {
-    const scroller = root.current?.closest('[data-shop-scroll]');
-    if (scroller) scroller.scrollTop = inDetail ? 0 : overviewScroll.current;
+    const top = root.current ? root.current.getBoundingClientRect().top + window.scrollY - 80 : 0;
+    if (inDetail) window.scrollTo({ top: Math.min(window.scrollY, Math.max(0, top)) });
+    else if (overviewScroll.current) window.scrollTo({ top: overviewScroll.current });
   }, [inDetail]);
 
   const openAsset = (id: string) => {
-    overviewScroll.current = root.current?.closest('[data-shop-scroll]')?.scrollTop ?? 0;
+    overviewScroll.current = window.scrollY;
     setOpen(id);
   };
 
@@ -875,7 +896,15 @@ export const TradeTab: React.FC<TradeTabProps> = ({ balance, onShop, isDark, bor
       </section>
 
       <section aria-label={t.tradeMarket} className="space-y-1.5">
-        {market.assets.map((a) => {
+        {(market.sectors ?? [{ id: '', name: '' }]).map((sector) => (
+          <div key={sector.id || 'all'} className="space-y-1.5">
+            {sector.name && (
+              <div className={`pt-2 first:pt-0 flex items-center gap-2 ${EYEBROW} ${textMuted}`}>
+                <span className="w-2 h-2 shrink-0" style={{ background: accentOf(sector.id, isDark) }} aria-hidden />
+                {sector.name}
+              </div>
+            )}
+        {market.assets.filter((a) => !sector.id || a.sector === sector.id).map((a) => {
           const pct = a.day_ago > 0 ? (a.price / a.day_ago - 1) * 100 : 0;
           const { position } = a;
           return (
@@ -886,7 +915,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({ balance, onShop, isDark, bor
               aria-label={tf(t.tradeOpenPackage, { name: a.name })}
               className={`relative w-full h-15 pl-3.5 pr-2.5 border ${borderCol} ${ROW_GRID} text-left cursor-pointer transition-colors hover:bg-amber-500/5 hover:border-amber-500/40`}
             >
-              <span className="absolute left-0 inset-y-0 w-1" style={{ background: accentOf(a.id, isDark) }} aria-hidden />
+              <span className="absolute left-0 inset-y-0 w-1" style={{ background: accentOf(a.sector, isDark) }} aria-hidden />
               <span className="min-w-0">
                 <span className="flex items-baseline gap-1.5 min-w-0">
                   <span className="font-bold shrink-0">{a.ticker}</span>
@@ -905,6 +934,8 @@ export const TradeTab: React.FC<TradeTabProps> = ({ balance, onShop, isDark, bor
             </button>
           );
         })}
+          </div>
+        ))}
       </section>
 
       <section className="space-y-1">
@@ -917,7 +948,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({ balance, onShop, isDark, bor
               {orders.map((order) => (
                 <li key={order.id} className={`px-2 py-1.5 flex items-center gap-2 tabular-nums border-b last:border-b-0 ${borderCol}`}>
                   <span className={`whitespace-nowrap ${textMuted}`}>{formatDateTime(order.at).slice(5, 16)}</span>
-                  <span className="w-2 h-2 shrink-0" style={{ background: accentOf(order.asset, isDark) }} aria-hidden />
+                  <span className="w-2 h-2 shrink-0" style={{ background: accentOf(market.assets.find((a) => a.id === order.asset)?.sector, isDark) }} aria-hidden />
                   <span className="font-bold">{tickerOf(order.asset)}</span>
                   <span className={textMuted}>{kindLabel(order.kind, t)}</span>
                   <span className="ml-auto font-bold">{signed(order.bits)}</span>

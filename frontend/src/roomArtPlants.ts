@@ -171,20 +171,6 @@ export const PLANTS_ART: Record<string, Art> = {
     }
     pot(p, 3, 19, 10, 24);
   },
-  cherry_blossom: (p) => {
-    p.rect(9, 16, 3, 15, C.walnut);
-    p.rect(6, 12, 1, 5, C.walnut);
-    p.rect(7, 16, 2, 1, C.walnut);
-    p.rect(13, 13, 1, 4, C.walnut);
-    p.rect(12, 16, 1, 1, C.walnut);
-    for (const [x, y, r] of [[5, 9, 4.5], [11, 6, 5], [17, 10, 4], [9, 12, 3.5], [15, 4, 3]] as const) {
-      disc(p, x, y, r, C.pink);
-      disc(p, x - 1, y - 1, r - 1.8, '#fbcfe8');
-    }
-    for (const [x, y] of [[3, 20], [16, 22], [6, 26], [19, 18]] as const) p.px(x, y, '#fbcfe8');
-    p.rect(4, 30, 15, 2, C.moss);
-    p.rect(5, 29, 13, 1, C.moss2);
-  },
   flower_box: (p) => {
     const blooms = [C.red, C.amber, C.purple, C.pink, C.white, C.orange];
     for (let i = 0; i < 6; i++) {

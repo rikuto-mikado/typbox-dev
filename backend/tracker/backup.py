@@ -20,6 +20,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from . import challenges, trade
+from .blessings import BLESSINGS, PREFIX as BLESSING_PREFIX
 from .economy import BUFFS, LEGACY_BUFFS, RUNNABLE_BUFFS, crate_turns_at, active_buff, refund_amount
 from .furniture import (
     FURNITURE,
@@ -118,6 +119,16 @@ def export_economy(user):
     }
 
 
+def log_blessing(entry):
+    """(blessing, bonus) a log carried in a backup with its economy."""
+    from .blessings import MAX_BONUS
+
+    blessing = entry.get("blessing")
+    if not isinstance(blessing, str) or blessing not in BLESSINGS:
+        return "", 0
+    return blessing, _amount(entry.get("blessingBits", entry.get("blessing_bits")), MAX_BONUS)
+
+
 def log_bonus(entry):
     """A log's buff bonus from a backup that carries its economy."""
     raw = entry.get("bonusBits", entry.get("bonus_bits"))
@@ -173,6 +184,10 @@ def _purchase_from(row, user, categories, now):
         obj.state = {"outcome": state["outcome"]}
         if _amount(state.get("bonus")):
             obj.state["bonus"] = _amount(state["bonus"])
+        return obj
+    if item_id.startswith(BLESSING_PREFIX):
+        if item_id[len(BLESSING_PREFIX):] not in BLESSINGS or expires is not None:
+            return None
         return obj
     if item_id in FURNITURE:
         if FURNITURE[item_id]["tier"] == 0 or expires is not None:

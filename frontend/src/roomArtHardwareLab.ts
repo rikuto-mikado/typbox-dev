@@ -45,21 +45,6 @@ export const HARDWARE_LAB_ART: Record<string, Art> = {
     p.rect(0, 1, 2, 2, C.leaf2);
     p.rect(1, 3, 1, 1, C.leaf2);
   },
-  hw_breaker_panel: (p, { on }) => {
-    box(p, 0, 0, 16, 24, S.m, S.m2);
-    p.rect(2, 2, 12, 18, C.ink2);
-    for (let row = 0; row < 4; row++) {
-      for (let col = 0; col < 5; col++) {
-        const x = 3 + col * 2;
-        const y = 3 + row * 4;
-        p.rect(x, y, 1, 3, C.ink3);
-        p.px(x, y + (hash(col, row) > 0.5 ? 0 : 2), C.white);
-      }
-    }
-    for (let x = 3; x < 13; x += 3) p.rect(x, 19, 1, 5, [C.red, C.blue, C.leaf2, C.amber2][x % 4]);
-    p.px(13, 21, on ? C.leaf3 : C.ink3);
-    p.rect(12, 21, 1, 1, S.a);
-  },
   hw_tool_wall: (p) => {
     p.rect(0, 0, 32, 15, S.w3);
     for (let y = 2; y < 15; y += 3) for (let x = 2; x < 32; x += 3) p.px(x, y, S.w2);
@@ -95,18 +80,6 @@ export const HARDWARE_LAB_ART: Record<string, Art> = {
     p.rect(20, 5, 3, 3, S.b);
     bench(p, 24, 8, 16);
   },
-  hw_3d_printer: (p, { on }) => {
-    box(p, 0, 0, 16, 16, S.m, S.m2);
-    p.rect(2, 2, 12, 11, C.ink);
-    p.rect(2, 4, 12, 1, S.m3);
-    p.rect(6, 3, 3, 3, S.a);
-    p.rect(7, 6, 1, 1, on ? C.orange : C.ink3);
-    // half-printed object
-    p.rect(5, 10, 6, 3, S.b);
-    p.rect(6, 9, 4, 1, S.b3);
-    p.rect(2, 13, 12, 1, S.m3);
-    box(p, 10, 14, 4, 2, on ? C.screenOn : C.screenOff, C.ink2);
-  },
   hw_parts_drawers: (p) => {
     box(p, 0, 0, 16, 16, S.a, S.a2);
     for (let row = 0; row < 4; row++) {
@@ -131,20 +104,6 @@ export const HARDWARE_LAB_ART: Record<string, Art> = {
     if (on) p.rect(24, 2, 5, 1, C.glow);
     bench(p, 32, 8, 16);
     p.rect(4, 12, 24, 1, S.w2);
-  },
-  hw_robot_arm: (p, { on }) => {
-    box(p, 3, 19, 10, 5, S.m, S.m2);
-    p.px(7, 21, on ? C.leaf3 : C.ink3);
-    p.rect(6, 13, 4, 6, S.a);
-    disc(p, 8, 13, 2.4, S.m2);
-    // upper arm angled to the right
-    for (let i = 0; i < 8; i++) p.rect(8 + i, 12 - i, 3, 3, S.a);
-    disc(p, 16.5, 4.5, 2.2, S.m2);
-    p.rect(13, 3, 3, 2, S.a2);
-    p.rect(10, 2, 3, 1, S.m3);
-    p.rect(10, 5, 3, 1, S.m3);
-    p.rect(9, 2, 1, 4, S.m3);
-    p.rect(2, 23, 12, 1, C.ink2);
   },
   hw_spool_rack: (p) => {
     p.rect(0, 1, 24, 1, S.m2);
@@ -179,17 +138,6 @@ export const HARDWARE_LAB_ART: Record<string, Art> = {
     p.px(4, 6, C.ink);
     p.rect(2, 0, 1, 2, C.red);
     p.rect(4, 1, 1, 1, C.ink);
-  },
-  hw_cnc_mill: (p, { on }) => {
-    box(p, 0, 0, 16, 24, S.a, S.a2);
-    p.rect(2, 2, 12, 14, C.ink2);
-    p.rect(2, 2, 12, 1, S.a3);
-    p.rect(6, 3, 4, 6, S.m);
-    p.rect(7, 9, 2, 3, S.m3);
-    if (on) p.px(8, 12, C.amber);
-    p.rect(3, 13, 10, 2, S.m2);
-    box(p, 3, 18, 6, 4, on ? C.screenOn : C.screenOff, C.ink);
-    disc(p, 12, 20, 1.2, C.red);
   },
   hw_magnifier_lamp: (p, { on }) => {
     p.rect(2, 13, 4, 3, S.m2);

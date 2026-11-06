@@ -38,7 +38,7 @@ from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
-from . import challenges, festival_pass, festivals
+from . import blessings, challenges, festival_pass, festivals
 from .collection import collection_state
 from .furniture import (
     FURNITURE,
@@ -1185,7 +1185,7 @@ def seal_contract_on_edit(log, now=None):
 
 def bits_summary(user):
     logs = user.study_logs.aggregate(
-        minutes=Sum("duration_minutes"), bonus=Sum("bonus_bits")
+        minutes=Sum("duration_minutes"), bonus=Sum("bonus_bits"), blessed=Sum("blessing_bits")
     )
     purchases = user.bit_purchases.aggregate(
         total=Sum(F("price") - F("refunded") + F("struck")), payouts=Sum("payout")
@@ -1194,7 +1194,8 @@ def bits_summary(user):
     payouts = purchases["payouts"] or 0
     # TRADE (trade.py): what buys took out and sales put back.
     traded = user.trade_orders.aggregate(total=Sum("bits"))["total"] or 0
-    earned = bits_for_minutes(logs["minutes"] or 0) + (logs["bonus"] or 0) + payouts
+    # BLESSINGS (blessings.py) add theirs on the logs too.
+    earned = bits_for_minutes(logs["minutes"] or 0) + (logs["bonus"] or 0) + (logs["blessed"] or 0) + payouts
     return {
         "balance": earned - spent + traded,
         "earned": earned,
@@ -1406,6 +1407,7 @@ def shop_state(user, now=None):
         "challenges": challenges.offers(user, now),
         "last_challenge": challenges.last_result(user, now),
         "collection": collection_state(user),
+        "blessings": blessings.state(user),
     }
 
 
@@ -1483,6 +1485,14 @@ def reset_economy(user):
             StudyLog.objects.filter(user=user)
             .filter(Q(bonus_bits__gt=0) | ~Q(bonus_item=""))
             .update(bonus_bits=0, bonus_item="")
+        )
+        # BLESSINGS go like any purchase (bought ones are among the rows
+        # deleted above), and their bonuses with the buffs'.
+        UserProfile.objects.filter(pk=profile.pk).update(blessing="", blessing_since=None)
+        (
+            StudyLog.objects.filter(user=user)
+            .filter(Q(blessing_bits__gt=0) | ~Q(blessing=""))
+            .update(blessing_bits=0, blessing="", blessing_pct=100)
         )
         if (
             profile.room_layout

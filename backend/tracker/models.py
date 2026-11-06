@@ -85,6 +85,10 @@ class UserProfile(models.Model):
     # The crate changes on a clock, and what the stars saw changes with it.
     crate_omen_until = models.DateTimeField(null=True, blank=True)
     shop_salt = models.PositiveIntegerField(default=0)
+    # BLESSINGS (blessings.py): the one worn now, and since when (its
+    # ATTUNEMENT grows from then).
+    blessing = models.CharField(max_length=32, blank=True, default="")
+    blessing_since = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -166,6 +170,11 @@ class StudyLog(models.Model):
     # committed (see economy.py); the base rate itself is never stored.
     bonus_bits = models.PositiveIntegerField(default=0)
     bonus_item = models.CharField(max_length=32, blank=True)
+    # BLESSINGS (blessings.py): what the blessing worn at commit added, and which.
+    blessing_bits = models.PositiveIntegerField(default=0)
+    blessing = models.CharField(max_length=32, blank=True, default="")
+    # Its ATTUNEMENT then (percent), so an edit works the bonus out the same way.
+    blessing_pct = models.PositiveSmallIntegerField(default=100)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
