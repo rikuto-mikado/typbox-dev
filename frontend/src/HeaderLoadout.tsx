@@ -16,7 +16,14 @@ import { tf, useI18n } from './i18n';
 export type LoadoutSlot = 'shop' | 'blessings' | 'starlight';
 
 /** Each STARLIGHT charm's glow in its socket. */
-const CHARM_GLOW: Record<string, string> = { astra: '#93a4d8', nova: '#fb923c', nebula: '#c4b5fd' };
+const CHARM_GLOW: Record<string, string> = {
+  astra: '#93a4d8',
+  polaris: '#5eead4',
+  nova: '#fb923c',
+  aurora: '#6ee7b7',
+  nebula: '#c4b5fd',
+  orion: '#93c5fd',
+};
 
 export interface LoadoutBlessing {
   id: string;

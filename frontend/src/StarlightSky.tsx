@@ -2,10 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { BuffIcon } from './BuffIcon';
 import { isDemo } from './demo';
 import { tf, useI18n } from './i18n';
-import type { Dict } from './i18n.strings';
-
-type DictKey = keyof Dict;
 import type { CharmId, Starlight, StarWish } from './api';
+import { WISH_TEXT } from './wishText';
 
 // STARLIGHT drawn as a real night sky: each guard's worth of stars is one real
 // constellation, lit star by star, and each charm has a sky of its own (not
@@ -112,7 +110,90 @@ const CLOUDED: readonly Figure[] = [
   },
 ];
 
-const SKIES: Record<CharmId, readonly Figure[]> = { astra: DIPPERS, nova: SUMMER, nebula: CLOUDED };
+const NORTH: readonly Figure[] = [
+  {
+    // Cepheus, the house round the pole: Alderamin, Alfirk, Errai, Iota, Zeta.
+    stars: [
+      { x: 44, y: 120, size: 1.0 },
+      { x: 62, y: 84, size: 0.86 },
+      { x: 92, y: 56, size: 0.9, warm: true },
+      { x: 120, y: 88, size: 0.66, warm: true },
+      { x: 98, y: 122, size: 0.7, warm: true },
+    ],
+    closes: [4, 0],
+  },
+  {
+    // Draco from its head down the neck: Eltanin, Rastaban, Grumium, Altais, Aldhibah, Thuban, Edasich.
+    stars: [
+      { x: 316, y: 128, size: 1.08, warm: true },
+      { x: 300, y: 112, size: 0.84 },
+      { x: 330, y: 104, size: 0.62 },
+      { x: 284, y: 76, size: 0.78 },
+      { x: 254, y: 60, size: 0.72 },
+      { x: 226, y: 80, size: 0.76 },
+      { x: 206, y: 108, size: 0.7, warm: true },
+    ],
+    closes: [2, 0],
+  },
+];
+
+const WINTER: readonly Figure[] = [
+  {
+    // Auriga's pentagon from Capella: Capella, Menkalinan, Theta, Elnath, Hassaleh, and the Kids.
+    stars: [
+      { x: 52, y: 58, size: 1.2, warm: true },
+      { x: 104, y: 54, size: 0.92 },
+      { x: 118, y: 96, size: 0.78 },
+      { x: 90, y: 128, size: 0.98 },
+      { x: 40, y: 104, size: 0.82, warm: true },
+      { x: 30, y: 74, size: 0.6 },
+    ],
+    closes: [5, 0],
+  },
+  {
+    // The Northern Cross: Deneb, Sadr, Albireo along the beam, Gienah and Delta across.
+    stars: [
+      { x: 252, y: 44, size: 1.14 },
+      { x: 268, y: 78, size: 0.92, warm: true },
+      { x: 284, y: 112, size: 0.7 },
+      { x: 300, y: 146, size: 0.84, warm: true },
+      { x: 236, y: 94, size: 0.86, warm: true },
+      { x: 304, y: 64, size: 0.8 },
+    ],
+  },
+];
+
+const HUNTER: readonly Figure[] = [
+  {
+    // Orion, belt first: Alnitak, Alnilam, Mintaka, Bellatrix, Betelgeuse, Saiph, Rigel.
+    stars: [
+      { x: 92, y: 102, size: 0.96 },
+      { x: 104, y: 96, size: 1.0 },
+      { x: 116, y: 90, size: 0.92 },
+      { x: 138, y: 52, size: 0.98 },
+      { x: 70, y: 46, size: 1.2, warm: true },
+      { x: 80, y: 146, size: 0.94 },
+      { x: 146, y: 140, size: 1.18 },
+    ],
+  },
+  {
+    // At his heel, the great dog: Sirius, Mirzam, Adhara.
+    stars: [
+      { x: 252, y: 100, size: 1.3 },
+      { x: 236, y: 82, size: 0.86 },
+      { x: 270, y: 148, size: 0.98 },
+    ],
+  },
+];
+
+const SKIES: Record<CharmId, readonly Figure[]> = {
+  astra: DIPPERS,
+  polaris: NORTH,
+  nova: SUMMER,
+  aurora: WINTER,
+  nebula: CLOUDED,
+  orion: HUNTER,
+};
 
 /** A fixed stream of numbers in [0, 1), so the sky never reshuffles. */
 const seeded = (seed: number) => () => {
@@ -267,7 +348,10 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
   const { t } = useI18n();
   const { stars, max, cost, guard_on: guardOn } = starlight;
   const guards = Math.floor(stars / cost);
-  const figures = SKIES[starlight.charm ?? 'astra'];
+  const hasGuard = starlight.has_guard !== false;
+  // No charm worn: the night is there, but no figure is drawn on it.
+  const bare = starlight.worn === false;
+  const figures = bare ? [] : SKIES[starlight.charm ?? 'astra'];
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -391,13 +475,15 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
       {/* Words stay crisp HTML over the sky, whatever its scale. */}
       <div className="absolute inset-x-0 top-0 flex items-baseline justify-between gap-2 px-3 pt-2.5 text-[10px] uppercase pointer-events-none">
         <span className="font-semibold tracking-[0.28em] text-slate-100/85">{t.starlightTitle}</span>
-        <span className="tabular-nums tracking-widest text-slate-300/60">
-          {stars} / {max}
-        </span>
+        {!bare && (
+          <span className="tabular-nums tracking-widest text-slate-300/60">
+            {stars} / {max}
+          </span>
+        )}
       </div>
       <div className="absolute inset-x-0 bottom-0 px-3 pb-2 text-[10px] uppercase tracking-widest pointer-events-none">
         <span className={guardOn ? 'text-[#f6dcae]' : 'text-slate-300/60'}>
-          {guardOn ? tf(t.starlightGuardOn, { n: guards }) : tf(t.starlightGuardOff, { n: cost - stars })}
+          {bare ? t.starlightBare : !hasGuard ? t.starlightNoGuard : guardOn ? tf(t.starlightGuardOn, { n: guards }) : tf(t.starlightGuardOff, { n: cost - stars })}
         </span>
       </div>
     </div>
@@ -491,22 +577,50 @@ const WISH_ICONS: Record<StarWish, React.ReactNode> = {
       <path d="M14 27.5Q16 25.5 18 27.5Q16 29.5 14 27.5Z" fill="currentColor" />
     </>
   ),
+  ember: (
+    <>
+      <path d="M16 5C17.5 10 22 11.5 22 17.5A6 6 0 0 1 10 17.5C10 14 12 12.5 12.8 10C13.6 12.5 15 13 16 13C16 10 15 8 16 5Z" fill="currentColor" fillOpacity="0.85" />
+      <path d="M6 26h20" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M22 23l4 3-4 3" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+    </>
+  ),
+  afterglow: (
+    <>
+      <circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1.1" />
+      <path d="M16 16V9M16 16l5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M6 16A10 10 0 0 1 16 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4 9l2-3 3 2" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+    </>
+  ),
+  aim: (
+    <>
+      <circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <circle cx="16" cy="16" r="4" fill="none" stroke="currentColor" strokeOpacity="0.6" strokeWidth="1" />
+      <path d="M16 3v6M16 23v6M3 16h6M23 16h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="16" cy="16" r="1.4" fill="currentColor" />
+    </>
+  ),
+  volley: (
+    <>
+      {[9, 16, 23].map((y) => (
+        <g key={y}>
+          <path d={`M5 ${y}H24`} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <path d={`M21 ${y - 3}L26 ${y}L21 ${y + 3}`} fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          <path d={`M5 ${y}l-2 -2M5 ${y}l-2 2`} stroke="currentColor" strokeOpacity="0.6" strokeWidth="1" />
+        </g>
+      ))}
+    </>
+  ),
+  quarry: (
+    <>
+      <path d="M8 27C8 18 12 14 16 14S24 18 24 27" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M11 9l2 4M21 9l-2 4M16 6v6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="16" cy="21" r="2.2" fill="currentColor" />
+      <path d="M4 20h4M24 20h4" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="1.5 1.5" />
+    </>
+  ),
 };
 
-const WISH_TEXT: Record<StarWish, { name: DictKey; line: DictKey }> = {
-  reroll: { name: 'starWishReroll', line: 'starWishRerollLine' },
-  omen: { name: 'starWishOmen', line: 'starWishOmenLine' },
-  starchart: { name: 'wishStarchart', line: 'wishStarchartLine' },
-  hush: { name: 'wishHush', line: 'wishHushLine' },
-  supernova: { name: 'wishSupernova', line: 'wishSupernovaLine' },
-  blaze: { name: 'wishBlaze', line: 'wishBlazeLine' },
-  wildfire: { name: 'wishWildfire', line: 'wishWildfireLine' },
-  scatter: { name: 'wishScatter', line: 'wishScatterLine' },
-  veil: { name: 'wishVeil', line: 'wishVeilLine' },
-  drift: { name: 'wishDrift', line: 'wishDriftLine' },
-  mist: { name: 'wishMist', line: 'wishMistLine' },
-  silver: { name: 'wishSilver', line: 'wishSilverLine' },
-};
 
 /** Wishes that deal a new furniture lineup. */
 const DEALS: StarWish[] = ['reroll', 'scatter'];
@@ -556,12 +670,15 @@ export const StarWishes: React.FC<{
       case 'hush':
       case 'veil':
       case 'supernova':
+      case 'aim':
+      case 'volley':
       case 'silver': {
         const n = running[use] ?? 0;
         return n > 0 ? { text: tf(t.wishWaiting, { n }), blocks: true } : null;
       }
       case 'blaze':
       case 'wildfire':
+      case 'quarry':
       case 'drift': {
         const ms = until(running[use]);
         return ms > 0 ? { text: tf(t.wishBurning, { t: formatLeft(ms) }), blocks: true } : null;
@@ -589,7 +706,7 @@ export const StarWishes: React.FC<{
           const dealt = DEALS.includes(use) && granted !== null && grantedUse === use;
           const short = starlight.stars < cost;
           const blocked = !dealt && (isDemo() || short || Boolean(run?.blocks) || tooLate);
-          const stopsGuard = !blocked && starlight.guard_on && starlight.stars - cost < starlight.cost;
+          const stopsGuard = !blocked && starlight.guard_on && starlight.has_guard !== false && starlight.stars - cost < starlight.cost;
           const isArmed = armed === use;
           const lit = Boolean(told || dealt || chart || (run && run.text));
           return (

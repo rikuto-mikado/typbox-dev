@@ -5,6 +5,8 @@ import { BitShard, StudyTime } from './BitsBadge';
 import { CHARM_ART } from './blessingArt';
 import { Pixel } from './ChallengePanel';
 import { tf, useI18n } from './i18n';
+import type { Dict } from './i18n.strings';
+import { RankBadge } from './RankBadge';
 
 // BLESSINGS (backend tracker/blessings.py): permanent favours. The hours
 // logged break each one's seal; BITS then buy it, once and for good. One is
@@ -16,7 +18,23 @@ const SILHOUETTE = 'brightness-0 invert opacity-[0.14]';
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 
+// Each rank's colour, as on the buffs' cards.
+const RANK_ACCENT = { C: '#a1a1aa', B: '#38bdf8', A: '#f59e0b', S: '#e879f9' } as const;
+
+// How a blessing sits beside a buff or a charm (blessings.py AFFINITY).
+const AFFINITY: Record<string, { label: keyof Dict; tone: string }> = {
+  BUFFED: { label: 'blessingAffinityBuffed', tone: 'text-violet-300 border-violet-400/50' },
+  UNBUFFED: { label: 'blessingAffinityUnbuffed', tone: 'text-sky-300 border-sky-400/50' },
+  STARS: { label: 'blessingAffinityStars', tone: 'text-amber-200 border-amber-300/50' },
+};
+
 type Item = BlessingState['items'][number];
+
+/** "3D 4H" / "5H": how long something still rests. */
+const restLeft = (ms: number) => {
+  const h = Math.max(0, Math.ceil(ms / 3_600_000));
+  return h >= 24 ? `${Math.floor(h / 24)}D${h % 24 ? ` ${h % 24}H` : ''}` : `${h}H`;
+};
 
 // Attunement grows 10 points a day worn (blessings.ATTUNE_PER_DAY).
 const ATTUNE_PER_DAY = 10;
@@ -70,16 +88,19 @@ const WornStrip: React.FC<{ blessings: BlessingState; borderCol: string; textMut
 export const BlessingsPanel: React.FC<{
   blessings: BlessingState;
   balance: number;
+  /** For the cooldowns' countdown. */
+  now: number;
   onWear: (id: string | null) => Promise<void>;
-  onBuy: (id: string) => Promise<void>;
+  /** Unlocks one for good (its seal broken), paying once. */
+  onUnlock: (id: string) => Promise<void>;
   demo: boolean;
   borderCol: string;
   textMuted: string;
-}> = ({ blessings, balance, onWear, onBuy, demo, borderCol, textMuted }) => {
+}> = ({ blessings, balance, now, onWear, onUnlock, demo, borderCol, textMuted }) => {
   const { t } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // A purchase asks twice: the first tap arms it.
+  // WEAR pays, so it asks twice: the first tap arms it.
   const [armed, setArmed] = useState<string | null>(null);
   const { hours, worn, items } = blessings;
 
@@ -98,11 +119,10 @@ export const BlessingsPanel: React.FC<{
 
   const button = (b: Item) => {
     const on = b.id === worn;
-    const owned = b.owned ?? true;
     const spinning = busy === b.id;
     const base = 'w-full h-8 border text-[10px] font-bold uppercase tracking-wider transition-colors';
     const off = `${base} ${borderCol} ${textMuted} opacity-60 cursor-not-allowed`;
-    if (!b.unlocked) {
+    if (!(b.open ?? b.unlocked)) {
       return (
         <button type="button" disabled className={`${off} flex items-center justify-center gap-1.5`}>
           <Lock className="w-3 h-3" />
@@ -110,27 +130,37 @@ export const BlessingsPanel: React.FC<{
         </button>
       );
     }
-    if (!owned) {
-      const short = balance < b.price;
-      if (short || demo) {
+    if (!b.unlocked) {
+      // Open but locked: UNLOCK pays once, for good. Asks twice.
+      const cost = b.unlock_price ?? 0;
+      const key = `unlock:${b.id}`;
+      if (balance < cost || demo) {
         return (
-          <button type="button" disabled className={off}>
-            {short ? tf(t.bitsNeedMore, { n: fmt(b.price - balance) }) : t.blessingBuy}
+          <button type="button" disabled className={`${off} flex items-center justify-center gap-1.5`}>
+            <Lock className="w-3 h-3" />
+            {balance < cost ? tf(t.bitsNeedMore, { n: fmt(cost - balance) }) : tf(t.unlockFor, { n: fmt(cost) })}
           </button>
         );
       }
-      const isArmed = armed === b.id;
+      const isArmed = armed === key;
       return (
         <button
           type="button"
           disabled={busy !== null}
-          onClick={() => (isArmed ? run(b.id, () => onBuy(b.id)) : setArmed(b.id))}
-          onBlur={() => setArmed((a) => (a === b.id ? null : a))}
-          className={`${base} cursor-pointer ${
+          onClick={() => (isArmed ? run(key, () => onUnlock(b.id)) : setArmed(key))}
+          onBlur={() => setArmed((a) => (a === key ? null : a))}
+          className={`${base} flex items-center justify-center gap-1.5 cursor-pointer ${
             isArmed ? 'border-amber-400 bg-amber-400 text-zinc-950 hover:brightness-110' : 'border-amber-400/70 text-amber-400 hover:bg-amber-400/10'
           }`}
         >
-          {spinning ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : isArmed ? tf(t.blessingBuyConfirm, { n: fmt(b.price) }) : t.blessingBuy}
+          {busy === key ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <>
+              <Lock className="w-3 h-3" />
+              {isArmed ? tf(t.unlockConfirm, { n: fmt(cost) }) : tf(t.unlockFor, { n: fmt(cost) })}
+            </>
+          )}
         </button>
       );
     }
@@ -146,14 +176,42 @@ export const BlessingsPanel: React.FC<{
         </button>
       );
     }
+    const rests = b.cooling_until ? Date.parse(b.cooling_until) - now : 0;
+    if (rests > 0) {
+      return (
+        <button type="button" disabled className={off}>
+          {tf(t.bitsCooldownButton, { t: restLeft(rests) })}
+        </button>
+      );
+    }
+    const short = balance < b.price;
+    if (short || demo) {
+      return (
+        <button type="button" disabled className={off}>
+          {short ? tf(t.bitsNeedMore, { n: fmt(b.price - balance) }) : tf(t.wearFor, { n: fmt(b.price) })}
+        </button>
+      );
+    }
+    const isArmed = armed === b.id;
     return (
       <button
         type="button"
-        disabled={demo || busy !== null}
-        onClick={() => run(b.id, () => onWear(b.id))}
-        className={`${base} ${demo ? off : 'border-amber-400/70 text-amber-400 cursor-pointer hover:bg-amber-400/10'}`}
+        disabled={busy !== null}
+        onClick={() => (isArmed ? run(b.id, () => onWear(b.id)) : setArmed(b.id))}
+        onBlur={() => setArmed((a) => (a === b.id ? null : a))}
+        className={`${base} cursor-pointer ${
+          isArmed ? 'border-amber-400 bg-amber-400 text-zinc-950 hover:brightness-110' : 'border-amber-400/70 text-amber-400 hover:bg-amber-400/10'
+        }`}
       >
-        {spinning ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : worn ? t.blessingSwitch : t.blessingWear}
+        {spinning ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
+        ) : isArmed ? (
+          tf(t.blessingWearConfirm, { n: fmt(b.price) })
+        ) : worn ? (
+          tf(t.switchFor, { n: fmt(b.price) })
+        ) : (
+          tf(t.wearFor, { n: fmt(b.price) })
+        )}
       </button>
     );
   };
@@ -169,13 +227,13 @@ export const BlessingsPanel: React.FC<{
         {items.map((b) => {
           const art = CHARM_ART[b.id];
           const on = b.id === worn;
-          const owned = b.owned ?? true;
           const progress = Math.min(100, (hours / b.hours) * 100);
+          const open = b.open ?? b.unlocked;
           return (
             <article
               key={b.id}
               className={`relative min-w-0 border p-3 flex flex-col gap-2 transition-colors ${
-                on ? 'border-amber-400/70 bg-amber-400/5' : owned && b.unlocked ? 'border-amber-400/25' : borderCol
+                on ? 'border-amber-400/70 bg-amber-400/5' : b.unlocked ? 'border-amber-400/25' : borderCol
               }`}
             >
               {on && <span className="blessing-halo pointer-events-none absolute inset-0" aria-hidden />}
@@ -185,27 +243,51 @@ export const BlessingsPanel: React.FC<{
                   style={on ? { background: 'radial-gradient(circle at 50% 55%, rgba(251,191,36,0.22), #09090b 70%)' } : undefined}
                   aria-hidden
                 >
-                  {art && <Pixel art={art} className={`w-10 h-10 ${b.unlocked ? '' : SILHOUETTE} ${on ? 'charm-float' : ''}`} />}
+                  {art && (
+                    <Pixel
+                      art={art}
+                      className={`w-10 h-10 ${!open ? SILHOUETTE : b.unlocked ? '' : 'opacity-45 grayscale'} ${on ? 'charm-float' : ''}`}
+                    />
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold tracking-[0.12em] leading-tight break-words">{b.name}</span>
-                    {owned ? (
-                      <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-amber-400">{t.blessingOwned}</span>
-                    ) : (
-                      <span className="shrink-0 flex items-center gap-1 tabular-nums">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {b.rank && <RankBadge rank={b.rank} accent={RANK_ACCENT[b.rank]} />}
+                      <span className="text-xs font-bold tracking-[0.12em] leading-tight break-words">{b.name}</span>
+                    </span>
+                    {b.unlocked ? (
+                      <span className="shrink-0 flex items-center gap-1 tabular-nums" title={t.priceWearTitle}>
+                        <span className={`text-[8px] uppercase tracking-wider ${textMuted}`}>{t.priceWear}</span>
                         <BitShard className="w-2.5 h-2.5" />
                         <span className="text-[11px] font-bold">{fmt(b.price)}</span>
-                        <StudyTime bits={b.price} className={textMuted} />
+                      </span>
+                    ) : (
+                      <span className="shrink-0 flex items-center gap-1 tabular-nums" title={t.priceUnlockTitle}>
+                        <Lock className={`w-2.5 h-2.5 ${textMuted}`} />
+                        <BitShard className="w-2.5 h-2.5" />
+                        <span className="text-[11px] font-bold">{fmt(b.unlock_price ?? b.price)}</span>
+                        <StudyTime bits={b.unlock_price ?? b.price} className={textMuted} />
                       </span>
                     )}
                   </span>
                   <span className={`block mt-1 text-[10px] font-bold leading-snug ${b.unlocked ? 'text-amber-400' : textMuted}`}>{b.effect}</span>
+                  {b.affinity && AFFINITY[b.affinity] && (
+                    <span className={`inline-block mt-1 px-1 border text-[8px] font-bold uppercase tracking-wider ${AFFINITY[b.affinity].tone}`}>
+                      {t[AFFINITY[b.affinity].label]}
+                    </span>
+                  )}
                 </span>
               </div>
               {b.detail && <p className={`text-[10px] font-sans leading-relaxed ${textMuted}`}>{b.detail}</p>}
+              {b.cooldown != null && (
+                <p className={`m-0 text-[9px] uppercase tracking-wider ${textMuted}`}>
+                  {!b.unlocked && `${tf(t.thenWearFor, { n: fmt(b.price) })} · `}
+                  {tf(t.wearCooldownLine, { t: restLeft(b.cooldown * 3_600_000) })}
+                </p>
+              )}
               <div className="mt-auto space-y-1.5">
-                {!b.unlocked && (
+                {!open && (
                   <>
                     <div className="h-1 bg-current/10" aria-hidden>
                       <div className="h-full bg-zinc-500" style={{ width: `${progress}%` }} />

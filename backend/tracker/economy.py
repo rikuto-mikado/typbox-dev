@@ -21,9 +21,12 @@ After a buff ends it cools down on its own timer (BUFF_COOLDOWN_HOURS); other bu
 the logs: every day with a log no buff paid on is a star, up to STARLIGHT_MAX.
 With STARLIGHT_COST stars on the gauge, a buff that fails its condition keeps
 running in exchange for them, once per buff; stars also buy wishes
-(wishes.py), four for each charm. Only what was spent is stored.
+(wishes.py), each charm its own. Only what was spent is stored.
 
-balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded + struck)
+balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded)
+
+(A raid's `struck`, what its boss's blows took, no longer leaves the wallet:
+it comes off the raid's bounty instead, see challenges._down_loot.)
 
 The frontend mirrors BITS_PER_HOUR and the rounding in src/bits.ts to show
 an instant balance after each commit; keep the two in sync.
@@ -38,7 +41,7 @@ from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
-from . import attacks, bank, blessings, challenges, charms, festival_pass, festivals
+from . import attacks, bank, blessings, challenges, charms, festival_pass, festivals, wishes
 from .collection import collection_state
 from .furniture import (
     FURNITURE,
@@ -637,7 +640,8 @@ def _spend_starlight(buff, covering, now):
         charm = charms.worn_now(buff.user, now, profile)
         if not charm or not charms.attuned(profile, charm, now):
             return False
-        if not charms.take_stars(profile, charm, charms.CHARMS[charm]["guard"], now):
+        guard = charms.CHARMS[charm]["guard"]
+        if guard is None or not charms.take_stars(profile, charm, guard, now):
             return False
         state["covered"] = [covering]
         locked.state = state
@@ -652,10 +656,12 @@ def buff_cooldown(purchase):
     return timedelta(hours=BUFF_COOLDOWN_HOURS.get(purchase.item_id, DEFAULT_BUFF_COOLDOWN_HOURS))
 
 
-def _cooling_until(row, now, wait=None):
+def _cooling_until(row, now, wait=None, glows=()):
     """When this bought buff stops holding its own card back, or None. One cancelled
     before it paid on any log leaves no cooldown, nor does a used-up buff from
-    before its end was recorded. `wait` is the wait to use, if not its own."""
+    before its end was recorded. `wait` is the wait to use, if not its own;
+    each AFTERGLOW in `glows` (wishes.py) wished while it cooled takes
+    AFTERGLOW_HOURS off."""
     state = row.state or {}
     if state.get("no_cooldown"):
         return None
@@ -666,7 +672,11 @@ def _cooling_until(row, now, wait=None):
         ended = row.expires_at
     else:
         return None
-    return ended + (wait or buff_cooldown(row))
+    until = ended + (wait or buff_cooldown(row))
+    for glow in glows:
+        if ended <= glow < until:
+            until -= timedelta(hours=wishes.AFTERGLOW_HOURS)
+    return until
 
 
 def _buff_rows(user):
@@ -679,6 +689,7 @@ def buff_cooldowns(user, now=None):
     are listed. A MYSTERY CRATE keeps a timer of its own, next to the one of the
     buff it opened into."""
     now = now or timezone.now()
+    glows = wishes.afterglows(UserProfile.objects.filter(user=user).first())
     seen, out = set(), {}
     for row in _buff_rows(user):
         for key in {row.item_id, row.via} - {""}:
@@ -686,7 +697,7 @@ def buff_cooldowns(user, now=None):
                 continue
             seen.add(key)
             wait = None if key == row.item_id else timedelta(hours=BUFF_COOLDOWN_HOURS[key])
-            until = _cooling_until(row, now, wait)
+            until = _cooling_until(row, now, wait, glows)
             if until is not None and until > now:
                 out[key] = until
     return out
@@ -719,17 +730,17 @@ def _shown_charm(user, now, profile):
 
 
 def star_lit_by(log, now=None):
-    """[{charm, name, stars, max, added}] for every charm the user holds whose
-    day this new log was the one to light (each counts its own way), or None."""
+    """[{charm, name, stars, max, added, held}] for every charm whose day this
+    new log was the one to light (each counts its own way), or None. `held`:
+    the user has worn it (the others are marked on the log, not announced)."""
     now = now or timezone.now()
     local = _local_now(log.user, now)
     if log.date > local.date() or not _lights_a_star(log.date, log.created_at, local.tzinfo):
         return None
     profile = UserProfile.objects.filter(user=log.user).first()
     lit = []
+    held = charms.held(log.user)
     for charm in charms.CHARMS:
-        if charm not in charms.owned(log.user):
-            continue
         days = dict(charms.star_days(log.user, charm, now, profile))
         if log.date not in days:
             continue
@@ -743,6 +754,7 @@ def star_lit_by(log, now=None):
                 "stars": charms.star_count(log.user, charm, now, profile),
                 "max": spec["max"],
                 "added": days[log.date],
+                "held": charm in held,
             }
         )
     return lit or None
@@ -817,17 +829,22 @@ def serialize_starlight(user, now=None):
     worn = charms.worn_now(user, now, profile)
     wished = wishes.serialize(user, now, profile)
     ready = bool(worn) and (charms.attuned(profile, worn, now) if profile else True)
+    guard, shield = spec["guard"], spec["shield"]
     return {
         "charm": charm,
         "worn": worn == charm,
         "attuned": ready,
         "stars": stars,
         "max": spec["max"],
-        "cost": spec["guard"],
-        "shield_cost": spec["shield"]["cost"],
+        # A charm with no GUARD shows no studs (its cost is past the gauge).
+        "cost": guard if guard is not None else spec["max"] + 1,
+        "has_guard": guard is not None,
+        "shield_cost": shield["cost"] if shield else None,
         # The insurance works only for a worn, settled-in charm.
-        "guard_on": ready and stars >= spec["guard"],
-        "shield_on": ready and stars >= spec["shield"]["cost"],
+        "guard_on": ready and guard is not None and stars >= guard,
+        "shield_on": ready and shield is not None and stars >= shield["cost"],
+        # The log that lit each day, for each charm held (the log list's marks).
+        "lit_logs": {str(pk): ids for pk, ids in charms.lit_logs(user, now, profile).items()},
         "days": [day.isoformat() for day in days],
         "last_guard": (profile.last_guard if profile else {}) or None,
         # Today's cost of each of the worn charm's wishes, and the FESTIVAL's.
@@ -1184,7 +1201,7 @@ def bits_summary(user):
         minutes=Sum("duration_minutes"), bonus=Sum("bonus_bits"), blessed=Sum("blessing_bits")
     )
     purchases = user.bit_purchases.aggregate(
-        total=Sum(F("price") - F("refunded") + F("struck")), payouts=Sum("payout")
+        total=Sum(F("price") - F("refunded")), payouts=Sum("payout")
     )
     spent = purchases["total"] or 0
     payouts = purchases["payouts"] or 0
@@ -1481,9 +1498,9 @@ def reset_economy(user):
         profile.star_spends = []
         profile.last_guard = {}
         profile.crate_omen = ""
-        # CHARMS go back to ASTRA, worn as from the start, and the SHIELDs
+        # CHARMS come off (none is worn at the start), and the SHIELDs
         # with the raids they stood against; TYPBOX BANK forgets the account.
-        profile.charm = charms.DEFAULT
+        profile.charm = ""
         profile.charm_log = []
         profile.shields = []
         profile.save(update_fields=["star_spends", "last_guard", "crate_omen", "charm", "charm_log", "shields"])

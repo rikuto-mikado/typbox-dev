@@ -48,8 +48,9 @@ import {
   ArrowUpRight,
   Armchair,
 } from 'lucide-react';
-import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight, type StarLit } from './api';
+import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type CharmId, type Starlight, type StarLit } from './api';
 import { CharmIcon } from './AstraCharm';
+import { CHARM_ACCENT, CHARM_INK } from './starCharm';
 import { ChallengeTicker, FestivalStrip } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
 import { SideNav, type MainView } from './SideNav';
@@ -232,8 +233,6 @@ const COMMIT_CONFIRM_MS = 5000;
 const STARLIGHT_SEEN_KEY = 'typbox_starlight_seen';
 const STARLIGHT_NEWS_MS = 3 * 86_400_000;
 const STARLIGHT_MAX = 14;
-/** Each STARLIGHT charm's colour in its toasts. */
-const CHARM_ACCENT: Record<string, string> = { astra: '#a5b4fc', nova: '#fb923c', nebula: '#c084fc' };
 
 export interface AuthUser {
   id: number;
@@ -1334,6 +1333,13 @@ export default function App() {
     pushToast('success', t.starlightHeldToast, tf(t.starlightHeldBody, { name: lastGuardName ?? '', cost: starlightCost ?? 0 }));
   }, [lastGuardAt, lastGuardName, starlightCost, userId, pushToast, t]);
 
+  // The charms a just-committed log lit, until the next /bits/ answer lists them.
+  const [freshLit, setFreshLit] = useState<Record<string, CharmId[]>>({});
+  const rememberLit = useCallback((logId: string | number, lit: StarLit[] | number | undefined) => {
+    if (!Array.isArray(lit) || lit.length === 0) return;
+    setFreshLit((prev) => ({ ...prev, [String(logId)]: lit.map((s) => s.charm) }));
+  }, []);
+
   // One toast per charm a log lit, each in its own colour with its own medallion.
   const announceStarLit = useCallback(
     (lit: StarLit[] | number | undefined) => {
@@ -1343,13 +1349,14 @@ export default function App() {
         return;
       }
       for (const star of lit) {
+        if (star.held === false) continue;
         pushToast(
           'success',
           tf(t.starlightToastCharm, { name: star.name, n: star.added }),
           tf(t.starlightToastBody, { n: star.stars, max: star.max }),
           undefined,
           {
-            accent: CHARM_ACCENT[star.charm] ?? '#a5b4fc',
+            accent: CHARM_ACCENT[star.charm as CharmId] ?? '#a5b4fc',
             icon: <CharmIcon charm={star.charm} stars={star.stars} max={star.max} cost={star.max + 1} guardOn={false} className="w-6 h-6" />,
           }
         );
@@ -1380,10 +1387,12 @@ export default function App() {
           : hit.hit === 'miss'
           ? t.chToastMiss
           : t.chToastNoHead;
-      // NOVA's wishes that lent the hit their fire.
-      const fired = (hit.wishes ?? []).map((w) => ({ supernova: 'SUPERNOVA', blaze: 'BLAZE', wildfire: 'WILDFIRE' } as Record<string, string>)[w]).filter(Boolean);
+      // NOVA's and ORION's wishes that lent the hit their fire.
+      const fired = (hit.wishes ?? [])
+        .map((w) => ({ supernova: 'SUPERNOVA', blaze: 'BLAZE', wildfire: 'WILDFIRE', aim: 'AIM', volley: 'VOLLEY', quarry: 'QUARRY' } as Record<string, string>)[w])
+        .filter(Boolean);
       pushToast('success', fired.length ? `${title} · ${fired.join(' + ')}` : title, tf(t.chToastHpLeft, { name: hit.name, h: h(hit.hp) }));
-      // The boss strikes back at the hit (it takes BITS: attacks).
+      // The boss strikes back at the hit (off the bounty, not the wallet: attacks).
       if (hit.counter) pushToast('error', tf(t.chToastCounter, { name: hit.name, n: hit.counter }), t.chToastCounterHint);
     },
     [pushToast, t]
@@ -2329,6 +2338,7 @@ export default function App() {
       announceLogCommitted(newLogItem.id, cat?.code, Number(finalMinutes), logDate);
       announceChallengeHit(created.challenge_hit);
       announceStarLit(created.star_lit);
+      rememberLit(created.id, created.star_lit);
       setCommitState('success');
       commitResetTimerRef.current = window.setTimeout(() => {
         setCommitState('idle');
@@ -2378,6 +2388,7 @@ export default function App() {
         announceLogCommitted(newLogItem.id, cat?.code, Number(minutes), todayDate);
         announceChallengeHit(created.challenge_hit);
         announceStarLit(created.star_lit);
+        rememberLit(created.id, created.star_lit);
         return true;
       } catch (err: unknown) {
         const error = err as Error;
@@ -2385,7 +2396,7 @@ export default function App() {
         return false;
       }
     },
-    [user, categories, announceLogCommitted, announceChallengeHit, announceStarLit, pushToast, t, timeZone]
+    [user, categories, announceLogCommitted, announceChallengeHit, announceStarLit, rememberLit, pushToast, t, timeZone]
   );
 
   const handleStartEditLog = (log: StudyLog) => {
@@ -2657,6 +2668,16 @@ export default function App() {
     }
     return new Set([...first.values()].map((log) => log.id));
   }, [logs, timeZone]);
+
+  // Which charms each log lit (the server's word, and what a commit just said);
+  // an older server sends none, and the list falls back to the plain star above.
+  const serverLit = starlight?.lit_logs;
+  const litByLog = useMemo(() => (serverLit ? { ...freshLit, ...serverLit } : null), [serverLit, freshLit]);
+  const charmNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const c of starlight?.charms?.charms ?? []) out[c.id] = c.name;
+    return out;
+  }, [starlight?.charms]);
 
   const handleSealedLogTap = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -6620,11 +6641,27 @@ export default function App() {
                                 <span className="px-1.5 py-0.5 text-[10px] border border-zinc-700/60 font-semibold tabular-nums">
                                   {tf(t.logDurationChip, { min: log.durationMinutes, h: (log.durationMinutes / 60).toFixed(1) })}
                                 </span>
-                                {starLogIds.has(log.id) && (
-                                  <span title={t.logStarTitle} aria-label={t.logStarTitle} role="img" className="flex text-amber-300">
-                                    <Glint className="w-2.5 h-2.5" />
-                                  </span>
-                                )}
+                                {litByLog
+                                  ? (litByLog[String(log.id)] ?? []).map((charm) => {
+                                      const name = charmNames[charm] ?? charm.toUpperCase();
+                                      const color = isDark ? CHARM_ACCENT[charm] : CHARM_INK[charm];
+                                      return (
+                                        <span
+                                          key={charm}
+                                          title={tf(t.logStarCharmTitle, { name })}
+                                          className="inline-flex items-center gap-1 px-1 py-0.5 border text-[9px] font-bold uppercase tracking-wider leading-none whitespace-nowrap"
+                                          style={{ color, borderColor: `${color ?? '#fcd34d'}66` }}
+                                        >
+                                          <Glint className="w-2.5 h-2.5 shrink-0" />
+                                          {name}
+                                        </span>
+                                      );
+                                    })
+                                  : starLogIds.has(log.id) && (
+                                      <span title={t.logStarTitle} aria-label={t.logStarTitle} role="img" className="flex text-amber-300">
+                                        <Glint className="w-2.5 h-2.5" />
+                                      </span>
+                                    )}
                                 {(log.bonusBits ?? 0) > 0 && (
                                   <span
                                     className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border font-bold tabular-nums"

@@ -1,13 +1,12 @@
 """
-ATTACKS: what a BOSS RAID takes back, in BITS.
+ATTACKS: what a BOSS RAID takes back, off its bounty.
 
 A boss attacks on a clock (challenges.raid_attacks), whatever you do, and it
-COUNTERs every log that lands on it (its
-attack's `counter`, at the moment the log was committed; not the blow that
-brings it down). Every blow that lands takes its damage straight from BITS,
-kept in the raid's BitPurchase.struck, which the ledger counts as spent. A
-wallet left short borrows the rest from TYPBOX BANK as an EMERGENCY loan
-(bank.py), so a hard raid can cost far more than it did to start.
+COUNTERs every log that lands on it (its attack's `counter`, at the moment the
+log was committed; not the blow that brings it down). Blows never touch the
+wallet: what they land is kept in the raid's BitPurchase.struck and comes off
+the loot when the boss goes down (challenges._down_loot), never below the
+stake. An escaped boss keeps the stake and takes nothing more.
 
 A SHIELD is the worn charm's insurance (charms.py): when a blow would land
 and the charm has been worn ATTUNE_HOURS and holds its shield's cost in
@@ -15,14 +14,13 @@ stars, the stars are spent and no blow lands for the shield's hours. Raised
 once per blow (the spend is keyed), kept in UserProfile.shields.
 
 The wishes (wishes.py) have their say before a SHIELD rises: a QUIET SKY
-stops the next attack, a VEIL the next counters, and inside a BLAZE every
-counter lands double.
+stops the next attack, a VEIL the next counters, inside a BLAZE every
+counter lands double and inside a QUARRY half.
 
 Nothing here is stored but the shields: what the raids have taken is replayed
 from their attacks and hits each time, so a deleted or edited log, a reset or
 an import all come out the same. Raids that fight this way carry
-state['attack']['hp'] (the name is from when blows took HP first); older
-raids take BITS capped at the balance (challenges._sync_attacks).
+state['attack']['hp'] (the name is from when blows took HP first).
 """
 
 from datetime import datetime, timedelta
@@ -109,6 +107,8 @@ def replay(user, now=None, commit=False, profile=None):
                 continue
         if is_counter and wishes.within(profile, "blaze", moment):
             dmg *= wishes.BLAZE_COUNTER
+        if is_counter and wishes.within(profile, "quarry", moment):
+            dmg = int(dmg * wishes.QUARRY_COUNTER)
         if window is None and commit and profile is not None:
             window = _raise_shield(profile, f"shield:{purchase.pk}:{key}", moment, now)
             if window:
@@ -139,7 +139,7 @@ def _raise_shield(profile, key, moment, now):
     if not charm or not charms.attuned(profile, charm, moment):
         return None
     spec = charms.CHARMS[charm]["shield"]
-    if not charms.take_stars(profile, charm, spec["cost"], now, key=key):
+    if spec is None or not charms.take_stars(profile, charm, spec["cost"], now, key=key):
         return None
     window = {
         "from": moment.isoformat(),
@@ -154,10 +154,8 @@ def _raise_shield(profile, key, moment, now):
 
 
 def sync(user, now=None):
-    """Brings what the raids have taken up to date (raising any SHIELD due on
-    the way), then has the bank cover a wallet left short."""
-    from . import bank
-
+    """Brings what the raids have taken off their bounties up to date
+    (raising any SHIELD due on the way)."""
     now = now or timezone.now()
     with transaction.atomic():
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
@@ -170,7 +168,6 @@ def sync(user, now=None):
             if struck != p.struck:
                 p.struck = struck
                 p.save(update_fields=["struck"])
-        bank.cover_shortfall(user, now)
 
 
 def counter_landed(user, purchase, log_id, now):

@@ -821,20 +821,21 @@ class BitsStarlightView(APIView):
 
 
 class BitsBlessingView(APIView):
-    """POST /api/bits/blessing/ - {"id": "<blessing>" | null}: wear one (null takes it off);
-    {"buy": "<blessing>"}: buy one whose seal is broken."""
+    """POST /api/bits/blessing/ - {"unlock": "<blessing>"}: unlock one for good;
+    {"id": "<blessing>" | null}: wear an unlocked one, paying its price (null
+    takes it off; the one that comes off rests a while)."""
 
     permission_classes = (permissions.IsAuthenticated,)
 
     def post(self, request):
         data = request.data if isinstance(request.data, dict) else {}
-        buying = "buy" in data
-        blessing_id = (data.get("buy") if buying else data.get("id")) or ""
-        if not isinstance(blessing_id, str) or (buying and not blessing_id):
+        unlocking = "unlock" in data
+        blessing_id = (data.get("unlock") if unlocking else data.get("id")) or ""
+        if not isinstance(blessing_id, str) or (unlocking and not blessing_id):
             return Response({"detail": "Unknown blessing."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            if buying:
-                blessings.buy(request.user, blessing_id)
+            if unlocking:
+                blessings.unlock(request.user, blessing_id)
             else:
                 blessings.wear(request.user, blessing_id)
         except blessings.BlessingError as exc:
@@ -843,26 +844,26 @@ class BitsBlessingView(APIView):
 
 
 class BitsCharmView(APIView):
-    """POST /api/bits/charm/ - {"wear": "<charm>" | null}: put a STARLIGHT charm
-    on (null takes it off); {"buy": "<charm>"}: buy one that has opened."""
+    """POST /api/bits/charm/ - {"unlock": "<charm>"}: unlock one for good;
+    {"wear": "<charm>" | null}: put an unlocked STARLIGHT charm on, paying its
+    price (null takes it off; the one that comes off rests a while)."""
 
     permission_classes = (permissions.IsAuthenticated,)
 
     def post(self, request):
         data = request.data if isinstance(request.data, dict) else {}
         try:
-            if "buy" in data:
-                charm = data.get("buy")
-                if not isinstance(charm, str):
+            if "unlock" in data:
+                if not isinstance(data.get("unlock"), str):
                     raise charms.CharmError("Unknown charm.")
-                charms.buy(request.user, charm)
-            elif "wear" in data:
-                charm = data.get("wear")
-                if charm is not None and not isinstance(charm, str):
-                    raise charms.CharmError("Unknown charm.")
-                charms.wear(request.user, charm)
-            else:
+                charms.unlock(request.user, data["unlock"])
+                return Response(shop_state(request.user))
+            if "wear" not in data:
                 raise charms.CharmError("Choose a charm.")
+            charm = data.get("wear")
+            if charm is not None and not isinstance(charm, str):
+                raise charms.CharmError("Unknown charm.")
+            charms.wear(request.user, charm)
         except charms.CharmError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user))

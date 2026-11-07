@@ -92,8 +92,8 @@ class UserProfile(models.Model):
     # CHARMS (charms.py): the STARLIGHT charm worn now ("" for none), and
     # every change of it as {"at", "charm"}, oldest first: stars are counted
     # from the logs worn or not, but only the worn charm spends them and its
-    # insurance needs it worn a while. Before the first change, ASTRA is worn.
-    charm = models.CharField(max_length=16, blank=True, default="astra")
+    # insurance needs it worn a while. None is worn before the first change.
+    charm = models.CharField(max_length=16, blank=True, default="")
     charm_log = models.JSONField(default=list, blank=True)
     # ATTACKS (attacks.py): the SHIELDs a charm has raised, as
     # {"from", "until", "charm", "key"}: no boss's blow lands inside one.

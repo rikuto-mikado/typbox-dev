@@ -7,18 +7,18 @@ LOANS (one open at a time per plan):
              grace it charges like a standard loan's big sister.
   standard   as much as STANDARD_RATE BITS per hour ever studied (STANDARD_CAP
              at most), interest every day from the first.
-  emergency  never asked for: when a boss's blow leaves the wallet short
-             (attacks.py), the bank lends exactly the shortfall at the
-             highest rate. While one is owed nothing else can be bought
-             (the bank aside), and half of what every new log
+  emergency  never asked for: raids used to take BITS, and a blow that left
+             the wallet short borrowed exactly the shortfall at the highest
+             rate. Blows no longer touch the wallet (attacks.py), so no new
+             one is made, but one still owed keeps its rules: nothing else
+             can be bought (the bank aside), and half of what every new log
              earns goes to paying it back.
 Interest is simple and daily: each whole day a loan has run past its grace
 adds rate_bp of what is still owed of its principal (at least 1 BITS), and
 it never adds up to more than the principal itself. A repayment pays the
 interest first, then the principal.
 
-The VAULT holds BITS out of the wallet: a boss's blow never touches it. It
-grows VAULT_RATE_BP a day (at most VAULT_DAY_CAP) on every day with
+The VAULT holds BITS out of the wallet. It grows VAULT_RATE_BP a day (at most VAULT_DAY_CAP) on every day with
 VAULT_STUDY_MINUTES logged, so it pays to keep studying, not to sit on it.
 NEBULA's wishes reach in: a DRIFT stops loan interest for days, a SILVER RAIN
 doubles the vault's next paying day (wishes.py).
@@ -308,20 +308,6 @@ def withdraw(user, amount, now=None):
         if amount > vault_state(user, now)["balance"]:
             raise BankError("The vault doesn't hold that much.")
         return BankEntry.objects.create(user=user, kind=BankEntry.WITHDRAW, amount=amount, created_at=now)
-
-
-def cover_shortfall(user, now=None):
-    """Lends a wallet that a boss left below zero back up to zero (EMERGENCY).
-    The caller holds the profile lock."""
-    now = now or timezone.now()
-    short = -_wallet(user)
-    if short <= 0:
-        return None
-    spec = PLANS["emergency"]
-    return BankEntry.objects.create(
-        user=user, kind=BankEntry.LOAN, plan="emergency", amount=short,
-        rate_bp=spec["rate_bp"], grace_days=spec["grace"], created_at=now,
-    )
 
 
 def auto_repay(log, now=None):

@@ -1,23 +1,45 @@
 """
-CHARMS: what STARLIGHT is gathered in. Three charms, one worn at a time:
+CHARMS: what STARLIGHT is gathered in. Six charms, one worn at a time, each
+with a rank (like the shop's buffs: what it asks of you and how far it goes,
+not a ladder where the top one wins) and a temper of its own:
 
-  ASTRA   everyone's from the start. A day studied with no buff paying lights
-          one star (the original STARLIGHT rule).
-  NOVA    for long days. A day with 3 hours or more logged (buffs or not)
-          lights two stars; shorter days light none. Its SHIELD is short but
-          hits harder while it lasts.
-  NEBULA  for patchy weeks. Any day with 30 minutes logged lights one star,
-          buffs or not, but it holds the fewest. Its SHIELD lasts longest.
+  ASTRA    C  SIGHT      the first one open. A day studied with no buff
+                         paying lights one. Wishes that see ahead (the crate,
+                         the shop) and quiet a boss's next attack.
+  POLARIS  B  ALL-ROUND  a day with two subjects or more lights one. A little of
+                         every sphere, each wish dearer than the specialist's.
+  NEBULA   B  COVER      any day with 30 minutes lights one, but it holds the
+                         fewest. Longest SHIELD, the cheapest GUARD but one,
+                         wishes for cover and money.
+  AURORA   A  BUFFS      a day a buff paid on lights one: ASTRA's opposite.
+                         The cheapest GUARD and no SHIELD; wishes that stretch
+                         a buff and cut the shop's cooldowns.
+  NOVA     A  BURST      a day of 3 hours or more lights two. No GUARD: a short
+                         SHIELD that hits harder while it lasts, and wishes for
+                         one huge blow, at a price.
+  ORION    S  THE HUNT   a day with a log of 90 minutes or more lights one.
+                         No GUARD, no SHIELD: while worn (and settled in),
+                         every hit that lands on a boss hits harder, and its
+                         wishes keep the pressure on.
 
-NOVA and NEBULA open with the hours studied and are bought with BITS, once
-(a BitPurchase 'charm:<id>', gone with a BITS reset like any purchase).
+None is worn at the start, and every charm starts locked. Once the hours
+studied open it, UNLOCK pays its (high) `unlock` price, once (a BitPurchase
+UNLOCK_PREFIX + id). From then on it is handled like a buff: WEAR pays its
+`price` in BITS, every time it is put on (a BitPurchase
+'charm:<id>' whose expires_at is set when it comes off; gone with a BITS reset
+like any purchase). It stays on until it is taken off or another is worn;
+then it rests for its own cooldown (`cooldown`, hours) before it can be worn
+again, so a charm can't be slipped on for one fight and straight back off.
 
 Every charm's gauge is worked out from the logs alone, worn or not (a charm
-not yet bought shows what it would hold). Wearing matters for the rest:
+not yet bought shows what it would hold).
+
+Wearing matters for the rest, too:
   - its insurance (the GUARD that saves a failing buff, and the SHIELD that
     stops a boss's blows, see attacks.py) only works once it has been worn
     ATTUNE_HOURS without a break, so it can't be slipped on just before a hit;
-  - its four wishes (wishes.py) spend the worn charm's stars.
+    ORION's hunt (`hit`) settles in the same way;
+  - its wishes (wishes.py) spend the worn charm's stars.
 
 Everything is worked out from the logs, the wear history (UserProfile.charm_log)
 and what was spent (UserProfile.star_spends, each tagged with its charm; an
@@ -34,51 +56,127 @@ from .models import BitPurchase, StudyLog, UserProfile
 from .timezones import get_user_zone
 
 PREFIX = "charm:"
+# A charm unlocked for good: UNLOCK_PREFIX + its id.
+UNLOCK_PREFIX = "unlock:charm:"
 DEFAULT = "astra"
 ATTUNE_HOURS = 24
 # How long after its date a log can still light that day's star (as before).
 STAR_LATE_DAYS = timedelta(days=2)
 
+#   rank / role  how it is shown (C-S like the buffs; what it is for)
 #   max      the gauge's size
-#   guard    stars a GUARD costs (a failing buff keeps running, once per buff)
+#   guard    stars a GUARD costs (a failing buff keeps running, once per
+#            buff), or None: this charm has no GUARD
 #   shield   stars a SHIELD costs, and how long it holds (hours); `power` is
-#            the raid damage multiplier inside it
-#   rule     how a day lights: ("nobuff", stars) a log no buff paid on;
-#            ("minutes", at_least, stars) that many minutes logged that day
-#   hours / price   what opens it and what it costs (ASTRA is free)
+#            the raid damage multiplier inside it. None: no SHIELD
+#   hit      raid damage multiplier on every landed hit while worn and
+#            settled in (1.0: none)
+#   rule     how a day lights:
+#              ("nobuff", stars)          a log no buff paid on
+#              ("buffed", stars)          a log a buff paid on
+#              ("minutes", least, stars)  that many minutes logged that day
+#              ("subjects", least, stars) logs in that many subjects that day
+#              ("long_log", least, stars) one log of that many minutes
+#   hours    study hours before it can be unlocked
+#   unlock   what unlocking it costs, once
+#   price    what each WEAR costs
+#   cooldown hours it rests after coming off before it can be worn again
 CHARMS = {
     "astra": {
         "name": "ASTRA",
         "title": "THE STEADY LYRE",
+        "rank": "C",
+        "role": "SIGHT",
         "line": "One star for every day studied without a buff.",
         "max": 14,
         "guard": 7,
         "shield": {"cost": 14, "hours": 48, "power": 1.0},
+        "hit": 1.0,
         "rule": ("nobuff", 1),
         "hours": 0,
-        "price": 0,
+        "unlock": 3_000,
+        "price": 150,
+        "cooldown": 24,
+    },
+    "polaris": {
+        "name": "POLARIS",
+        "title": "THE FIXED STAR",
+        "rank": "B",
+        "role": "ALL-ROUND",
+        "line": "One star for a day with logs in two subjects or more. A little of everything, none of it cheap.",
+        "max": 12,
+        "guard": 6,
+        "shield": {"cost": 12, "hours": 36, "power": 1.0},
+        "hit": 1.0,
+        "rule": ("subjects", 2, 1),
+        "hours": 50,
+        "unlock": 9_000,
+        "price": 450,
+        "cooldown": 48,
     },
     "nova": {
         "name": "NOVA",
         "title": "THE BURNING STAR",
-        "line": "Two stars for a day of 3 hours or more, buffs or not. Short days light nothing.",
+        "rank": "A",
+        "role": "BURST",
+        "line": "Two stars for a day of 3 hours or more, buffs or not. Short days light nothing. Burns too hot to GUARD.",
         "max": 12,
-        "guard": 6,
+        "guard": None,
         "shield": {"cost": 10, "hours": 24, "power": 1.25},
+        "hit": 1.0,
         "rule": ("minutes", 180, 2),
         "hours": 100,
-        "price": 6000,
+        "unlock": 18_000,
+        "price": 900,
+        "cooldown": 96,
+    },
+    "aurora": {
+        "name": "AURORA",
+        "title": "THE DAWN CURTAIN",
+        "rank": "A",
+        "role": "BUFFS",
+        "line": "One star for a day a buff paid on: the opposite of ASTRA. The cheapest GUARD, and no SHIELD.",
+        "max": 12,
+        "guard": 4,
+        "shield": None,
+        "hit": 1.0,
+        "rule": ("buffed", 1),
+        "hours": 200,
+        "unlock": 21_000,
+        "price": 1_050,
+        "cooldown": 96,
     },
     "nebula": {
         "name": "NEBULA",
         "title": "THE SLOW CLOUD",
+        "rank": "B",
+        "role": "COVER",
         "line": "One star for any day with 30 minutes logged, buffs or not. Holds the fewest.",
         "max": 10,
         "guard": 5,
         "shield": {"cost": 10, "hours": 72, "power": 1.0},
+        "hit": 1.0,
         "rule": ("minutes", 30, 1),
         "hours": 300,
-        "price": 9000,
+        "unlock": 27_000,
+        "price": 1_350,
+        "cooldown": 72,
+    },
+    "orion": {
+        "name": "ORION",
+        "title": "THE HUNTER",
+        "rank": "S",
+        "role": "THE HUNT",
+        "line": "One star for a day with a single log of 90 minutes or more. No GUARD, no SHIELD: worn, every hit on a boss lands 20% harder.",
+        "max": 10,
+        "guard": None,
+        "shield": None,
+        "hit": 1.2,
+        "rule": ("long_log", 90, 1),
+        "hours": 1_000,
+        "unlock": 42_000,
+        "price": 2_100,
+        "cooldown": 168,
     },
 }
 
@@ -101,10 +199,11 @@ def _parse(raw):
 
 def wear_periods(profile):
     """[(start or None, end or None, charm)]: who was worn when. Before the
-    first change ASTRA was."""
+    first change none was (an account from when ASTRA came free has it in its
+    log, migration 0039)."""
     out = []
-    start, charm = None, DEFAULT
-    for entry in profile.charm_log or []:
+    start, charm = None, ""
+    for entry in (profile.charm_log if profile else []) or []:
         at = _parse(entry.get("at")) if isinstance(entry, dict) else None
         if at is None:
             continue
@@ -135,27 +234,49 @@ def _lights(log_date, created_at, zone):
     return log_date - timedelta(days=1) <= committed <= log_date + STAR_LATE_DAYS
 
 
-def star_days(user, charm, now=None, profile=None, exclude=None):
-    """[(day, stars)] the days `charm` lit, oldest first, worn or not
+def lit_days(user, charm, now=None, exclude=None):
+    """[(day, stars, log id, when)] the days `charm` lit, oldest first, worn
+    or not: the log that made the day light and when it was committed
     (`exclude`: a log id to leave out)."""
     now = now or timezone.now()
     zone = _zone(user)
     today = timezone.localtime(now, zone).date()
-    rule = CHARMS[charm]["rule"]
+    kind, *args = CHARMS[charm]["rule"]
+    stars = args[-1]
     logs = StudyLog.objects.filter(user=user, date__lte=today)
     if exclude is not None:
         logs = logs.exclude(pk=exclude)
-    if rule[0] == "nobuff":
+    if kind == "nobuff":
         logs = logs.filter(bonus_item="")
+    elif kind == "buffed":
+        logs = logs.exclude(bonus_item="")
+    elif kind == "long_log":
+        logs = logs.filter(duration_minutes__gte=args[0])
 
-    totals = {}
-    for day, created, minutes in logs.values_list("date", "created_at", "duration_minutes"):
-        if not _lights(day, created, zone):
+    # In commit order, so the log that tips a day over is the one that lit it.
+    rows = logs.order_by("created_at", "pk").values_list("pk", "date", "created_at", "duration_minutes", "category_id")
+    lit, minutes, subjects = {}, {}, {}
+    for pk, day, created, mins, category in rows:
+        if day in lit or not _lights(day, created, zone):
             continue
-        totals[day] = totals.get(day, 0) + minutes
-    if rule[0] == "nobuff":
-        return [(day, rule[1]) for day in sorted(totals)]
-    return [(day, rule[2]) for day in sorted(totals) if totals[day] >= rule[1]]
+        if kind in ("nobuff", "buffed", "long_log"):
+            lit[day] = (pk, created)
+        elif kind == "minutes":
+            minutes[day] = minutes.get(day, 0) + mins
+            if minutes[day] >= args[0]:
+                lit[day] = (pk, created)
+        elif kind == "subjects":
+            if category is None:
+                continue
+            subjects.setdefault(day, set()).add(category)
+            if len(subjects[day]) >= args[0]:
+                lit[day] = (pk, created)
+    return [(day, stars, pk, created) for day, (pk, created) in sorted(lit.items())]
+
+
+def star_days(user, charm, now=None, profile=None, exclude=None):
+    """[(day, stars)] the days `charm` lit, oldest first, worn or not."""
+    return [(day, n) for day, n, _, _ in lit_days(user, charm, now, exclude)]
 
 
 def spends_of(profile, charm):
@@ -206,59 +327,126 @@ def study_hours(user):
     return (StudyLog.objects.filter(user=user).aggregate(m=Sum("duration_minutes"))["m"] or 0) / 60
 
 
-def owned(user):
+def held(user):
+    """The charms the user has worn at least once (the log list marks theirs)."""
     ids = {
         item_id[len(PREFIX):]
         for item_id in BitPurchase.objects.filter(user=user, item_id__startswith=PREFIX).values_list(
             "item_id", flat=True
         )
     }
-    return {DEFAULT} | {i for i in ids if i in CHARMS}
+    worn = UserProfile.objects.filter(user=user).values_list("charm", flat=True).first()
+    return {i for i in ids | {worn or ""} if i in CHARMS}
 
 
-def worn_now(user, now=None, profile=None):
-    profile = profile or UserProfile.objects.filter(user=user).first()
-    if profile is None:
-        return DEFAULT
-    charm = profile.charm if profile.charm in CHARMS else ""
-    return charm if charm in owned(user) else ""
+def unlocked(user):
+    """The charms the user has unlocked."""
+    rows = BitPurchase.objects.filter(user=user, item_id__startswith=UNLOCK_PREFIX).values_list("item_id", flat=True)
+    return {i[len(UNLOCK_PREFIX):] for i in rows if i[len(UNLOCK_PREFIX):] in CHARMS}
 
 
-def buy(user, charm, now=None):
+def unlock(user, charm, now=None):
+    """Unlocks a charm whose hours are in, paying its unlock price once."""
     from .economy import PurchaseError, bits_summary
     from . import bank
 
     now = now or timezone.now()
     spec = CHARMS.get(charm)
-    if spec is None or charm == DEFAULT:
+    if spec is None:
         raise CharmError("Unknown charm.")
     with transaction.atomic():
         UserProfile.objects.select_for_update().get_or_create(user=user)
-        if charm in owned(user):
-            raise CharmError("You already have this charm.")
+        if charm in unlocked(user):
+            raise CharmError(f"{spec['name']} is already unlocked.")
         if study_hours(user) < spec["hours"]:
-            raise CharmError(f"{spec['name']} opens at {spec['hours']} hours studied.")
+            raise CharmError(f"{spec['name']} opens at {spec['hours']:,} hours studied.")
         try:
             bank.check_not_in_debt(user, now)
         except PurchaseError as exc:
             raise CharmError(str(exc))
-        if bits_summary(user)["balance"] < spec["price"]:
+        if bits_summary(user)["balance"] < spec["unlock"]:
             raise CharmError("Not enough BITS.")
-        return BitPurchase.objects.create(user=user, item_id=PREFIX + charm, price=spec["price"])
+        BitPurchase.objects.create(user=user, item_id=UNLOCK_PREFIX + charm, price=spec["unlock"])
+
+
+def worn_now(user, now=None, profile=None):
+    profile = profile or UserProfile.objects.filter(user=user).first()
+    if profile is None:
+        return ""
+    return profile.charm if profile.charm in CHARMS else ""
+
+
+def cooling_until(user, charm, now=None):
+    """When `charm` can be worn again after it last came off, or None."""
+    now = now or timezone.now()
+    ended = (
+        BitPurchase.objects.filter(user=user, item_id=PREFIX + charm, expires_at__isnull=False)
+        .order_by("-expires_at")
+        .values_list("expires_at", flat=True)
+        .first()
+    )
+    if ended is None:
+        return None
+    until = ended + timedelta(hours=CHARMS[charm]["cooldown"])
+    return until if until > now else None
+
+
+def hit_bonus(user, moment, profile=None):
+    """ORION's hunt: the raid damage multiplier of the charm worn (and settled
+    in) at `moment`."""
+    profile = profile or UserProfile.objects.filter(user=user).first()
+    if profile is None:
+        return 1.0
+    charm = worn_at(profile, moment)
+    if not charm or charm not in CHARMS or not attuned(profile, charm, moment):
+        return 1.0
+    return float(CHARMS[charm].get("hit") or 1.0)
+
+
+def lit_logs(user, now=None, profile=None):
+    """{log id: [charm, ...]}: for every charm, unlocked or not, the log that
+    lit each of its days (shown on the log list)."""
+    out = {}
+    for charm in CHARMS:
+        for _, _, pk, _ in lit_days(user, charm, now):
+            out.setdefault(pk, []).append(charm)
+    return out
 
 
 def wear(user, charm, now=None):
-    """Puts `charm` on (or takes the worn one off for ""/None)."""
+    """Puts `charm` on, paying its price (or takes the worn one off for
+    ""/None). The one that comes off starts its cooldown."""
+    from .economy import PurchaseError, bits_summary
+    from . import bank
+
     now = now or timezone.now()
     charm = charm or ""
     if charm and charm not in CHARMS:
         raise CharmError("Unknown charm.")
     with transaction.atomic():
         profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
-        if charm and charm not in owned(user):
-            raise CharmError("Buy this charm first.")
-        if worn_now(user, now, profile) == charm:
+        current = worn_now(user, now, profile)
+        if current == charm:
             return profile
+        if charm:
+            spec = CHARMS[charm]
+            if charm not in unlocked(user):
+                if study_hours(user) < spec["hours"]:
+                    raise CharmError(f"{spec['name']} opens at {spec['hours']:,} hours studied.")
+                raise CharmError(f"Unlock {spec['name']} first.")
+            until = cooling_until(user, charm, now)
+            if until:
+                raise CharmError(f"{spec['name']} is resting until {timezone.localtime(until, _zone(user)):%m/%d %H:%M}.")
+            try:
+                bank.check_not_in_debt(user, now)
+            except PurchaseError as exc:
+                raise CharmError(str(exc))
+            if bits_summary(user)["balance"] < spec["price"]:
+                raise CharmError("Not enough BITS.")
+        if current:
+            BitPurchase.objects.filter(user=user, item_id=PREFIX + current, expires_at__isnull=True).update(expires_at=now)
+        if charm:
+            BitPurchase.objects.create(user=user, item_id=PREFIX + charm, price=CHARMS[charm]["price"])
         profile.charm = charm
         profile.charm_log = [*(profile.charm_log or []), {"at": now.isoformat(), "charm": charm}][-500:]
         profile.save(update_fields=["charm", "charm_log"])
@@ -275,8 +463,8 @@ def worn_since(profile, charm, now):
 def serialize(user, now=None, profile=None):
     now = now or timezone.now()
     profile = profile or UserProfile.objects.filter(user=user).first()
-    have = owned(user)
     hours = study_hours(user)
+    have = unlocked(user)
     worn = worn_now(user, now, profile)
     cards = []
     for charm, spec in CHARMS.items():
@@ -286,14 +474,22 @@ def serialize(user, now=None, profile=None):
                 "id": charm,
                 "name": spec["name"],
                 "title": spec["title"],
+                "rank": spec["rank"],
+                "role": spec["role"],
                 "line": spec["line"],
                 "max": spec["max"],
                 "guard": spec["guard"],
-                "shield": dict(spec["shield"]),
+                "shield": dict(spec["shield"]) if spec["shield"] else None,
+                "hit": spec["hit"],
+                "wishes": _wish_costs(charm),
                 "hours": spec["hours"],
                 "price": spec["price"],
-                "unlocked": hours >= spec["hours"],
-                "owned": charm in have,
+                "unlock_price": spec["unlock"],
+                "cooldown": spec["cooldown"],
+                "cooling_until": _iso(cooling_until(user, charm, now)),
+                # The hours are in (it can be unlocked); and it has been unlocked.
+                "open": hours >= spec["hours"],
+                "unlocked": charm in have,
                 "worn": charm == worn,
                 "stars": star_count(user, charm, now, profile),
                 "attuned_at": (
@@ -305,3 +501,13 @@ def serialize(user, now=None, profile=None):
             }
         )
     return {"worn": worn or None, "attune_hours": ATTUNE_HOURS, "charms": cards}
+
+
+def _iso(moment):
+    return moment.isoformat() if moment else None
+
+
+def _wish_costs(charm):
+    from .wishes import WISHES
+
+    return [{"id": use, "cost": cost} for use, cost in WISHES.get(charm, {}).items()]

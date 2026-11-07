@@ -390,18 +390,19 @@ DEFAULT_LAYOUT = {
 # stays locked until then (a BITS reset goes back to this). Once a user owns any
 # furniture the free basics are theirs too, and the packs are gone.
 #
-# Three of them, each a whole lived-in room: thirty-odd pieces crowded in
-# the way a room is once someone lives there (a desk under the shelves, the
-# laundry drying, a kettle by the low table), so the first thing anyone sees
-# is a room worth coming back to, not a desk on an empty floor.
+# Three of them, each the bones of a room, not a finished one: its signature
+# surface (the wall, or the tatami floor), one centrepiece to sleep or sit on,
+# a handful of small things, and the free desk and chair. Filling the rest of
+# it is what the shop is for.
 #
-# Balance: 4,000 BITS is about 40 hours of study, once per economy. Small and
-# medium pieces only (tiers 1 and 2): large and featured pieces stay out,
-# since those are what the weeks of saving are for. Each pack is worth about
-# the same, so the choice is only about the room you want.
-# tests.StarterPackTests holds every pack to this.
-STARTER_PACK_PRICE = 4000
-STARTER_PACK_VALUE = (85000, 100000)
+# Balance: 2,500 BITS is about 25 hours of study, once per economy, for pieces
+# worth 20,000-25,000 (about three weeks of a heavy week's earnings, the most a
+# first gift should hand over). Small and medium pieces only (tiers 1 and 2),
+# at most two medium ones. Each pack is worth about the same, so the choice is
+# only about the room you want. Accounts that bought a bigger pack before keep
+# every piece. tests.StarterPackTests holds every pack to this.
+STARTER_PACK_PRICE = 2500
+STARTER_PACK_VALUE = (20000, 25000)
 
 
 def _pack(name, line, wall, floor, items):
@@ -416,53 +417,35 @@ def _pack(name, line, wall, floor, items):
 STARTER_PACKS = {
     "pack_study": _pack(
         "STUDY ROOM",
-        "A desk under the shelves, a bed by the window, homework everywhere",
+        "A navy wall, a bed by the window and a desk to start from",
         "wall_two_tone__navy",
-        "floor_light_oak",
+        "floor_wood",
         [
-            ("window_small", 0, 1), ("wall_books", 3, 1), ("study_plan", 3, 2), ("reading_sconce", 5, 2),
-            ("desk_simple", 3, 4), ("chair_mesh", 4, 4), ("book_tower", 2, 3), ("manga_shelf", 6, 3),
-            ("clock_big", 8, 0), ("vocab_cards", 8, 2), ("poster_rocket", 11, 1), ("hat_hooks", 14, 1),
-            ("plastic_drawers", 8, 4), ("zz_plant", 9, 4), ("bed_single", 12, 4), ("rolling_cart", 0, 4),
-            ("paper_bin", 1, 5), ("bookcase_low", 0, 7), ("rug_stripe", 5, 8), ("bean_lounger", 6, 9),
-            ("alarm_clock", 12, 6), ("laundry_basket", 13, 7), ("hamper", 15, 6), ("task_floor_lamp", 10, 3),
-            ("nightlight", 11, 5), ("file_boxes", 3, 7), ("cat_bed_round", 3, 8), ("chair_ball", 9, 8),
-            ("storage_bins", 13, 9), ("sneakers", 8, 11), ("textbook_pile", 0, 10), ("school_bag", 1, 11),
-            ("paper_stack", 3, 11), ("clothes_pile", 10, 11), ("slippers", 13, 11), ("pilea", 15, 11),
+            ("starter_desk", 3, 4), ("starter_chair", 4, 4), ("study_plan", 3, 2), ("vocab_cards", 8, 2),
+            ("bed_single", 12, 4), ("zz_plant", 9, 4), ("paper_bin", 1, 5), ("alarm_clock", 12, 6),
+            ("laundry_basket", 13, 7), ("textbook_pile", 0, 10), ("school_bag", 1, 11),
         ],
     ),
     "pack_cozy": _pack(
         "ONE-ROOM FLAT",
-        "A sofa, a kitchen corner and the laundry still drying",
+        "A blush wall, a sofa bed and a pouf to put your feet on",
         "wall_limewash__blush",
-        "floor_herringbone",
+        "floor_wood",
         [
-            ("window_small", 1, 1), ("photo_ledge", 4, 1), ("pendant_globe", 8, 0), ("poster_coffee", 12, 0),
-            ("jar_shelf", 12, 2), ("utensil_rail", 14, 2), ("teapot_clock", 15, 0), ("calathea", 0, 4),
-            ("throw_basket", 1, 5), ("lamp_torchiere", 2, 3), ("sofa_bed", 3, 4), ("side_table_c", 7, 5),
-            ("fan_tower", 8, 3), ("high_table", 9, 4), ("cafe_chair", 10, 4), ("trash_sorter", 11, 4),
-            ("microwave_cart", 12, 4), ("sink_counter", 13, 4), ("coffee_table_round", 4, 7),
-            ("pouf_knit", 7, 7), ("rug_berber", 3, 8), ("kitchen_mat", 12, 7), ("laundry_rack", 14, 8),
-            ("cat_bed_round", 9, 9), ("peace_lily", 8, 10), ("floor_pillows", 1, 8),
-            ("lamp_paper_cube", 0, 7), ("nesting_tables", 9, 7), ("tray_table", 10, 9),
-            ("laundry_basket", 15, 11), ("board_games", 0, 11), ("tote_bag", 2, 11), ("blanket_pile", 5, 11),
-            ("sneakers", 11, 11), ("door_mat", 12, 11),
+            ("starter_desk", 9, 4), ("starter_chair", 10, 4), ("sofa_bed", 3, 4), ("side_table_c", 7, 5),
+            ("pilea", 0, 5), ("throw_basket", 1, 5), ("pouf_knit", 7, 7), ("lamp_paper_cube", 0, 7),
+            ("tray_table", 10, 9), ("door_mat", 12, 11),
         ],
     ),
     "pack_washitsu": _pack(
         "TATAMI ROOM",
-        "Shoji light, a low desk and the futon laid out",
-        "wall_washi",
+        "Tatami underfoot, the futon laid out and a wind chime",
+        "wall_plain",
         "floor_tatami",
         [
-            ("window_shoji", 0, 1), ("furin", 3, 0), ("chochin", 4, 0), ("paper_fan", 6, 1),
-            ("kakejiku", 9, 1), ("tear_calendar", 11, 1), ("noren", 13, 0), ("desk_low", 0, 5),
-            ("chair_zaisu", 1, 5), ("andon", 3, 4), ("tansu", 5, 4), ("bonsai", 8, 5), ("daruma", 9, 5),
-            ("ikebana", 10, 4), ("futon_folded", 11, 4), ("kerosene_heater", 13, 4),
-            ("umbrella_stand", 14, 4), ("futon", 0, 8), ("zabuton", 5, 8), ("chabudai", 6, 8),
-            ("electric_kettle", 11, 8), ("kitten_box", 13, 8), ("tea_shelf", 11, 3), ("go_board", 9, 9),
-            ("lamp_paper_cube", 8, 9), ("yarn_basket", 14, 7), ("lucky_bamboo", 0, 11),
-            ("pickle_crock", 2, 11), ("book_crate", 4, 10), ("maneki_neko", 12, 11), ("rice_bag", 15, 11),
+            ("starter_desk", 0, 5), ("starter_chair", 1, 5), ("chair_zaisu", 4, 5), ("furin", 3, 0),
+            ("tear_calendar", 11, 1), ("daruma", 9, 5), ("futon", 0, 8), ("zabuton", 5, 8),
+            ("electric_kettle", 11, 8), ("lucky_bamboo", 0, 11),
         ],
     ),
 }

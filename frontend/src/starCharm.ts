@@ -15,9 +15,14 @@
 // - NOVA: a six-pointed burst whose outline is traced point by point, star
 //   after star, round the dial, in a rim of burning rays;
 // - NEBULA: a spiral arm winding out from the centre, a star at a time, with
-//   a short spur once it is full, in a drifting cloud.
+//   a short spur once it is full, in a drifting cloud;
+// - POLARIS: a compass rose, arm by arm, in a rim with four sharp points;
+// - AURORA: a curtain of light rippling across the dial, in a wavy rim;
+// - ORION: the hunter, belt first, then shoulders, feet, head and bow, in a
+//   notched rim.
 // A charm that isn't worn is drawn dimmed by its caller.
 
+import type { CharmId } from './api';
 import type { PixelArt } from './challengeArt';
 
 const SIZE = 24;
@@ -64,7 +69,7 @@ const line = (a: [number, number], b: [number, number]): Array<[number, number]>
   return out;
 };
 
-export type CharmVariant = 'astra' | 'nova' | 'nebula';
+export type CharmVariant = 'astra' | 'polaris' | 'nova' | 'aurora' | 'nebula' | 'orion';
 
 type Seat = [number, number];
 interface Figure {
@@ -111,12 +116,66 @@ const spiral = (): Figure => {
   return { seats, links };
 };
 
-const FIGURES: Record<CharmVariant, () => Figure> = { astra: lyre, nova: burst, nebula: spiral };
+/** POLARIS's compass rose: each arm's tip, its middle, then the diagonal
+ *  between it and the next arm, so the rose closes as the last arm lights. */
+const rose = (): Figure => {
+  const seats: Seat[] = [];
+  for (let k = 0; k < 4; k++) {
+    seats.push(at(7.4, -90 + k * 90));
+    seats.push(at(4.2, -90 + k * 90));
+    seats.push(at(3.4, -45 + k * 90));
+  }
+  const links: Array<[number, number]> = [];
+  for (let k = 0; k < 4; k++) {
+    const tip = k * 3;
+    links.push([tip, tip + 1], [tip + 1, tip + 2], [tip + 2, ((k + 1) % 4) * 3 + 1]);
+  }
+  return { seats, links };
+};
+
+/** AURORA's curtain: a ripple of light drawn left to right. */
+const curtain = (): Figure => {
+  const seats: Seat[] = [];
+  for (let i = 0; i < 12; i++) {
+    const x = 5 + Math.round((i * 13) / 11);
+    const y = Math.round(CY + 3.2 * Math.sin((i / 11) * Math.PI * 2.4) - (i % 2 ? 1 : 0));
+    seats.push([x, y]);
+  }
+  const links: Array<[number, number]> = seats.slice(1).map((_, i) => [i, i + 1] as [number, number]);
+  return { seats, links };
+};
+
+/** ORION, the hunter: the belt, the shoulders, the feet, the head, the bow. */
+const hunter = (): Figure => {
+  const seats: Seat[] = [
+    [10, 14], [12, 13], [14, 12], // belt
+    [7, 8], [15, 8], // Betelgeuse, Bellatrix
+    [8, 18], [16, 18], // Saiph, Rigel
+    [11, 5], // head
+    [17, 9], [18, 13], // bow
+  ];
+  const links: Array<[number, number]> = [
+    [0, 1], [1, 2], [3, 0], [4, 2], [5, 0], [6, 2], [7, 3], [7, 4], [8, 4], [9, 8],
+  ];
+  return { seats, links };
+};
+
+const FIGURES: Record<CharmVariant, () => Figure> = {
+  astra: lyre,
+  polaris: rose,
+  nova: burst,
+  aurora: curtain,
+  nebula: spiral,
+  orion: hunter,
+};
 
 /** How far a mount's rim and edge reach out at an angle (0 for a plain ring). */
 const reach = (variant: CharmVariant, angle: number) => {
   if (variant === 'nova') return 1.5 * Math.max(0, Math.cos(12 * angle)) ** 3;
   if (variant === 'nebula') return 0.7 * Math.sin(5 * angle) + 0.45 * Math.sin(9 * angle + 1.3);
+  if (variant === 'polaris') return 1.4 * Math.max(0, Math.cos(4 * (angle + Math.PI / 2))) ** 8;
+  if (variant === 'aurora') return 0.55 * Math.sin(3 * angle) + 0.3 * Math.sin(7 * angle + 0.6);
+  if (variant === 'orion') return 0.8 * Math.max(0, Math.cos(8 * angle)) ** 6;
   return 0;
 };
 
@@ -124,6 +183,9 @@ const PALETTES: Record<CharmVariant, Record<string, string>> = {
   astra: { s: '#64748b', S: '#cbd5e1', n: '#111a3a', N: '#1e2a5c', u: '#334170', l: '#2f3d73', b: '#93a4d8' },
   nova: { s: '#9a3412', S: '#fb923c', n: '#260d08', N: '#47170c', u: '#6b2c1a', l: '#b4532a', b: '#fdba74' },
   nebula: { s: '#6d28d9', S: '#c4b5fd', n: '#170f30', N: '#2a1a52', u: '#43306f', l: '#6b52b8', b: '#a5b4fc' },
+  polaris: { s: '#0f766e', S: '#5eead4', n: '#06201e', N: '#0b3a36', u: '#1f4d48', l: '#2c7a72', b: '#99f6e4' },
+  aurora: { s: '#047857', S: '#6ee7b7', n: '#05191a', N: '#0a2e2c', u: '#1d4a40', l: '#34a37f', b: '#f9a8d4' },
+  orion: { s: '#1e40af', S: '#93c5fd', n: '#0a0f24', N: '#121c40', u: '#283766', l: '#3b5bb5', b: '#fca5a5' },
 };
 
 export const starCharmArt = (
@@ -202,4 +264,24 @@ export const starCharmArt = (
     },
     rows: grid.map((row) => row.join('')),
   };
+};
+
+/** Each charm's colour: its rim in the picker, its toast, the log list's marks. */
+export const CHARM_ACCENT: Record<CharmId, string> = {
+  astra: '#a5b4fc',
+  polaris: '#5eead4',
+  nova: '#fb923c',
+  aurora: '#6ee7b7',
+  nebula: '#c084fc',
+  orion: '#93c5fd',
+};
+
+/** The same, deep enough to read on a light page. */
+export const CHARM_INK: Record<CharmId, string> = {
+  astra: '#4f46e5',
+  polaris: '#0f766e',
+  nova: '#c2410c',
+  aurora: '#047857',
+  nebula: '#7e22ce',
+  orion: '#1d4ed8',
 };

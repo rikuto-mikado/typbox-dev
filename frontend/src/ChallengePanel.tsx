@@ -349,6 +349,9 @@ export const RaidCard: React.FC<{ raid: ActiveRaid; borderCol: string; textMuted
         </span>
         <span className={`${textMuted} tabular-nums`}>
           {t.chLoot} <span className="text-amber-400 font-bold">+{fmt(raid.loot)}</span>
+          {raid.full_loot != null && raid.full_loot > raid.loot && (
+            <span className="ml-1 line-through opacity-60">{fmt(raid.full_loot)}</span>
+          )}
         </span>
       </div>
 

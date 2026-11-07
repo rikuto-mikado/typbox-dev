@@ -1,23 +1,33 @@
 """
 MAKE A WISH: what the worn charm's stars buy, besides its GUARD and SHIELD.
-Each charm grants four wishes of its own, in its own temper, and any of them
-the FESTIVAL wish (a festival piece for 5 stars):
+Each charm grants wishes of its own, in its own temper, and any of them the
+FESTIVAL wish (a festival piece for 5 stars):
 
   ASTRA   the steady lyre: sight and the shop.
     reroll     FALLING STAR  a new furniture lineup (every shelf)
     omen       OMEN          see inside this turn's MYSTERY CRATE
     starchart  STARCHART     see next week's FEATURED and LARGE pieces
     hush       QUIET SKY     the boss's next scheduled attack doesn't land
+  POLARIS the fixed star: a little of every sphere, each dearer than the
+          specialist's own (FALLING STAR, MIST OMEN, VEIL, SUPERNOVA).
   NOVA    the burning star: hitting hard, at a price.
     supernova  SUPERNOVA     the next hit that lands deals double
     blaze      BLAZE         12h: hits x1.5, but counters land double
     wildfire   WILDFIRE      24h: each hit that lands has a 30% chance of x2
     scatter    SCATTER       re-deal only the shelves that turn daily
+  AURORA  the dawn curtain: the shop's buffs.
+    ember      EMBER         the running buff lasts 12 hours longer (once each)
+    afterglow  AFTERGLOW     every buff cooling down now is ready 12h sooner
+    omen       OMEN          as ASTRA's, a star dearer
   NEBULA  the slow cloud: cover and money.
     veil       VEIL          the next 2 counters don't land
     drift      DRIFT         3 days with no loan interest
     mist       MIST OMEN     whether the crate holds something rare, no more
     silver     SILVER RAIN   the vault's next paying day pays double
+  ORION   the hunter: steady pressure on a boss.
+    aim        AIM           the next landed hit that isn't a critical hits x1.5
+    volley     VOLLEY        the next 3 hits that land deal x1.3
+    quarry     QUARRY        24h: hits x1.25 and counters take half
 
 Two things are never shown on the page, to be found by playing:
   - DUTY DAY: each charm keeps one weekday a week (a different one each week,
@@ -28,8 +38,9 @@ Two things are never shown on the page, to be found by playing:
 
 What a wish leaves running is kept in UserProfile.shields beside the SHIELDs,
 each as {"kind": <wish>, ...}; the raid replay (attacks.py), a hit's power
-(challenges._boost), the shop (furniture.shop_lineup) and the bank (bank.py)
-read it from there. A BITS reset clears it with the SHIELDs.
+(challenges._boost), the shop (furniture.shop_lineup, economy.buff_cooldowns)
+and the bank (bank.py) read it from there. A BITS reset clears it with the
+SHIELDs. EMBER is the one that changes a purchase instead (its expiry).
 """
 
 import random
@@ -44,11 +55,15 @@ from .models import BitPurchase, StudyLog, UserProfile
 FESTIVAL_COST = 5
 WISHES = {
     "astra": {"reroll": 2, "omen": 3, "starchart": 3, "hush": 4},
+    "polaris": {"reroll": 3, "mist": 3, "veil": 4, "supernova": 7},
     "nova": {"supernova": 5, "blaze": 3, "wildfire": 4, "scatter": 2},
-    "nebula": {"veil": 3, "drift": 4, "mist": 1, "silver": 4},
+    "aurora": {"ember": 3, "afterglow": 4, "omen": 4},
+    "nebula": {"veil": 3, "drift": 4, "mist": 2, "silver": 4},
+    "orion": {"aim": 2, "volley": 3, "quarry": 5},
 }
 ALL = {use for uses in WISHES.values() for use in uses}
-KINDS = ALL - {"reroll", "omen"}
+# The ones that leave something running on the profile.
+KINDS = ALL - {"reroll", "omen", "ember"}
 
 BLAZE_HOURS = 12
 BLAZE_HIT, BLAZE_COUNTER = 1.5, 2
@@ -59,6 +74,12 @@ VEIL_COUNTERS = (2, 3)
 DRIFT_DAYS = (3, 5)
 SILVER_MULT = (2, 3)
 SWELL_CHANCE = 0.2
+AIM_HIT = 1.5
+VOLLEY_HIT, VOLLEY_HITS = 1.3, 3
+QUARRY_HOURS = 24
+QUARRY_HIT, QUARRY_COUNTER = 1.25, 0.5
+EMBER_HOURS = 12
+AFTERGLOW_HOURS = 12
 # A crate's buff is RARE at this weight or under (economy.BUFFS crate).
 RARE_WEIGHT = 8
 
@@ -129,35 +150,77 @@ def _keep(profile, entry):
 # ---------------------------------------------------------------- raids
 
 
-def hit_power(log, now):
-    """(multiplier, [wish ids]) a landed hit gets from NOVA's wishes. Spends
-    a waiting SUPERNOVA on it (one freed again if its log is deleted)."""
+def hit_power(log, now, kind="hit"):
+    """(multiplier, [wish ids]) a landed hit gets from the wishes (NOVA's and
+    ORION's). Spends a waiting SUPERNOVA, AIM or VOLLEY shot on it (freed
+    again if its log is deleted)."""
     with transaction.atomic():
         profile = UserProfile.objects.select_for_update().filter(user=log.user).first()
         if profile is None:
             return 1.0, []
-        power, used = 1.0, []
-        waiting = _waiting_supernova(profile)
+        power, used, changed = 1.0, [], False
+        waiting = _waiting(profile, "supernova")
         if waiting is not None:
             waiting["log"] = log.pk
-            profile.save(update_fields=["shields"])
+            changed = True
             power *= SUPERNOVA_HIT
             used.append("supernova")
+        if kind != "crit":
+            aim = _waiting(profile, "aim")
+            if aim is not None:
+                aim["log"] = log.pk
+                changed = True
+                power *= AIM_HIT
+                used.append("aim")
+        volley = _volley_waiting(profile)
+        if volley is not None:
+            volley["logs"] = [*_live_logs(volley.get("logs")), log.pk]
+            changed = True
+            power *= VOLLEY_HIT
+            used.append("volley")
+        if changed:
+            profile.save(update_fields=["shields"])
         if within(profile, "blaze", now):
             power *= BLAZE_HIT
             used.append("blaze")
+        if within(profile, "quarry", now):
+            power *= QUARRY_HIT
+            used.append("quarry")
         if within(profile, "wildfire", now) and random.Random(f"typbox-wildfire-{log.pk}").random() < WILDFIRE_CHANCE:
             power *= 2
             used.append("wildfire")
         return power, used
 
 
-def _waiting_supernova(profile):
-    for e in entries(profile, "supernova"):
+def _waiting(profile, kind):
+    """A one-shot wish (SUPERNOVA, AIM) not yet spent on a log that still exists."""
+    for e in entries(profile, kind):
         log = e.get("log")
         if not log or not StudyLog.objects.filter(pk=log).exists():
             return e
     return None
+
+
+def _waiting_supernova(profile):
+    return _waiting(profile, "supernova")
+
+
+def _live_logs(ids):
+    ids = [i for i in (ids or []) if isinstance(i, int)]
+    return list(StudyLog.objects.filter(pk__in=ids).values_list("pk", flat=True)) if ids else []
+
+
+def _volley_waiting(profile):
+    """A VOLLEY with shots left (a deleted log's shot comes back)."""
+    for e in entries(profile, "volley"):
+        if len(_live_logs(e.get("logs"))) < VOLLEY_HITS:
+            return e
+    return None
+
+
+def volley_left(profile):
+    e = _volley_waiting(profile)
+    return VOLLEY_HITS - len(_live_logs(e.get("logs"))) if e else 0
 
 
 def charges(profile, kind):
@@ -169,6 +232,17 @@ def charges(profile, kind):
         if start:
             out.append([start, int(e.get("n") or 1)])
     return sorted(out, key=lambda c: c[0])
+
+
+def afterglows(profile):
+    """When each AFTERGLOW was wished, oldest first (economy.buff_cooldowns
+    takes AFTERGLOW_HOURS off every cooldown running then)."""
+    out = []
+    for e in entries(profile, "afterglow"):
+        start = _parse(e.get("from"))
+        if start:
+            out.append(start)
+    return sorted(out)
 
 
 # ---------------------------------------------------------------- bank
@@ -278,10 +352,30 @@ def grant(user, use, now=None, item_id=None):
             if attacks.replay(user, now, profile=profile)["charges"][use]:
                 raise WishError("One is already waiting.")
             entry = {"kind": use, "from": now.isoformat(), "n": 1 if use == "hush" else VEIL_COUNTERS[swell]}
-        elif use == "supernova":
-            if _waiting_supernova(profile) is not None:
+        elif use in ("supernova", "aim"):
+            if _waiting(profile, use) is not None:
                 raise WishError("One is already waiting.")
-            entry = {"kind": "supernova", "from": now.isoformat(), "log": None}
+            entry = {"kind": use, "from": now.isoformat(), "log": None}
+        elif use == "volley":
+            if _volley_waiting(profile) is not None:
+                raise WishError("The last volley isn't spent yet.")
+            entry = {"kind": "volley", "from": now.isoformat(), "logs": []}
+        elif use == "quarry":
+            if within(profile, "quarry", now):
+                raise WishError("The hunt is already on.")
+            entry = {"kind": "quarry", "from": now.isoformat(), "until": (now + timedelta(hours=QUARRY_HOURS)).isoformat()}
+        elif use == "ember":
+            ember = economy.active_buff(user, now)
+            if ember is None:
+                raise WishError("No buff is running.")
+            if economy.spec_of(ember)["expires"] != "hours":
+                raise WishError("This buff keeps its own calendar: it can't be stretched.")
+            if (ember.state or {}).get("ember"):
+                raise WishError("This buff has already been stretched once.")
+        elif use == "afterglow":
+            if not economy.buff_cooldowns(user, now):
+                raise WishError("No buff is cooling down.")
+            entry = {"kind": "afterglow", "from": now.isoformat()}
         elif use in ("blaze", "wildfire"):
             if within(profile, use, now):
                 raise WishError("It is already burning.")
@@ -307,6 +401,11 @@ def grant(user, use, now=None, item_id=None):
             raise WishError("Not enough stars.")
         if use == "festival":
             BitPurchase.objects.create(user=user, item_id=item_id, price=0)
+        if use == "ember":
+            BitPurchase.objects.filter(pk=ember.pk).update(
+                expires_at=ember.expires_at + timedelta(hours=EMBER_HOURS),
+                state={**(ember.state or {}), "ember": True},
+            )
         if entry is not None:
             entry["charm"] = charm
             if swell:
@@ -340,6 +439,9 @@ def serialize(user, now, profile):
         "hush": replay["charges"]["hush"],
         "veil": replay["charges"]["veil"],
         "supernova": int(_waiting_supernova(profile) is not None) if profile else 0,
+        "aim": int(_waiting(profile, "aim") is not None) if profile else 0,
+        "volley": volley_left(profile) if profile else 0,
+        "quarry": _until(profile, "quarry", now),
         "blaze": _until(profile, "blaze", now),
         "wildfire": _until(profile, "wildfire", now),
         "drift": _until(profile, "drift", now),
@@ -420,13 +522,17 @@ def restore(raw):
         out["n"] = min(3, max(1, n)) if isinstance(n, int) and not isinstance(n, bool) else 1
     if raw["kind"] == "silver":
         out["mult"] = 3 if raw.get("mult") == 3 else 2
-    if raw["kind"] == "supernova":
+    if raw["kind"] in ("supernova", "aim"):
         if raw.get("log"):
             return None  # spent: the log it went into has a new id here
         out["log"] = None
+    if raw["kind"] == "volley":
+        if raw.get("logs"):
+            return None  # partly spent: those logs have new ids here
+        out["logs"] = []
     if raw.get("swell") is True:
         out["swell"] = True
-    if raw["kind"] in ("blaze", "wildfire", "drift", "starchart", "mist") and "until" not in out:
+    if raw["kind"] in ("blaze", "wildfire", "quarry", "drift", "starchart", "mist") and "until" not in out:
         return None
     if "until" in out and "from" in out and not timedelta(0) < _parse(out["until"]) - _parse(out["from"]) <= timedelta(days=7):
         return None

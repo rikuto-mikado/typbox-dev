@@ -19,17 +19,16 @@ state['events'] and HP is replayed from them (plus the trait's heals), so a
 log deleted mid-raid takes its hit back and an edited one hits for its new
 length, up to what it hit for when committed. A HYDRA head whose category is
 deleted or marked DONE counts as slain once another head has really been cut
-down. Down in time: the full loot. Out of time: a share of the loot in step
-with the damage dealt.
+down. Down in time: the loot, the stake always among it. Out of time: nothing
+back; the stake is what an escaped boss takes with it, and all it takes.
 
-The boss hits back: on a fixed clock from the moment the raid began it attacks,
-unless the damage dealt since its last attack parries it. Attacks are replayed
-from the hits like HP (a session running across the moment counts for it), and
-every 6 hours, and it COUNTERs every hit that lands: what its blows take is
-replayed by attacks.py into BitPurchase.struck (which the ledger counts as
-spent), and a wallet left short borrows from TYPBOX BANK (bank.py). A log a
-buff paid on or a NOVA SHIELD makes a hit land harder (_boost). Raids started
-before that took BITS once a day, never below a zero balance (_sync_attacks).
+The boss hits back: every 6 hours from the moment the raid began it attacks,
+and it COUNTERs every hit that lands. Its blows never touch the wallet: what
+they would take is replayed by attacks.py into BitPurchase.struck and comes
+off the BOUNTY (the loot above the stake) when the boss goes down
+(_down_loot), never below the stake. So a slow win still gives the stake
+back, and a SHIELD or a wish keeps the bounty whole. A log a buff paid on, a
+NOVA SHIELD or ORION worn makes a hit land harder (_boost).
 
 RIVAL: a 72-hour duel against an NPC whose day runs on a schedule drawn
 from the date (rival_day), the same for everyone. Like a raid, it starts
@@ -57,8 +56,6 @@ from .timezones import get_user_zone
 MAX_HIT_MINUTES = 180
 CRIT_MINUTES = 90
 CRIT_MULTIPLIER = 1.5
-# Out of time: this share of the loot, scaled by the fraction of HP dealt.
-ESCAPE_SHARE = 0.4
 
 # ==========================================
 # Catalog
@@ -249,10 +246,10 @@ RAIDS = {
 # How a boss fights back (attacks.py). It attacks every ATTACK_EVERY hours
 # from the start of the raid, whatever you do: nothing parries it, only a
 # charm's SHIELD or a wish stops a blow. It also COUNTERs every log that lands
-# on it (COUNTER_SHARE of its attack). So the race is the point: the faster
-# it falls the fewer blows it lands. A blow's BITS are scaled to what the raid
-# pays: brought down a fifth of the way from the end (with a counter for each
-# day's hit), it about breaks even; sooner pays, later costs.
+# on it (COUNTER_SHARE of its attack). Blows come off the bounty, not the
+# wallet: brought down a fifth of the way from the end (with a counter for
+# each day's hit), the bounty is about spent and the win gives back the
+# stake; sooner keeps more of it.
 # An attack marked "hp" is replayed by attacks.py (the name is from when
 # blows took HP first); a raid started before that took BITS once a day,
 # parried by the study since the last attack, never below a zero balance
@@ -1230,10 +1227,8 @@ def settle_expired(user, now=None):
             if locked is None:
                 continue
             if _kind(locked.item_id) == "raid":
-                spec = RAIDS[_key(locked.item_id)]
-                hp, _, max_hp = raid_hp(locked, locked.expires_at)
-                share = int(spec["loot"] * ESCAPE_SHARE * (max_hp - hp) / max_hp)
-                _settle(locked, "escaped", share, now)
+                # Escaped: the stake goes with it, and nothing else is taken.
+                _settle(locked, "escaped", 0, now)
             else:
                 outcome = duel_outcome(
                     _key(locked.item_id), duel_score(locked, locked.expires_at)
@@ -1254,7 +1249,7 @@ def settle_expired(user, now=None):
                 .first()
             )
             if locked is not None and raid_hp(locked, now)[0] <= 0:
-                _settle(locked, "down", _down_loot(locked), now)
+                _settle(locked, "down", _down_loot(locked, now, final=True), now)
     for purchase in _live(user).filter(
         item_id__startswith=RAID_PREFIX, expires_at__gt=now
     ):
@@ -1273,8 +1268,29 @@ def settle_expired(user, now=None):
     attacks.sync(user, now)
 
 
-def _down_loot(purchase):
-    return RAIDS[_key(purchase.item_id)]["loot"] + (purchase.state or {}).get("bonus", 0)
+def _down_loot(purchase, now=None, final=False):
+    """What a boss brought down pays: its loot (and a first clear's bonus),
+    less what its blows took off the bounty, never below the stake. `final`:
+    the last hit brought it down, and that one draws no counter."""
+    full = RAIDS[_key(purchase.item_id)]["loot"] + (purchase.state or {}).get("bonus", 0)
+    return max(purchase.price, full - _struck(purchase, now, final))
+
+
+def _struck(purchase, now=None, final=False):
+    """What the boss's blows have taken off the bounty so far."""
+    if not ((purchase.state or {}).get("attack") or {}).get("hp"):
+        return 0  # an older raid's blows were settled the old way
+    from . import attacks
+
+    now = now or timezone.now()
+    upto = min(now, purchase.expires_at) if purchase.expires_at else now
+    result = attacks.replay(purchase.user, upto)
+    struck = result["struck"].get(purchase.pk, 0)
+    if final:
+        landed = [e for e in (purchase.state or {}).get("events", []) if e.get("dmg")]
+        if landed and (purchase.state or {}).get("outcome") != "down":
+            struck -= result["landed"].get(f"{purchase.pk}:c{landed[-1].get('log')}", 0)
+    return max(0, struck)
 
 
 def active_challenge(user, now=None):
@@ -1550,7 +1566,7 @@ def apply_to_new_log(log, now=None):
         purchase.save(update_fields=["state"])
         hp, heads, max_hp = raid_hp(purchase, now)
         down = hp <= 0
-        loot = _down_loot(purchase)
+        loot = _down_loot(purchase, now, final=True)
         if down:
             _settle(purchase, "down", loot, now)
         return {
@@ -1582,10 +1598,10 @@ def _counter_landed(log, purchase, now):
 
 def _boost(log, kind, now):
     """(multiplier, [wishes]) for how much harder this log hits a raid: half
-    its buff's share of its BITS, a NOVA SHIELD up (attacks.py), and NOVA's
-    wishes (wishes.hit_power)."""
+    its buff's share of its BITS, a NOVA SHIELD up (attacks.py), ORION worn
+    (charms.hit_bonus), and the wishes (wishes.hit_power)."""
     from .economy import bits_for_minutes
-    from . import attacks, wishes
+    from . import attacks, charms, wishes
 
     if kind not in ("hit", "crit"):
         return 1.0, []
@@ -1594,7 +1610,8 @@ def _boost(log, kind, now):
     if base and log.bonus_bits:
         boost = min(BUFF_HIT_CAP, 1 + BUFF_HIT_SHARE * log.bonus_bits / base)
     boost *= attacks.power_at(log.user, now)
-    power, wished = wishes.hit_power(log, now)
+    boost *= charms.hit_bonus(log.user, now)
+    power, wished = wishes.hit_power(log, now, kind)
     return round(boost * power, 3), wished
 
 
@@ -1663,7 +1680,7 @@ def on_log_edited(log, now=None):
         purchase.state = state
         purchase.save(update_fields=["state"])
         if raid_hp(purchase, now)[0] <= 0:
-            _settle(purchase, "down", _down_loot(purchase), now)
+            _settle(purchase, "down", _down_loot(purchase, now, final=True), now)
 
 
 # ==========================================
@@ -1755,7 +1772,8 @@ def serialize_challenge(purchase, now=None):
             "hp": hp,
             "max_hp": max_hp,
             "days": spec["days"],
-            "loot": _down_loot(purchase),
+            "loot": _down_loot(purchase, now),
+            "full_loot": spec["loot"] + state.get("bonus", 0),
             "first_bonus": state.get("bonus", 0),
             "inverted_of": spec.get("inverted_of"),
             "struck": purchase.struck,

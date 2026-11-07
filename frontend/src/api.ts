@@ -222,6 +222,8 @@ export type RaidHitKind = 'hit' | 'crit' | 'block' | 'miss' | 'nohead';
 
 export interface StarLit {
   charm: CharmId;
+  /** Worn at least once: announced. The others are only marked on the log. */
+  held?: boolean;
   name: string;
   stars: number;
   max: number;
@@ -246,11 +248,14 @@ export interface ActiveRaid {
   hp: number;
   max_hp: number;
   days: number;
+  /** What bringing it down pays now: the loot less what its blows took, never below the stake. */
   loot: number;
+  /** The loot before any blow (older servers omit it). */
+  full_loot?: number;
   /** Part of the loot that only the first clear pays. */
   first_bonus?: number;
   inverted_of?: string | null;
-  /** BITS its attacks have taken so far. */
+  /** BITS its blows have taken off the bounty so far (never from the wallet). */
   struck?: number;
   /** Null for a raid started before bosses hit back. */
   attack?: BossAttack | null;
@@ -489,14 +494,19 @@ export interface Starlight {
   attuned?: boolean;
   stars: number;
   max: number;
+  /** Stars a GUARD costs (past the gauge for a charm with no GUARD). */
   cost: number;
-  /** Stars its SHIELD costs. */
-  shield_cost?: number;
+  /** False for a charm with no GUARD (NOVA, ORION). */
+  has_guard?: boolean;
+  /** Stars its SHIELD costs (null: it has none). */
+  shield_cost?: number | null;
   guard_on: boolean;
   shield_on?: boolean;
   charms?: CharmsState;
   /** Local days a star was lit, 'YYYY-MM-DD', oldest first. */
   days: string[];
+  /** {log id: [charm, ...]}: the log that lit each day, for each charm held. */
+  lit_logs?: Record<string, CharmId[]>;
   last_guard: { at: string; name: string } | null;
   /** What each of the worn charm's wishes costs today (and the FESTIVAL's). */
   uses?: Partial<Record<StarWish | 'festival', number>>;
@@ -527,7 +537,12 @@ export type StarWish =
   | 'veil'
   | 'drift'
   | 'mist'
-  | 'silver';
+  | 'silver'
+  | 'ember'
+  | 'afterglow'
+  | 'aim'
+  | 'volley'
+  | 'quarry';
 
 export interface WishState {
   charm: CharmId | null;
@@ -540,6 +555,10 @@ export interface WishState {
     veil?: number;
     supernova?: number;
     silver?: number;
+    aim?: number;
+    /** VOLLEY shots left. */
+    volley?: number;
+    quarry?: string | null;
     blaze?: string | null;
     wildfire?: string | null;
     drift?: string | null;
@@ -548,7 +567,10 @@ export interface WishState {
 }
 
 /** CHARMS (backend tracker/charms.py): what STARLIGHT is gathered in. */
-export type CharmId = 'astra' | 'nova' | 'nebula';
+export type CharmId = 'astra' | 'polaris' | 'nova' | 'aurora' | 'nebula' | 'orion';
+
+/** How far a charm, blessing or buff goes and how much it asks (not a ladder). */
+export type Rank = 'C' | 'B' | 'A' | 'S';
 
 export interface CharmCard {
   id: CharmId;
@@ -557,14 +579,30 @@ export interface CharmCard {
   /** How its stars light, in a line. */
   line: string;
   max: number;
-  /** Stars a GUARD costs. */
-  guard: number;
-  /** Its SHIELD: stars, hours, raid damage multiplier inside, HP given back when it rises. */
-  shield: { cost: number; hours: number; power: number };
+  rank?: Rank;
+  /** What it is for: SIGHT, ALL-ROUND, BURST, BUFFS, COVER, THE HUNT. */
+  role?: string;
+  /** Stars a GUARD costs, or null: it has none. */
+  guard: number | null;
+  /** Its SHIELD: stars, hours, raid damage multiplier inside; null: it has none. */
+  shield: { cost: number; hours: number; power: number } | null;
+  /** Raid damage multiplier on every landed hit while worn and settled in. */
+  hit?: number;
+  /** Its wishes and their usual costs. */
+  wishes?: Array<{ id: StarWish; cost: number }>;
   hours: number;
+  /** What each WEAR costs. */
   price: number;
+  /** What unlocking it costs, once. */
+  unlock_price?: number;
+  /** Hours it rests after coming off. */
+  cooldown?: number;
+  /** When it can be worn again, while it rests. */
+  cooling_until?: string | null;
+  /** Its hours are in: it can be unlocked. */
+  open?: boolean;
+  /** Unlocked (paid for once): it can be worn. */
   unlocked: boolean;
-  owned: boolean;
   worn: boolean;
   stars: number;
   /** When a just-worn charm's insurance starts working. */
@@ -686,12 +724,23 @@ export interface BlessingState {
     /** The effect in a line. */
     effect: string;
     detail?: string;
+    rank?: Rank;
+    /** How it sits beside a buff or a charm: ANY, BUFFED, UNBUFFED, STARS. */
+    affinity?: 'ANY' | 'BUFFED' | 'UNBUFFED' | 'STARS';
     /** Hours logged that break its seal. */
     hours: number;
+    /** What each WEAR costs. */
     price: number;
+    /** What unlocking it costs, once. */
+    unlock_price?: number;
+    /** Hours it rests after coming off. */
+    cooldown?: number;
+    /** When it can be worn again, while it rests. */
+    cooling_until?: string | null;
+    /** Its seal is broken: it can be unlocked. */
+    open?: boolean;
+    /** Unlocked (paid for once): it can be worn. */
     unlocked: boolean;
-    /** Bought (older servers omit it: there, open meant usable). */
-    owned?: boolean;
   }>;
 }
 
@@ -898,28 +947,29 @@ export const api = {
         body: JSON.stringify({}),
       }),
     /** Gives up the running BOSS RAID / RIVAL duel (nothing comes back). */
-    /** Wears a bought blessing (null takes it off); a new one starts attuning. */
+    /** Wears a blessing, paying its price (null takes it off; that one then rests); a new one starts attuning. */
     wearBlessing: async (id: string | null) =>
       apiFetch<BitsShopState>('/bits/blessing/', {
         method: 'POST',
         body: JSON.stringify({ id }),
       }),
-    /** Buys a blessing whose seal the hours have broken. */
-    buyBlessing: async (id: string) =>
+    /** Unlocks a blessing for good, paying its unlock price once. */
+    unlockBlessing: async (id: string) =>
       apiFetch<BitsShopState>('/bits/blessing/', {
         method: 'POST',
-        body: JSON.stringify({ buy: id }),
+        body: JSON.stringify({ unlock: id }),
       }),
-    /** Puts a STARLIGHT charm on (null takes the worn one off). */
+    /** Unlocks a STARLIGHT charm for good, paying its unlock price once. */
+    unlockCharm: async (id: CharmId) =>
+      apiFetch<BitsShopState>('/bits/charm/', {
+        method: 'POST',
+        body: JSON.stringify({ unlock: id }),
+      }),
+    /** Puts a STARLIGHT charm on, paying its price (null takes the worn one off; that one then rests). */
     wearCharm: async (id: CharmId | null) =>
       apiFetch<BitsShopState>('/bits/charm/', {
         method: 'POST',
         body: JSON.stringify({ wear: id }),
-      }),
-    buyCharm: async (id: CharmId) =>
-      apiFetch<BitsShopState>('/bits/charm/', {
-        method: 'POST',
-        body: JSON.stringify({ buy: id }),
       }),
     bank: async (body: BankAction) =>
       apiFetch<BitsShopState>('/bits/bank/', {

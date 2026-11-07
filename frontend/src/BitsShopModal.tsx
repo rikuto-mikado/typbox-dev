@@ -1131,9 +1131,18 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                         {
                           view: 'starlight',
                           label: t.nowStars,
-                          art: stars ? <AstraIcon starlight={stars} className="w-8 h-8" /> : <span className={`w-7 h-7 border border-dashed ${borderCol}`} />,
-                          value: stars ? tf(t.nowStarsLine, { a: stars.stars, b: stars.max }) : t.nowNone,
-                          sub: stars?.worn === false ? t.charmNotWorn : stars?.guard_on ? t.nowGuardOn : '',
+                          // Nothing worn: an empty socket, like the buff's and the blessing's.
+                          art:
+                            stars && stars.worn !== false ? (
+                              <AstraIcon starlight={stars} className="w-8 h-8" />
+                            ) : (
+                              <span className={`w-7 h-7 border border-dashed ${borderCol}`} />
+                            ),
+                          value:
+                            stars && stars.worn !== false
+                              ? `${stars.charms?.charms.find((c) => c.id === stars.charm)?.name ?? ''} ${tf(t.nowStarsLine, { a: stars.stars, b: stars.max })}`.trim()
+                              : t.nowNone,
+                          sub: stars && stars.worn !== false && stars.guard_on ? t.nowGuardOn : '',
                           lit: Boolean(stars && stars.worn !== false && stars.stars > 0),
                         },
                       ];
@@ -1174,8 +1183,9 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                     setState(next);
                     onPurchased(next);
                   }}
-                  onBuy={async (id) => {
-                    const next = await api.bits.buyBlessing(id);
+                  now={now}
+                  onUnlock={async (id) => {
+                    const next = await api.bits.unlockBlessing(id);
                     setState(next);
                     onPurchased(next);
                   }}
@@ -1204,8 +1214,9 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                     balance={balance}
                     demo={isDemo()}
                     onWear={wearCharm}
-                    onBuy={async (id) => {
-                      const next = await api.bits.buyCharm(id);
+                    now={now}
+                    onUnlock={async (id) => {
+                      const next = await api.bits.unlockCharm(id);
                       setState(next);
                       onPurchased(next);
                     }}
@@ -1241,8 +1252,14 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                     onCancel={handleCancelBuff}
                   />
                 ) : (
-                  <div className={`p-3 border border-dashed ${borderCol} text-[10px] ${textMuted}`}>
-                    {t.bitsNoBuff}
+                  // The running card's frame, empty: the page keeps its shape.
+                  <div className={`p-3 border border-dashed ${borderCol} flex gap-3 items-center`}>
+                    <span className={`shrink-0 w-14 h-14 border border-dashed ${borderCol}`} aria-hidden />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className={`font-bold tracking-wider ${textMuted}`}>{t.bitsNoBuffTitle}</div>
+                      <div className={`h-2 border border-dashed ${borderCol}`} aria-hidden />
+                      <div className={`text-[10px] font-sans ${textMuted}`}>{t.bitsNoBuff}</div>
+                    </div>
                   </div>
                 )}
                 {cancelNotice && !state?.active_buff && (

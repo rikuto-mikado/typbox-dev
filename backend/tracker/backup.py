@@ -20,7 +20,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from . import bank, challenges, charms, trade, wishes
-from .blessings import BLESSINGS, PREFIX as BLESSING_PREFIX
+from .blessings import BLESSINGS, PREFIX as BLESSING_PREFIX, UNLOCK_PREFIX as BLESSING_UNLOCK
 from .economy import BUFFS, LEGACY_BUFFS, RUNNABLE_BUFFS, crate_turns_at, active_buff, refund_amount
 from .furniture import (
     FURNITURE,
@@ -203,12 +203,19 @@ def _purchase_from(row, user, categories, now):
         if _amount(state.get("bonus")):
             obj.state["bonus"] = _amount(state["bonus"])
         return obj
+    # A charm's or blessing's WEAR: `expires` is when it came off (its cooldown
+    # runs from there); none while it is still on.
+    # An UNLOCK, for good.
+    if item_id.startswith(charms.UNLOCK_PREFIX):
+        return obj if item_id[len(charms.UNLOCK_PREFIX):] in charms.CHARMS and expires is None else None
+    if item_id.startswith(BLESSING_UNLOCK):
+        return obj if item_id[len(BLESSING_UNLOCK):] in BLESSINGS and expires is None else None
     if item_id.startswith(charms.PREFIX):
-        if item_id[len(charms.PREFIX):] not in charms.CHARMS or expires is not None:
+        if item_id[len(charms.PREFIX):] not in charms.CHARMS:
             return None
         return obj
     if item_id.startswith(BLESSING_PREFIX):
-        if item_id[len(BLESSING_PREFIX):] not in BLESSINGS or expires is not None:
+        if item_id[len(BLESSING_PREFIX):] not in BLESSINGS:
             return None
         return obj
     if item_id in FURNITURE:
@@ -460,6 +467,9 @@ def _restore_starlight(profile, raw):
         charm = raw.get("charm")
         if charm in charms.CHARMS or charm == "":
             profile.charm = charm
+        # An older file (when ASTRA came free) may wear one its log never put on.
+        if profile.charm and charms.worn_at(profile, timezone.now()) != profile.charm:
+            profile.charm_log = [*profile.charm_log, {"at": timezone.now().isoformat(), "charm": profile.charm}]
     shields = raw.get("shields")
     if not profile.shields and isinstance(shields, list):
         clean = []
@@ -473,6 +483,8 @@ def _restore_starlight(profile, raw):
             if not (start and until and charm in charms.CHARMS and timedelta(0) < until - start <= timedelta(days=7)):
                 continue
             spec = charms.CHARMS[charm]["shield"]
+            if spec is None:
+                continue  # this charm raises no SHIELD (any more)
             clean.append(
                 {
                     "from": start.isoformat(),
