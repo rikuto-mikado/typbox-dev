@@ -3215,8 +3215,9 @@ class ChallengeTests(APITestCase):
             state = self._state()
             self.assertIsNone(state["active_challenge"])
             self.assertEqual(state["last_challenge"]["outcome"], "down")
-            # 10,000 - 800 entry + 15h base + 1,500 loot
-            self.assertEqual(state["bits"]["balance"], 10000 - 800 + 1500 + 1500)
+            # 10,000 - 800 entry + 15h base + 1,500 loot - four counters (20 each;
+            # none for the blow that brought it down)
+            self.assertEqual(state["bits"]["balance"], 10000 - 800 + 1500 + 1500 - 4 * 20)
             self.assertEqual(state["bits"]["payouts"], 1500)
             self.assertIsNone(self._log(60).get("challenge_hit"))
 
@@ -3307,7 +3308,8 @@ class ChallengeTests(APITestCase):
             self.assertEqual(self._buy("warm_up").status_code, 201)
             log = self._log(60)
             self.assertEqual(log["bonus_bits"], 100)  # the buff still pays
-            self.assertEqual(log["challenge_hit"]["damage"], 60)
+            # and hits harder: half its share of the log's BITS (x1.5 here)
+            self.assertEqual(log["challenge_hit"]["damage"], 90)
 
     def test_forfeit_ends_it_with_nothing_back(self):
         with self._at(2026, 11, 2, 12, 0):
@@ -4110,11 +4112,11 @@ class SessionTimingAndEditTests(APITestCase):
     def test_one_star_a_day(self):
         self._set_stars(0)
         with self._at(2026, 3, 2, 12):
-            self.assertEqual(self._log(30)["star_lit"], 1)
+            self.assertEqual(self._log(30)["star_lit"][0]["stars"], 1)
             self.assertNotIn("star_lit", self._log(30))
             self.assertEqual(self._stars(), 1)
         with self._at(2026, 3, 3, 12):
-            self.assertEqual(self._log(30)["star_lit"], 2)
+            self.assertEqual(self._log(30)["star_lit"][0]["stars"], 2)
 
     def test_a_log_a_buff_paid_on_lights_nothing(self):
         self._set_stars(0)
@@ -4691,7 +4693,7 @@ class SessionTimingAndEditTests(APITestCase):
                 {"duration_minutes": 30, "category": self.math.id, "date": "2026-03-18"},
                 format="json",
             ).data
-            self.assertEqual(res["star_lit"], 1)
+            self.assertEqual(res["star_lit"][0]["stars"], 1)
             self.assertEqual(self._starlight()["days"], ["2026-03-18"])
 
     def test_a_trophy_left_in_a_room_is_dropped_and_cannot_be_placed(self):
@@ -4976,60 +4978,69 @@ class InvertedAndAttackTests(APITestCase):
                 for (s, n, _), (s2, _, _) in zip(sessions, sessions[1:]):
                     self.assertLess(s + n, s2 + 1, key)
 
-    # ---- attacks
-    def test_a_boss_attacks_when_left_alone_and_a_hit_parries(self):
-        with self._at(2026, 3, 2, 12):
-            self._buy("raid_golem")
-            start = self._shop()["bits"]["balance"]
-        with self._at(2026, 3, 3, 11):
-            self._log(60)  # parries the attack at noon
-        with self._at(2026, 3, 3, 13):
-            shop = self._shop()
-            self.assertEqual(shop["active_challenge"]["struck"], 0)
-            self.assertEqual(shop["bits"]["balance"], start + 100)
-        with self._at(2026, 3, 4, 13):
-            shop = self._shop()
-            self.assertEqual(shop["active_challenge"]["struck"], 75)
-            self.assertEqual(shop["bits"]["balance"], start + 100 - 75)
-            self.assertEqual(self.client.get("/api/auth/me/").data["bits"]["balance"], start + 100 - 75)
+    # ---- attacks (every 6 hours whatever you do, a counter for every hit, all in BITS: attacks.py)
+    def _struck(self):
+        return self._shop()["active_challenge"]["struck"]
 
-    def test_a_session_running_across_the_attack_parries_it(self):
+    def test_a_boss_attacks_every_six_hours_and_nothing_parries_it(self):
         with self._at(2026, 3, 2, 12):
             self._buy("raid_titan")
-        with self._at(2026, 3, 3, 12, 30):
-            self.assertEqual(self._shop()["active_challenge"]["struck"], 170)
-            self._log(90)  # began 11:00
-            self.assertEqual(self._shop()["active_challenge"]["struck"], 0)
+            start = self._shop()["bits"]["balance"]
+        with self._at(2026, 3, 2, 19):
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["struck"], 85)  # 18:00
+            self.assertEqual(shop["bits"]["balance"], start - 85)
+        with self._at(2026, 3, 2, 23):
+            hit = self._log(60)["challenge_hit"]
+            self.assertEqual(hit["counter"], 42)
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["struck"], 127)
+            self.assertEqual(shop["bits"]["balance"], start - 85 + 100 - 42)
+        with self._at(2026, 3, 3, 1):
+            self.assertEqual(self._struck(), 212)  # midnight's lands, studied or not
+        with self._at(2026, 3, 3, 7):
+            self.assertEqual(self._struck(), 297)
 
-    def test_a_blocked_log_does_not_parry(self):
+    def test_a_blocked_log_draws_no_counter(self):
         with self._at(2026, 3, 2, 12):
             self._buy("raid_golem")
-        with self._at(2026, 3, 3, 11):
-            self._log(50)
-        with self._at(2026, 3, 3, 13):
-            self.assertEqual(self._shop()["active_challenge"]["struck"], 75)
+        with self._at(2026, 3, 2, 17):
+            self.assertEqual(self._log(50)["challenge_hit"]["counter"], 0)
+        with self._at(2026, 3, 2, 19):
+            self.assertEqual(self._struck(), 40)
 
-    def test_an_attack_never_takes_the_balance_below_zero(self):
+    def test_with_no_bits_left_the_bank_lends_and_nothing_else_can_be_bought(self):
+        from .challenges import RAIDS
+
+        price = RAIDS["titan"]["price"]
         StudyLog.objects.filter(user=self.user).delete()
         with self._at(2026, 1, 1):
-            StudyLog.objects.create(user=self.user, duration_minutes=60 * 8 + 30)  # 850
+            StudyLog.objects.create(user=self.user, duration_minutes=(price + 50) * 60 // 100)
         with self._at(2026, 3, 2, 12):
-            self._buy("raid_golem")  # 800: 50 left
-        with self._at(2026, 3, 3, 13):
+            self._buy("raid_titan")  # 50 BITS left
+        with self._at(2026, 3, 2, 19):
             shop = self._shop()
-            self.assertEqual(shop["active_challenge"]["struck"], 50)
+            self.assertEqual(shop["active_challenge"]["struck"], 85)
+            self.assertEqual(shop["bits"]["balance"], 0)
+            self.assertEqual(shop["bank"]["emergency_owed"], 35)
+            self.assertEqual(self._buy("warm_up").status_code, 400)  # owing it
+        with self._at(2026, 3, 3, 7):
+            self.assertEqual(self._shop()["bank"]["emergency_owed"], 205)  # 0:00 and 6:00 too
+        with self._at(2026, 3, 3, 8):
+            self._log(30)  # 50 BITS, half to the loan; its counter is 42 more
+            shop = self._shop()
+            self.assertEqual(shop["bank"]["emergency_owed"], 205 - 25 + 17)
             self.assertEqual(shop["bits"]["balance"], 0)
 
-    def test_attacks_stop_with_the_raid_and_stay_on_the_ledger(self):
+    def test_attacks_stop_with_the_raid(self):
         with self._at(2026, 3, 2, 12):
-            self._buy("raid_golem")
-        with self._at(2026, 3, 3, 13):
+            self._buy("raid_titan")
+        with self._at(2026, 3, 2, 19):
+            self.assertEqual(self._struck(), 85)
             self.assertEqual(self.client.post("/api/bits/challenge/forfeit/").status_code, 200)
         with self._at(2026, 3, 6, 13):
-            shop = self._shop()
-            self.assertEqual(shop["last_challenge"]["struck"], 75)
-            purchase = BitPurchase.objects.get(user=self.user, item_id="raid_golem")
-            self.assertEqual(purchase.struck, 75)
+            self._shop()
+            self.assertEqual(BitPurchase.objects.get(user=self.user, item_id="raid_titan").struck, 85)
 
     def test_a_raid_from_before_attacks_stays_peaceful(self):
         with self._at(2026, 3, 2, 12):
@@ -5042,15 +5053,32 @@ class InvertedAndAttackTests(APITestCase):
             self.assertEqual(active["struck"], 0)
             self.assertIsNone(active["attack"])
 
-    def test_deleting_the_hit_that_parried_brings_the_attack_back(self):
+    def test_a_raid_from_before_still_takes_bits_never_below_zero(self):
+        StudyLog.objects.filter(user=self.user).delete()
+        with self._at(2026, 1, 1):
+            StudyLog.objects.create(user=self.user, duration_minutes=60 * 8 + 30)  # 850
         with self._at(2026, 3, 2, 12):
-            self._buy("raid_golem")
-        with self._at(2026, 3, 3, 11):
-            log = self._log(60)
+            self._buy("raid_golem")  # 800: 50 left
+            purchase = BitPurchase.objects.get(user=self.user, item_id="raid_golem")
+            state = dict(purchase.state)
+            state["attack"] = {"name": "BOULDER THROW", "every": 24, "parry": 60, "dmg": 75}
+            purchase.state = state
+            purchase.save(update_fields=["state"])
         with self._at(2026, 3, 3, 13):
-            self.assertEqual(self._shop()["active_challenge"]["struck"], 0)
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["struck"], 50)
+            self.assertEqual(shop["bits"]["balance"], 0)
+            self.assertEqual(shop["bank"]["emergency_owed"], 0)
+
+    def test_deleting_a_hit_takes_its_counter_back(self):
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_titan")
+        with self._at(2026, 3, 2, 23):
+            log = self._log(60)
+        with self._at(2026, 3, 3, 1):
+            self.assertEqual(self._struck(), 212)
             self.client.delete(f"/api/logs/{log['id']}/")
-            self.assertEqual(self._shop()["active_challenge"]["struck"], 75)
+            self.assertEqual(self._struck(), 170)
 
     # ---- collection
     def test_the_collection_keeps_the_record(self):
@@ -6379,3 +6407,401 @@ class BlessingTests(APITestCase):
             BitPurchase.objects.filter(user=self.user).delete()
             res = self.client.post("/api/logs/import-backup/", payload, format="json")
             self.assertTrue(BitPurchase.objects.filter(user=self.user, item_id="blessing:steady").exists())
+
+
+class CharmShieldBankTests(APITestCase):
+    """CHARMS (charms.py), SHIELDs against the raids (attacks.py), TYPBOX BANK (bank.py)."""
+
+    def setUp(self):
+        for name, value in (("active_on", None), ("is_active", False)):
+            patcher = mock.patch(f"tracker.festivals.{name}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.tokyo = ZoneInfo("Asia/Tokyo")
+        self.user = User.objects.create_user(
+            username="charmer", email="charmer@example.com", password="s3cure-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        UserProfile.objects.update_or_create(user=self.user, defaults={"timezone": "Asia/Tokyo"})
+        with self._at(2026, 1, 1):
+            StudyLog.objects.create(user=self.user, duration_minutes=60 * 600, date=date(2026, 1, 1))
+
+    def _at(self, *args):
+        return mock.patch("django.utils.timezone.now", return_value=datetime(*args, tzinfo=self.tokyo))
+
+    def _shop(self):
+        return self.client.get("/api/bits/").data
+
+    def _log(self, minutes):
+        res = self.client.post("/api/logs/", {"duration_minutes": minutes, "topic": ""}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        return res.data
+
+    def _post(self, path, body):
+        return self.client.post(f"/api/bits/{path}/", body, format="json")
+
+    def _buy(self, item_id):
+        return self._post("buy", {"item_id": item_id})
+
+    def _charm(self, shop, charm):
+        return next(c for c in shop["starlight"]["charms"]["charms"] if c["id"] == charm)
+
+    # ---- charms
+    def test_astra_is_worn_from_the_start_and_taking_it_off_stops_its_insurance(self):
+        with self._at(2026, 3, 2, 12):
+            star = self._shop()["starlight"]
+            self.assertEqual((star["charm"], star["worn"], star["attuned"], star["stars"]), ("astra", True, True, 1))
+            self._log(30)
+        with self._at(2026, 3, 3, 12):
+            self._log(30)
+            self.assertEqual(self._shop()["starlight"]["stars"], 3)
+        with self._at(2026, 3, 3, 13):
+            self.assertEqual(self._post("charm", {"wear": None}).status_code, 200)
+            star = self._shop()["starlight"]
+            self.assertEqual((star["worn"], star["guard_on"]), (False, False))
+        with self._at(2026, 3, 4, 12):
+            self._log(30)  # not worn: still counted from the logs
+            self.assertEqual(self._shop()["starlight"]["stars"], 4)
+            res = self._post("starlight", {"use": "reroll"})
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("Wear a charm", res.data["detail"])
+            self._post("charm", {"wear": "astra"})
+            self.assertFalse(self._shop()["starlight"]["attuned"])  # 24 hours to settle in
+        with self._at(2026, 3, 5, 13):
+            self.assertTrue(self._shop()["starlight"]["attuned"])
+
+    def test_nova_is_bought_once_it_opens_and_lights_two_on_a_long_day(self):
+        with self._at(2026, 3, 2, 9):
+            before = self._shop()["bits"]["balance"]
+            self.assertEqual(self._post("charm", {"wear": "nova"}).status_code, 400)  # not bought
+            self.assertEqual(self._post("charm", {"buy": "nova"}).status_code, 200)
+            self.assertEqual(self._post("charm", {"buy": "nova"}).status_code, 400)  # once
+            self.assertEqual(self._shop()["bits"]["balance"], before - 6000)
+            self.assertEqual(self._post("charm", {"wear": "nova"}).status_code, 200)
+            self._log(120)
+            self.assertEqual(self._shop()["starlight"]["stars"], 2)  # 1/1's long day; today is under 3 hours
+            self._log(90)
+            shop = self._shop()
+            self.assertEqual((shop["starlight"]["charm"], shop["starlight"]["stars"], shop["starlight"]["max"]), ("nova", 4, 12))
+            self.assertEqual(self._charm(shop, "astra")["stars"], 2)  # ASTRA counts the same day its own way
+
+    def test_a_charm_needs_its_hours(self):
+        StudyLog.objects.filter(user=self.user).update(duration_minutes=60 * 50)
+        with self._at(2026, 3, 2, 9):
+            res = self._post("charm", {"buy": "nebula"})
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("300 hours", res.data["detail"])
+            self.assertEqual(self._post("charm", {"buy": "nope"}).status_code, 400)
+            self.assertEqual(self._post("charm", {"wear": 5}).status_code, 400)
+
+    def test_a_full_astra_raises_a_shield_against_the_boss(self):
+        for day in range(14):
+            with self._at(2026, 2, 10 + day, 12):
+                StudyLog.objects.create(user=self.user, duration_minutes=30, date=date(2026, 2, 10 + day))
+        with self._at(2026, 3, 2, 12):
+            self.assertTrue(self._shop()["starlight"]["shield_on"])
+            self._buy("raid_golem")
+        with self._at(2026, 3, 3, 13):
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["struck"], 0)
+            self.assertEqual(shop["starlight"]["stars"], 0)  # all 14 spent
+            self.assertIsNotNone(shop["defense"]["shield"])
+        with self._at(2026, 3, 4, 13):
+            self.assertEqual(self._shop()["active_challenge"]["struck"], 0)  # still inside 48h
+        with self._at(2026, 3, 4, 19):
+            self.assertEqual(self._shop()["active_challenge"]["struck"], 40)  # it held until 18:00
+
+    def test_a_charm_not_worn_raises_no_shield(self):
+        for day in range(14):
+            with self._at(2026, 2, 10 + day, 12):
+                StudyLog.objects.create(user=self.user, duration_minutes=30, date=date(2026, 2, 10 + day))
+        with self._at(2026, 3, 2, 12):
+            self._post("charm", {"wear": None})
+            self._buy("raid_golem")
+        with self._at(2026, 3, 3, 13):
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["struck"], 160)  # four attacks
+            self.assertEqual(shop["starlight"]["stars"], 14)
+
+    # ---- wishes (wishes.py): four for each charm
+    def _wearing(self, charm, days, minutes):
+        """Wears `charm` (given for free) with `days` days of `minutes` logged before 3/2."""
+        for day in range(days):
+            with self._at(2026, 2, 10 + day, 12):
+                StudyLog.objects.create(user=self.user, duration_minutes=minutes, date=date(2026, 2, 10 + day))
+        with self._at(2026, 2, 28, 12):
+            if charm != "astra":
+                BitPurchase.objects.create(user=self.user, item_id=f"charm:{charm}", price=0)
+            self.assertEqual(self._post("charm", {"wear": charm}).status_code, 200)
+
+    def _wish(self, use):
+        return self._post("starlight", {"use": use})
+
+    def _no_duty(self):
+        patcher = mock.patch("tracker.wishes.duty_weekday", return_value=-1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_each_charm_grants_its_own_wishes(self):
+        self._no_duty()
+        self._wearing("astra", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            wishes = self._shop()["starlight"]["wishes"]
+            self.assertEqual([w["id"] for w in wishes["list"]], ["reroll", "omen", "starchart", "hush"])
+            self.assertEqual(self._wish("veil").status_code, 400)  # NEBULA's
+            self.assertEqual(self._wish("nope").status_code, 400)
+            BitPurchase.objects.create(user=self.user, item_id="charm:nova", price=0)
+            self._post("charm", {"wear": "nova"})
+            wishes = self._shop()["starlight"]["wishes"]
+            self.assertEqual([w["id"] for w in wishes["list"]], ["supernova", "blaze", "wildfire", "scatter"])
+            self.assertEqual(self._wish("reroll").status_code, 400)  # ASTRA's
+            self._post("charm", {"wear": None})
+            self.assertEqual(self._wish("supernova").status_code, 400)  # nothing worn
+
+    def test_a_charm_keeps_a_hidden_duty_day(self):
+        self._wearing("astra", 14, 30)
+        with self._at(2026, 3, 2, 12):  # a Monday
+            with mock.patch("tracker.wishes.duty_weekday", return_value=0):
+                uses = self._shop()["starlight"]["uses"]
+                self.assertEqual((uses["reroll"], uses["hush"], uses["festival"]), (1, 3, 4))
+                self.assertEqual(self._wish("reroll").status_code, 200)
+                self.assertEqual(self._shop()["starlight"]["stars"], 13)
+            with mock.patch("tracker.wishes.duty_weekday", return_value=3):
+                self.assertEqual(self._shop()["starlight"]["uses"]["reroll"], 2)
+
+    def test_quiet_sky_stops_the_next_attack(self):
+        self._no_duty()
+        self._wearing("astra", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            self.assertEqual(self._wish("hush").status_code, 400)  # no boss yet
+            self._buy("raid_golem")
+            self.assertEqual(self._wish("hush").status_code, 200)
+            self.assertEqual(self._wish("hush").status_code, 400)  # one waiting
+            self.assertEqual(self._shop()["starlight"]["wishes"]["running"]["hush"], 1)
+        with self._at(2026, 3, 2, 19):
+            shop = self._shop()
+            self.assertEqual(shop["active_challenge"]["struck"], 0)
+            self.assertEqual(shop["defense"]["events"][0]["kind"], "hushed")
+            self.assertEqual(shop["starlight"]["stars"], 10)  # no SHIELD: the sky was quiet
+        with self._at(2026, 3, 3, 1):
+            self.assertEqual(self._shop()["active_challenge"]["struck"], 40)  # 10 stars: no SHIELD
+
+    def test_veil_stops_counters_and_may_swell(self):
+        self._no_duty()
+        self._wearing("nebula", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_titan")
+            with mock.patch("tracker.wishes._swells", return_value=False):
+                self.assertEqual(self._wish("veil").status_code, 200)
+        with self._at(2026, 3, 2, 13):
+            self.assertEqual(self._log(30)["challenge_hit"]["counter"], 0)
+            self.assertEqual(self._log(30)["challenge_hit"]["counter"], 0)
+            self.assertEqual(self._log(30)["challenge_hit"]["counter"], 42)
+        with self._at(2026, 3, 2, 14):
+            with mock.patch("tracker.wishes._swells", return_value=True):
+                self.assertTrue(self._wish("veil").data)
+            self.assertEqual(self._shop()["starlight"]["wishes"]["running"]["veil"], 3)
+
+    def test_nova_hits_harder_and_blaze_cuts_both_ways(self):
+        self._no_duty()
+        self._wearing("nova", 6, 180)
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_titan")
+            # First, or the first counter raises NOVA's SHIELD with 10 of its 12 stars.
+            self.assertEqual(self._wish("supernova").status_code, 200)
+            self.assertEqual(self._wish("supernova").status_code, 400)  # one waiting
+            hit = self._log(30)["challenge_hit"]
+            self.assertEqual((hit["damage"], hit["wishes"]), (60, ["supernova"]))
+            self.assertEqual(self._log(30)["challenge_hit"]["damage"], 30)  # spent
+            self.assertEqual(self._wish("blaze").status_code, 200)
+            hit = self._log(30)["challenge_hit"]
+            self.assertEqual((hit["damage"], hit["counter"]), (45, 84))
+        with self._at(2026, 3, 3, 1):
+            hit = self._log(30)["challenge_hit"]  # past 12h
+            self.assertEqual((hit["damage"], hit["counter"]), (30, 42))
+
+    def test_wildfire_flares_on_some_hits(self):
+        self._no_duty()
+        self._wearing("nova", 6, 180)
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_titan")
+            self.assertEqual(self._wish("wildfire").status_code, 200)
+            damage = {self._log(30)["challenge_hit"]["damage"] for _ in range(12)}
+            self.assertEqual(damage, {30, 60})
+
+    def test_scatter_redeals_only_the_daily_shelves(self):
+        self._no_duty()
+        self._wearing("nova", 6, 180)
+        with self._at(2026, 3, 2, 12):
+            before = {(g["tier"], g["every_days"]): g["items"] for g in self.client.get("/api/room/").data["weekly"]["groups"]}
+            self.assertEqual(self._wish("scatter").status_code, 200)
+            after = {(g["tier"], g["every_days"]): g["items"] for g in self.client.get("/api/room/").data["weekly"]["groups"]}
+            for key in before:
+                if key[1] == 7:
+                    self.assertEqual(before[key], after[key])
+            self.assertNotEqual([before[k] for k in before if k[1] <= 2], [after[k] for k in after if k[1] <= 2])
+
+    def test_starchart_shows_next_weeks_big_pieces(self):
+        self._no_duty()
+        self._wearing("astra", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            self.assertIsNone(self._shop()["starlight"]["wishes"]["running"]["starchart"])
+            self.assertEqual(self._wish("starchart").status_code, 200)
+            self.assertEqual(self._wish("starchart").status_code, 400)
+            chart = self._shop()["starlight"]["wishes"]["running"]["starchart"]
+            self.assertEqual(len(chart["items"]), 3)
+        with self._at(2026, 3, 10, 12):
+            room = self.client.get("/api/room/").data["weekly"]
+            shown = [i for g in room["groups"] if g["every_days"] == 7 for i in g["items"]]
+            self.assertEqual(sorted(shown), sorted(chart["items"]))
+            self.assertIsNone(self._shop()["starlight"]["wishes"]["running"]["starchart"])
+
+    def test_mist_omen_says_only_whether_it_is_rare(self):
+        self._no_duty()
+        self._wearing("nebula", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            with mock.patch("tracker.wishes._swells", return_value=False), mock.patch(
+                "tracker.economy.roll_crate", return_value="deep_dive"
+            ):
+                self.assertEqual(self._wish("mist").status_code, 200)
+            light = self._shop()["starlight"]
+            self.assertEqual((light["omen"], light["omen_hint"], light["omen_live"]), (None, "rare", True))
+            self.assertEqual(self._wish("mist").status_code, 400)  # already spoken
+
+    def test_drift_puts_loan_interest_to_sleep(self):
+        self._no_duty()
+        self._wearing("nebula", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            self.assertEqual(self._post("bank", {"action": "borrow", "plan": "standard", "amount": 10000}).status_code, 200)
+            with mock.patch("tracker.wishes._swells", return_value=False):
+                self.assertEqual(self._wish("drift").status_code, 200)
+            self.assertEqual(self._wish("drift").status_code, 400)
+        with self._at(2026, 3, 4, 13):
+            self.assertEqual(self._shop()["bank"]["loans"][0]["owed"], 10000)
+        with self._at(2026, 3, 6, 13):
+            self.assertEqual(self._shop()["bank"]["loans"][0]["owed"], 10100)  # 3/5 and 3/6
+
+    def test_silver_rain_doubles_the_vaults_next_paying_day(self):
+        self._no_duty()
+        self._wearing("nebula", 14, 30)
+        with self._at(2026, 3, 2, 10):
+            self.assertEqual(self._post("bank", {"action": "deposit", "amount": 10000}).status_code, 200)
+            with mock.patch("tracker.wishes._swells", return_value=False):
+                self.assertEqual(self._wish("silver").status_code, 200)
+            self.assertEqual(self._wish("silver").status_code, 400)
+        with self._at(2026, 3, 3, 10):
+            self.assertEqual(self._shop()["bank"]["vault"]["balance"], 10000)  # no study on 3/2
+            self._log(60)
+        with self._at(2026, 3, 4, 10):
+            self.assertEqual(self._shop()["bank"]["vault"]["balance"], 10100)  # 50 doubled
+            self.assertEqual(self._wish("silver").status_code, 200)  # that one fell
+
+    def test_a_reset_takes_off_the_charm_and_its_wishes(self):
+        self._no_duty()
+        self._wearing("nova", 6, 180)
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_golem")
+            self.assertEqual(self._wish("blaze").status_code, 200)
+            self.assertEqual(self._wish("supernova").status_code, 200)
+            self.assertEqual(self.client.post("/api/bits/reset/", {"confirm": "RESET"}, format="json").status_code, 200)
+            shop = self._shop()
+            self.assertEqual(shop["starlight"]["charms"]["worn"], "astra")
+            self.assertFalse(next(c for c in shop["starlight"]["charms"]["charms"] if c["id"] == "nova")["owned"])
+            self.assertEqual([w["id"] for w in shop["starlight"]["wishes"]["list"]], ["reroll", "omen", "starchart", "hush"])
+            self.assertEqual(UserProfile.objects.get(user=self.user).shields, [])
+            self.assertIsNone(shop["defense"]["shield"])
+            self.assertIsNone(shop["active_challenge"])
+
+    def test_running_wishes_come_back_with_a_backup(self):
+        from .backup import export_economy
+
+        self._no_duty()
+        self._wearing("nebula", 14, 30)
+        with self._at(2026, 3, 2, 12):
+            self._buy("raid_golem")
+            with mock.patch("tracker.wishes._swells", return_value=False):
+                self.assertEqual(self._wish("veil").status_code, 200)
+            saved = export_economy(self.user)
+            saved = json.loads(json.dumps(saved, default=str))
+            UserProfile.objects.filter(user=self.user).update(shields=[])
+            restore_economy(self.user, saved, {})
+            self.assertEqual(self._shop()["starlight"]["wishes"]["running"]["veil"], 2)
+            # A hand-edited file can't stack wishes or bring back old ones.
+            saved["starlight"]["shields"] = [
+                *[{"kind": "silver", "from": "2026-03-02T11:00:00+09:00", "mult": 3}] * 30,
+                {"kind": "drift", "from": "2025-01-01T00:00:00+09:00", "until": "2025-01-04T00:00:00+09:00"},
+                {"kind": "veil", "from": "2026-03-02T11:00:00+09:00", "n": True},
+            ]
+            UserProfile.objects.filter(user=self.user).update(shields=[])
+            restore_economy(self.user, saved, {})
+            kinds = [w["kind"] for w in UserProfile.objects.get(user=self.user).shields]
+            self.assertEqual(sorted(kinds), ["silver", "veil"])
+            self.assertEqual(self._shop()["starlight"]["wishes"]["running"]["veil"], 1)
+
+    # ---- bank
+    def test_loans_have_limits_one_at_a_time_and_interest(self):
+        with self._at(2026, 3, 2, 12):
+            res = self._post("bank", {"action": "borrow", "plan": "study", "amount": 100})
+            self.assertEqual(res.status_code, 400)  # nothing studied in 30 days
+            self._log(600)
+            before = self._shop()["bits"]["balance"]
+            self.assertEqual(self._post("bank", {"action": "borrow", "plan": "study", "amount": 300}).status_code, 200)
+            self.assertEqual(self._post("bank", {"action": "borrow", "plan": "study", "amount": 1}).status_code, 400)
+            self.assertEqual(self._post("bank", {"action": "borrow", "plan": "standard", "amount": 10000}).status_code, 200)
+            self.assertEqual(self._shop()["bits"]["balance"], before + 10300)
+        with self._at(2026, 3, 4, 12):
+            loans = {l["plan"]: l for l in self._shop()["bank"]["loans"]}
+            self.assertEqual(loans["standard"]["owed"], 10100)  # 0.5% a day
+            self.assertEqual(loans["study"]["owed"], 300)  # interest-free for 14 days
+            res = self._post("bank", {"action": "repay", "loan": loans["standard"]["id"], "amount": 99999})
+            self.assertEqual(res.status_code, 200)
+            self.assertNotIn("standard", {l["plan"] for l in res.data["bank"]["loans"]})
+        with self._at(2026, 3, 17, 12):
+            loans = {l["plan"]: l for l in self._shop()["bank"]["loans"]}
+            self.assertEqual(loans["study"]["owed"], 303)
+        for bad in ({"action": "borrow", "plan": "emergency", "amount": 5}, {"action": "deposit", "amount": -5},
+                    {"action": "deposit", "amount": True}, {"action": "nope"}):
+            self.assertEqual(self._post("bank", bad).status_code, 400, bad)
+
+    def test_the_vault_pays_on_study_days_only(self):
+        with self._at(2026, 3, 2, 10):
+            before = self._shop()["bits"]["balance"]
+            self.assertEqual(self._post("bank", {"action": "deposit", "amount": 10000}).status_code, 200)
+            self.assertEqual(self._shop()["bits"]["balance"], before - 10000)
+            self._log(60)
+        with self._at(2026, 3, 4, 10):
+            vault = self._shop()["bank"]["vault"]
+            self.assertEqual((vault["balance"], vault["interest"]), (10050, 50))  # 3/3 had no study
+            self.assertEqual(self._post("bank", {"action": "withdraw", "amount": 10051}).status_code, 400)
+            self.assertEqual(self._post("bank", {"action": "withdraw", "amount": 10050}).status_code, 200)
+
+    def test_a_reset_forgets_the_bank_and_the_charms(self):
+        with self._at(2026, 3, 2, 12):
+            self._post("charm", {"buy": "nova"})
+            self._post("charm", {"wear": "nova"})
+            self._post("bank", {"action": "borrow", "plan": "standard", "amount": 1000})
+            self._post("bank", {"action": "deposit", "amount": 500})
+            self.assertEqual(self.client.post("/api/bits/reset/", {}, format="json").status_code, 200)
+            shop = self._shop()
+            self.assertEqual((shop["starlight"]["charm"], shop["starlight"]["worn"]), ("astra", True))
+            self.assertFalse(self._charm(shop, "nova")["owned"])
+            self.assertEqual((shop["bank"]["owed"], shop["bank"]["vault"]["balance"]), (0, 0))
+
+    def test_a_backup_brings_the_bank_and_the_charm_back(self):
+        from .backup import export_economy
+
+        with self._at(2026, 3, 2, 12):
+            self._post("charm", {"buy": "nova"})
+            self._post("charm", {"wear": "nova"})
+            self._post("bank", {"action": "borrow", "plan": "standard", "amount": 1000})
+            saved = export_economy(self.user)
+            saved["bank"][0]["plan"] = "standard"
+            BitPurchase.objects.filter(user=self.user).delete()
+            from .models import BankEntry
+
+            BankEntry.objects.filter(user=self.user).delete()
+            UserProfile.objects.filter(user=self.user).update(charm="astra", charm_log=[], shields=[])
+            restore_economy(self.user, saved, {})
+            shop = self._shop()
+            self.assertEqual(shop["starlight"]["charm"], "nova")
+            self.assertEqual(shop["bank"]["loans"][0]["owed"], 1000)

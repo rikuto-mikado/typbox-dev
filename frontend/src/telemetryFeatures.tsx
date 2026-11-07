@@ -1452,7 +1452,7 @@ export const AmbientSoundControl: React.FC<AmbientSoundControlProps> = ({
           onClick={() => setShowPopover((prev) => !prev)}
           aria-label={t.mixerTitle}
           aria-expanded={showPopover}
-          className={`relative w-full h-11 lg:h-10 flex items-center gap-3 px-5 max-lg:w-9 max-lg:h-9 max-lg:px-0 max-lg:justify-center max-lg:border max-lg:border-[var(--tb-border)] font-mono text-[11px] uppercase tracking-wider transition-colors cursor-pointer ${
+          className={`relative w-full h-11 lg:h-10 flex items-center gap-3 px-5 max-lg:w-[30px] max-lg:h-[30px] sm:max-lg:w-9 sm:max-lg:h-9 max-lg:px-0 max-lg:justify-center max-lg:border max-lg:border-[var(--tb-border)] font-mono text-[11px] uppercase tracking-wider transition-colors cursor-pointer ${
             isPlaying || showPopover ? 'text-emerald-400 bg-emerald-500/10' : `${textMuted} hover:text-emerald-400 hover:bg-emerald-500/5`
           }`}
         >

@@ -24,7 +24,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import blessings, challenges, festival_pass, trade
+from . import bank, blessings, challenges, charms, festival_pass, trade
 from .backup import (
     MAX_IMPORTED_PURCHASES,
     MAX_IMPORTED_TRADES,
@@ -393,6 +393,8 @@ class StudyLogViewSet(viewsets.ModelViewSet):
         )
         # BLESSINGS: the worn one's bonus, beside the buff's.
         blessings.apply_to_new_log(log)
+        # TYPBOX BANK: half of what it earns goes to an emergency loan.
+        bank.auto_repay(log)
         self._star_lit = star_lit_by(log)
         # BOSS RAID / RIVAL: what the log did, sent back with it.
         self._challenge_hit = challenges.apply_to_new_log(log)
@@ -836,6 +838,57 @@ class BitsBlessingView(APIView):
             else:
                 blessings.wear(request.user, blessing_id)
         except blessings.BlessingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(shop_state(request.user))
+
+
+class BitsCharmView(APIView):
+    """POST /api/bits/charm/ - {"wear": "<charm>" | null}: put a STARLIGHT charm
+    on (null takes it off); {"buy": "<charm>"}: buy one that has opened."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            if "buy" in data:
+                charm = data.get("buy")
+                if not isinstance(charm, str):
+                    raise charms.CharmError("Unknown charm.")
+                charms.buy(request.user, charm)
+            elif "wear" in data:
+                charm = data.get("wear")
+                if charm is not None and not isinstance(charm, str):
+                    raise charms.CharmError("Unknown charm.")
+                charms.wear(request.user, charm)
+            else:
+                raise charms.CharmError("Choose a charm.")
+        except charms.CharmError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(shop_state(request.user))
+
+
+class BitsBankView(APIView):
+    """POST /api/bits/bank/ - TYPBOX BANK: {"action": "borrow", "plan", "amount"},
+    {"action": "repay", "loan", "amount"}, {"action": "deposit" | "withdraw", "amount"}."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        action = data.get("action")
+        try:
+            if action == "borrow":
+                bank.borrow(request.user, data.get("plan"), data.get("amount"))
+            elif action == "repay":
+                bank.repay(request.user, data.get("loan"), data.get("amount"))
+            elif action == "deposit":
+                bank.deposit(request.user, data.get("amount"))
+            elif action == "withdraw":
+                bank.withdraw(request.user, data.get("amount"))
+            else:
+                raise bank.BankError("Unknown action.")
+        except bank.BankError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(shop_state(request.user))
 

@@ -14,8 +14,8 @@ import { ThemeToggleIcon } from './ThemeToggleIcon';
 //   a toggle re-renders this component only and the motion starts at once.
 //   Every icon sits at the same place in both widths.
 // - Below lg: a bar fixed to the bottom of the screen with the five pages and
-//   SIGN OUT (SIGN IN for a guest); SHARE CARD, NOISE and the theme sit as
-//   icons in the header's top-right corner.
+//   SIGN OUT (SIGN IN for a guest); SHARE CARD, NOISE, the theme and the
+//   signed-in user's avatar sit as icons in the header's top-right corner.
 
 export type MainView = 'home' | 'data' | 'bits' | 'room' | 'settings';
 const PAGES: MainView[] = ['home', 'bits', 'room', 'data', 'settings'];
@@ -84,7 +84,7 @@ const NavButton: React.FC<{
     aria-current={active ? 'page' : undefined}
     className={`relative w-full h-11 lg:h-10 flex items-center gap-3 px-5 font-mono text-[11px] uppercase tracking-wider transition-colors cursor-pointer ${
       tab ? 'max-lg:h-14 max-lg:flex-col max-lg:justify-center max-lg:gap-1 max-lg:px-0 max-lg:text-[9px] max-lg:tracking-normal' : ''
-    } ${tool ? `max-lg:w-9 max-lg:h-9 max-lg:px-0 max-lg:justify-center max-lg:border ${'border-[var(--tb-border)]'}` : ''} ${
+    } ${tool ? `max-lg:w-[30px] max-lg:h-[30px] sm:max-lg:w-9 sm:max-lg:h-9 max-lg:px-0 max-lg:justify-center max-lg:border ${'border-[var(--tb-border)]'}` : ''} ${
       armed
         ? 'text-rose-400 bg-rose-500/10'
         : active
@@ -247,7 +247,7 @@ export const SideNav: React.FC<SideNavProps> = ({
         <div
           className={[
             `shrink-0 lg:mt-auto lg:border-t ${borderCol} lg:py-2 lg:space-y-0.5`,
-            'max-lg:fixed max-lg:top-0 max-lg:right-2 max-lg:h-13 sm:max-lg:h-16 max-lg:flex max-lg:items-center max-lg:gap-1',
+            'max-lg:fixed max-lg:top-0 max-lg:right-2 max-lg:h-13 sm:max-lg:h-16 max-lg:flex max-lg:items-center max-lg:gap-0.5 sm:max-lg:gap-1',
           ].join(' ')}
         >
           <NavButton label={t.navCommand} icon={<Terminal className="w-4 h-4" />} onClick={pick(onCommand)} textMuted={textMuted} className="max-lg:hidden" />
@@ -261,6 +261,17 @@ export const SideNav: React.FC<SideNavProps> = ({
             textMuted={textMuted}
           />
           {onSignOut && <SignOutButton onSignOut={onSignOut} textMuted={textMuted} className="max-lg:hidden" />}
+          {/* Below lg: who is signed in, last in the corner (opens the profile). */}
+          {user && (
+            <button
+              type="button"
+              onClick={pick(onSettings)}
+              aria-label={user.name}
+              className="lg:hidden w-[34px] h-[34px] sm:w-10 sm:h-10 ml-1 flex items-center justify-center border border-[var(--tb-border)] cursor-pointer [&>*]:scale-125"
+            >
+              {user.avatar}
+            </button>
+          )}
         </div>
 
         {/* From lg up: widen the rail to show the names, or fold it back. The

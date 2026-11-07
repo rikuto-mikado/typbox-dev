@@ -8,6 +8,15 @@
 // - a GUARD's worth of stars (cost) sets gold studs in the silver rim; the
 //   guard on turns the rim gold; a full sky turns the stars gold and sets four
 //   glints around the medallion.
+// The three CHARMS (backend charms.py) each have a figure and a mount of their
+// own, drawn by the same rules (dark seats to fill, lines as both ends shine,
+// gold when full):
+// - ASTRA: the lyre above, in a round silver rim;
+// - NOVA: a six-pointed burst whose outline is traced point by point, star
+//   after star, round the dial, in a rim of burning rays;
+// - NEBULA: a spiral arm winding out from the centre, a star at a time, with
+//   a short spur once it is full, in a drifting cloud.
+// A charm that isn't worn is drawn dimmed by its caller.
 
 import type { PixelArt } from './challengeArt';
 
@@ -55,8 +64,77 @@ const line = (a: [number, number], b: [number, number]): Array<[number, number]>
   return out;
 };
 
-export const starCharmArt = (stars: number, max: number, cost: number, guardOn: boolean): PixelArt => {
-  const seats = SEATS.slice(0, Math.max(1, Math.min(SEATS.length, max)));
+export type CharmVariant = 'astra' | 'nova' | 'nebula';
+
+type Seat = [number, number];
+interface Figure {
+  /** Every seat in lighting order. */
+  seats: Seat[];
+  /** The lines drawn once both their stars shine: [a, b] seat indexes. */
+  links: Array<[number, number]>;
+}
+
+const at = (r: number, deg: number): Seat => {
+  const a = (deg * Math.PI) / 180;
+  return [Math.round(CX + Math.cos(a) * r), Math.round(CY + Math.sin(a) * r)];
+};
+
+/** ASTRA's lyre: mirrored pairs, each star joined up its own side, the crown and foot joined across. */
+const lyre = (): Figure => {
+  const links: Array<[number, number]> = [];
+  for (let i = 0; i < SEATS.length; i++) {
+    if (i >= 2) links.push([i - 2, i]);
+    if (i % 2 === 1 && CLOSED.has((i - 1) / 2)) links.push([i - 1, i]);
+  }
+  return { seats: SEATS, links };
+};
+
+/** NOVA's burst: six points and the six notches between them, traced round
+ *  from the top; the last star closes the outline. */
+const burst = (): Figure => {
+  const seats: Seat[] = [];
+  for (let k = 0; k < 6; k++) {
+    seats.push(at(7, -90 + k * 60));
+    seats.push(at(3.1, -60 + k * 60));
+  }
+  const links: Array<[number, number]> = seats.map((_, i) => [i, (i + 1) % seats.length] as [number, number]);
+  return { seats, links };
+};
+
+/** NEBULA's spiral: an arm winding out from the centre; once full, a spur
+ *  joins its tip back towards the heart. */
+const spiral = (): Figure => {
+  const seats: Seat[] = [];
+  for (let i = 0; i < 10; i++) seats.push(at(1.1 + i * 0.66, -120 + i * 62));
+  const links: Array<[number, number]> = seats.slice(1).map((_, i) => [i, i + 1] as [number, number]);
+  links.push([9, 3]);
+  return { seats, links };
+};
+
+const FIGURES: Record<CharmVariant, () => Figure> = { astra: lyre, nova: burst, nebula: spiral };
+
+/** How far a mount's rim and edge reach out at an angle (0 for a plain ring). */
+const reach = (variant: CharmVariant, angle: number) => {
+  if (variant === 'nova') return 1.5 * Math.max(0, Math.cos(12 * angle)) ** 3;
+  if (variant === 'nebula') return 0.7 * Math.sin(5 * angle) + 0.45 * Math.sin(9 * angle + 1.3);
+  return 0;
+};
+
+const PALETTES: Record<CharmVariant, Record<string, string>> = {
+  astra: { s: '#64748b', S: '#cbd5e1', n: '#111a3a', N: '#1e2a5c', u: '#334170', l: '#2f3d73', b: '#93a4d8' },
+  nova: { s: '#9a3412', S: '#fb923c', n: '#260d08', N: '#47170c', u: '#6b2c1a', l: '#b4532a', b: '#fdba74' },
+  nebula: { s: '#6d28d9', S: '#c4b5fd', n: '#170f30', N: '#2a1a52', u: '#43306f', l: '#6b52b8', b: '#a5b4fc' },
+};
+
+export const starCharmArt = (
+  stars: number,
+  max: number,
+  cost: number,
+  guardOn: boolean,
+  variant: CharmVariant = 'astra'
+): PixelArt => {
+  const figure = FIGURES[variant]();
+  const seats = figure.seats.slice(0, Math.max(1, Math.min(figure.seats.length, max)));
   const lit = Math.max(0, Math.min(seats.length, stars));
   const full = lit >= seats.length;
   const studded = lit >= cost;
@@ -74,13 +152,14 @@ export const starCharmArt = (stars: number, max: number, cost: number, guardOn: 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
       const d = Math.hypot(x + 0.5 - CX - 0.5, y + 0.5 - CY);
-      if (d <= RIM_IN) grid[y][x] = full ? 'N' : 'n';
-      else if (d <= RIM_OUT) {
-        const angle = Math.atan2(y - CY, x - CX);
+      const angle = Math.atan2(y - CY, x - CX);
+      const out = reach(variant, angle);
+      if (d <= RIM_IN + Math.min(0, out) * 0.4) grid[y][x] = full ? 'N' : 'n';
+      else if (d <= RIM_OUT + out) {
         const stud = studded && Math.round(((angle + Math.PI) / (2 * Math.PI)) * 16) % 4 === 0;
         const light = y < CY - 2;
         grid[y][x] = guardOn ? (light ? 'G' : 'g') : stud ? 'g' : light ? 'S' : 's';
-      } else if (d <= EDGE) grid[y][x] = 'k';
+      } else if (d <= EDGE + out) grid[y][x] = 'k';
     }
   }
 
@@ -96,11 +175,8 @@ export const starCharmArt = (stars: number, max: number, cost: number, guardOn: 
 
   // The figure: dark seats, then lines and stars as far as it has grown.
   for (const [x, y] of seats) grid[y][x] = 'u';
-  const links: Array<[number, number]> = [];
-  for (let i = 0; i < lit; i++) {
-    if (i >= 2) links.push([i - 2, i]); // up its own side
-    if (i % 2 === 1 && CLOSED.has((i - 1) / 2)) links.push([i - 1, i]); // across, at the crown and the foot
-  }
+  // A line shows once both its stars shine.
+  const links = figure.links.filter(([a, b]) => a < lit && b < lit && a < seats.length && b < seats.length);
   for (const [a, b] of links) for (const [x, y] of line(seats[a], seats[b])) grid[y][x] = 'l';
   for (let i = 0; i < lit; i++) {
     const [x, y] = seats[i];
@@ -117,18 +193,12 @@ export const starCharmArt = (stars: number, max: number, cost: number, guardOn: 
   return {
     palette: {
       k: '#0b0b0e',
-      s: '#64748b',
-      S: '#cbd5e1',
       g: '#d97706',
       G: '#fcd34d',
-      n: '#111a3a',
-      N: '#1e2a5c',
-      u: '#334170',
-      l: '#2f3d73',
       w: '#f8fafc',
-      b: '#93a4d8',
       y: '#fde047',
       a: '#a16207',
+      ...PALETTES[variant],
     },
     rows: grid.map((row) => row.join('')),
   };

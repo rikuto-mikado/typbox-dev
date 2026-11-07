@@ -2,12 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import { BuffIcon } from './BuffIcon';
 import { isDemo } from './demo';
 import { tf, useI18n } from './i18n';
-import type { Starlight, StarWish } from './api';
+import type { Dict } from './i18n.strings';
 
-// STARLIGHT drawn as a real night sky: each guard is one of the two seven-star
-// dippers, lit star by star. The sky behind them is painted once onto a canvas
-// from a fixed seed, so it looks the same on every visit. It is night in both
-// themes, so its colors are fixed.
+type DictKey = keyof Dict;
+import type { CharmId, Starlight, StarWish } from './api';
+
+// STARLIGHT drawn as a real night sky: each guard's worth of stars is one real
+// constellation, lit star by star, and each charm has a sky of its own (not
+// the figure on its medallion): ASTRA the two dippers, NOVA the summer's
+// Scorpius and the Sickle of Leo, NEBULA Cassiopeia's W and the Pleiades. The
+// sky behind them is painted once onto a canvas from a fixed seed, so it looks
+// the same on every visit. It is night in both themes, so its colors are fixed.
 
 const VIEW_W = 360;
 const VIEW_H = 190;
@@ -24,12 +29,12 @@ interface SkyStar {
 interface Figure {
   /** In lighting order; neighbours are joined as they light. */
   stars: readonly SkyStar[];
-  /** The line that closes the figure's bowl, once all seven are lit. */
-  closes: readonly [from: number, to: number];
+  /** A line that closes the figure (a bowl, a loop), once all its stars are lit. */
+  closes?: readonly [from: number, to: number];
 }
 
 // Laid out after the sky itself, with each star's real relative brightness.
-const FIGURES: readonly Figure[] = [
+const DIPPERS: readonly Figure[] = [
   {
     // The Big Dipper, handle first: Alkaid, Mizar, Alioth, Megrez, Phecda, Merak, Dubhe.
     stars: [
@@ -57,6 +62,57 @@ const FIGURES: readonly Figure[] = [
     closes: [3, 6],
   },
 ];
+
+const SUMMER: readonly Figure[] = [
+  {
+    // Scorpius from its red heart down the tail: Antares, Tau, Epsilon, Mu, Zeta, Eta.
+    stars: [
+      { x: 58, y: 46, size: 1.18, warm: true },
+      { x: 70, y: 62, size: 0.62 },
+      { x: 78, y: 86, size: 0.86, warm: true },
+      { x: 80, y: 110, size: 0.72 },
+      { x: 94, y: 128, size: 0.68 },
+      { x: 118, y: 134, size: 0.74 },
+    ],
+  },
+  {
+    // The Sickle of Leo, handle to blade: Regulus, Eta, Algieba, Adhafera, Rasalas, Epsilon.
+    stars: [
+      { x: 266, y: 132, size: 1.1 },
+      { x: 260, y: 106, size: 0.66 },
+      { x: 270, y: 82, size: 1.0, warm: true },
+      { x: 288, y: 68, size: 0.6 },
+      { x: 308, y: 72, size: 0.62 },
+      { x: 316, y: 96, size: 0.86, warm: true },
+    ],
+  },
+];
+
+const CLOUDED: readonly Figure[] = [
+  {
+    // Cassiopeia's W, in the Milky Way: Caph, Schedar, Gamma, Ruchbah, Segin.
+    stars: [
+      { x: 36, y: 58, size: 0.9 },
+      { x: 60, y: 84, size: 1.05, warm: true },
+      { x: 84, y: 64, size: 1.0 },
+      { x: 106, y: 88, size: 0.86 },
+      { x: 132, y: 72, size: 0.7 },
+    ],
+  },
+  {
+    // The Pleiades, a little dipper of their own: Electra, Maia, Alcyone, Atlas, Merope.
+    stars: [
+      { x: 238, y: 92, size: 0.76 },
+      { x: 256, y: 72, size: 0.72 },
+      { x: 268, y: 98, size: 0.98 },
+      { x: 296, y: 106, size: 0.76 },
+      { x: 276, y: 126, size: 0.7 },
+    ],
+    closes: [4, 2],
+  },
+];
+
+const SKIES: Record<CharmId, readonly Figure[]> = { astra: DIPPERS, nova: SUMMER, nebula: CLOUDED };
 
 /** A fixed stream of numbers in [0, 1), so the sky never reshuffles. */
 const seeded = (seed: number) => () => {
@@ -211,6 +267,7 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
   const { t } = useI18n();
   const { stars, max, cost, guard_on: guardOn } = starlight;
   const guards = Math.floor(stars / cost);
+  const figures = SKIES[starlight.charm ?? 'astra'];
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -234,8 +291,9 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
 
   return (
     <div
-      className="relative w-full overflow-hidden border border-slate-400/15 font-mono bg-[#02040b]"
-      style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}`, maxHeight: 248 }}
+      // Its own shape when stacked; beside the charm (sm and up) it fills the
+      // row the charm card sets, so the two always stand the same height.
+      className="relative w-full overflow-hidden border border-slate-400/15 font-mono bg-[#02040b] aspect-[360/190] max-h-[248px] sm:aspect-auto sm:max-h-none sm:h-full"
     >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" aria-hidden="true" />
       <svg
@@ -267,12 +325,13 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
 
         <path className="sky-shoot" d="M244 20 L206 42" stroke="url(#sl-meteor)" strokeWidth="0.6" strokeLinecap="round" fill="none" />
 
-        {FIGURES.map((figure, f) => {
-          const offset = f * cost;
-          const litHere = Math.max(0, Math.min(cost, stars - offset));
-          const complete = litHere === cost;
+        {figures.map((figure, f) => {
+          const size = figure.stars.length;
+          const offset = figures.slice(0, f).reduce((n, g) => n + g.stars.length, 0);
+          const litHere = Math.max(0, Math.min(size, stars - offset));
+          const complete = litHere === size;
           const line = figure.stars.slice(0, litHere).map((s) => `${s.x},${s.y}`).join(' ');
-          const [from, to] = figure.closes;
+          const [from, to] = figure.closes ?? [0, 0];
           return (
             <g key={f}>
               {/* A chart's hairline: drawn only as far as the stars are lit. */}
@@ -285,7 +344,7 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
                   strokeWidth="0.45"
                 />
               )}
-              {complete && (
+              {complete && figure.closes && (
                 <line
                   x1={figure.stars[from].x}
                   y1={figure.stars[from].y}
@@ -347,7 +406,7 @@ export const StarlightSky: React.FC<{ starlight: Starlight }> = ({ starlight }) 
 
 // ---------------------------------------------------------------- wishes
 
-/** A falling star and an eye of stars: the two wishes. */
+/** Each wish's sign, in the night sky's line. */
 const WISH_ICONS: Record<StarWish, React.ReactNode> = {
   reroll: (
     <>
@@ -363,27 +422,110 @@ const WISH_ICONS: Record<StarWish, React.ReactNode> = {
       <path d="M16 13.6Q16 16 18.4 16Q16 16 16 18.4Q16 16 13.6 16Q16 16 16 13.6Z" fill="currentColor" />
     </>
   ),
+  starchart: (
+    <>
+      <rect x="5" y="6" width="22" height="20" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M9 21 L14 13 L19 17 L24 10" fill="none" stroke="currentColor" strokeOpacity="0.6" strokeWidth="1" />
+      {[[9, 21], [14, 13], [19, 17], [24, 10]].map(([x, y]) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" fill="currentColor" />
+      ))}
+    </>
+  ),
+  hush: (
+    <>
+      <path d="M20 5A11 11 0 1 0 27 21A8.5 8.5 0 1 1 20 5Z" fill="currentColor" fillOpacity="0.85" />
+      <path d="M22 9h4M24 7v4" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    </>
+  ),
+  supernova: (
+    <>
+      <circle cx="16" cy="16" r="4" fill="currentColor" />
+      {Array.from({ length: 8 }, (_, i) => {
+        const a = (i * Math.PI) / 4;
+        const r = i % 2 ? 9 : 13;
+        return <path key={i} d={`M${16 + Math.cos(a) * 6} ${16 + Math.sin(a) * 6}L${16 + Math.cos(a) * r} ${16 + Math.sin(a) * r}`} stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />;
+      })}
+    </>
+  ),
+  blaze: (
+    <path d="M16 3C18 9 24 11 24 19A8 8 0 0 1 8 19C8 14 11 12 12 8C13 12 15 13 16 13C16 9 15 6 16 3Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+  ),
+  wildfire: (
+    <>
+      <path d="M11 8C12 12 16 13 16 18A5 5 0 0 1 6 18C6 15 8 14 8.5 11.5C9.5 13 11 12 11 8Z" fill="currentColor" fillOpacity="0.85" />
+      <path d="M22 10C23 14 27 15 27 20A5 5 0 0 1 17 20C17 17 19 16 19.5 13.5C20.5 15 22 14 22 10Z" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M8 27h17" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1" strokeDasharray="2 2" />
+    </>
+  ),
+  scatter: (
+    <>
+      {[[8, 9, 2.2], [22, 7, 1.5], [15, 15, 2.6], [25, 20, 2], [9, 23, 1.6], [19, 26, 1.2]].map(([x, y, r]) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r={r} fill="currentColor" fillOpacity={r > 2 ? 1 : 0.6} />
+      ))}
+    </>
+  ),
+  veil: (
+    <>
+      <path d="M5 8Q16 2 27 8V18Q16 30 5 18Z" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M9 11Q16 7 23 11M9 16Q16 12 23 16M10 21Q16 17 22 21" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1" fill="none" />
+    </>
+  ),
+  drift: (
+    <>
+      <path d="M4 12Q10 8 16 12T28 12M4 19Q10 15 16 19T28 19" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M21 25h6l-6 0M22 23l5 0-5 4h5" fill="none" stroke="currentColor" strokeOpacity="0.6" strokeWidth="0.9" />
+    </>
+  ),
+  mist: (
+    <>
+      <path d="M3 16Q16 3 29 16Q16 29 3 16Z" fill="none" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1.1" strokeDasharray="2 1.5" />
+      <path d="M8 13h16M6 17h20M9 21h14" stroke="currentColor" strokeOpacity="0.7" strokeWidth="1.2" strokeLinecap="round" />
+    </>
+  ),
+  silver: (
+    <>
+      <path d="M7 10Q7 5 13 5Q15 2 19 4Q25 4 25 10Z" fill="currentColor" fillOpacity="0.8" />
+      {[[9, 14], [14, 17], [19, 14], [24, 17], [11, 22], [21, 23]].map(([x, y]) => (
+        <path key={`${x}-${y}`} d={`M${x} ${y}l-1.2 3`} stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      ))}
+      <path d="M14 27.5Q16 25.5 18 27.5Q16 29.5 14 27.5Z" fill="currentColor" />
+    </>
+  ),
 };
 
-const WISHES: Array<{ use: StarWish; name: 'starWishReroll' | 'starWishOmen'; line: 'starWishRerollLine' | 'starWishOmenLine' }> = [
-  { use: 'reroll', name: 'starWishReroll', line: 'starWishRerollLine' },
-  { use: 'omen', name: 'starWishOmen', line: 'starWishOmenLine' },
-];
+const WISH_TEXT: Record<StarWish, { name: DictKey; line: DictKey }> = {
+  reroll: { name: 'starWishReroll', line: 'starWishRerollLine' },
+  omen: { name: 'starWishOmen', line: 'starWishOmenLine' },
+  starchart: { name: 'wishStarchart', line: 'wishStarchartLine' },
+  hush: { name: 'wishHush', line: 'wishHushLine' },
+  supernova: { name: 'wishSupernova', line: 'wishSupernovaLine' },
+  blaze: { name: 'wishBlaze', line: 'wishBlazeLine' },
+  wildfire: { name: 'wishWildfire', line: 'wishWildfireLine' },
+  scatter: { name: 'wishScatter', line: 'wishScatterLine' },
+  veil: { name: 'wishVeil', line: 'wishVeilLine' },
+  drift: { name: 'wishDrift', line: 'wishDriftLine' },
+  mist: { name: 'wishMist', line: 'wishMistLine' },
+  silver: { name: 'wishSilver', line: 'wishSilverLine' },
+};
 
-/** What stars can buy besides a save, on the same night as the sky above. Two
- *  taps each, like everything that spends. */
+/** Wishes that deal a new furniture lineup. */
+const DEALS: StarWish[] = ['reroll', 'scatter'];
+
 export const StarWishes: React.FC<{
   starlight: Starlight;
   now: number;
   /** "3h 12m": how the shop writes time left. */
   formatLeft: (ms: number) => string;
   onWish: (use: StarWish) => Promise<void>;
-  /** After a FALLING STAR: set (to when it was granted) while its card offers
-   *  the way to FURNITURE; the shop clears it after `grantMs`. */
+  /** A furniture piece's name, for a STARCHART. */
+  pieceName?: (id: string) => string;
+  /** After a FALLING STAR or SCATTER: set (to when it was granted) while its
+   *  card offers the way to FURNITURE; the shop clears it after `grantMs`. */
   granted?: number | null;
+  grantedUse?: StarWish | null;
   grantMs?: number;
   onGo?: () => void;
-}> = ({ starlight, now, formatLeft, onWish, granted = null, grantMs = 10_000, onGo }) => {
+}> = ({ starlight, now, formatLeft, onWish, pieceName = (id) => id, granted = null, grantedUse = null, grantMs = 10_000, onGo }) => {
   const { t } = useI18n();
   const [armed, setArmed] = useState<StarWish | null>(null);
   useEffect(() => {
@@ -391,24 +533,65 @@ export const StarWishes: React.FC<{
     const id = window.setTimeout(() => setArmed(null), 4000);
     return () => window.clearTimeout(id);
   }, [armed]);
+  const wishes = starlight.wishes;
+  if (!wishes || !wishes.charm) {
+    return (
+      <div className="space-y-1.5 font-mono">
+        <div className="text-[10px] uppercase tracking-[0.28em] text-amber-400/90">{t.starWishes}</div>
+        <div className="p-3 border border-dashed border-slate-500/40 text-[10px] text-slate-400">{t.wishWearFirst}</div>
+      </div>
+    );
+  }
+  const running = wishes.running;
+  const turnsAt = starlight.crate_turns_at ? new Date(starlight.crate_turns_at).getTime() : 0;
+  const crateLive = now < turnsAt;
+  const until = (iso?: string | null) => (iso && Date.parse(iso) > now ? Date.parse(iso) - now : 0);
+  /** What a wish has going: a line under its name, and whether that blocks another. */
+  const going = (use: StarWish): { text: string; blocks: boolean } | null => {
+    switch (use) {
+      case 'omen':
+      case 'mist':
+        if (!crateLive || !starlight.omen_live) return null;
+        return { text: '', blocks: true };
+      case 'hush':
+      case 'veil':
+      case 'supernova':
+      case 'silver': {
+        const n = running[use] ?? 0;
+        return n > 0 ? { text: tf(t.wishWaiting, { n }), blocks: true } : null;
+      }
+      case 'blaze':
+      case 'wildfire':
+      case 'drift': {
+        const ms = until(running[use]);
+        return ms > 0 ? { text: tf(t.wishBurning, { t: formatLeft(ms) }), blocks: true } : null;
+      }
+      case 'starchart':
+        return running.starchart && until(running.starchart.until) > 0 ? { text: '', blocks: true } : null;
+      default:
+        return null;
+    }
+  };
   return (
     <div className="space-y-1.5 font-mono">
-      <div className="text-[10px] uppercase tracking-[0.28em] text-amber-400/90">{t.starWishes}</div>
-      <div className="grid grid-cols-2 gap-1">
-        {WISHES.map(({ use, name, line }) => {
-          const cost = starlight.uses?.[use] ?? 0;
-          const isOmen = use === 'omen';
-          const turnsAt = isOmen && starlight.crate_turns_at ? new Date(starlight.crate_turns_at).getTime() : 0;
-          // Until the shop has fetched the next crate, the clock already knows this one is gone.
-          const told = isOmen && now < turnsAt ? starlight.omen : null;
-          const tooLate = isOmen && now < turnsAt && !told && Boolean(starlight.omen_too_late);
-          // A FALLING STAR just granted: the card becomes the way to the new lineup.
-          const dealt = use === 'reroll' && granted !== null;
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-[0.28em] text-amber-400/90">{t.starWishes}</span>
+        <span className="text-[9px] uppercase tracking-wider text-slate-400 truncate">{tf(t.wishFestivalCost, { n: wishes.festival })}</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+        {wishes.list.map(({ id: use, cost, base }) => {
+          const text = WISH_TEXT[use];
+          const isCrate = use === 'omen' || use === 'mist';
+          const told = isCrate && crateLive && starlight.omen_live ? (starlight.omen ?? (starlight.omen_hint ? (starlight.omen_hint === 'rare' ? t.wishMistRare : t.wishMistCommon) : null)) : null;
+          const tooLate = isCrate && crateLive && !starlight.omen_live && Boolean(starlight.omen_too_late);
+          const run = going(use);
+          const chart = use === 'starchart' && run ? running.starchart : null;
+          const dealt = DEALS.includes(use) && granted !== null && grantedUse === use;
           const short = starlight.stars < cost;
-          const blocked = !dealt && (isDemo() || short || Boolean(told) || tooLate);
-          // Spending below the guard's price switches it off: say so before it happens.
+          const blocked = !dealt && (isDemo() || short || Boolean(run?.blocks) || tooLate);
           const stopsGuard = !blocked && starlight.guard_on && starlight.stars - cost < starlight.cost;
           const isArmed = armed === use;
+          const lit = Boolean(told || dealt || chart || (run && run.text));
           return (
             <button
               key={use}
@@ -426,9 +609,9 @@ export const StarWishes: React.FC<{
                 setArmed(null);
                 void onWish(use);
               }}
-              className={`star-wish relative min-w-0 min-h-[116px] px-1.5 pt-2 pb-1.5 flex flex-col items-center gap-1 text-center border overflow-hidden ${
+              className={`star-wish relative min-w-0 min-h-[124px] px-1.5 pt-2 pb-1.5 flex flex-col items-center gap-1 text-center border overflow-hidden ${
                 blocked ? 'cursor-not-allowed' : 'cursor-pointer'
-              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !told ? 'star-wish-off' : ''} ${told || dealt ? 'star-wish-told' : ''}`}
+              } ${isArmed ? 'star-wish-armed' : ''} ${blocked && !lit ? 'star-wish-off' : ''} ${lit ? 'star-wish-told' : ''}`}
             >
               {dealt && (
                 <span
@@ -438,7 +621,7 @@ export const StarWishes: React.FC<{
                   aria-hidden
                 />
               )}
-              {told && starlight.omen_id ? (
+              {told && use === 'omen' && starlight.omen_id ? (
                 <BuffIcon itemId={starlight.omen_id} className="star-omen-reveal w-8 h-8 shrink-0" />
               ) : (
                 <svg viewBox="0 0 32 32" className="w-8 h-8 shrink-0" aria-hidden="true">
@@ -455,13 +638,23 @@ export const StarWishes: React.FC<{
                   <span className="text-[8px] tracking-wider uppercase leading-tight opacity-80">{t.starWishOmenNext}</span>
                   <span className="text-[11px] font-bold tracking-wider uppercase leading-tight">{told}</span>
                 </>
+              ) : chart ? (
+                <>
+                  <span className="text-[8px] tracking-wider uppercase leading-tight opacity-80">{t.wishStarchartNext}</span>
+                  {chart.items.map((id) => (
+                    <span key={id} className="w-full text-[9px] font-bold tracking-wider uppercase leading-tight truncate">
+                      {pieceName(id)}
+                    </span>
+                  ))}
+                </>
               ) : (
                 <>
-                  <span className="text-[10px] font-semibold tracking-wider uppercase leading-tight">{name && t[name]}</span>
-                  <span className="text-[9px] font-sans leading-tight opacity-70">{tooLate ? t.starWishOmenLate : t[line]}</span>
+                  <span className="text-[10px] font-semibold tracking-wider uppercase leading-tight">{t[text.name]}</span>
+                  <span className="text-[9px] font-sans leading-tight opacity-70">{tooLate ? t.starWishOmenLate : t[text.line]}</span>
+                  {run?.text && <span className="text-[9px] font-bold tracking-wider uppercase leading-tight text-amber-300">{run.text}</span>}
                 </>
               )}
-              {isOmen && now < turnsAt && (
+              {isCrate && crateLive && (
                 <span className="text-[8px] tracking-wider uppercase tabular-nums leading-tight opacity-70">
                   {tf(t.starWishChangesIn, { t: formatLeft(turnsAt - now) })}
                 </span>
@@ -473,7 +666,10 @@ export const StarWishes: React.FC<{
                 ) : isArmed ? (
                   <span className="text-[9px] font-bold tracking-wider">{t.starWishConfirm}</span>
                 ) : (
-                  Array.from({ length: cost }, (_, i) => <Glint key={i} className="w-2 h-2" />)
+                  <>
+                    {Array.from({ length: cost }, (_, i) => <Glint key={i} className="w-2 h-2" />)}
+                    {cost < base && <Glint className="w-2 h-2 opacity-25" />}
+                  </>
                 )}
               </span>
             </button>

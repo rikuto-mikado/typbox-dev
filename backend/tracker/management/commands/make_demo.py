@@ -23,8 +23,9 @@ from django.db import transaction
 from django.test import override_settings
 from rest_framework.test import APIClient
 
+from tracker.economy import BUFFS
 from tracker.festivals import active_on
-from tracker.furniture import FURNITURE, LayoutError, validate_layout
+from tracker.furniture import FURNITURE, STARTER_PACK_PRICE, LayoutError, validate_layout
 from tracker.models import Category, UserProfile
 
 ZONE = ZoneInfo("Asia/Tokyo")
@@ -160,16 +161,26 @@ class Command(BaseCommand):
             room = self.client.get("/api/room/").data
             balance = self._balance()
             if room["starter_required"]:
-                if balance >= 2500:
+                if balance >= STARTER_PACK_PRICE:
                     self.client.post("/api/bits/buy/", {"item_id": "pack_study"}, format="json")
                 return
             shop = self.client.get("/api/bits/").data
+            # Pay TYPBOX BANK back before shopping, like a player would.
+            for loan in (shop.get("bank") or {}).get("loans", []):
+                pay = min(loan["owed"], self._balance())
+                if loan["plan"] == "emergency" and pay > 0:
+                    self.client.post("/api/bits/bank/", {"action": "repay", "loan": loan["id"], "amount": pay}, format="json")
+            shop = self.client.get("/api/bits/").data
+            balance = self._balance()
             left = DAYS - offset
             # Clear the decks near the end, so the demo opens on a fight and a buff
             # that have been going for a couple of days, not ones just bought.
-            if not shop["active_buff"] and balance > 1500 and not 2 < left <= 7:
-                self.client.post("/api/bits/buy/", {"item_id": "warm_up" if left <= 2 else next(self.buffs)}, format="json")
-            if not shop.get("active_challenge") and balance > 2500 and not 3 < left <= 9:
+            buff = "warm_up" if left <= 2 else next(self.buffs)
+            if not shop["active_buff"] and balance > BUFFS[buff]["price"] and not 2 < left <= 7:
+                self.client.post("/api/bits/buy/", {"item_id": buff}, format="json")
+                balance = self._balance()
+            # Raids bite every few hours now: only pick a fight with room to spare.
+            if not shop.get("active_challenge") and balance > 8000 and not 3 < left <= 9:
                 self.client.post("/api/bits/buy/", {"item_id": "raid_warden" if left <= 3 else next(self.fights)}, format="json")
             if offset % 4 == 0:
                 self._buy_a_piece(room, self._balance())
@@ -180,7 +191,7 @@ class Command(BaseCommand):
             for item_id in room["weekly"]["items"]
             if FURNITURE[item_id]["tier"] in (1, 2)
             and FURNITURE[item_id]["layer"] in ("wall", "floor")
-            and FURNITURE[item_id]["price"] <= balance * 0.5
+            and FURNITURE[item_id]["price"] <= balance * 0.3
             and not room["inventory"].get(item_id)
         ]
         if not affordable:

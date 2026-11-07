@@ -48,7 +48,8 @@ import {
   ArrowUpRight,
   Armchair,
 } from 'lucide-react';
-import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight } from './api';
+import { api, apiFetch, ApiError, getAccessToken, type ActiveChallenge, type BitsActiveBuff, type BitsShopState, type ChallengeHit, type Starlight, type StarLit } from './api';
+import { CharmIcon } from './AstraCharm';
 import { ChallengeTicker, FestivalStrip } from './ChallengePanel';
 import { TypboxLogo } from './TypboxLogo';
 import { SideNav, type MainView } from './SideNav';
@@ -231,6 +232,8 @@ const COMMIT_CONFIRM_MS = 5000;
 const STARLIGHT_SEEN_KEY = 'typbox_starlight_seen';
 const STARLIGHT_NEWS_MS = 3 * 86_400_000;
 const STARLIGHT_MAX = 14;
+/** Each STARLIGHT charm's colour in its toasts. */
+const CHARM_ACCENT: Record<string, string> = { astra: '#a5b4fc', nova: '#fb923c', nebula: '#c084fc' };
 
 export interface AuthUser {
   id: number;
@@ -407,6 +410,8 @@ interface ToastItem {
   message?: string;
   /** Optional inline button, e.g. UNDO; clicking it also dismisses the toast. */
   action?: ToastAction;
+  /** A toast of its own colour and mark (a STARLIGHT charm's star). */
+  look?: { accent: string; icon: React.ReactNode };
 }
 
 const TOAST_DURATION_MS = 3600;
@@ -425,26 +430,29 @@ const ToastStack: React.FC<{
   >
     {toasts.map((toast) => {
       const ok = toast.kind === 'success';
+      const look = toast.look;
       return (
         <div
           key={toast.id}
           className={`typbox-toast pointer-events-auto relative overflow-hidden border font-mono shadow-2xl ${
-            ok ? 'border-emerald-500/70' : 'border-rose-500/70'
+            look ? '' : ok ? 'border-emerald-500/70' : 'border-rose-500/70'
           } ${isDark ? 'bg-zinc-950/95 text-zinc-100' : 'bg-white/95 text-zinc-900'}`}
+          style={look ? { borderColor: `${look.accent}b3` } : undefined}
         >
           <div className="flex items-start gap-3 p-3 pr-2">
             <span
               className={`mt-0.5 w-7 h-7 shrink-0 flex items-center justify-center ${
-                ok ? 'bg-emerald-500 text-zinc-950 typbox-toast-pop' : 'bg-rose-500 text-white'
+                look ? 'bg-[#060816] typbox-toast-pop' : ok ? 'bg-emerald-500 text-zinc-950 typbox-toast-pop' : 'bg-rose-500 text-white'
               }`}
             >
-              {ok ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              {look ? look.icon : ok ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
             </span>
             <div className="flex-1 min-w-0">
               <div
                 className={`text-[11px] font-bold uppercase tracking-widest ${
-                  ok ? 'text-emerald-400' : 'text-rose-400'
+                  look ? '' : ok ? 'text-emerald-400' : 'text-rose-400'
                 }`}
+                style={look ? { color: look.accent } : undefined}
               >
                 {toast.title}
               </div>
@@ -1282,11 +1290,11 @@ export default function App() {
   }, []);
 
   const pushToast = useCallback(
-    (kind: ToastKind, title: string, message?: string, action?: ToastAction) => {
+    (kind: ToastKind, title: string, message?: string, action?: ToastAction, look?: ToastItem['look']) => {
       toastSeqRef.current += 1;
       const id = toastSeqRef.current;
       // Keep at most 3 on screen; newest at the bottom.
-      setToasts((prev) => [...prev.slice(-2), { id, kind, title, message, action }]);
+      setToasts((prev) => [...prev.slice(-2), { id, kind, title, message, action, look }]);
       window.setTimeout(() => dismissToast(id), TOAST_DURATION_MS);
     },
     [dismissToast]
@@ -1326,10 +1334,26 @@ export default function App() {
     pushToast('success', t.starlightHeldToast, tf(t.starlightHeldBody, { name: lastGuardName ?? '', cost: starlightCost ?? 0 }));
   }, [lastGuardAt, lastGuardName, starlightCost, userId, pushToast, t]);
 
+  // One toast per charm a log lit, each in its own colour with its own medallion.
   const announceStarLit = useCallback(
-    (stars: number | undefined) => {
-      if (stars === undefined) return;
-      pushToast('success', t.starlightToast, tf(t.starlightToastBody, { n: stars, max: STARLIGHT_MAX }));
+    (lit: StarLit[] | number | undefined) => {
+      if (lit === undefined) return;
+      if (typeof lit === 'number') {
+        pushToast('success', t.starlightToast, tf(t.starlightToastBody, { n: lit, max: STARLIGHT_MAX }));
+        return;
+      }
+      for (const star of lit) {
+        pushToast(
+          'success',
+          tf(t.starlightToastCharm, { name: star.name, n: star.added }),
+          tf(t.starlightToastBody, { n: star.stars, max: star.max }),
+          undefined,
+          {
+            accent: CHARM_ACCENT[star.charm] ?? '#a5b4fc',
+            icon: <CharmIcon charm={star.charm} stars={star.stars} max={star.max} cost={star.max + 1} guardOn={false} className="w-6 h-6" />,
+          }
+        );
+      }
     },
     [pushToast, t]
   );
@@ -1356,7 +1380,11 @@ export default function App() {
           : hit.hit === 'miss'
           ? t.chToastMiss
           : t.chToastNoHead;
-      pushToast('success', title, tf(t.chToastHpLeft, { name: hit.name, h: h(hit.hp) }));
+      // NOVA's wishes that lent the hit their fire.
+      const fired = (hit.wishes ?? []).map((w) => ({ supernova: 'SUPERNOVA', blaze: 'BLAZE', wildfire: 'WILDFIRE' } as Record<string, string>)[w]).filter(Boolean);
+      pushToast('success', fired.length ? `${title} · ${fired.join(' + ')}` : title, tf(t.chToastHpLeft, { name: hit.name, h: h(hit.hp) }));
+      // The boss strikes back at the hit (it takes BITS: attacks).
+      if (hit.counter) pushToast('error', tf(t.chToastCounter, { name: hit.name, n: hit.counter }), t.chToastCounterHint);
     },
     [pushToast, t]
   );
@@ -3667,12 +3695,12 @@ export default function App() {
           >
             <TypboxLogo className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" isDark={isDark} isRunning={isRunning} />
             <span className="font-mono text-base sm:text-lg font-bold tracking-tighter whitespace-nowrap">TYPBOX</span>
-            <span className={`max-[359px]:hidden font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>.me</span>
+            <span className={`max-[419px]:hidden shrink-0 whitespace-nowrap font-mono text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 border ${borderCol} ${textMuted}`}>.me</span>
           </button>
 
           {/* Below lg the side navigation puts SHARE CARD, NOISE and the theme
               in this corner, so the header keeps clear of them. */}
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-lg:mr-[7.5rem]">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-lg:mr-[10rem] sm:max-lg:mr-[12rem]">
             {user && !authLoading && (
               <HeaderLoadout
                 buff={activeBuff}

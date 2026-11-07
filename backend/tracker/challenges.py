@@ -25,8 +25,11 @@ with the damage dealt.
 The boss hits back: on a fixed clock from the moment the raid began it attacks,
 unless the damage dealt since its last attack parries it. Attacks are replayed
 from the hits like HP (a session running across the moment counts for it), and
-what they take is kept in BitPurchase.struck, which the ledger counts as spent.
-They never take the balance below zero.
+every 6 hours, and it COUNTERs every hit that lands: what its blows take is
+replayed by attacks.py into BitPurchase.struck (which the ledger counts as
+spent), and a wallet left short borrows from TYPBOX BANK (bank.py). A log a
+buff paid on or a NOVA SHIELD makes a hit land harder (_boost). Raids started
+before that took BITS once a day, never below a zero balance (_sync_attacks).
 
 RIVAL: a 72-hour duel against an NPC whose day runs on a schedule drawn
 from the date (rival_day), the same for everyone. Like a raid, it starts
@@ -243,38 +246,62 @@ RAIDS = {
     },
 }
 
-# How often a boss attacks (hours), the damage since its last attack that
-# parries it, and (name, BITS an attack takes).
-ATTACK_EVERY = 24
-ATTACK_PARRY = 60
+# How a boss fights back (attacks.py). It attacks every ATTACK_EVERY hours
+# from the start of the raid, whatever you do: nothing parries it, only a
+# charm's SHIELD or a wish stops a blow. It also COUNTERs every log that lands
+# on it (COUNTER_SHARE of its attack). So the race is the point: the faster
+# it falls the fewer blows it lands. A blow's BITS are scaled to what the raid
+# pays: brought down a fifth of the way from the end (with a counter for each
+# day's hit), it about breaks even; sooner pays, later costs.
+# An attack marked "hp" is replayed by attacks.py (the name is from when
+# blows took HP first); a raid started before that took BITS once a day,
+# parried by the study since the last attack, never below a zero balance
+# (_sync_attacks).
+ATTACK_EVERY = 6
+COUNTER_SHARE = 0.5
+
+
+def _attack_bits(spec, every):
+    """BITS a blow takes: a raid won at 80% of its time just about pays off."""
+    blows = spec["days"] * 0.8 * (24 / every + COUNTER_SHARE)
+    return max(10, int(round((spec["loot"] - spec["price"]) / blows / 5)) * 5)
+
+
 RAID_ATTACKS = {
-    "golem": ("BOULDER THROW", 75),
-    "nightmare": ("NIGHT TERROR", 80),
-    "hydra": ("VENOM SPIT", 85),
-    "warden": ("CHAIN LASH", 80),
-    "phantom": ("COLD TOUCH", 85),
-    "titan": ("EARTHQUAKE", 170),
-    "kagami": ("MOCHI SLAM", 60),
-    "river": ("STARFALL", 85),
-    "august": ("HEATSTROKE", 125),
-    "jack": ("TRICK", 75),
-    "fubuki": ("PETAL STORM", 80),
-    "oni": ("IRON CLUB", 50),
-    "bitter": ("AFTERTASTE", 60),
-    "tsukuyomi": ("MOONBEAM", 115),
-    "stagefright": ("BLANK MIND", 75),
-    "krampus": ("BIRCH SWITCH", 90),
+    "golem": "BOULDER THROW",
+    "nightmare": "NIGHT TERROR",
+    "hydra": "VENOM SPIT",
+    "warden": "CHAIN LASH",
+    "phantom": "COLD TOUCH",
+    "titan": "EARTHQUAKE",
+    "kagami": "MOCHI SLAM",
+    "river": "STARFALL",
+    "august": "HEATSTROKE",
+    "jack": "TRICK",
+    "fubuki": "PETAL STORM",
+    "oni": "IRON CLUB",
+    "bitter": "AFTERTASTE",
+    "tsukuyomi": "MOONBEAM",
+    "stagefright": "BLANK MIND",
+    "krampus": "BIRCH SWITCH",
 }
-for _boss, (_name, _dmg) in RAID_ATTACKS.items():
+for _boss, _name in RAID_ATTACKS.items():
+    _dmg = _attack_bits(RAIDS[_boss], ATTACK_EVERY)
     RAIDS[_boss]["attack"] = {
         "name": _name,
         "every": ATTACK_EVERY,
-        "parry": ATTACK_PARRY,
+        "parry": 0,
         "dmg": _dmg,
+        "counter": int(_dmg * COUNTER_SHARE),
+        "hp": True,
     }
+# A log a buff paid on hits harder by half the buff's share of its BITS
+# (a buff doubling a log adds x1.5), at most BUFF_HIT_CAP times.
+BUFF_HIT_SHARE = 0.5
+BUFF_HIT_CAP = 2.0
 
-# The other side of each regular boss: 2.5 times the HP, attacks twice as often
-# and harder to parry. Keys on top of the plain ones:
+# The other side of each regular boss: 2.5 times the HP, attacks every 4
+# hours and counters harder. Keys on top of the plain ones:
 #   inverted_of: the boss it is the other side of · first_bonus: extra loot on
 #   the first clear · heal / heal_noon: NIGHT heals this much, at noon as well ·
 #   regen_below / regen_heal: REGEN counts a day under these minutes as empty,
@@ -284,7 +311,9 @@ INVERT_AT = 3
 
 
 def _inverted_attack(name, dmg):
-    return {"name": name, "every": 12, "parry": 180, "dmg": dmg}
+    """The other side: every 4 hours and a heavier counter. `dmg` is
+    replaced once the raid is defined (_attack_bits)."""
+    return {"name": name, "every": 4, "parry": 0, "dmg": dmg, "counter": int(dmg * 0.6), "hp": True}
 
 
 INVERTED_RAIDS = {
@@ -373,6 +402,9 @@ INVERTED_RAIDS = {
         "inverted_of": "titan",
     },
 }
+for _spec in INVERTED_RAIDS.values():
+    _dmg = _attack_bits(_spec, _spec["attack"]["every"])
+    _spec["attack"]["dmg"], _spec["attack"]["counter"] = _dmg, int(_dmg * 0.6)
 RAIDS.update(INVERTED_RAIDS)
 
 NIGHT_HEAL = 60
@@ -1112,7 +1144,8 @@ def raid_attacks(purchase, upto):
         dealt = sum(
             dmg for began, dmg in hits if (previous is None or began > previous) and began <= moment
         )
-        parried = dealt >= attack["parry"]
+        # Only a raid from before the blows took BITS every few hours parries.
+        parried = not attack.get("hp") and dealt >= attack["parry"]
         out.append(
             {
                 "at": moment,
@@ -1130,8 +1163,9 @@ def _sync_attacks(purchase, now):
     balance below zero: what it couldn't take stays due."""
     from .economy import bits_summary  # economy imports this module
 
-    if not (purchase.state or {}).get("attack"):
-        return
+    attack = (purchase.state or {}).get("attack")
+    if not attack or attack.get("hp"):
+        return  # replayed by attacks.sync
     total = sum(a["dmg"] for a in raid_attacks(purchase, min(now, purchase.expires_at)))
     if total > purchase.struck:
         total = min(total, purchase.struck + max(0, bits_summary(purchase.user)["balance"]))
@@ -1233,6 +1267,10 @@ def settle_expired(user, now=None):
             )
             if locked is not None:
                 _sync_attacks(locked, now)
+    # ATTACKS: what the raids' blows took, and the bank covering it.
+    from . import attacks
+
+    attacks.sync(user, now)
 
 
 def _down_loot(purchase):
@@ -1491,7 +1529,8 @@ def apply_to_new_log(log, now=None):
             kind = "miss"
         else:
             kind = _landed_kind(spec, minutes)
-        damage = _hit(spec, minutes, kind)
+        boost, wished = _boost(log, kind, now) if (state.get("attack") or {}).get("hp") else (1.0, [])
+        damage = int(round(_hit(spec, minutes, kind) * boost))
         events = list(state.get("events", []))
         events.append(
             {
@@ -1502,6 +1541,8 @@ def apply_to_new_log(log, now=None):
                 "kind": kind,
                 "head": head,
                 "cat": log.category_id,
+                "boost": boost,
+                **({"wishes": wished} if wished else {}),
             }
         )
         state["events"] = events
@@ -1522,7 +1563,39 @@ def apply_to_new_log(log, now=None):
             "max_hp": max_hp,
             "down": down,
             "payout": loot if down else 0,
+            "wishes": wished,
+            # The boss strikes back at a hit that landed (attacks.py), unless
+            # a SHIELD or a VEIL stops it; inside a BLAZE it lands double.
+            "counter": (
+                _counter_landed(log, purchase, now)
+                if (state.get("attack") or {}).get("hp") and damage > 0 and not down
+                else 0
+            ),
         }
+
+
+def _counter_landed(log, purchase, now):
+    from . import attacks
+
+    return attacks.counter_landed(log.user, purchase, log.id, now)
+
+
+def _boost(log, kind, now):
+    """(multiplier, [wishes]) for how much harder this log hits a raid: half
+    its buff's share of its BITS, a NOVA SHIELD up (attacks.py), and NOVA's
+    wishes (wishes.hit_power)."""
+    from .economy import bits_for_minutes
+    from . import attacks, wishes
+
+    if kind not in ("hit", "crit"):
+        return 1.0, []
+    base = bits_for_minutes(log.duration_minutes)
+    boost = 1.0
+    if base and log.bonus_bits:
+        boost = min(BUFF_HIT_CAP, 1 + BUFF_HIT_SHARE * log.bonus_bits / base)
+    boost *= attacks.power_at(log.user, now)
+    power, wished = wishes.hit_power(log, now)
+    return round(boost * power, 3), wished
 
 
 def _same_as_last_hit(state, log):
@@ -1585,7 +1658,7 @@ def on_log_edited(log, now=None):
         else:
             e["kind"] = _landed_kind(spec, minutes)
         e["min"] = log.duration_minutes
-        e["dmg"] = _hit(spec, minutes, e["kind"])
+        e["dmg"] = int(round(_hit(spec, minutes, e["kind"]) * e.get("boost", 1.0)))
         state["events"] = events
         purchase.state = state
         purchase.save(update_fields=["state"])
@@ -1610,6 +1683,18 @@ def _serialize_attack(purchase, now):
     if not attack:
         return None
     done = raid_attacks(purchase, now)
+    landed = {}
+    if attack.get("hp"):
+        # What each blow really took: a SHIELD, a QUIET SKY or a BLAZE has a say
+        # (attacks.py). `parried` is true for a blow stopped any way.
+        from . import attacks
+
+        prefix = f"{purchase.pk}:"
+        landed = {
+            key[len(prefix):]: bits
+            for key, bits in attacks.replay(purchase.user, now)["landed"].items()
+            if key.startswith(prefix)
+        }
     every = timedelta(hours=attack["every"])
     previous = done[-1]["at"] if done else None
     following = (previous or purchase.created_at) + every
@@ -1625,12 +1710,14 @@ def _serialize_attack(purchase, now):
     return {
         "name": attack["name"],
         "dmg": attack["dmg"],
+        "hp": bool(attack.get("hp")),
+        "counter": attack.get("counter", 0),
         "every": attack["every"],
         "parry": attack["parry"],
         "next_at": following if following < purchase.expires_at else None,
         "dealt": dealt,
         "log": [
-            {"at": a["at"].isoformat(), "parried": a["parried"], "dmg": a["dmg"]}
+            {"at": a["at"].isoformat(), "parried": landed.get(a["at"].isoformat(), a["dmg"]) == 0, "dmg": landed.get(a["at"].isoformat(), a["dmg"])}
             for a in done[-4:]
         ],
     }
@@ -1765,7 +1852,7 @@ def _raid_offer(key, spec, beaten, hydra_ok, suggested):
         },
         "loot": spec["loot"] + bonus,
         "first_bonus": bonus,
-        "attack": {k: spec["attack"][k] for k in ("name", "dmg", "every", "parry")},
+        "attack": {k: spec["attack"].get(k) for k in ("name", "dmg", "every", "parry", "hp", "counter")},
         "event": spec.get("event"),
         "available": hydra_ok if spec["trait"] in ("heads", "afterimage") else True,
         # HYDRA: how many heads to pick, and the ones suggested.

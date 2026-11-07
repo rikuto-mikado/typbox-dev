@@ -40,7 +40,7 @@ export const PackSplash: React.FC<{
     <div
       role="status"
       onClick={onClose}
-      className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-4 cursor-pointer ${
+      className={`fixed inset-0 z-[60] font-mono text-xs flex flex-col items-center justify-center gap-3 p-4 cursor-pointer ${
         isDark ? 'bg-zinc-950' : 'bg-white'
       }`}
     >

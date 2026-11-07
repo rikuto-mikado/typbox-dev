@@ -20,8 +20,8 @@ keeps the balance in step automatically. On top of that:
 After a buff ends it cools down on its own timer (BUFF_COOLDOWN_HOURS); other buffs can be bought meanwhile. STARLIGHT is worked out from
 the logs: every day with a log no buff paid on is a star, up to STARLIGHT_MAX.
 With STARLIGHT_COST stars on the gauge, a buff that fails its condition keeps
-running in exchange for them, once per buff; stars also buy small wishes
-(STAR_USES). Only what was spent is stored.
+running in exchange for them, once per buff; stars also buy wishes
+(wishes.py), four for each charm. Only what was spent is stored.
 
 balance = floor(total minutes * 100 / 60) + sum(bonus_bits) + sum(payout) - sum(price - refunded + struck)
 
@@ -38,7 +38,7 @@ from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
-from . import blessings, challenges, festival_pass, festivals
+from . import attacks, bank, blessings, challenges, charms, festival_pass, festivals
 from .collection import collection_state
 from .furniture import (
     FURNITURE,
@@ -51,7 +51,7 @@ from .furniture import (
     shop_lineup,
     validate_layout,
 )
-from .models import BitPurchase, Category, StudyLog, TradeOrder, UserProfile
+from .models import BankEntry, BitPurchase, Category, StudyLog, TradeOrder, UserProfile
 from .timezones import get_user_zone
 
 BITS_PER_HOUR = 100
@@ -633,7 +633,11 @@ def _spend_starlight(buff, covering, now):
         state = dict(locked.state or {})
         if state.get("closed") or state.get("covered"):
             return False
-        if not _take_stars(profile, STARLIGHT_COST, now):
+        # The worn charm's GUARD, once it has settled in (charms.py).
+        charm = charms.worn_now(buff.user, now, profile)
+        if not charm or not charms.attuned(profile, charm, now):
+            return False
+        if not charms.take_stars(profile, charm, charms.CHARMS[charm]["guard"], now):
             return False
         state["covered"] = [covering]
         locked.state = state
@@ -696,63 +700,60 @@ def _lights_a_star(log_date, created_at, zone):
 
 
 def star_days(user, now=None):
-    """The days STARLIGHT is lit for: every day up to today with a log no buff
-    paid on (no bonus_item, which a backup keeps), oldest first. Worked out
-    from the logs each time, so old logs, deletions, resets and imports need
-    no special handling."""
-    local = _local_now(user, now or timezone.now())
-    logs = StudyLog.objects.filter(user=user, bonus_item="", date__lte=local.date())
-    return sorted(
-        {
-            day
-            for day, created_at in logs.values_list("date", "created_at")
-            if _lights_a_star(day, created_at, local.tzinfo)
-        }
-    )
+    """The days the worn charm (ASTRA by default) lit, oldest first. See charms.py."""
+    profile = UserProfile.objects.filter(user=user).first()
+    charm = _shown_charm(user, now or timezone.now(), profile)
+    return [day for day, _ in charms.star_days(user, charm, now, profile)]
 
 
-def star_count(user, spends, now=None):
-    """The gauge: lit days add a star up to the cap and spending takes them,
-    in the order they happened (a day's star lands before that day's spend)."""
-    events = [(day.isoformat(), 0, 1) for day in star_days(user, now)]
-    events += [(s["day"], 1, -s["n"]) for s in spends]
-    stars = 0
-    for _, _, change in sorted(events):
-        stars = max(0, min(STARLIGHT_MAX, stars + change))
-    return stars
+def _shown_charm(user, now, profile):
+    """The charm whose gauge the STARLIGHT card shows: the worn one, or the
+    last one worn when none is."""
+    worn = charms.worn_now(user, now, profile)
+    if worn:
+        return worn
+    for entry in reversed((profile.charm_log if profile else []) or []):
+        if isinstance(entry, dict) and entry.get("charm") in charms.CHARMS:
+            return entry["charm"]
+    return charms.DEFAULT
 
 
 def star_lit_by(log, now=None):
-    """The stars on the gauge if this new log was the first to light its day."""
-    local = _local_now(log.user, now or timezone.now())
-    if (
-        log.bonus_item
-        or log.date > local.date()
-        or not _lights_a_star(log.date, log.created_at, local.tzinfo)
-    ):
-        return None
-    others = StudyLog.objects.filter(user=log.user, date=log.date, bonus_item="").exclude(pk=log.pk)
-    if any(_lights_a_star(log.date, c, local.tzinfo) for c in others.values_list("created_at", flat=True)):
+    """[{charm, name, stars, max, added}] for every charm the user holds whose
+    day this new log was the one to light (each counts its own way), or None."""
+    now = now or timezone.now()
+    local = _local_now(log.user, now)
+    if log.date > local.date() or not _lights_a_star(log.date, log.created_at, local.tzinfo):
         return None
     profile = UserProfile.objects.filter(user=log.user).first()
-    return star_count(log.user, profile.star_spends if profile else [], now)
-
-
-def _take_stars(profile, n, now):
-    """Spends `n` stars from a locked profile, or returns False."""
-    if star_count(profile.user, profile.star_spends, now) < n:
-        return False
-    day = _local_now(profile.user, now).date().isoformat()
-    profile.star_spends = [*profile.star_spends, {"day": day, "n": n}]
-    profile.save(update_fields=["star_spends"])
-    return True
+    lit = []
+    for charm in charms.CHARMS:
+        if charm not in charms.owned(log.user):
+            continue
+        days = dict(charms.star_days(log.user, charm, now, profile))
+        if log.date not in days:
+            continue
+        if log.date in dict(charms.star_days(log.user, charm, now, profile, exclude=log.pk)):
+            continue
+        spec = charms.CHARMS[charm]
+        lit.append(
+            {
+                "charm": charm,
+                "name": spec["name"],
+                "stars": charms.star_count(log.user, charm, now, profile),
+                "max": spec["max"],
+                "added": days[log.date],
+            }
+        )
+    return lit or None
 
 
 class StarlightError(Exception):
     pass
 
 
-# What the stars buy, besides saving a buff. Nothing here pays BITS.
+# What ASTRA's stars buy, besides saving a buff (every charm's wishes and
+# their costs: wishes.py). Nothing here pays BITS.
 STAR_USES = {"reroll": 2, "omen": 3, "festival": 5}
 CRATE_TURN_HOURS = 6
 
@@ -792,59 +793,54 @@ def _crate_rests_past_turn(user, now):
 
 
 def use_starlight(user, use, now=None, item_id=None):
-    """Spends stars on a wish, or raises StarlightError."""
-    now = now or timezone.now()
-    cost = STAR_USES.get(use)
-    if cost is None:
-        raise StarlightError("Unknown wish.")
-    with transaction.atomic():
-        profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
-        fields = []
-        if use == "festival":
-            festival = festivals.active_on(_local_now(user, now).date())
-            if not festival or item_id not in event_pieces(festival["id"]):
-                raise StarlightError("That piece isn't part of a festival right now.")
-            if not owns_furniture(user):
-                raise StarlightError("Choose a starter pack first.")
-            if user.bit_purchases.filter(item_id=item_id).exists():
-                raise StarlightError("You already own this piece.")
-            BitPurchase.objects.create(user=user, item_id=item_id, price=0)
-        elif use == "reroll":
-            profile.shop_salt += 1
-            fields = ["shop_salt"]
-        else:
-            if _live_omen(profile, now):
-                raise StarlightError("The stars have already spoken.")
-            if _crate_rests_past_turn(user, now):
-                raise StarlightError("The crate will have changed before it is ready.")
-            profile.crate_omen = roll_crate(BUFFS["mystery_crate"])
-            profile.crate_omen_until = crate_turns_at(user, now)
-            fields = ["crate_omen", "crate_omen_until"]
-        if not _take_stars(profile, cost, now):
-            raise StarlightError("Not enough stars.")
-        if fields:
-            profile.save(update_fields=fields)
+    """Spends stars on a wish (wishes.py), or raises StarlightError."""
+    from . import wishes
+
+    try:
+        return wishes.grant(user, use, now, item_id)
+    except wishes.WishError as exc:
+        raise StarlightError(str(exc))
 
 
 def serialize_starlight(user, now=None):
+    from . import wishes
+
     now = now or timezone.now()
     profile = UserProfile.objects.filter(user=user).first()
-    days = star_days(user, now)
-    stars = star_count(user, profile.star_spends if profile else [], now)
+    charm = _shown_charm(user, now, profile)
+    spec = charms.CHARMS[charm]
+    days = [day for day, _ in charms.star_days(user, charm, now, profile)]
+    stars = charms.star_count(user, charm, now, profile)
     omen = _live_omen(profile, now)
+    # A MIST OMEN only says whether it's rare.
+    hint = wishes.omen_hint(profile, now) if profile else None
+    worn = charms.worn_now(user, now, profile)
+    wished = wishes.serialize(user, now, profile)
+    ready = bool(worn) and (charms.attuned(profile, worn, now) if profile else True)
     return {
+        "charm": charm,
+        "worn": worn == charm,
+        "attuned": ready,
         "stars": stars,
-        "max": STARLIGHT_MAX,
-        "cost": STARLIGHT_COST,
-        "guard_on": stars >= STARLIGHT_COST,
+        "max": spec["max"],
+        "cost": spec["guard"],
+        "shield_cost": spec["shield"]["cost"],
+        # The insurance works only for a worn, settled-in charm.
+        "guard_on": ready and stars >= spec["guard"],
+        "shield_on": ready and stars >= spec["shield"]["cost"],
         "days": [day.isoformat() for day in days],
         "last_guard": (profile.last_guard if profile else {}) or None,
-        "uses": STAR_USES,
-        "omen": BUFFS[omen]["name"] if omen else None,
-        "omen_id": omen or None,
+        # Today's cost of each of the worn charm's wishes, and the FESTIVAL's.
+        "uses": {**{w["id"]: w["cost"] for w in wished["list"]}, "festival": wished["festival"]},
+        "wishes": wished,
+        "omen": BUFFS[omen]["name"] if omen and not hint else None,
+        "omen_id": omen if omen and not hint else None,
+        "omen_hint": hint,
+        "omen_live": bool(omen),
         # A reading keeps the end it was given, even if the time zone moved since.
         "crate_turns_at": profile.crate_omen_until if omen else crate_turns_at(user, now),
         "omen_too_late": _crate_rests_past_turn(user, now),
+        "charms": charms.serialize(user, now, profile),
     }
 
 
@@ -1196,8 +1192,10 @@ def bits_summary(user):
     traded = user.trade_orders.aggregate(total=Sum("bits"))["total"] or 0
     # BLESSINGS (blessings.py) add theirs on the logs too.
     earned = bits_for_minutes(logs["minutes"] or 0) + (logs["bonus"] or 0) + (logs["blessed"] or 0) + payouts
+    # TYPBOX BANK (bank.py): loans and withdrawals in, repayments and deposits out.
+    banked = bank.ledger_flow(user)
     return {
-        "balance": earned - spent + traded,
+        "balance": earned - spent + traded + banked,
         "earned": earned,
         "spent": spent,
         # Challenge payouts (part of earned): the client adds them to the
@@ -1408,6 +1406,9 @@ def shop_state(user, now=None):
         "last_challenge": challenges.last_result(user, now),
         "collection": collection_state(user),
         "blessings": blessings.state(user),
+        # ATTACKS (attacks.py): a SHIELD up, the last blows; TYPBOX BANK (bank.py).
+        "defense": attacks.serialize(user, now),
+        "bank": bank.serialize(user, now),
     }
 
 
@@ -1480,7 +1481,13 @@ def reset_economy(user):
         profile.star_spends = []
         profile.last_guard = {}
         profile.crate_omen = ""
-        profile.save(update_fields=["star_spends", "last_guard", "crate_omen"])
+        # CHARMS go back to ASTRA, worn as from the start, and the SHIELDs
+        # with the raids they stood against; TYPBOX BANK forgets the account.
+        profile.charm = charms.DEFAULT
+        profile.charm_log = []
+        profile.shields = []
+        profile.save(update_fields=["star_spends", "last_guard", "crate_omen", "charm", "charm_log", "shields"])
+        BankEntry.objects.filter(user=user).delete()
         cleared = (
             StudyLog.objects.filter(user=user)
             .filter(Q(bonus_bits__gt=0) | ~Q(bonus_item=""))
@@ -1530,6 +1537,8 @@ def buy(user, item_id, now=None, category_id=None, category_ids=None):
     LOCK needs `category_id`: one of the user's own in-progress categories.
     HYDRA takes `category_ids` (challenges.start)."""
     now = now or timezone.now()
+    # Nothing else while TYPBOX BANK's emergency loan is owed.
+    bank.check_not_in_debt(user, now)
     if item_id in STARTER_PACKS:
         return _buy_starter_pack(user, item_id)
     if item_id in FURNITURE:

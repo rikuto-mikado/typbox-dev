@@ -8,11 +8,15 @@ import { Pixel } from './ChallengePanel';
 import { tf, useI18n } from './i18n';
 
 // The header's right-hand corner (beside SHARE, NOISE and the theme on
-// narrow screens): what is on now, as three icon sockets: the buff, the blessing and ASTRA
-// (whose charm shows its own state). A socket with nothing in it keeps its
+// narrow screens): what is on now, as three icon sockets: the buff, the
+// blessing and the worn STARLIGHT charm (ASTRA, NOVA or NEBULA, showing its
+// own state). A socket with nothing in it keeps its
 // place, drawn as an empty mount, so the row never shifts. Each one opens its own view on the BITS page.
 
 export type LoadoutSlot = 'shop' | 'blessings' | 'starlight';
+
+/** Each STARLIGHT charm's glow in its socket. */
+const CHARM_GLOW: Record<string, string> = { astra: '#93a4d8', nova: '#fb923c', nebula: '#c4b5fd' };
 
 export interface LoadoutBlessing {
   id: string;
@@ -35,7 +39,7 @@ const Socket: React.FC<{
     type="button"
     onClick={onClick}
     aria-label={title}
-    className={`loadout-socket relative w-8 h-8 max-[359px]:w-7 max-[359px]:h-7 sm:w-10 sm:h-10 flex items-center justify-center border cursor-pointer transition-colors ${
+    className={`loadout-socket relative w-7 h-7 max-[379px]:w-6 max-[379px]:h-6 sm:w-10 sm:h-10 flex items-center justify-center border cursor-pointer transition-colors ${
       lit ? '' : `${borderCol} border-dashed`
     }`}
     style={lit ? ({ borderColor: `${glow}99`, '--socket-glow': glow } as React.CSSProperties) : undefined}
@@ -78,6 +82,7 @@ export const HeaderLoadout: React.FC<{
       : undefined;
   const buffLook = buff ? lookOf(buff.item_id) : null;
   const stars = starlight?.stars ?? 0;
+  const charmName = starlight?.charms?.charms.find((c) => c.id === starlight.charm)?.name ?? t.astraName;
   return (
     <div className="flex items-center gap-1 sm:gap-1.5" role="group" aria-label={t.buffsNowOn}>
       <Socket
@@ -88,7 +93,7 @@ export const HeaderLoadout: React.FC<{
         onClick={() => onOpen('shop')}
         borderCol={borderCol}
       >
-        {buff && <BuffIcon itemId={buff.item_id} className="w-6 h-6 sm:w-7 sm:h-7" />}
+        {buff && <BuffIcon itemId={buff.item_id} className="w-5 h-5 sm:w-7 sm:h-7" />}
       </Socket>
       <Socket
         title={
@@ -101,20 +106,20 @@ export const HeaderLoadout: React.FC<{
         onClick={() => onOpen('blessings')}
         borderCol={borderCol}
       >
-        {blessing && CHARM_ART[blessing.id] && <Pixel art={CHARM_ART[blessing.id]} className="w-6 h-6 sm:w-7 sm:h-7 charm-float" />}
+        {blessing && CHARM_ART[blessing.id] && <Pixel art={CHARM_ART[blessing.id]} className="w-5 h-5 sm:w-7 sm:h-7 charm-float" />}
       </Socket>
       <Socket
         title={
-          starlight
-            ? `${t.astraName} · ${tf(t.nowStarsLine, { a: stars, b: starlight.max })}${starlight.guard_on ? ` · ${t.nowGuardOn}` : ''}`
-            : `${t.astraName} · ${t.nowNone}`
+          starlight && starlight.worn !== false
+            ? `${charmName} · ${tf(t.nowStarsLine, { a: stars, b: starlight.max })}${starlight.guard_on ? ` · ${t.nowGuardOn}` : ''}`
+            : `${t.nowStars} · ${t.nowNone}`
         }
-        lit={Boolean(starlight)}
-        glow={starlight?.guard_on || (starlight && stars >= starlight.max) ? '#fde047' : '#93a4d8'}
+        lit={Boolean(starlight && starlight.worn !== false)}
+        glow={starlight?.guard_on || (starlight && stars >= starlight.max) ? '#fde047' : CHARM_GLOW[starlight?.charm ?? 'astra']}
         onClick={() => onOpen('starlight')}
         borderCol={borderCol}
       >
-        {starlight && <AstraIcon starlight={starlight} className="w-7 h-7 sm:w-8 sm:h-8" />}
+        {starlight && starlight.worn !== false && <AstraIcon starlight={starlight} className="w-6 h-6 sm:w-8 sm:h-8" />}
       </Socket>
     </div>
   );

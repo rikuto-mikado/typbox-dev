@@ -594,7 +594,12 @@ def shop_lineup(user, now=None, profile=None):
     """
     now = now or timezone.now()
     zone = get_user_zone(user) or timezone.get_current_timezone()
-    salt = (profile or UserProfile.objects.filter(user=user).first() or UserProfile()).shop_salt
+    from . import wishes
+
+    profile = profile or UserProfile.objects.filter(user=user).first() or UserProfile()
+    salt = profile.shop_salt
+    # NOVA's SCATTER re-deals only the shelves that turn daily.
+    scatter = wishes.scatter_salt(profile)
     today = timezone.localtime(now, zone).date()
     groups = []
     festival = festivals.active_on(today)
@@ -619,7 +624,7 @@ def shop_lineup(user, now=None, profile=None):
             {
                 "tier": tier,
                 "every_days": every,
-                "items": lineup_for(tier, count, index, salt),
+                "items": lineup_for(tier, count, index, salt + (scatter if every <= 2 else 0)),
                 "resets_at": timezone.make_aware(
                     datetime.combine(start + timedelta(days=every), time.min), zone
                 ),

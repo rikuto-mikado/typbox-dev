@@ -200,13 +200,13 @@ interface Float {
 const RAID_SEEN_KEY = 'typbox_raid_hit_seen';
 const ATTACK_SEEN_KEY = 'typbox_raid_attack_seen';
 
-/** What the boss is about to do, and how close the study since its last attack
- *  comes to parrying it. */
+/** What the boss is about to do and when (a raid from before the blows came
+ *  every few hours also shows how close the study comes to parrying it). */
 const AttackPanel: React.FC<{ raid: ActiveRaid; now: number; borderCol: string; textMuted: string }> = ({ raid, now, borderCol, textMuted }) => {
   const { t } = useI18n();
   const attack = raid.attack;
   if (!attack) return null;
-  const ready = attack.dealt >= attack.parry;
+  const ready = attack.parry > 0 && attack.dealt >= attack.parry;
   const nextAt = attack.next_at ? new Date(attack.next_at).getTime() : null;
   return (
     <div className={`px-3 py-2 border-t ${borderCol} space-y-1`}>
@@ -217,9 +217,20 @@ const AttackPanel: React.FC<{ raid: ActiveRaid; now: number; borderCol: string; 
             {nextAt !== null ? tf(t.chAttackNext, { name: attack.name, t: left(nextAt - now) }) : t.chAttackNone}
           </span>
         </span>
-        <span className="shrink-0 text-rose-400 tabular-nums">−{fmt(attack.dmg)}</span>
+        <span className="shrink-0 text-rose-400 tabular-nums">−{fmt(attack.dmg)} BITS</span>
       </div>
-      {nextAt !== null && (
+      {attack.counter ? (
+        <div className="text-[9px] uppercase tracking-wider tabular-nums text-rose-300/80">{tf(t.chAttackCounter, { n: fmt(attack.counter) })}</div>
+      ) : null}
+      {nextAt !== null && attack.hp ? (
+        // Nothing parries it now: the bar is the clock running down to the blow.
+        <span className="block relative h-1.5 bg-zinc-500/20 overflow-hidden">
+          <span
+            className="absolute inset-y-0 left-0 bg-rose-500/80 transition-[width] duration-500"
+            style={{ width: `${Math.min(100, Math.max(0, 100 - ((nextAt - now) / (attack.every * 3600000)) * 100))}%` }}
+          />
+        </span>
+      ) : nextAt !== null ? (
         <div className="flex items-center gap-2">
           <span className="relative flex-1 h-1.5 bg-zinc-500/20 overflow-hidden">
             <span className="absolute inset-y-0 left-0 transition-[width] duration-500" style={{ width: `${Math.min(100, (attack.dealt / attack.parry) * 100)}%`, background: ready ? '#34d399' : '#fb7185' }} />
@@ -228,9 +239,9 @@ const AttackPanel: React.FC<{ raid: ActiveRaid; now: number; borderCol: string; 
             {ready ? t.chAttackParried : tf(t.chAttackParry, { a: hours(attack.dealt), b: hours(attack.parry) })}
           </span>
         </div>
-      )}
+      ) : null}
       {(raid.struck ?? 0) > 0 && (
-        <div className={`text-[9px] uppercase tracking-wider tabular-nums ${textMuted}`}>{tf(t.chAttackTaken, { n: fmt(raid.struck ?? 0) })}</div>
+        <div className="text-[9px] uppercase tracking-wider tabular-nums text-rose-400 font-bold">{tf(t.chAttackTaken, { n: fmt(raid.struck ?? 0) })}</div>
       )}
     </div>
   );
@@ -1157,6 +1168,7 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                   <span className="px-1 py-0.5 border border-rose-500/50 text-rose-400 text-[8px] uppercase tracking-wider shrink-0">{t.chAttackLabel}</span>
                   <span className="font-sans leading-snug">
                     {tf(t.chAttackOffer, { name: raid.attack.name, n: fmt(raid.attack.dmg), h: raid.attack.every, p: hours(raid.attack.parry) })}
+                    {raid.attack.counter ? tf(t.chAttackOfferCounter, { n: fmt(raid.attack.counter) }) : ''}
                   </span>
                 </div>
               )}

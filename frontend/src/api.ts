@@ -208,7 +208,8 @@ interface LogWriteResponse {
   /** When the server stops accepting edits and deletes of this log. */
   editable_until?: string;
   /** The stars on the gauge, when this log lit today's star (new logs only). */
-  star_lit?: number;
+  /** Each charm this log lit a day for (older servers sent the worn gauge as a number). */
+  star_lit?: StarLit[] | number;
   /** What the log did to the running BOSS RAID / RIVAL duel (new logs only). */
   challenge_hit?: ChallengeHit;
 }
@@ -218,6 +219,15 @@ interface LogWriteResponse {
 // the buff, one challenge at a time.
 
 export type RaidHitKind = 'hit' | 'crit' | 'block' | 'miss' | 'nohead';
+
+export interface StarLit {
+  charm: CharmId;
+  name: string;
+  stars: number;
+  max: number;
+  /** Stars this day added (NOVA's long day lights two). */
+  added: number;
+}
 
 export interface ActiveRaid {
   kind: 'raid';
@@ -254,7 +264,12 @@ export interface ActiveRaid {
 
 export interface BossAttack {
   name: string;
+  /** BITS an attack takes. */
   dmg: number;
+  /** Replayed every few hours with counters (backend attacks.py); a raid from before took one a day. */
+  hp?: boolean;
+  /** BITS it strikes back with at every log that lands. */
+  counter?: number;
   /** Hours between attacks. */
   every: number;
   /** The damage since its last attack that parries the next one. */
@@ -326,7 +341,7 @@ export interface RaidOffer {
   heads?: [number, number];
   suggested?: number[];
   first_bonus?: number;
-  attack?: Pick<BossAttack, 'name' | 'dmg' | 'every' | 'parry'>;
+  attack?: Pick<BossAttack, 'name' | 'dmg' | 'every' | 'parry' | 'hp' | 'counter'>;
   wins?: number;
   inversion?: Inversion<RaidOffer> | null;
 }
@@ -384,7 +399,7 @@ export interface ChallengeResult {
 }
 
 export type ChallengeHit =
-  | { kind: 'raid'; name: string; boss: string; hit: RaidHitKind; damage: number; hp: number; max_hp: number; down: boolean; payout: number }
+  | { kind: 'raid'; name: string; boss: string; hit: RaidHitKind; damage: number; hp: number; max_hp: number; down: boolean; payout: number; counter?: number; wishes?: StarWish[] }
   | { kind: 'rival'; name: string; mine: number; theirs: number };
 
 export interface BitsBuff {
@@ -466,25 +481,149 @@ export interface BitsActiveBuff {
 
 /** STARLIGHT (backend tracker/economy.py): the gauge and the days a star was lit. */
 export interface Starlight {
+  /** The charm whose gauge this is: the worn one, else the last worn (older servers omit it). */
+  charm?: CharmId;
+  /** Whether that charm is worn now. */
+  worn?: boolean;
+  /** Worn long enough for its insurance to work. */
+  attuned?: boolean;
   stars: number;
   max: number;
   cost: number;
+  /** Stars its SHIELD costs. */
+  shield_cost?: number;
   guard_on: boolean;
+  shield_on?: boolean;
+  charms?: CharmsState;
   /** Local days a star was lit, 'YYYY-MM-DD', oldest first. */
   days: string[];
   last_guard: { at: string; name: string } | null;
-  /** What each wish costs. */
-  uses?: Record<StarWish | 'festival', number>;
+  /** What each of the worn charm's wishes costs today (and the FESTIVAL's). */
+  uses?: Partial<Record<StarWish | 'festival', number>>;
+  /** The worn charm's four wishes (backend tracker/wishes.py). */
+  wishes?: WishState;
   /** What the next MYSTERY CRATE holds, if the stars were asked. */
   omen?: string | null;
   omen_id?: string | null;
+  /** A MIST OMEN's reading: only whether it is rare. */
+  omen_hint?: 'rare' | 'common' | null;
+  /** Some reading of this crate is out (OMEN or MIST OMEN). */
+  omen_live?: boolean;
   /** When the crate next changes, and what the stars saw goes with it. */
   crate_turns_at?: string;
   /** The crate is resting past that change: an omen would be wasted. */
   omen_too_late?: boolean;
 }
 
-export type StarWish = 'reroll' | 'omen';
+export type StarWish =
+  | 'reroll'
+  | 'omen'
+  | 'starchart'
+  | 'hush'
+  | 'supernova'
+  | 'blaze'
+  | 'wildfire'
+  | 'scatter'
+  | 'veil'
+  | 'drift'
+  | 'mist'
+  | 'silver';
+
+export interface WishState {
+  charm: CharmId | null;
+  /** Today's cost against the usual one (a charm's hidden DUTY DAY makes it a star less). */
+  list: Array<{ id: StarWish; cost: number; base: number }>;
+  festival: number;
+  /** What the wishes have running: charges waiting, or when a timed one ends. */
+  running: {
+    hush?: number;
+    veil?: number;
+    supernova?: number;
+    silver?: number;
+    blaze?: string | null;
+    wildfire?: string | null;
+    drift?: string | null;
+    starchart?: { items: string[]; until: string } | null;
+  };
+}
+
+/** CHARMS (backend tracker/charms.py): what STARLIGHT is gathered in. */
+export type CharmId = 'astra' | 'nova' | 'nebula';
+
+export interface CharmCard {
+  id: CharmId;
+  name: string;
+  title: string;
+  /** How its stars light, in a line. */
+  line: string;
+  max: number;
+  /** Stars a GUARD costs. */
+  guard: number;
+  /** Its SHIELD: stars, hours, raid damage multiplier inside, HP given back when it rises. */
+  shield: { cost: number; hours: number; power: number };
+  hours: number;
+  price: number;
+  unlocked: boolean;
+  owned: boolean;
+  worn: boolean;
+  stars: number;
+  /** When a just-worn charm's insurance starts working. */
+  attuned_at: string | null;
+  attuned: boolean;
+}
+
+export interface CharmsState {
+  worn: CharmId | null;
+  attune_hours: number;
+  charms: CharmCard[];
+}
+
+/** A charm's SHIELD standing and the raids' last blows (backend tracker/attacks.py). */
+export interface DefenseState {
+  shield: { until: string; charm: CharmId | null; power: number } | null;
+  events: Array<{ at: string; kind: 'attack' | 'counter' | 'shielded' | 'hushed' | 'veiled'; of?: 'attack' | 'counter'; bits: number; dmg: number; name: string }>;
+}
+
+/** TYPBOX BANK (backend tracker/bank.py). */
+export type LoanPlan = 'study' | 'standard' | 'emergency';
+
+export interface BankLoan {
+  id: number;
+  plan: LoanPlan;
+  name: string;
+  amount: number;
+  rate_bp: number;
+  grace_days: number;
+  created_at: string;
+  interest_from: string;
+  principal: number;
+  interest: number;
+  owed: number;
+  paid: number;
+  days: number;
+}
+
+export interface BankState {
+  loans: BankLoan[];
+  owed: number;
+  emergency_owed: number;
+  plans: Array<{ id: LoanPlan; name: string; rate_bp: number; grace_days: number; limit: number; open: boolean }>;
+  vault: {
+    balance: number;
+    interest: number;
+    deposited: number;
+    withdrawn: number;
+    rate_bp: number;
+    day_cap: number;
+    study_minutes: number;
+  };
+  auto_repay: number;
+}
+
+export type BankAction =
+  | { action: 'borrow'; plan: LoanPlan; amount: number }
+  | { action: 'repay'; loan: number; amount: number }
+  | { action: 'deposit' | 'withdraw'; amount: number };
 
 /** A festival (backend tracker/festivals.py); dates are 'MM-DD', every year. */
 export interface Festival {
@@ -527,6 +666,8 @@ export interface BitsShopState {
   collection?: CollectionState;
   /** Older servers omit it. */
   blessings?: BlessingState;
+  defense?: DefenseState;
+  bank?: BankState;
 }
 
 /** BLESSINGS (backend tracker/blessings.py). */
@@ -768,6 +909,22 @@ export const api = {
       apiFetch<BitsShopState>('/bits/blessing/', {
         method: 'POST',
         body: JSON.stringify({ buy: id }),
+      }),
+    /** Puts a STARLIGHT charm on (null takes the worn one off). */
+    wearCharm: async (id: CharmId | null) =>
+      apiFetch<BitsShopState>('/bits/charm/', {
+        method: 'POST',
+        body: JSON.stringify({ wear: id }),
+      }),
+    buyCharm: async (id: CharmId) =>
+      apiFetch<BitsShopState>('/bits/charm/', {
+        method: 'POST',
+        body: JSON.stringify({ buy: id }),
+      }),
+    bank: async (body: BankAction) =>
+      apiFetch<BitsShopState>('/bits/bank/', {
+        method: 'POST',
+        body: JSON.stringify(body),
       }),
     forfeitChallenge: async () =>
       apiFetch<BitsShopState>('/bits/challenge/forfeit/', {

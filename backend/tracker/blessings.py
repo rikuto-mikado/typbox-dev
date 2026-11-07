@@ -325,6 +325,13 @@ def buy(user, blessing_id):
         UserProfile.objects.select_for_update().get_or_create(user=user)
         if not is_unlocked(user, blessing_id):
             raise BlessingError(f"{spec['name']} opens after {spec['hours']:,} hours of study.")
+        from . import bank
+        from .economy import PurchaseError
+
+        try:
+            bank.check_not_in_debt(user)
+        except PurchaseError as exc:
+            raise BlessingError(str(exc))
         if blessing_id in owned(user):
             raise BlessingError(f"You already have {spec['name']}.")
         if bits_summary(user)["balance"] < spec["price"]:

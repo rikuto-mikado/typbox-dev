@@ -597,6 +597,10 @@ def place_order(user, asset, side, amount=None, units=None, now=None):
             amount = _parse_amount(amount)
             if bits_summary(user)["balance"] < amount:
                 raise TradeError("Not enough BITS.")
+            from . import bank
+
+            if bank.emergency_owed(user, now) > 0:
+                raise TradeError("Pay back TYPBOX BANK's emergency loan first.")
             if spec["cap"] is not None and held_basis + amount > spec["cap"]:
                 room = max(0, spec["cap"] - held_basis)
                 raise TradeError(

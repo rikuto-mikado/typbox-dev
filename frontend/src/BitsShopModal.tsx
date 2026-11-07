@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap, Lock, Play, Clock, Hourglass } from 'lucide-react';
-import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type RoomState, type StarterPack, type StarWish } from './api';
+import { createPortal } from 'react-dom';
+import { Bookmark, BookmarkCheck, Check, Home, Loader2, Zap, Lock, Play, Clock, Hourglass, ShieldCheck } from 'lucide-react';
+import { api, type BitsActiveBuff, type BitsBuff, type BitsShopState, type CharmId, type RoomState, type StarterPack, type StarWish } from './api';
 import { Glint, StarlightSky, StarWishes } from './StarlightSky';
 import { BITS_PER_HOUR } from './bits';
 import { BitShard, StudyTime } from './BitsBadge';
@@ -15,7 +16,8 @@ import { CategoryChips } from './CategoryChips';
 import { SegmentIndicator } from './SegmentIndicator';
 import { TradeTab } from './TradeTab';
 import { BlessingsPanel } from './Blessings';
-import { AstraCharm, AstraIcon } from './AstraCharm';
+import { AstraCharm, AstraIcon, CharmPicker } from './AstraCharm';
+import { BankPanel } from './BankPanel';
 import { CHARM_ART } from './blessingArt';
 import { Pixel } from './ChallengePanel';
 
@@ -31,7 +33,7 @@ const SPLASH_MS = 1700;
 const CRATE_SHAKE_MS = 1000;
 const BAR_CELLS = 20;
 
-export type ShopTab = 'buffs' | 'furniture' | 'challenges' | 'trade';
+export type ShopTab = 'buffs' | 'furniture' | 'challenges' | 'trade' | 'bank';
 /** The BUFFS tab's three views. */
 type BuffsView = 'shop' | 'blessings' | 'starlight';
 
@@ -381,6 +383,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
   // FALLING STAR: until when the "go to FURNITURE" card shows, and the pieces
   // the wish dealt in, veiled until tapped (see VEIL_KEY).
   const [granted, setGranted] = useState<number | null>(null);
+  const [grantedUse, setGrantedUse] = useState<StarWish | null>(null);
   const [veils, setVeils] = useState<Record<string, string>>(readVeils);
   const [lifting, setLifting] = useState<string | null>(null);
   const [state, setState] = useState<BitsShopState | null>(null);
@@ -540,6 +543,12 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
       setBuyError((err as Error).message || t.starWishFailed);
     }
   };
+  const wearCharm = async (id: CharmId | null) => {
+    const next = await api.bits.wearCharm(id);
+    setState(next);
+    onPurchased(next);
+  };
+
   const handleWish = async (use: StarWish) => {
     setBuyError(null);
     const before = room?.weekly;
@@ -547,7 +556,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
       const next = await api.bits.starlight(use);
       setState(next);
       onPurchased(next);
-      if (use !== 'reroll') return;
+      if (use !== 'reroll' && use !== 'scatter') return;
       const fresh = await api.room.get();
       setRoom(fresh);
       // Veil what the wish dealt in: each new piece until its group turns over.
@@ -565,6 +574,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
         return merged;
       });
       setGranted(Date.now() + GRANT_MS);
+      setGrantedUse(use);
     } catch (err: unknown) {
       setBuyError((err as Error).message || t.starWishFailed);
     }
@@ -934,7 +944,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             <div className={`text-[10px] ${textMuted}`}>{tf(t.bitsRate, { n: BITS_PER_HOUR })}</div>
           </div>
 
-          <div className={`relative grid grid-cols-4 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
+          <div className={`relative grid grid-cols-5 border-l border-t ${borderCol} text-[9px] sm:text-[10px] uppercase sm:tracking-wider`} role="tablist">
             <SegmentIndicator activeKey={tab} colorClass="bg-amber-500/10" />
             {(
               [
@@ -942,6 +952,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 ['challenges', t.chTab],
                 ['furniture', t.bitsTabFurniture],
                 ['trade', t.tradeTab],
+                ['bank', t.bankTab],
               ] as Array<[ShopTab, string]>
             ).map(([id, label]) => (
               <button
@@ -1048,8 +1059,31 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             />
           )}
 
+          {tab === 'bank' && state?.bank && (
+            <BankPanel
+              bank={state.bank}
+              balance={balance}
+              demo={isDemo()}
+              onBank={async (body) => {
+                const next = await api.bits.bank(body);
+                setState(next);
+                onPurchased(next);
+              }}
+              borderCol={borderCol}
+              textMuted={textMuted}
+            />
+          )}
+
           {tab === 'challenges' && (
             <>
+              {/* A charm's SHIELD standing between you and the boss. */}
+              {state?.defense?.shield && (
+                <div className="p-2 border border-sky-300/60 bg-sky-300/5 text-sky-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {tf(t.defShield, { t: new Date(state.defense.shield.until).toLocaleString() })}
+                  {state.defense.shield.power > 1 ? tf(t.vitShieldPower, { p: state.defense.shield.power }) : ''}
+                </div>
+              )}
               <ChallengesTab
                 state={state}
                 loadError={loadError}
@@ -1099,8 +1133,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                           label: t.nowStars,
                           art: stars ? <AstraIcon starlight={stars} className="w-8 h-8" /> : <span className={`w-7 h-7 border border-dashed ${borderCol}`} />,
                           value: stars ? tf(t.nowStarsLine, { a: stars.stars, b: stars.max }) : t.nowNone,
-                          sub: stars?.guard_on ? t.nowGuardOn : '',
-                          lit: Boolean(stars && stars.stars > 0),
+                          sub: stars?.worn === false ? t.charmNotWorn : stars?.guard_on ? t.nowGuardOn : '',
+                          lit: Boolean(stars && stars.worn !== false && stars.stars > 0),
                         },
                       ];
                       return slots.map((slot) => (
@@ -1153,18 +1187,40 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
               {buffsView === 'starlight' && state?.starlight && (
                 <div className="space-y-1.5">
                   {/* ASTRA, the charm the stars build, beside the sky they light. */}
-                  <div className="grid gap-2 sm:grid-cols-[11rem_minmax(0,1fr)] items-stretch">
-                    <AstraCharm starlight={state.starlight} borderCol={borderCol} textMuted={textMuted} />
+                  <div className="grid gap-2 sm:grid-cols-[11rem_minmax(0,1fr)] sm:h-[264px] items-stretch">
+                    <AstraCharm
+                      starlight={state.starlight}
+                      now={now}
+                      demo={isDemo()}
+                      onWear={wearCharm}
+                      borderCol={borderCol}
+                      textMuted={textMuted}
+                    />
                     <StarlightSky starlight={state.starlight} />
                   </div>
                   <p className={`text-[10px] font-sans ${textMuted}`}>{t.starlightHint}</p>
+                  <CharmPicker
+                    starlight={state.starlight}
+                    balance={balance}
+                    demo={isDemo()}
+                    onWear={wearCharm}
+                    onBuy={async (id) => {
+                      const next = await api.bits.buyCharm(id);
+                      setState(next);
+                      onPurchased(next);
+                    }}
+                    borderCol={borderCol}
+                    textMuted={textMuted}
+                  />
                   <StarWishes
                     starlight={state.starlight}
                     now={now}
                     formatLeft={formatLeft}
                     onWish={handleWish}
                     granted={granted}
+                    grantedUse={grantedUse}
                     grantMs={GRANT_MS}
+                    pieceName={(id) => furnitureById.get(id)?.name ?? id}
                     onGo={goToNewLineup}
                   />
                 </div>
@@ -1362,7 +1418,7 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
 
         {/* Purchase splash: the buff "comes online" / the new piece is shown
             off. A crate rattles shut first, then bursts open on what it held. */}
-        {packSplash && room && (
+        {packSplash && room && createPortal(
           <PackSplash
             pack={packSplash}
             catalog={room.catalog}
@@ -1370,7 +1426,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
             textMuted={textMuted}
             onClose={() => setPackSplash(null)}
             onOpenRoom={onOpenRoom}
-          />
+          />,
+          document.body
         )}
         {splash && (() => {
           const shaking = splash.kind === 'buff' && splash.crate && !crateOpen;
@@ -1382,12 +1439,14 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
               : splash.crate
               ? t.bitsCrateRolled
               : t.bitsSplashBuff;
-          return (
+          // Over the whole screen and centred in it, wherever the page was
+          // scrolled to when the button was pressed.
+          return createPortal(
           <div
             key={shaking ? 'crate-shut' : 'open'}
             role="status"
             onClick={closeSplash}
-            className={`${splash.kind === 'buff' && !shaking ? 'buff-splash' : ''} absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 cursor-pointer ${
+            className={`${splash.kind === 'buff' && !shaking ? 'buff-splash' : ''} fixed inset-0 z-[60] font-mono text-xs flex flex-col items-center justify-center gap-4 cursor-pointer ${
               isDark ? 'bg-zinc-950/92' : 'bg-white/94'
             }`}
             style={{ ['--buff-accent' as string]: shaking ? lookOf('mystery_crate').accent : splashAccent }}
@@ -1456,7 +1515,8 @@ export const BitsShopModal: React.FC<BitsShopModalProps> = ({
                 {t.bitsSplashDismiss}
               </button>
             </div>
-          </div>
+          </div>,
+          document.body
           );
         })()}
       </div>

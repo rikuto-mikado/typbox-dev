@@ -89,6 +89,15 @@ class UserProfile(models.Model):
     # ATTUNEMENT grows from then).
     blessing = models.CharField(max_length=32, blank=True, default="")
     blessing_since = models.DateTimeField(null=True, blank=True)
+    # CHARMS (charms.py): the STARLIGHT charm worn now ("" for none), and
+    # every change of it as {"at", "charm"}, oldest first: stars are counted
+    # from the logs worn or not, but only the worn charm spends them and its
+    # insurance needs it worn a while. Before the first change, ASTRA is worn.
+    charm = models.CharField(max_length=16, blank=True, default="astra")
+    charm_log = models.JSONField(default=list, blank=True)
+    # ATTACKS (attacks.py): the SHIELDs a charm has raised, as
+    # {"from", "until", "charm", "key"}: no boss's blow lands inside one.
+    shields = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -308,3 +317,47 @@ class TradeOrder(models.Model):
 
     def __str__(self):
         return f"{self.user} {self.kind} {self.asset} {self.bits:+d}"
+
+
+class BankEntry(models.Model):
+    """
+    TYPBOX BANK (bank.py): one movement of BITS between the wallet and the
+    bank. The BITS ledger (economy.bits_summary) adds loans and withdrawals
+    to the wallet and takes repayments and deposits out of it.
+      loan      `amount` borrowed on `plan` (study / standard / emergency) at
+                `rate_bp` per day (basis points), interest-free for
+                `grace_days`; what it owes is worked out from its repayments
+      repay     `amount` paid back on `loan` (interest first, then principal)
+      deposit   `amount` put in the VAULT
+      withdraw  `amount` taken out of the VAULT
+    Rows are never edited: the state is replayed from them, and a BITS reset
+    deletes them with the rest of the economy.
+    """
+
+    LOAN = "loan"
+    REPAY = "repay"
+    DEPOSIT = "deposit"
+    WITHDRAW = "withdraw"
+    KIND_CHOICES = [(LOAN, "Loan"), (REPAY, "Repay"), (DEPOSIT, "Deposit"), (WITHDRAW, "Withdraw")]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bank_entries"
+    )
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES)
+    plan = models.CharField(max_length=16, blank=True, default="")
+    amount = models.PositiveIntegerField(default=0)
+    loan = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="repayments"
+    )
+    rate_bp = models.PositiveIntegerField(default=0)
+    grace_days = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "Bank Entry"
+        verbose_name_plural = "Bank Entries"
+        ordering = ["created_at", "id"]
+        indexes = [models.Index(fields=["user", "kind"])]
+
+    def __str__(self):
+        return f"{self.user} {self.kind} {self.amount}"

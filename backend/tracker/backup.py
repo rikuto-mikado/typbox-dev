@@ -14,12 +14,12 @@ and a buff still running ends at the import with the usual refund.
 """
 
 from collections import Counter
-from datetime import timezone as dt_timezone
+from datetime import timedelta, timezone as dt_timezone
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from . import challenges, trade
+from . import bank, challenges, charms, trade, wishes
 from .blessings import BLESSINGS, PREFIX as BLESSING_PREFIX
 from .economy import BUFFS, LEGACY_BUFFS, RUNNABLE_BUFFS, crate_turns_at, active_buff, refund_amount
 from .furniture import (
@@ -29,10 +29,11 @@ from .furniture import (
     inventory,
     sanitize_layout,
 )
-from .models import BitPurchase, TradeOrder, UserProfile
+from .models import BankEntry, BitPurchase, TradeOrder, UserProfile
 
 MAX_IMPORTED_PURCHASES = 20000
 MAX_IMPORTED_TRADES = 20000
+MAX_IMPORTED_BANK = 20000
 MAX_AMOUNT = 10_000_000
 MAX_TRADE_UNITS = 10**15
 MAX_LOG_BONUS = 100_000
@@ -98,10 +99,24 @@ def export_economy(user):
         }
         for o in TradeOrder.objects.filter(user=user).order_by("created_at", "id")
     ]
+    # TYPBOX BANK: a repayment names its loan by its place in this list.
+    entries = list(BankEntry.objects.filter(user=user).order_by("created_at", "id"))
+    place = {e.id: i for i, e in enumerate(entries)}
+    bank_rows = [
+        {
+            "kind": e.kind,
+            "plan": e.plan,
+            "amount": e.amount,
+            "loan": place.get(e.loan_id) if e.loan_id else None,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in entries
+    ]
     return {
         "version": 1,
         "purchases": purchases,
         "trades": trades,
+        "bank": bank_rows,
         "room": {
             "layout": profile.room_layout,
             "slots": profile.room_slots,
@@ -114,6 +129,9 @@ def export_economy(user):
             "crate_omen": profile.crate_omen,
             "crate_omen_until": profile.crate_omen_until,
             "shop_salt": profile.shop_salt,
+            "charm": profile.charm,
+            "charm_log": profile.charm_log,
+            "shields": profile.shields,
         },
         "preferences": {key: getattr(profile, key) for key in PREFERENCES},
     }
@@ -184,6 +202,10 @@ def _purchase_from(row, user, categories, now):
         obj.state = {"outcome": state["outcome"]}
         if _amount(state.get("bonus")):
             obj.state["bonus"] = _amount(state["bonus"])
+        return obj
+    if item_id.startswith(charms.PREFIX):
+        if item_id[len(charms.PREFIX):] not in charms.CHARMS or expires is not None:
+            return None
         return obj
     if item_id.startswith(BLESSING_PREFIX):
         if item_id[len(BLESSING_PREFIX):] not in BLESSINGS or expires is not None:
@@ -395,7 +417,12 @@ def _restore_starlight(profile, raw):
             if held[(s["day"], s["n"])] > 0:
                 held[(s["day"], s["n"])] -= 1
                 continue
-            spends.append({"day": s["day"], "n": s["n"]})
+            entry = {"day": s["day"], "n": s["n"]}
+            if s.get("charm") in charms.CHARMS and s["charm"] != charms.DEFAULT:
+                entry["charm"] = s["charm"]
+            if isinstance(s.get("key"), str) and len(s["key"]) <= 120:
+                entry["key"] = s["key"]
+            spends.append(entry)
     profile.star_spends = spends[-5000:]
     guard = raw.get("last_guard")
     if (
@@ -418,6 +445,79 @@ def _restore_starlight(profile, raw):
         profile.crate_omen = omen
         profile.crate_omen_until = until
     profile.shop_salt = max(profile.shop_salt, _amount(raw.get("shop_salt"), 1_000_000))
+    # CHARMS: the wear history and the SHIELDs, onto an account that has none.
+    log = raw.get("charm_log")
+    if not profile.charm_log and isinstance(log, list):
+        clean = []
+        for entry in log[-500:]:
+            if (
+                isinstance(entry, dict)
+                and _moment(entry.get("at"))
+                and (entry.get("charm") in charms.CHARMS or entry.get("charm") == "")
+            ):
+                clean.append({"at": _moment(entry["at"]).isoformat(), "charm": entry["charm"]})
+        profile.charm_log = clean
+        charm = raw.get("charm")
+        if charm in charms.CHARMS or charm == "":
+            profile.charm = charm
+    shields = raw.get("shields")
+    if not profile.shields and isinstance(shields, list):
+        clean = []
+        # The wishes still running (wishes.py), cleaned and capped.
+        clean = wishes.restore_all([w for w in shields[-200:] if isinstance(w, dict) and w.get("kind")])
+        for w in shields[-200:]:
+            if not isinstance(w, dict) or w.get("kind"):
+                continue
+            start, until = _moment(w.get("from")), _moment(w.get("until"))
+            charm = w.get("charm")
+            if not (start and until and charm in charms.CHARMS and timedelta(0) < until - start <= timedelta(days=7)):
+                continue
+            spec = charms.CHARMS[charm]["shield"]
+            clean.append(
+                {
+                    "from": start.isoformat(),
+                    "until": until.isoformat(),
+                    "charm": charm,
+                    "key": str(w.get("key") or "")[:120],
+                    "power": spec["power"],
+                }
+            )
+        profile.shields = clean
+
+
+def _restore_bank(user, rows, now):
+    """TYPBOX BANK's movements, onto an account with none of its own. Rates
+    come from today's plans, never from the file."""
+    if BankEntry.objects.filter(user=user).exists():
+        return 0
+    made = {}
+    count = 0
+    for i, row in enumerate(rows[:MAX_IMPORTED_BANK]):
+        if not isinstance(row, dict):
+            continue
+        kind = row.get("kind")
+        created = _moment(row.get("created_at"))
+        amount = _amount(row.get("amount"))
+        if kind not in (BankEntry.LOAN, BankEntry.REPAY, BankEntry.DEPOSIT, BankEntry.WITHDRAW) or not created or created > now or not amount:
+            continue
+        entry = BankEntry(user=user, kind=kind, amount=amount, created_at=created)
+        if kind == BankEntry.LOAN:
+            plan = row.get("plan")
+            if plan not in bank.PLANS:
+                continue
+            entry.plan = plan
+            entry.rate_bp = bank.PLANS[plan]["rate_bp"]
+            entry.grace_days = bank.PLANS[plan]["grace"]
+        elif kind == BankEntry.REPAY:
+            ref = row.get("loan")
+            if not isinstance(ref, int) or isinstance(ref, bool) or ref not in made:
+                continue
+            entry.loan = made[ref]
+        entry.save()
+        if kind == BankEntry.LOAN:
+            made[i] = entry
+        count += 1
+    return count
 
 
 def _restore_preferences(user, raw):
@@ -447,6 +547,8 @@ def restore_economy(user, raw, categories):
     restored = _restore_purchases(user, rows, categories, now)
     trades = raw.get("trades")
     _restore_trades(user, trades if isinstance(trades, list) else [], now)
+    if isinstance(raw.get("bank"), list):
+        _restore_bank(user, raw["bank"], now)
     profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
     if isinstance(raw.get("room"), dict):
         _restore_room(profile, raw["room"], user)
